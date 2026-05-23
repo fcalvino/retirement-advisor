@@ -635,15 +635,19 @@ elif page == "⚙️ Settings":
         st.session_state.ai_use_in_screener = use_in_screener
         # Nous activates via local hermes session even without explicit API key
         ai_on = bool(ai_key_input.strip()) or provider_key in ("nous", "xai")
+        prev_provider = st.session_state.get("ai_provider", "")
+        prev_model = st.session_state.get("ai_model", "")
         st.session_state.ai_enabled = ai_on
         _save_ai_config_to_env(provider_key, ai_model_sel, ai_key_input, ai_on, use_in_screener)
-        st.cache_data.clear()
+        # Only clear Streamlit cache if provider/model changed — avoids slow screener reload
+        if provider_key != prev_provider or ai_model_sel != prev_model:
+            st.cache_data.clear()
         if provider_key == "xai":
             st.success(f"✅ AI activado — {ai_model_sel} vía xAI OAuth (Hermes).")
         elif provider_key == "nous":
             st.success(f"✅ AI activado — {ai_model_sel} vía Hermes (sesión local).")
         elif ai_key_input.strip():
-            st.success(f"✅ AI activado — {ai_model_sel}. El cache se limpió para forzar re-análisis.")
+            st.success(f"✅ AI activado — {ai_model_sel}.")
         else:
             st.info("API Key vacía — se usará el scoring clásico.")
 
