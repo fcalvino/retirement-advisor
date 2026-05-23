@@ -165,6 +165,7 @@ class AIConfig:
     model: str = field(default_factory=lambda: os.getenv("AI_MODEL", "claude-sonnet-4-6"))
     api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", "") or os.getenv("OPENAI_API_KEY", ""))
     enabled: bool = field(default_factory=lambda: os.getenv("AI_ENABLED", "").lower() in ("true", "1", "yes"))
+    use_in_screener: bool = field(default_factory=lambda: os.getenv("AI_USE_IN_SCREENER", "false").lower() in ("true", "1", "yes"))
 
 
 @dataclass

@@ -38,12 +38,13 @@ def _load_env_vars() -> dict:
                 env[k.strip()] = v.strip()
     return env
 
-def _save_ai_config_to_env(provider: str, model: str, api_key: str, enabled: bool):
+def _save_ai_config_to_env(provider: str, model: str, api_key: str, enabled: bool, use_in_screener: bool = False):
     """Persist AI settings into .env without touching other keys."""
     env = _load_env_vars()
     env["AI_PROVIDER"] = provider
     env["AI_MODEL"] = model
     env["AI_ENABLED"] = "true" if enabled else "false"
+    env["AI_USE_IN_SCREENER"] = "true" if use_in_screener else "false"
     if api_key:
         env["AI_API_KEY"] = api_key
     elif "AI_API_KEY" in env:
@@ -98,6 +99,7 @@ if "ai_provider" not in st.session_state:
     st.session_state.ai_model = _env.get("AI_MODEL", "claude-sonnet-4-6")
     st.session_state.ai_api_key = _env.get("AI_API_KEY", "")
     st.session_state.ai_enabled = _env.get("AI_ENABLED", "").lower() in ("true", "1", "yes")
+    st.session_state.ai_use_in_screener = _env.get("AI_USE_IN_SCREENER", "false").lower() in ("true", "1", "yes")
 
 portfolio: Portfolio = st.session_state.portfolio
 
@@ -119,12 +121,17 @@ def score_bar(score: float) -> str:
     return "█" * filled + "░" * (10 - filled) + f"  {score:.0f}/100"
 
 
-def _get_ai_config() -> AIConfig:
+def _get_ai_config(context: str = "detailed_analysis") -> AIConfig:
+    enabled = st.session_state.get("ai_enabled", False)
+    use_in_screener = st.session_state.get("ai_use_in_screener", False)
+    # Disable AI for screener unless explicitly opted-in
+    effective_enabled = enabled and (context != "screener" or use_in_screener)
     return AIConfig(
         provider=st.session_state.get("ai_provider", "claude"),
         model=st.session_state.get("ai_model", "claude-sonnet-4-6"),
         api_key=st.session_state.get("ai_api_key", ""),
-        enabled=st.session_state.get("ai_enabled", False),
+        enabled=effective_enabled,
+        use_in_screener=use_in_screener,
     )
 
 
@@ -159,12 +166,12 @@ if page == "🏠 Screener":
     progress = st.progress(0)
     status = st.empty()
 
+    ai_cfg = _get_ai_config(context="screener")
     for i, sym in enumerate(selected):
         status.text(f"Analyzing {sym}... ({i+1}/{len(selected)})")
         progress.progress((i + 1) / len(selected))
         try:
-            # Screener uses rule-based engine only — AI is reserved for Stock Analysis
-            fund, tech, decision = cached_full_analysis(sym, ai_enabled=False)
+            fund, tech, decision = cached_full_analysis(sym, ai_cfg.provider, ai_cfg.model, ai_cfg.enabled, ai_cfg.api_key)
             rows.append({
                 "Ticker": sym,
                 "Company": fund.company_name[:25],
@@ -613,17 +620,23 @@ elif page == "⚙️ Settings":
         value=st.session_state.get("ai_api_key", ""),
         placeholder="sk-ant-... / sk-... / dejar vacío si usás hermes login",
     )
+    use_in_screener = st.toggle(
+        "Usar AI también en el Screener",
+        value=st.session_state.get("ai_use_in_screener", False),
+        help="Desactivado por defecto: el Screener usa scoring rule-based (rápido y sin costo). Activar solo si querés razonamiento AI en cada ticker del ranking.",
+    )
     ai_enabled_now = st.session_state.get("ai_enabled", False)
-    st.caption(f"Estado actual: {'🟢 AI activo' if ai_enabled_now else '⚪ Usando scoring clásico'}")
+    st.caption(f"Estado actual: {'🟢 AI activo' if ai_enabled_now else '⚪ Usando scoring clásico'} | Screener: {'🤖 AI' if use_in_screener else '⚡ Rule-based'}")
 
     if st.button("Guardar configuración AI", type="primary"):
         st.session_state.ai_provider = provider_key
         st.session_state.ai_model = ai_model_sel
         st.session_state.ai_api_key = ai_key_input
+        st.session_state.ai_use_in_screener = use_in_screener
         # Nous activates via local hermes session even without explicit API key
         ai_on = bool(ai_key_input.strip()) or provider_key in ("nous", "xai")
         st.session_state.ai_enabled = ai_on
-        _save_ai_config_to_env(provider_key, ai_model_sel, ai_key_input, ai_on)
+        _save_ai_config_to_env(provider_key, ai_model_sel, ai_key_input, ai_on, use_in_screener)
         st.cache_data.clear()
         if provider_key == "xai":
             st.success(f"✅ AI activado — {ai_model_sel} vía xAI OAuth (Hermes).")
