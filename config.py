@@ -136,13 +136,13 @@ DEFAULT_TICKERS: List[str] = [
     # ETFs (treated as non-fundamental)
     "SPY", "QQQ", "VTI", "BND",
     # Argentina ADRs
-    "YPF", "PAM", "CEPU", "LOMA", "MELI", "GLOB", "DESP", "TEO", "EDN",
+    "YPF", "PAM", "CEPU", "LOMA", "MELI", "GLOB", "TEO", "EDN",
 ]
 
 # Sectors for diversification analysis
 SECTOR_MAP: Dict[str, List[str]] = {
     "Technology": ["AAPL", "MSFT", "GOOGL", "META", "NVDA", "MELI", "GLOB"],
-    "Consumer Discretionary": ["AMZN", "HD", "DESP"],
+    "Consumer Discretionary": ["AMZN", "HD"],
     "Financials": ["JPM", "BRK-B", "V", "MA", "BAC"],
     "Healthcare": ["JNJ", "UNH", "ABBV", "PFE"],
     "Consumer Staples": ["PG", "KO", "PEP", "WMT"],
