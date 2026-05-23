@@ -42,7 +42,7 @@ class EnhancedScoring:
         income_stmt: pd.DataFrame,
         balance_sheet: pd.DataFrame,
     ) -> EnhancedScore:
-        consistency, recs = self._consistency_score(income_stmt)
+        consistency, recs = self._consistency_score(income_stmt, balance_sheet)
         piotroski = self._piotroski_score(info, income_stmt, balance_sheet)
 
         if piotroski >= self.pc.strong_threshold:
@@ -71,10 +71,11 @@ class EnhancedScoring:
     #  Consistency Score — 0 to 15 pts                                    #
     # ------------------------------------------------------------------ #
 
-    def _consistency_score(self, income_stmt: pd.DataFrame) -> Tuple[float, List[str]]:
+    def _consistency_score(self, income_stmt: pd.DataFrame, balance_sheet: pd.DataFrame = None) -> Tuple[float, List[str]]:
         """
         Measures earnings quality via two signals:
-          ROE volatility   (0–8 pts)  — std of net income / equity proxy
+          ROE stability    (0–8 pts)  — std of actual ROE (net income / equity) when available,
+                                        falls back to net income CV
           Margin stability (0–7 pts)  — std of net margin over available years
         """
         recs: List[str] = []
@@ -84,13 +85,34 @@ class EnhancedScoring:
 
         score = 0.0
 
-        # --- ROE proxy: net income trend volatility (8 pts) ---
+        # --- ROE stability (8 pts): prefer actual ROE from statements ---
         ni = self._extract(income_stmt, ["Net Income"])
-        if ni is not None and len(ni) >= 2:
-            # Use coefficient of variation so scale doesn't matter
+        roe_series = None
+
+        if balance_sheet is not None and not balance_sheet.empty:
+            equity = self._extract(
+                balance_sheet,
+                ["Stockholders Equity", "Total Stockholder Equity", "Common Stock Equity"],
+            )
+            if ni is not None and equity is not None:
+                # Align on common dates
+                common = ni.index.intersection(equity.index)
+                if len(common) >= 2:
+                    roe_series = (ni[common] / equity[common].replace(0, float("nan")) * 100).dropna()
+
+        if roe_series is not None and len(roe_series) >= 2:
+            roe_std = roe_series.std()
+            if roe_std <= self.ct.roe_std_max_excellent:
+                score += 8
+            elif roe_std <= self.ct.roe_std_max_acceptable:
+                score += 5
+            else:
+                score += 2
+                recs.append(f"ROE volátil: desviación estándar {roe_std:.1f}%")
+        elif ni is not None and len(ni) >= 2:
+            # Fallback: coefficient of variation of net income
             mean = ni.mean()
-            std = ni.std()
-            cv = abs(std / mean * 100) if mean != 0 else 999
+            cv = abs(ni.std() / mean * 100) if mean != 0 else 999
             if cv <= self.ct.roe_std_max_excellent:
                 score += 8
             elif cv <= self.ct.roe_std_max_acceptable:
