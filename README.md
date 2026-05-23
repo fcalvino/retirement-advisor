@@ -1,78 +1,114 @@
 # Retirement Advisor
 
-Herramienta de análisis de inversiones a largo plazo (horizonte 10–30 años) orientada al retiro. Combina análisis fundamental, técnico y un motor de decisión para calificar acciones de 0 a 100 y emitir señales de compra/venta.
+Herramienta de análisis de inversiones a largo plazo (horizonte 10–30 años) orientada al retiro. Combina análisis fundamental, técnico y un motor de decisión AI para calificar acciones de 0 a 100 y emitir señales de compra/venta con razonamiento en lenguaje natural.
 
 ---
 
 ## Instalación
 
-Requiere Python 3.10+. Desde el directorio `outputs/`:
+### Requisitos
+
+- Python 3.10+
+- Git
+
+### Pasos
 
 ```bash
-pip install -r retirement_advisor/requirements.txt
+# 1. Clonar el repositorio
+git clone https://github.com/fcalvino/retirement-advisor.git
+cd retirement-advisor
+
+# 2. Crear entorno virtual
+python3 -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
+
+# 3. Instalar dependencias
+pip install -r requirements.txt
+
+# 4. Configurar variables de entorno
+cp .env.example .env
+# Editar .env con tu configuración (ver sección Configuración)
+
+# 5. Lanzar el dashboard
+streamlit run dashboard/app.py
 ```
+
+Abrí `http://localhost:8501` en el navegador.
 
 ---
 
-## Modos de uso
-
-### 1. CLI (línea de comandos)
-
-Desde `outputs/retirement_advisor/`:
+## Configuración (.env)
 
 ```bash
-# Análisis completo de un ticker
-../venv/bin/python main.py analyze AAPL
+# Cache (horas antes de refrescar datos de Yahoo Finance)
+CACHE_TTL_HOURS=24
 
-# Análisis de varios tickers a la vez
-../venv/bin/python main.py analyze AAPL MSFT GOOGL META
-
-# Screener del universo completo (24 tickers por defecto)
-../venv/bin/python main.py screen
-
-# Screener limitado a los primeros N tickers
-../venv/bin/python main.py screen --n 10
-
-# Resumen del portafolio guardado
-../venv/bin/python main.py portfolio
-
-# Lanzar el dashboard web
-../venv/bin/python main.py dashboard
+# AI Analysis
+AI_PROVIDER=claude        # claude | openai | xai | nous
+AI_MODEL=claude-sonnet-4-6
+AI_ENABLED=true
+ANTHROPIC_API_KEY=sk-ant-...   # Si usás Claude
+# OPENAI_API_KEY=sk-...        # Si usás GPT-4o
+# XAI_API_KEY=...              # Si usás Grok directamente
 ```
 
-### 2. Dashboard web (Streamlit)
+### Proveedores AI soportados
 
-```bash
-../venv/bin/python main.py dashboard
-```
+| Proveedor | `AI_PROVIDER` | Modelos recomendados |
+|-----------|--------------|----------------------|
+| Anthropic (Claude) | `claude` | `claude-sonnet-4-6`, `claude-opus-4-7` |
+| OpenAI | `openai` | `gpt-4o`, `gpt-4o-mini` |
+| xAI (Grok) | `xai` | `grok-4.3` |
+| Nous Research | `nous` | `nousresearch/hermes-4-70b` |
 
-Abre `http://localhost:8501` en el navegador. Tiene 5 secciones:
+> Para xAI y Nous también podés autenticarte vía [Hermes OAuth](https://hermes-agent.nousresearch.com/) sin API key explícita.
 
-| Sección | Qué hace |
-|---------|----------|
-| **Screener** | Ranking de todos los tickers con scores y señales |
-| **Stock Analysis** | Análisis detallado de un ticker: score por dimensión, gráfico de precio, decisión |
+Si no configurás AI, el sistema cae automáticamente al motor de decisión rule-based.
+
+---
+
+## Dashboard
+
+El dashboard tiene 5 secciones:
+
+| Sección | Descripción |
+|---------|-------------|
+| **Screener** | Ranking de todos los tickers con scores, señales y métricas clave |
+| **Stock Analysis** | Análisis detallado: score por dimensión, gráfico de precio, decisión AI |
 | **Portfolio** | Posiciones abiertas, P&L, gráfico de pesos por sector |
 | **Allocation** | Recomendación de asset allocation según tu edad (acciones / bonos / cash) |
-| **Settings** | Editar el universo de tickers, limpiar caché |
+| **Settings** | Editar universo de tickers, configurar AI, limpiar caché |
 
 ---
 
-## Cómo leer los resultados
+## Cómo funciona
 
 ### Score fundamental (0–100)
 
-El sistema califica cada empresa en 5 dimensiones:
+Cada empresa se califica en 5 dimensiones:
 
-| Dimensión | Peso | Qué mide |
+| Dimensión | Peso | Métricas |
 |-----------|------|----------|
 | Profitability | 25 pts | ROE, ROIC, margen neto, margen bruto |
 | Financial Health | 20 pts | Deuda/patrimonio, current ratio, cobertura de intereses |
 | Valuation | 25 pts | P/E, PEG, EV/EBITDA, P/B |
 | Growth | 20 pts | CAGR de ingresos y EPS a 5 años, FCF yield |
-| Dividends | 10 pts | Yield, payout ratio, años consecutivos de crecimiento |
+| Dividends | 10 pts | Yield, payout ratio |
 
-### Señal de decisión
+### Análisis técnico
+
+Indicadores calculados sobre **barras semanales de 10 años**:
+
+- SMA200 y su pendiente a 26 semanas
+- RSI semanal
+- MACD (alcista/bajista)
+- ADX (fuerza de tendencia)
+- Bandas de Bollinger
+- Distancia desde máximo/mínimo de 52 semanas
+
+### Decisión
+
+Con AI activado, un LLM recibe todos los datos fundamentales y técnicos y devuelve una recomendación con razonamiento en español. Sin AI, se usa un motor rule-based:
 
 | Score | Técnico | Decisión |
 |-------|---------|----------|
@@ -82,81 +118,61 @@ El sistema califica cada empresa en 5 dimensiones:
 | 35–44 | Cualquiera | **REDUCE** |
 | < 35 | Cualquiera | **SELL** |
 
-Bloqueos automáticos (override al score): deuda/patrimonio > 3, patrimonio negativo, RSI semanal > 80.
+Bloqueos automáticos (override al score): D/E > 3, patrimonio negativo, RSI semanal > 80 con movimiento parabólico.
 
-### Graham Value y Margen de Seguridad
+### Graham Value
 
-Calcula el valor intrínseco con la fórmula de Graham:
+Valor intrínseco estimado con la fórmula de Benjamin Graham:
 
 ```
-Valor = EPS × (8.5 + 2 × tasa_de_crecimiento) × 4.4 / tasa_AAA
+Valor = EPS × (8.5 + 2 × tasa_crecimiento) × 4.4 / tasa_AAA
 ```
 
-El **Margen de Seguridad** es qué tan por debajo del valor Graham cotiza el precio actual. Valores > 25% son atractivos.
+El **Margen de Seguridad** indica cuánto por debajo del valor Graham cotiza el precio actual. > 25% es atractivo.
 
 ---
 
 ## Universo de tickers por defecto
 
-24 empresas y ETFs de gran capitalización estadounidense:
+39 empresas, ETFs y ADRs argentinos:
 
 ```
-AAPL  MSFT  GOOGL  AMZN  NVDA  META  BRK-B  JPM  V  MA
-BAC   JNJ   UNH    ABBV  PFE   PG    KO     PEP  WMT  HD
-SPY   QQQ   VYM    SCHD
+# US Mega-Cap
+AAPL  MSFT  GOOGL  AMZN  NVDA  META  BRK-B
+
+# Financials
+JPM  V  MA  BAC
+
+# Healthcare
+JNJ  UNH  ABBV  PFE
+
+# Consumer Staples
+PG  KO  PEP  WMT
+
+# Industrials
+HD  CAT  HON
+
+# Dividend / Energy
+O  T  XOM  CVX
+
+# ETFs
+SPY  QQQ  VTI  BND
+
+# Argentina ADRs
+YPF  PAM  CEPU  LOMA  MELI  GLOB  DESP  TEO  EDN
 ```
 
-Para agregar o quitar tickers, editar `config.py` → `DEFAULT_TICKERS`, o usar la sección **Settings** del dashboard.
+Para modificar el universo: editar `DEFAULT_TICKERS` en `config.py` o usar **Settings** en el dashboard.
 
 ---
 
-## Portafolio
+## Fuente de datos
 
-Agregar una posición (desde el dashboard → Stock Analysis → "Add to Portfolio", o editando `data/db/portfolio.json` manualmente):
+Todos los datos provienen de **Yahoo Finance** vía `yfinance` (gratuito, sin API key):
 
-```json
-{
-  "MSFT": {
-    "shares": 10,
-    "avg_cost": 380.00,
-    "purchase_date": "2024-01-15"
-  }
-}
-```
-
-El portafolio calcula automáticamente: P&L total, retorno anualizado, Sharpe ratio, max drawdown y beta vs SPY.
-
----
-
-## Alertas (opcional)
-
-Configurar en `config.py` o variables de entorno:
-
-```bash
-# Email
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-EMAIL_FROM=tu@gmail.com
-EMAIL_TO=destino@gmail.com
-SMTP_PASSWORD=tu_app_password
-
-# Telegram
-TELEGRAM_TOKEN=tu_bot_token
-TELEGRAM_CHAT_ID=tu_chat_id
-```
-
-Las alertas se disparan automáticamente cuando la señal de un ticker cambia (ej: HOLD → BUY).
-
----
-
-## Caché
-
-Los datos de yfinance se cachean en SQLite para evitar llamadas repetidas a la API. TTL por defecto: 4 horas.
-
-```bash
-# Limpiar caché completo (fuerza datos frescos)
-../venv/bin/python -c "from data.cache import cache; cache.clear_all()"
-```
+- **Fundamentals**: `yf.Ticker().info`, `.financials`, `.balance_sheet`, `.cashflow`, `.dividends`
+- **Técnicos**: precios semanales históricos de 10 años + cálculo local con `pandas_ta`
+- **Cache**: SQLite local con TTL configurable (default 24h) para evitar llamadas repetidas
 
 ---
 
@@ -165,20 +181,47 @@ Los datos de yfinance se cachean en SQLite para evitar llamadas repetidas a la A
 ```
 retirement_advisor/
 ├── main.py               # CLI entry point
-├── config.py             # Umbrales, universo de tickers, configuración de alertas
+├── config.py             # Universo de tickers, umbrales, configuración AI
 ├── requirements.txt
-├── data/
-│   ├── cache.py          # SQLite cache con TTL
-│   └── fetcher.py        # Wrapper de yfinance
+├── .env.example
 ├── analysis/
-│   ├── fundamental.py    # Scoring fundamental (5 dimensiones)
+│   ├── fundamental.py    # Scoring fundamental (5 dimensiones, 0–100)
 │   ├── technical.py      # Indicadores técnicos en barras semanales
-│   └── strategy.py       # Motor de decisión + full_analysis()
+│   ├── strategy.py       # Motor de decisión + full_analysis()
+│   └── ai_analyzer.py    # Motor AI (Claude / GPT-4o / Grok / Nous)
+├── data/
+│   ├── fetcher.py        # Wrapper de yfinance con cache
+│   └── cache.py          # SQLite cache con TTL
 ├── portfolio/
 │   ├── tracker.py        # Posiciones, P&L, métricas de riesgo
 │   └── allocation.py     # Asset allocation por edad
 ├── alerts/
-│   └── notifier.py       # Email y Telegram
+│   └── notifier.py       # Alertas por email y Telegram
 └── dashboard/
     └── app.py            # UI web con Streamlit
 ```
+
+---
+
+## Alertas (opcional)
+
+Configurar en `.env`:
+
+```bash
+# Email
+EMAIL_FROM=tu@gmail.com
+EMAIL_TO=destino@gmail.com
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_PASSWORD=tu_app_password
+
+# Telegram
+TELEGRAM_TOKEN=tu_bot_token
+TELEGRAM_CHAT_ID=tu_chat_id
+```
+
+---
+
+## Licencia
+
+MIT
