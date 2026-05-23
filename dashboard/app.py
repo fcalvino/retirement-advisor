@@ -300,7 +300,7 @@ elif page == "🔍 Stock Analysis":
         col4.metric("Score Ajustado", f"{fund.adjusted_score:.1f}/100")
 
         # Consistency sub-scores
-        if fund.consistency_detail:
+        if getattr(fund, "consistency_detail", None):
             cd = fund.consistency_detail
             with st.expander(f"📊 Detalle Consistency ({cd.total:.1f}/15)", expanded=False):
                 c1, c2, c3 = st.columns(3)
@@ -312,7 +312,7 @@ elif page == "🔍 Stock Analysis":
                         st.caption(f"⚠️ {note}")
 
         # Piotroski F-score detail
-        if fund.piotroski_detail:
+        if getattr(fund, "piotroski_detail", None):
             pd_obj = fund.piotroski_detail
             _piotroski_labels = {
                 "f1_roa_positive":          "F1 — ROA > 0 (actual)",
