@@ -274,7 +274,11 @@ elif page == "🔍 Stock Analysis":
         col4.metric("Growth", f"{fund.growth_score:.0f}/20")
         col5.metric("Dividend", f"{fund.dividend_score:.0f}/10")
 
-        st.markdown(f"**Total Score: {fund.total_score:.1f} / 100**")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Base Score", f"{fund.total_score:.1f}/100")
+        col2.metric("Consistency", f"{fund.consistency_score:.1f}/15", help="Estabilidad de márgenes y utilidades")
+        col3.metric("Piotroski F-Score", f"{fund.piotroski_score}/9", help="Calidad contable (≥7 = fuerte)")
+        st.markdown(f"**Score Ajustado: {fund.adjusted_score:.1f} / 100**")
 
         # Tabs
         tab_fund, tab_tech, tab_chart, tab_decision = st.tabs(

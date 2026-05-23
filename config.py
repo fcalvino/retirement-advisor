@@ -167,7 +167,23 @@ class AIConfig:
     enabled: bool = field(default_factory=lambda: os.getenv("AI_ENABLED", "").lower() in ("true", "1", "yes"))
 
 
+@dataclass
+class ConsistencyThresholds:
+    roe_std_max_excellent: float = 5.0
+    roe_std_max_acceptable: float = 12.0
+    margin_volatility_max: float = 6.0
+
+
+@dataclass
+class PiotroskiConfig:
+    strong_threshold: int = 7
+    bonus_strong: float = 12.0
+    bonus_good: float = 6.0
+
+
 THRESHOLDS = FundamentalThresholds()
 STRATEGY = StrategyConfig()
 ALERTS = AlertConfig()
 AI_CONFIG = AIConfig()
+CONSISTENCY = ConsistencyThresholds()
+PIOTROSKI = PiotroskiConfig()

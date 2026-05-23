@@ -65,6 +65,12 @@ class FundamentalResult:
     graham_value: Optional[float] = None
     margin_of_safety_pct: Optional[float] = None
 
+    # Enhanced scoring (Phase 1)
+    consistency_score: float = 0.0      # 0–15 pts
+    piotroski_score: int = 0            # 0–9
+    piotroski_bonus: float = 0.0        # bonus applied to adjusted_score
+    adjusted_score: float = 0.0        # total_score + consistency + piotroski_bonus, capped at 100
+
     # Human-readable breakdown
     notes: Dict[str, str] = field(default_factory=dict)
     warnings: list = field(default_factory=list)
@@ -134,7 +140,22 @@ class FundamentalAnalyzer:
                 mos = (graham - result.current_price) / graham * 100
                 result.margin_of_safety_pct = round(mos, 1)
 
-        logger.info(f"{symbol}: total score = {result.total_score:.1f}/100")
+        # Enhanced scoring: Consistency + Piotroski
+        from analysis.scoring import EnhancedScoring
+        enhanced = EnhancedScoring().get_enhanced_score(
+            result.total_score, info, income_stmt, balance_sheet
+        )
+        result.consistency_score = enhanced.consistency_score
+        result.piotroski_score = enhanced.piotroski_score
+        result.piotroski_bonus = enhanced.piotroski_bonus
+        result.adjusted_score = enhanced.adjusted_score
+        for rec in enhanced.recommendations:
+            result.notes[f"enhanced_{len(result.notes)}"] = rec
+
+        logger.info(
+            f"{symbol}: base={result.total_score:.1f} consistency={result.consistency_score:.1f} "
+            f"piotroski={result.piotroski_score}/9 adjusted={result.adjusted_score:.1f}"
+        )
         return result
 
     # ------------------------------------------------------------------ #
