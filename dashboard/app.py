@@ -159,12 +159,12 @@ if page == "🏠 Screener":
     progress = st.progress(0)
     status = st.empty()
 
-    ai_cfg = _get_ai_config()
     for i, sym in enumerate(selected):
         status.text(f"Analyzing {sym}... ({i+1}/{len(selected)})")
         progress.progress((i + 1) / len(selected))
         try:
-            fund, tech, decision = cached_full_analysis(sym, ai_cfg.provider, ai_cfg.model, ai_cfg.enabled, ai_cfg.api_key)
+            # Screener uses rule-based engine only — AI is reserved for Stock Analysis
+            fund, tech, decision = cached_full_analysis(sym, ai_enabled=False)
             rows.append({
                 "Ticker": sym,
                 "Company": fund.company_name[:25],
