@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-from analysis.scoring import EnhancedScoring
+from analysis.scoring import ConsistencyDetail, EnhancedScoring, PiotroskiDetail
 from config import THRESHOLDS as T
 from data.fetcher import (
     _safe_float,
@@ -66,11 +66,13 @@ class FundamentalResult:
     graham_value: Optional[float] = None
     margin_of_safety_pct: Optional[float] = None
 
-    # Enhanced scoring (Phase 1)
-    consistency_score: float = 0.0      # 0–15 pts
-    piotroski_score: int = 0            # 0–9
-    piotroski_bonus: float = 0.0        # bonus applied to adjusted_score
-    adjusted_score: float = 0.0        # total_score + consistency + piotroski_bonus, capped at 100
+    # Enhanced scoring (Phase 1.5)
+    consistency_score: float = 0.0          # 0–15 pts
+    piotroski_score: int = 0                # 0–9
+    piotroski_bonus: float = 0.0            # bonus applied to adjusted_score
+    adjusted_score: float = 0.0             # total_score + consistency + piotroski_bonus, capped at 100
+    consistency_detail: Optional[ConsistencyDetail] = None   # per-signal breakdown
+    piotroski_detail: Optional[PiotroskiDetail] = None       # per-criterion F1–F9 breakdown
 
     # Human-readable breakdown
     notes: Dict[str, str] = field(default_factory=dict)
@@ -150,6 +152,8 @@ class FundamentalAnalyzer:
         result.piotroski_score = enhanced.piotroski_score
         result.piotroski_bonus = enhanced.piotroski_bonus
         result.adjusted_score = enhanced.adjusted_score
+        result.consistency_detail = enhanced.consistency_detail
+        result.piotroski_detail = enhanced.piotroski_detail
         for rec in enhanced.recommendations:
             result.notes[f"enhanced_{len(result.notes)}"] = rec
 

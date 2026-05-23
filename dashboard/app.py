@@ -216,22 +216,23 @@ if page == "🏠 Screener":
     st.dataframe(
         df[[
             "Ticker", "Company", "Sector", "Signal", "Score Bar",
+            "Consistency", "Piotroski",
             "Technical", "P/E", "ROE %", "Rev CAGR 5Y", "Div Yield %", "MoS %", "Price"
-        ]],
+        ]].rename(columns={"Consistency": "Consist./15", "Piotroski": "Piotroski/9"}),
         use_container_width=True,
         hide_index=True,
     )
 
     # Score distribution chart
     fig = px.bar(
-        df.sort_values("Fund. Score", ascending=True),
-        x="Fund. Score",
+        df.sort_values("Adj. Score", ascending=True),
+        x="Adj. Score",
         y="Ticker",
         orientation="h",
-        color="Fund. Score",
+        color="Adj. Score",
         color_continuous_scale="RdYlGn",
         range_color=[0, 100],
-        title="Fundamental Score Ranking",
+        title="Adjusted Score Ranking (Base + Consistency + Piotroski)",
     )
     fig.add_vline(x=75, line_dash="dash", line_color="green", annotation_text="Strong Buy")
     fig.add_vline(x=60, line_dash="dash", line_color="orange", annotation_text="Buy")
@@ -284,11 +285,54 @@ elif page == "🔍 Stock Analysis":
         col4.metric("Growth", f"{fund.growth_score:.0f}/20")
         col5.metric("Dividend", f"{fund.dividend_score:.0f}/10")
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         col1.metric("Base Score", f"{fund.total_score:.1f}/100")
-        col2.metric("Consistency", f"{fund.consistency_score:.1f}/15", help="Estabilidad de márgenes y utilidades")
-        col3.metric("Piotroski F-Score", f"{fund.piotroski_score}/9", help="Calidad contable (≥7 = fuerte)")
-        st.markdown(f"**Score Ajustado: {fund.adjusted_score:.1f} / 100**")
+        col2.metric(
+            "Consistency",
+            f"{fund.consistency_score:.1f}/15",
+            help="ROE stability + EPS growth CV + Net margin stability",
+        )
+        col3.metric(
+            "Piotroski F-Score",
+            f"{fund.piotroski_score}/9",
+            help="Calidad contable YoY (≥7 = fuerte, ≤3 = débil)",
+        )
+        col4.metric("Score Ajustado", f"{fund.adjusted_score:.1f}/100")
+
+        # Consistency sub-scores
+        if fund.consistency_detail:
+            cd = fund.consistency_detail
+            with st.expander(f"📊 Detalle Consistency ({cd.total:.1f}/15)", expanded=False):
+                c1, c2, c3 = st.columns(3)
+                c1.metric("ROE Stability", f"{cd.roe_score:.1f}/5")
+                c2.metric("EPS Stability", f"{cd.eps_score:.1f}/5")
+                c3.metric("Margin Stability", f"{cd.margin_score:.1f}/5")
+                if cd.notes:
+                    for note in cd.notes:
+                        st.caption(f"⚠️ {note}")
+
+        # Piotroski F-score detail
+        if fund.piotroski_detail:
+            pd_obj = fund.piotroski_detail
+            _piotroski_labels = {
+                "f1_roa_positive":          "F1 — ROA > 0 (actual)",
+                "f2_ocf_positive":          "F2 — Operating Cash Flow > 0",
+                "f3_roa_improving":         "F3 — ROA mejoró YoY",
+                "f4_leverage_decreasing":   "F4 — Deuda/Activos ↓ YoY",
+                "f5_liquidity_improving":   "F5 — Current Ratio ↑ YoY",
+                "f6_no_dilution":           "F6 — Sin dilución accionaria (≤2%)",
+                "f7_gross_margin_improving":"F7 — Margen bruto ↑ YoY",
+                "f8_asset_turnover_improving":"F8 — Asset Turnover ↑ YoY",
+                "f9_accruals_quality":      "F9 — OCF > Net Income (accruals)",
+            }
+            score_color = "#00C851" if pd_obj.score >= 7 else ("#ffbb33" if pd_obj.score >= 5 else "#ff4444")
+            with st.expander(
+                f"🏦 Detalle Piotroski F-Score ({pd_obj.score}/9)",
+                expanded=False,
+            ):
+                for attr, label in _piotroski_labels.items():
+                    passed = getattr(pd_obj, attr, False)
+                    st.markdown(f"{'✅' if passed else '❌'} {label}")
 
         # Tabs
         tab_fund, tab_tech, tab_chart, tab_decision = st.tabs(
