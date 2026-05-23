@@ -177,8 +177,11 @@ if page == "🏠 Screener":
                 "Company": fund.company_name[:25],
                 "Sector": fund.sector,
                 "Signal": f"{decision.action_emoji} {decision.action}",
-                "Fund. Score": fund.total_score,
-                "Score Bar": score_bar(fund.total_score),
+                "Adj. Score": fund.adjusted_score,
+                "Base Score": fund.total_score,
+                "Score Bar": score_bar(fund.adjusted_score),
+                "Consistency": fund.consistency_score,
+                "Piotroski": fund.piotroski_score,
                 "Technical": tech.signal,
                 "P/E": fund.pe_ratio,
                 "ROE %": fund.roe,
@@ -197,7 +200,7 @@ if page == "🏠 Screener":
         st.warning("No data returned. Check internet connection.")
         st.stop()
 
-    df = pd.DataFrame(rows).sort_values("Fund. Score", ascending=False)
+    df = pd.DataFrame(rows).sort_values("Adj. Score", ascending=False)
 
     # Summary metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -623,8 +626,15 @@ elif page == "⚙️ Settings":
     use_in_screener = st.toggle(
         "Usar AI también en el Screener",
         value=st.session_state.get("ai_use_in_screener", False),
-        help="Desactivado por defecto: el Screener usa scoring rule-based (rápido y sin costo). Activar solo si querés razonamiento AI en cada ticker del ranking.",
+        help="Desactivado por defecto. El Screener usa scoring rule-based (rápido y sin costo).",
     )
+    if use_in_screener:
+        n = len(st.session_state.get("universe", []))
+        st.warning(
+            f"⚠️ Activar AI en el Screener hará **{n} llamadas al API** por cada refresh "
+            f"(~{n * 2}–{n * 5} segundos y costo real de tokens). "
+            "Recomendado solo para universos pequeños (<10 tickers)."
+        )
     ai_enabled_now = st.session_state.get("ai_enabled", False)
     st.caption(f"Estado actual: {'🟢 AI activo' if ai_enabled_now else '⚪ Usando scoring clásico'} | Screener: {'🤖 AI' if use_in_screener else '⚡ Rule-based'}")
 

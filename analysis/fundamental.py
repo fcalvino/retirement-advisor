@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
+from analysis.scoring import EnhancedScoring
 from config import THRESHOLDS as T
 from data.fetcher import (
     _safe_float,
@@ -140,10 +141,10 @@ class FundamentalAnalyzer:
                 mos = (graham - result.current_price) / graham * 100
                 result.margin_of_safety_pct = round(mos, 1)
 
-        # Enhanced scoring: Consistency + Piotroski
-        from analysis.scoring import EnhancedScoring
+        # Enhanced scoring: Consistency + Piotroski (pass real cashflow for OCF)
         enhanced = EnhancedScoring().get_enhanced_score(
-            result.total_score, info, income_stmt, balance_sheet
+            result.total_score, info, income_stmt, balance_sheet,
+            cashflow=cashflow,
         )
         result.consistency_score = enhanced.consistency_score
         result.piotroski_score = enhanced.piotroski_score
