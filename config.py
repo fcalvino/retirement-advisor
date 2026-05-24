@@ -334,6 +334,28 @@ class OptimizerConfig:
     ars_risk_discount: float = 0.85  # 15% discount on composite score
 
 
+@dataclass
+class MonteCarloConfig:
+    """
+    Monte Carlo simulation parameters.
+
+    Conservative adjustments applied to historical returns before simulation:
+      vol_adjustment  — multiply deviations by this factor (>1 = more volatile)
+      mean_haircut    — multiply expected return by this factor (<1 = lower return)
+    These reflect two realities: (1) future volatility tends to exceed historical,
+    (2) future expected returns for equities are likely lower than 2010-2024 history.
+
+    min_history_weeks — minimum weeks of history required to run simulation.
+    default_n_sims    — simulation count shown in the dashboard by default.
+    """
+    vol_adjustment: float = 1.10         # +10% volatility (conservative)
+    mean_haircut: float = 0.80           # -20% expected return (conservative)
+    min_history_weeks: int = 104         # 2 years minimum
+    default_n_sims: int = 10_000
+    default_horizon_years: int = 20
+    block_size_weeks: int = 4            # bootstrap block size (preserves autocorrelation)
+
+
 THRESHOLDS = FundamentalThresholds()
 STRATEGY = StrategyConfig()
 ALERTS = AlertConfig()
@@ -344,3 +366,4 @@ BACKTEST = BacktestConfig()
 MOAT = MoatConfig()
 OPTIMIZER = OptimizerConfig()
 REPORT = ReportConfig()
+MONTE_CARLO = MonteCarloConfig()
