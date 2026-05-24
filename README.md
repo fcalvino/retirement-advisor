@@ -1,6 +1,22 @@
 # Retirement Advisor
 
-Herramienta de análisis de inversiones a largo plazo (horizonte 10–30 años) orientada al retiro. Combina análisis fundamental, técnico y un motor de decisión AI para calificar acciones de 0 a 100 y emitir señales de compra/venta con razonamiento en lenguaje natural.
+Herramienta de análisis de inversiones a largo plazo orientada al retiro. Combina análisis fundamental profundo, análisis técnico, Economic Moat, optimización de portafolio Mean-Variance, simulación Monte Carlo, stress testing y un motor de decisión con soporte AI para calificar acciones de 0 a 100 y emitir señales de inversión con razonamiento en lenguaje natural.
+
+---
+
+## Features
+
+| Módulo | Descripción |
+|--------|-------------|
+| **Screener** | Ranking de 38+ tickers con score ajustado, señal y métricas clave |
+| **Stock Analysis** | Score por dimensión, Piotroski F-Score, Consistency Score, Economic Moat, gráfico de precio, decisión AI |
+| **Portfolio Tracker** | Posiciones abiertas, P&L, gráficos de pesos por sector |
+| **Asset Allocation** | Recomendación conservadora de acciones/bonos/cash según edad |
+| **Backtesting** | Curva de equity histórica, Sharpe, Sortino, Calmar, scatter Score↔CAGR |
+| **Portfolio Optimizer** | Mean-Variance SLSQP con 3 perfiles de riesgo, Efficient Frontier |
+| **Simulaciones** | Monte Carlo block-bootstrap (10 000 sims), fan chart, stress test de crisis históricas |
+| **Alertas** | Motor de alertas persistente (SQLite), email y Telegram, generación de PDFs mensuales |
+| **Settings** | Editor de universo, configuración AI, limpieza de caché |
 
 ---
 
@@ -14,22 +30,17 @@ Herramienta de análisis de inversiones a largo plazo (horizonte 10–30 años) 
 ### Pasos
 
 ```bash
-# 1. Clonar el repositorio
 git clone https://github.com/fcalvino/retirement-advisor.git
 cd retirement-advisor
 
-# 2. Crear entorno virtual
 python3 -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 
-# 3. Instalar dependencias
 pip install -r requirements.txt
 
-# 4. Configurar variables de entorno
 cp .env.example .env
-# Editar .env con tu configuración (ver sección Configuración)
+# Editar .env con tu configuración
 
-# 5. Lanzar el dashboard
 streamlit run dashboard/app.py
 ```
 
@@ -47,9 +58,23 @@ CACHE_TTL_HOURS=24
 AI_PROVIDER=claude        # claude | openai | xai | nous
 AI_MODEL=claude-sonnet-4-6
 AI_ENABLED=true
-ANTHROPIC_API_KEY=sk-ant-...   # Si usás Claude
-# OPENAI_API_KEY=sk-...        # Si usás GPT-4o
-# XAI_API_KEY=...              # Si usás Grok directamente
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Alertas por email (opcional)
+EMAIL_FROM=tu@gmail.com
+EMAIL_TO=destino@gmail.com
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_PASSWORD=tu_app_password
+
+# Alertas por Telegram (opcional)
+TELEGRAM_TOKEN=tu_bot_token
+TELEGRAM_CHAT_ID=tu_chat_id
+
+# Reportes PDF
+REPORT_OUTPUT_DIR=reports
+ALERT_INTERVAL_HOURS=24
+REPORT_DAY=1
 ```
 
 ### Proveedores AI soportados
@@ -58,26 +83,10 @@ ANTHROPIC_API_KEY=sk-ant-...   # Si usás Claude
 |-----------|--------------|----------------------|
 | Anthropic (Claude) | `claude` | `claude-sonnet-4-6`, `claude-opus-4-7` |
 | OpenAI | `openai` | `gpt-4o`, `gpt-4o-mini` |
-| xAI (Grok) | `xai` | `grok-4.3` |
-| Nous Research | `nous` | `nousresearch/hermes-4-70b` |
+| xAI (Grok) | `xai` | `grok-4` |
+| Nous Research | `nous` | `nousresearch/hermes-4` |
 
-> Para xAI y Nous también podés autenticarte vía [Hermes OAuth](https://hermes-agent.nousresearch.com/) sin API key explícita.
-
-Si no configurás AI, el sistema cae automáticamente al motor de decisión rule-based.
-
----
-
-## Dashboard
-
-El dashboard tiene 5 secciones:
-
-| Sección | Descripción |
-|---------|-------------|
-| **Screener** | Ranking de todos los tickers con scores, señales y métricas clave |
-| **Stock Analysis** | Análisis detallado: score por dimensión, gráfico de precio, decisión AI |
-| **Portfolio** | Posiciones abiertas, P&L, gráfico de pesos por sector |
-| **Allocation** | Recomendación de asset allocation según tu edad (acciones / bonos / cash) |
-| **Settings** | Editar universo de tickers, configurar AI, limpiar caché |
+Sin AI configurado, el sistema cae automáticamente al motor de decisión rule-based.
 
 ---
 
@@ -87,80 +96,134 @@ El dashboard tiene 5 secciones:
 
 Cada empresa se califica en 5 dimensiones:
 
-| Dimensión | Peso | Métricas |
-|-----------|------|----------|
-| Profitability | 25 pts | ROE, ROIC, margen neto, margen bruto |
-| Financial Health | 20 pts | Deuda/patrimonio, current ratio, cobertura de intereses |
-| Valuation | 25 pts | P/E, PEG, EV/EBITDA, P/B |
-| Growth | 20 pts | CAGR de ingresos y EPS a 5 años, FCF yield |
-| Dividends | 10 pts | Yield, payout ratio |
+| Dimensión | Pts | Métricas |
+|-----------|-----|----------|
+| Profitability | 25 | ROE, ROIC, margen neto, margen bruto |
+| Financial Health | 20 | D/E ratio, current ratio, cobertura de intereses |
+| Valuation | 25 | P/E, PEG, EV/EBITDA, P/B |
+| Growth | 20 | CAGR de ingresos y EPS a 5 años, FCF yield |
+| Dividends | 10 | Yield, payout ratio |
+
+### Bonos de calidad (Score Ajustado)
+
+Sobre el score base se suman tres bonos:
+
+| Componente | Pts máx | Lógica |
+|------------|---------|--------|
+| **Consistency Score** | +15 | Estabilidad de ROE, EPS y márgenes a 4+ años (std/CV) |
+| **Piotroski F-Score** | +6 / +12 | 9 checks YoY de rentabilidad, liquidez y eficiencia |
+| **Moat Bonus** | +10 | `min(moat_score × 0.5, 10)` según clasificación Wide/Narrow/Minimal |
+
+`adjusted_score = min(base + consistency + piotroski_bonus + moat_bonus, 100)`
+
+### Economic Moat (0–20 pts)
+
+| Fuente | Pts | Método |
+|--------|-----|--------|
+| Cuantitativo | 0–12 | Retornos sobre capital, márgenes, pricing power, eficiencia |
+| AI cualitativo | 0–8 | LLM evalúa 4 dimensiones: network effects, switching costs, brand, regulatory moat |
+
+Clasificación: Wide ≥14 / Narrow ≥8 / Minimal ≥4 / None
 
 ### Análisis técnico
 
 Indicadores calculados sobre **barras semanales de 10 años**:
 
-- SMA200 y su pendiente a 26 semanas
+- SMA200 y pendiente a 26 semanas
 - RSI semanal
-- MACD (alcista/bajista)
+- MACD semanal
 - ADX (fuerza de tendencia)
 - Bandas de Bollinger
 - Distancia desde máximo/mínimo de 52 semanas
 
-### Decisión
+### Señales de decisión
 
-Con AI activado, un LLM recibe todos los datos fundamentales y técnicos y devuelve una recomendación con razonamiento en español. Sin AI, se usa un motor rule-based:
-
-| Score | Técnico | Decisión |
-|-------|---------|----------|
+| Score Ajustado | Técnico | Señal |
+|----------------|---------|-------|
 | ≥ 75 | Alcista o neutro | **STRONG BUY** |
 | ≥ 60 | No bajista | **BUY** |
 | ≥ 45 | Cualquiera | **HOLD** |
 | 35–44 | Cualquiera | **REDUCE** |
 | < 35 | Cualquiera | **SELL** |
 
-Bloqueos automáticos (override al score): D/E > 3, patrimonio negativo, RSI semanal > 80 con movimiento parabólico.
+Bloqueos automáticos (override): D/E > 3, patrimonio negativo, RSI semanal > 80 con movimiento parabólico.
 
-### Graham Value
+### Portfolio Optimizer (Mean-Variance)
 
-Valor intrínseco estimado con la fórmula de Benjamin Graham:
+Usa scipy SLSQP para minimizar el Sharpe negativo sujeto a:
 
-```
-Valor = EPS × (8.5 + 2 × tasa_crecimiento) × 4.4 / tasa_AAA
-```
+- Pesos suman 1.0
+- Máximo por posición (`max_position_pct`)
+- Máximo por sector (`max_sector_pct`)
+- Volatilidad anualizada ≤ `max_volatility_pct`
+- Dividend yield ≥ `min_dividend_yield_pct`
+- Mínimo de posiciones (`min_positions`)
 
-El **Margen de Seguridad** indica cuánto por debajo del valor Graham cotiza el precio actual. > 25% es atractivo.
+Tres perfiles:
+
+| Perfil | Max Vol | Min Div | Max Pos |
+|--------|---------|---------|---------|
+| Conservador | 12% | 3.5% | 8% |
+| Moderado | 18% | 2.5% | 12% |
+| Agresivo | 25% | 1.5% | 18% |
+
+El return esperado por ticker es: `score_weight×(score/100×0.18) + div_weight×(yield/100) + moat_weight×(moat/20×0.05)`.
+
+Fallback score-weighted cuando SLSQP no converge (e.g., perfil Conservador con universo growth-heavy).
+
+### Monte Carlo
+
+Metodología block-bootstrap sobre retornos semanales históricos (10 años):
+- Bloques de 4 semanas → preserva autocorrelación y fat tails (sin asunción gaussiana)
+- Ajuste conservador: +10% volatilidad, -20% retorno esperado vs. historia
+- 10 000 simulaciones en < 2 segundos (vectorizado con NumPy)
+- Fan chart con percentiles 5/10/25/50/75/90/95
+
+### Stress Testing
+
+6 escenarios históricos/hipotéticos con shocks por sector calibrados de Bloomberg/FRED:
+
+| Escenario | SPY drawdown |
+|-----------|-------------|
+| 2008 Crisis Financiera Global | -56.8% |
+| 2000-2002 Burbuja Dot-com | -49.1% |
+| 2020 COVID-19 | -33.9% |
+| 2022 Inflación + Suba de Tasas | -19.4% |
+| Recesión Severa (hipotético) | -30.0% |
+| Stagflación Extrema (hipotético) | -25.0% |
+
+### Smart Alerts
+
+5 tipos de alerta con debounce inteligente (SQLite):
+
+| Tipo | Cooldown |
+|------|---------|
+| Signal change | 24h |
+| Score drop ≥ 8 pts | 168h (7d) |
+| Score surge ≥ 8 pts + BUY | 168h |
+| Nueva oportunidad (BUY/STRONG_BUY) | 72h |
+| Moat downgrade | 336h (14d) |
+
+Primera ejecución: guarda baseline silenciosamente sin disparar alertas (cold start).
 
 ---
 
 ## Universo de tickers por defecto
 
-39 empresas, ETFs y ADRs argentinos:
+38 empresas, ETFs y ADRs argentinos (todos operados en USD):
 
 ```
-# US Mega-Cap
-AAPL  MSFT  GOOGL  AMZN  NVDA  META  BRK-B
-
-# Financials
-JPM  V  MA  BAC
-
-# Healthcare
-JNJ  UNH  ABBV  PFE
-
-# Consumer Staples
-PG  KO  PEP  WMT
-
-# Industrials
-HD  CAT  HON
-
-# Dividend / Energy
-O  T  XOM  CVX
-
-# ETFs
-SPY  QQQ  VTI  BND
-
-# Argentina ADRs
-YPF  PAM  CEPU  LOMA  MELI  GLOB  DESP  TEO  EDN
+US Mega-Cap: AAPL  MSFT  GOOGL  AMZN  NVDA  META  BRK-B
+Financials:  JPM   V     MA     BAC
+Healthcare:  JNJ   UNH   ABBV   PFE
+Staples:     PG    KO    PEP    WMT
+Industrials: HD    CAT   HON
+Dividend:    O     T     XOM    CVX
+ETFs:        SPY   QQQ   VTI    BND
+Argentina ADRs (USD): YPF  PAM  CEPU  LOMA  MELI  GLOB  TEO  EDN
 ```
+
+Los ADRs argentinos aplican un descuento de 15% en el composite score para los perfiles Conservador y Moderado (riesgo macro ARS). Todos cotizan en USD.
 
 Para modificar el universo: editar `DEFAULT_TICKERS` en `config.py` o usar **Settings** en el dashboard.
 
@@ -172,7 +235,32 @@ Todos los datos provienen de **Yahoo Finance** vía `yfinance` (gratuito, sin AP
 
 - **Fundamentals**: `yf.Ticker().info`, `.financials`, `.balance_sheet`, `.cashflow`, `.dividends`
 - **Técnicos**: precios semanales históricos de 10 años + cálculo local con `pandas_ta`
-- **Cache**: SQLite local con TTL configurable (default 24h) para evitar llamadas repetidas
+- **Cache**: SQLite local con TTL configurable (default 24h)
+
+---
+
+## Tests
+
+```bash
+pip install pytest
+pytest tests/ -v
+```
+
+Cobertura actual: 114 tests — `StressTester`, `EnhancedScoring`, `Piotroski`, `MonteCarloSimulator`, `AlertEngine`, `PortfolioOptimizer`.
+
+Los tests de Monte Carlo y Optimizer mockean `get_history` para no hacer llamadas de red.
+
+---
+
+## Scheduler de alertas y reportes
+
+```bash
+python scripts/run_scheduler.py
+```
+
+Ejecuta:
+- Chequeo de alertas cada `ALERT_INTERVAL_HOURS` (default 24h)
+- Reporte PDF el día `REPORT_DAY` de cada mes a las 08:00
 
 ---
 
@@ -180,45 +268,59 @@ Todos los datos provienen de **Yahoo Finance** vía `yfinance` (gratuito, sin AP
 
 ```
 retirement_advisor/
-├── main.py               # CLI entry point
-├── config.py             # Universo de tickers, umbrales, configuración AI
+├── config.py                    # Umbrales, perfiles, universo de tickers
 ├── requirements.txt
 ├── .env.example
 ├── analysis/
-│   ├── fundamental.py    # Scoring fundamental (5 dimensiones, 0–100)
-│   ├── technical.py      # Indicadores técnicos en barras semanales
-│   ├── strategy.py       # Motor de decisión + full_analysis()
-│   └── ai_analyzer.py    # Motor AI (Claude / GPT-4o / Grok / Nous)
+│   ├── fundamental.py           # Score fundamental (5 dimensiones, 0–100)
+│   ├── scoring.py               # Consistency Score + Piotroski F-Score
+│   ├── moat.py                  # Economic Moat cuantitativo + AI (0–20)
+│   ├── technical.py             # Indicadores técnicos semanales
+│   ├── strategy.py              # full_analysis() — orquestador principal
+│   └── ai_analyzer.py           # Capa AI (Claude / GPT-4o / Grok / Nous)
 ├── data/
-│   ├── fetcher.py        # Wrapper de yfinance con cache
-│   └── cache.py          # SQLite cache con TTL
+│   ├── fetcher.py               # Wrapper yfinance con caché
+│   └── cache.py                 # SQLite cache TTL
 ├── portfolio/
-│   ├── tracker.py        # Posiciones, P&L, métricas de riesgo
-│   └── allocation.py     # Asset allocation por edad
+│   ├── optimizer.py             # Mean-Variance SLSQP + 3 perfiles
+│   ├── monte_carlo.py           # Block-bootstrap Monte Carlo
+│   ├── stress_test.py           # 6 escenarios de crisis histórica
+│   ├── tracker.py               # Posiciones, P&L, métricas de riesgo
+│   └── allocation.py            # Asset allocation por edad
 ├── alerts/
-│   └── notifier.py       # Alertas por email y Telegram
+│   ├── engine.py                # Motor de detección de alertas
+│   ├── store.py                 # Persistencia SQLite (snapshots + historial)
+│   ├── notifier.py              # Email + Telegram
+│   └── reporter.py              # Generación de PDFs con reportlab
+├── scripts/
+│   └── run_scheduler.py         # Scheduler: alertas diarias + PDF mensual
+├── tests/
+│   ├── conftest.py              # Fixtures compartidos
+│   ├── test_scoring.py          # EnhancedScoring, Piotroski, Consistency
+│   ├── test_stress_test.py      # StressTester — matemática pura
+│   ├── test_monte_carlo.py      # MonteCarloSimulator (mocked fetcher)
+│   ├── test_alert_engine.py     # AlertEngine (mocked store)
+│   └── test_optimizer.py        # PortfolioOptimizer (mocked fetcher)
+├── docs/
+│   ├── architecture.md          # Mapa de módulos y flujo de datos
+│   ├── moat_methodology.md      # Metodología Economic Moat
+│   ├── portfolio_optimizer.md   # Metodología optimizer
+│   ├── alert_system.md          # Sistema de alertas y scheduler
+│   └── ROADMAP.md               # Historial de fases
 └── dashboard/
-    └── app.py            # UI web con Streamlit
+    └── app.py                   # UI Streamlit — 9 páginas
 ```
 
 ---
 
-## Alertas (opcional)
+## Limitaciones conocidas
 
-Configurar en `.env`:
-
-```bash
-# Email
-EMAIL_FROM=tu@gmail.com
-EMAIL_TO=destino@gmail.com
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_PASSWORD=tu_app_password
-
-# Telegram
-TELEGRAM_TOKEN=tu_bot_token
-TELEGRAM_CHAT_ID=tu_chat_id
-```
+- **Datos**: Yahoo Finance puede tener datos faltantes o inconsistentes, especialmente en balance sheets de empresas pequeñas. El sistema cae a valores neutrales cuando hay datos parciales.
+- **Monte Carlo**: El block-bootstrap usa historia real para construir distribuciones futuras — no modela cambios estructurales (e.g., regulaciones nuevas, disrupciones de sector).
+- **AI Moat**: La evaluación cualitativa de moat por LLM está basada en conocimiento de training data y puede estar desactualizada para empresas que cambian rápidamente.
+- **Optimización**: El perfil Conservador puede ser matemáticamente infeasible con el universo default (volatilidad 12% + dividend yield 3.5% son constraints difíciles de cumplir simultáneamente con acciones growth). En ese caso se aplica fallback score-weighted.
+- **Stress test**: Los shocks sectoriales son calibrados desde datos históricos de Bloomberg/FRED, pero una crisis futura podría diferir materialmente.
+- **No es asesoramiento financiero**: Esta herramienta es educativa. Consultá con un asesor certificado antes de tomar decisiones de inversión.
 
 ---
 
