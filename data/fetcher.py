@@ -1,5 +1,6 @@
-"""yfinance wrapper with caching and robust error handling."""
+"""yfinance wrapper with caching, retries and robust error handling."""
 
+import time
 from typing import Any, Dict, Optional
 
 import pandas as pd
@@ -7,6 +8,10 @@ import yfinance as yf
 from loguru import logger
 
 from data.cache import cache
+
+# Maximum attempts and base delay for exponential backoff on yfinance failures.
+_MAX_RETRIES = 3
+_RETRY_BASE_DELAY = 2.0   # seconds — doubles each attempt (2s, 4s, 8s)
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -17,6 +22,24 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _fetch_with_retry(fn, symbol: str, label: str):
+    """
+    Call fn() up to _MAX_RETRIES times with exponential backoff.
+    Returns the result or None on permanent failure.
+    """
+    delay = _RETRY_BASE_DELAY
+    for attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            return fn()
+        except Exception as exc:
+            if attempt == _MAX_RETRIES:
+                logger.error(f"{symbol}: {label} failed after {_MAX_RETRIES} attempts — {exc}")
+                return None
+            logger.warning(f"{symbol}: {label} attempt {attempt} failed ({exc}), retrying in {delay:.0f}s")
+            time.sleep(delay)
+            delay *= 2
+
+
 def get_info(symbol: str) -> Dict[str, Any]:
     """Return ticker.info dict. Cached for CACHE_TTL_HOURS."""
     key = f"info:{symbol}"
@@ -24,17 +47,18 @@ def get_info(symbol: str) -> Dict[str, Any]:
     if cached:
         return cached
 
-    try:
+    def _fetch():
         ticker = yf.Ticker(symbol)
         info = ticker.info or {}
         if not info or info.get("regularMarketPrice") is None:
-            logger.warning(f"{symbol}: empty info from yfinance")
-            return {}
+            raise ValueError("empty or incomplete info")
+        return info
+
+    info = _fetch_with_retry(_fetch, symbol, "info")
+    if info:
         cache.set(key, info)
         return info
-    except Exception as exc:
-        logger.error(f"{symbol}: failed to fetch info — {exc}")
-        return {}
+    return {}
 
 
 def get_history(symbol: str, period: str = "10y", interval: str = "1wk") -> pd.DataFrame:
@@ -44,19 +68,21 @@ def get_history(symbol: str, period: str = "10y", interval: str = "1wk") -> pd.D
     if cached:
         return pd.DataFrame(cached)
 
-    try:
+    def _fetch():
         ticker = yf.Ticker(symbol)
         df = ticker.history(period=period, interval=interval, auto_adjust=True)
         if df.empty:
-            logger.warning(f"{symbol}: empty price history")
-            return pd.DataFrame()
+            raise ValueError("empty price history")
         df.index = df.index.tz_localize(None)
         df.columns = [c.lower() for c in df.columns]
+        return df
+
+    df = _fetch_with_retry(_fetch, symbol, "history")
+    if df is not None and not df.empty:
         cache.set(key, df.reset_index().to_dict(orient="records"))
         return df
-    except Exception as exc:
-        logger.error(f"{symbol}: failed to fetch history — {exc}")
-        return pd.DataFrame()
+    logger.warning(f"{symbol}: no price history available")
+    return pd.DataFrame()
 
 
 def get_financials(symbol: str) -> Dict[str, pd.DataFrame]:

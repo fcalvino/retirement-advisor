@@ -11,12 +11,12 @@ rule-based engine if the API call fails.
 
 import json
 import re
+
 from loguru import logger
 
 from analysis.fundamental import FundamentalResult
-from analysis.technical import TechnicalResult
 from analysis.strategy import Decision, RetirementStrategy
-
+from analysis.technical import TechnicalResult
 
 # Argentine ADR tickers — flag for emerging market context in the prompt
 ARGENTINA_ADRS = {"YPF", "PAM", "CEPU", "LOMA", "MELI", "GLOB", "DESP", "TEO", "EDN", "GGAL", "BMA", "BBAR", "SUPV"}
@@ -136,8 +136,9 @@ Respondé ÚNICAMENTE con un JSON válido con esta estructura exacta:
         return response.choices[0].message.content
 
     def _call_nous(self, prompt: str) -> str:
-        import sys
         import os
+        import sys
+
         from openai import OpenAI
 
         # Resolve credentials: prefer local Hermes OAuth session, fall back to explicit API key
@@ -169,8 +170,9 @@ Respondé ÚNICAMENTE con un JSON válido con esta estructura exacta:
         return response.choices[0].message.content
 
     def _call_xai(self, prompt: str) -> str:
-        import sys
         import os
+        import sys
+
         from openai import OpenAI
 
         api_key = self.config.api_key

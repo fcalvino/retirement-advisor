@@ -31,7 +31,6 @@ from loguru import logger
 from config import MONTE_CARLO
 from data.fetcher import get_history
 
-
 # ------------------------------------------------------------------ #
 #  Result dataclass                                                    #
 # ------------------------------------------------------------------ #

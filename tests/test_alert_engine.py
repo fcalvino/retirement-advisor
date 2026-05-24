@@ -8,9 +8,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from alerts.engine import AlertEngine, FiredAlert, SCORE_CHANGE_THRESHOLD
+from alerts.engine import SCORE_CHANGE_THRESHOLD, AlertEngine, FiredAlert
 from alerts.store import AlertSeverity, AlertType
-
 
 # ------------------------------------------------------------------ #
 #  Fake AlertStore                                                     #
@@ -211,7 +210,7 @@ class TestCooldown:
         ticker = {"symbol": "T", "adjusted_score": 55.0, "signal": "HOLD",
                   "moat_classification": "Narrow", "company_name": "AT&T"}
 
-        fired1 = engine.run([ticker])
+        engine.run([ticker])
         store.seed("T", score=70.0, signal="BUY")  # reset snapshot as if cooldown test
         # Manually put the cooldown in place
         store.set_cooldown(AlertType.SCORE_DROP, "T")

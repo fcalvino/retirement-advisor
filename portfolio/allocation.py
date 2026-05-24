@@ -11,7 +11,8 @@ Provides:
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-from config import STRATEGY as CFG, recommended_bond_pct
+from config import STRATEGY as CFG
+from config import recommended_bond_pct
 
 
 @dataclass

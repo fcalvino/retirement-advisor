@@ -23,7 +23,6 @@ from alerts.notifier import Notifier
 from alerts.store import AlertSeverity, AlertStore, AlertType, alert_store
 from config import ALERTS
 
-
 # Score change considered significant (points)
 SCORE_CHANGE_THRESHOLD: float = 8.0
 

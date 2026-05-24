@@ -19,7 +19,6 @@ from loguru import logger
 
 from config import ALERTS
 
-
 _HTML_TEMPLATE = """\
 <!DOCTYPE html>
 <html>

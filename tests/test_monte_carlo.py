@@ -10,7 +10,6 @@ import pytest
 
 from portfolio.monte_carlo import MonteCarloResult, MonteCarloSimulator
 
-
 # ------------------------------------------------------------------ #
 #  Helpers                                                             #
 # ------------------------------------------------------------------ #

@@ -89,7 +89,7 @@ def cmd_portfolio() -> None:
         print("No positions in portfolio.")
         return
     metrics = p.compute_metrics()
-    print(f"\nPortfolio Summary")
+    print("\nPortfolio Summary")
     print(f"  Positions    : {metrics.num_positions}")
     print(f"  Total Value  : ${metrics.total_value:,.0f}")
     print(f"  Total P&L    : ${metrics.total_pnl:,.0f} ({metrics.total_pnl_pct:.1f}%)")

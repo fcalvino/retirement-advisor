@@ -8,9 +8,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from portfolio.optimizer import PortfolioOptimizer, OptimizationResult, _ARS_TICKERS, _ETF_TICKERS
 from config import OPTIMIZER
-
+from portfolio.optimizer import _ARS_TICKERS, _ETF_TICKERS, OptimizationResult, PortfolioOptimizer
 
 # ------------------------------------------------------------------ #
 #  Fixtures                                                            #

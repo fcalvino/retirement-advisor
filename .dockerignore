@@ -1,0 +1,13 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+data/db/
+reports/
+.git/
+.github/
+*.md
+tests/
+code.review.md

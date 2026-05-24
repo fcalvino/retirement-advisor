@@ -1,0 +1,16 @@
+target-version = "py310"
+line-length = 100
+exclude = ["venv", ".venv", "__pycache__"]
+
+[lint]
+select = ["E", "F", "I", "W"]
+ignore = [
+    "E501",   # line too long — enforced by formatter, not linter
+    "F401",   # unused imports — some are re-exported intentionally
+    "E741",   # ambiguous variable names (l, O, I)
+]
+
+[lint.isort]
+known-first-party = [
+    "analysis", "alerts", "config", "data", "dashboard", "portfolio", "scripts"
+]

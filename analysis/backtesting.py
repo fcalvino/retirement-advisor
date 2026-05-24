@@ -353,7 +353,6 @@ class BacktestEngine:
             return pd.Series(dtype=float)
 
         syms = prices_df.columns.tolist()
-        n = len(syms)
 
         if rebalance_freq == "buy_and_hold":
             # Simple normalized average — no rebalancing

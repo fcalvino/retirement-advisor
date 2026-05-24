@@ -83,7 +83,7 @@ class TestPiotroskiFromStatements:
 
     def test_f1_roa_positive_detection(self, scorer):
         """F1: positive net income and total assets → ROA > 0."""
-        from tests.conftest import _make_income_stmt, _make_balance_sheet
+        from tests.conftest import _make_balance_sheet, _make_income_stmt
         income = _make_income_stmt(net_income=[500, 400], revenue=[1000, 900])
         balance = _make_balance_sheet(
             stockholders_equity=[2000, 1900],
@@ -94,7 +94,7 @@ class TestPiotroskiFromStatements:
 
     def test_f1_roa_negative_detection(self, scorer):
         """F1: negative net income → ROA < 0 → F1 = False."""
-        from tests.conftest import _make_income_stmt, _make_balance_sheet
+        from tests.conftest import _make_balance_sheet, _make_income_stmt
         income = _make_income_stmt(net_income=[-200, -100], revenue=[1000, 900])
         balance = _make_balance_sheet(
             stockholders_equity=[2000, 1900],
@@ -105,7 +105,7 @@ class TestPiotroskiFromStatements:
 
     def test_f6_no_dilution_detects_share_issuance(self, scorer):
         """F6: if shares increased > 2% YoY, no_dilution = False."""
-        from tests.conftest import _make_income_stmt, _make_balance_sheet
+        from tests.conftest import _make_balance_sheet, _make_income_stmt
         income = _make_income_stmt(net_income=[500, 400], revenue=[1000, 900])
         balance = _make_balance_sheet(
             stockholders_equity=[2000, 1800],
@@ -117,7 +117,7 @@ class TestPiotroskiFromStatements:
 
     def test_f9_accruals_quality_ocf_beats_ni(self, scorer):
         """F9: OCF > NI → accruals quality = True."""
-        from tests.conftest import _make_income_stmt, _make_balance_sheet, _make_cashflow
+        from tests.conftest import _make_balance_sheet, _make_cashflow, _make_income_stmt
         income = _make_income_stmt(net_income=[500, 400], revenue=[1000, 900])
         balance = _make_balance_sheet(stockholders_equity=[2000, 1800], total_assets=[4000, 3800])
         cashflow = _make_cashflow(operating_cf=[800, 700])  # OCF > NI

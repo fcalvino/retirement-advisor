@@ -1,9 +1,10 @@
 """Central configuration for the Retirement Advisor system."""
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List
-import os
+
 from dotenv import load_dotenv
 
 load_dotenv()

@@ -19,12 +19,12 @@ from pathlib import Path
 from typing import List, Optional
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import pandas as pd
 from loguru import logger
-
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
@@ -212,7 +212,7 @@ class ReportGenerator:
 
         elements = [
             Spacer(1, 1.0 * cm),
-            Paragraph(f"📊 Retirement Advisor", ParagraphStyle(
+            Paragraph("📊 Retirement Advisor", ParagraphStyle(
                 "cover_title", fontSize=28, textColor=_NAVY,
                 fontName="Helvetica-Bold", alignment=TA_CENTER, spaceAfter=4)),
             Paragraph(f"Reporte Periódico — {period}", ParagraphStyle(

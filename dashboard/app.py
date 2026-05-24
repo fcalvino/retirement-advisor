@@ -8,8 +8,10 @@ Pages:
   4. 📐 Allocation     — asset allocation advisor
   5. 📈 Optimizer      — Mean-Variance portfolio optimization with 3 risk profiles
   6. 📊 Backtesting    — historical strategy simulation
-  7. 🔔 Alertas        — alert history, manual trigger, PDF report generation
-  8. ⚙️  Settings       — adjust universe and thresholds
+  7. 🎲 Simulaciones   — Monte Carlo + Stress Testing
+  8. 🔔 Alertas        — alert history, manual trigger, PDF report generation
+  9. ⚙️  Settings       — adjust universe and thresholds
+ 10. ℹ️  About          — version, docs, configuration status
 """
 
 import sys
@@ -24,7 +26,6 @@ import plotly.graph_objects as go
 import streamlit as st
 from loguru import logger
 
-from pathlib import Path
 from analysis.backtesting import BacktestEngine, BacktestResult
 from analysis.strategy import full_analysis
 from config import BACKTEST, DEFAULT_TICKERS, MOAT, SECTOR_MAP, AIConfig
@@ -58,10 +59,26 @@ def _save_ai_config_to_env(provider: str, model: str, api_key: str, enabled: boo
     for k, v in env.items():
         lines.append(f"{k}={v}")
     _ENV_PATH.write_text("\n".join(lines) + "\n")
-from data.cache import cache
-from data.fetcher import get_history, get_info
-from portfolio.allocation import AllocationAdvisor
-from portfolio.tracker import Portfolio
+from config_validator import log_config_issues, validate_config  # noqa: E402
+from data.cache import cache  # noqa: E402
+from data.fetcher import get_history, get_info  # noqa: E402
+from portfolio.allocation import AllocationAdvisor  # noqa: E402
+from portfolio.tracker import Portfolio  # noqa: E402
+
+# ------------------------------------------------------------------ #
+#  Production logging — rotate at 10 MB, keep 7 days                  #
+# ------------------------------------------------------------------ #
+
+_LOG_DIR = Path(__file__).parent.parent / "logs"
+_LOG_DIR.mkdir(exist_ok=True)
+logger.add(
+    _LOG_DIR / "retirement_advisor.log",
+    rotation="10 MB",
+    retention="7 days",
+    level="INFO",
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{line} | {message}",
+    enqueue=True,   # thread-safe writes from Streamlit's async context
+)
 
 # ------------------------------------------------------------------ #
 #  Page config                                                         #
@@ -75,6 +92,16 @@ st.set_page_config(
 )
 
 # ------------------------------------------------------------------ #
+#  Startup config validation (runs once per session)                   #
+# ------------------------------------------------------------------ #
+
+if "config_validated" not in st.session_state:
+    issues = validate_config()
+    log_config_issues(issues)
+    st.session_state.config_issues = issues
+    st.session_state.config_validated = True
+
+# ------------------------------------------------------------------ #
 #  Sidebar navigation                                                  #
 # ------------------------------------------------------------------ #
 
@@ -83,8 +110,19 @@ st.sidebar.caption("Long-term investment decisions for retirement")
 
 page = st.sidebar.radio(
     "Navigation",
-    ["🏠 Screener", "🔍 Stock Analysis", "💼 Portfolio", "📐 Allocation", "📈 Optimizer", "📊 Backtesting", "🎲 Simulaciones", "🔔 Alertas", "⚙️ Settings"],
+    ["🏠 Screener", "🔍 Stock Analysis", "💼 Portfolio", "📐 Allocation", "📈 Optimizer", "📊 Backtesting", "🎲 Simulaciones", "🔔 Alertas", "⚙️ Settings", "ℹ️ About"],
 )
+
+# Show config warnings in sidebar (collapsed by default)
+config_issues = st.session_state.get("config_issues", [])
+warnings = [msg for lvl, msg in config_issues if lvl == "warning"]
+errors   = [msg for lvl, msg in config_issues if lvl == "error"]
+if errors or warnings:
+    with st.sidebar.expander("⚠️ Configuración", expanded=bool(errors)):
+        for msg in errors:
+            st.error(msg, icon="🔴")
+        for msg in warnings:
+            st.warning(msg, icon="🟡")
 
 # ------------------------------------------------------------------ #
 #  Shared state                                                        #
@@ -197,6 +235,85 @@ def cached_full_analysis(symbol: str, ai_provider: str = "", ai_model: str = "",
     )
     fund, tech, decision = full_analysis(symbol, ai_config=ai_cfg)
     return fund, tech, decision
+
+
+# ------------------------------------------------------------------ #
+#  About page (defined before the page switch)                         #
+# ------------------------------------------------------------------ #
+
+def page_about():
+    st.title("ℹ️ About — Retirement Advisor")
+    st.caption("v8.0 — Fase 8: Producción Ready")
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Versión", "8.0")
+    col2.metric("Tickers en universo", len(st.session_state.get("universe", DEFAULT_TICKERS)))
+    col3.metric("Tests", "114 passing")
+
+    st.divider()
+
+    st.subheader("Estado de configuración")
+    issues = st.session_state.get("config_issues", [])
+    if not issues:
+        st.info("Validación de configuración no disponible. Recargá la página.")
+    else:
+        for level, msg in issues:
+            if level == "error":
+                st.error(msg, icon="🔴")
+            elif level == "warning":
+                st.warning(msg, icon="🟡")
+            else:
+                st.success(msg, icon="✅")
+
+    st.divider()
+
+    st.subheader("Módulos activos")
+    st.markdown("""
+    | Módulo | Descripción |
+    |--------|-------------|
+    | **Screener** | Ranking de 38+ tickers con score ajustado (0–100) y señal |
+    | **Stock Analysis** | Análisis profundo: Piotroski, Consistency, Economic Moat, AI |
+    | **Portfolio Tracker** | Posiciones, P&L, pesos por sector |
+    | **Asset Allocation** | Regla conservadora acciones/bonos/cash por edad |
+    | **Optimizer** | Mean-Variance SLSQP + 3 perfiles de riesgo |
+    | **Backtesting** | Curva de equity histórica, Sharpe, Sortino, Calmar |
+    | **Simulaciones** | Monte Carlo 10k sims + Stress Test 6 crisis históricas |
+    | **Alertas** | Motor inteligente con debounce + email/Telegram + PDF |
+    """)
+
+    st.divider()
+
+    st.subheader("Fórmula del Score Ajustado")
+    st.code(
+        "adjusted_score = min(\n"
+        "    fundamental_score        (0–100)\n"
+        "  + consistency_score        (0–15)   # estabilidad ROE/EPS/márgenes\n"
+        "  + piotroski_bonus          (0–12)   # 9 checks YoY de calidad contable\n"
+        "  + moat_bonus               (0–10)   # min(moat_score × 0.5, 10)\n"
+        ", 100)",
+        language="python",
+    )
+
+    st.divider()
+
+    st.subheader("Documentación técnica")
+    st.markdown("""
+    - `docs/architecture.md` — Mapa de módulos y flujo de datos
+    - `docs/moat_methodology.md` — Economic Moat: metodología y umbrales
+    - `docs/portfolio_optimizer.md` — Optimizer: SLSQP, perfiles, ARS discount
+    - `docs/alert_system.md` — Alertas: tipos, cooldowns, scheduler
+    - `docs/ROADMAP.md` — Historial de fases (1 → 8)
+    """)
+
+    st.divider()
+
+    st.warning(
+        "**Aviso legal**: Esta herramienta es educativa. Los resultados no constituyen "
+        "asesoramiento financiero. Los datos provienen de Yahoo Finance y pueden contener "
+        "errores o estar desactualizados. Consultá con un asesor certificado antes de "
+        "tomar decisiones de inversión.",
+        icon="⚠️",
+    )
 
 
 # ================================================================== #
@@ -756,8 +873,8 @@ elif page == "📐 Allocation":
 # ================================================================== #
 
 elif page == "📈 Optimizer":
-    from portfolio.optimizer import PortfolioOptimizer, _ARS_TICKERS
-    from config import OPTIMIZER_PROFILES, OPTIMIZER
+    from config import OPTIMIZER, OPTIMIZER_PROFILES
+    from portfolio.optimizer import _ARS_TICKERS, PortfolioOptimizer
 
     st.title("📈 Portfolio Optimizer")
     st.caption(
@@ -1490,9 +1607,9 @@ elif page == "📊 Backtesting":
 # ================================================================== #
 
 elif page == "🎲 Simulaciones":
+    from config import MONTE_CARLO
     from portfolio.monte_carlo import MonteCarloSimulator
     from portfolio.stress_test import StressTester
-    from config import MONTE_CARLO
 
     st.title("🎲 Simulaciones & Stress Testing")
     st.caption(
@@ -1908,7 +2025,7 @@ Consultá con un asesor financiero certificado antes de tomar decisiones de inve
 elif page == "🔔 Alertas":
     from alerts.engine import AlertEngine
     from alerts.reporter import ReportGenerator
-    from alerts.store import alert_store, AlertSeverity
+    from alerts.store import AlertSeverity, alert_store
 
     st.title("🔔 Alertas & Reportes")
     st.caption(
@@ -2107,6 +2224,9 @@ nohup python scripts/run_scheduler.py &> logs/scheduler.log &
 #  PAGE 8: SETTINGS                                                    #
 # ================================================================== #
 
+elif page == "ℹ️ About":
+    page_about()
+
 elif page == "⚙️ Settings":
     st.title("⚙️ Settings")  # noqa: RUF001
 
@@ -2218,16 +2338,89 @@ elif page == "⚙️ Settings":
         st.caption("Cache stores fetched data for 24h to avoid API rate limits.")
 
     st.divider()
-    st.subheader("About")
+    st.caption("Retirement Advisor v8.0 — datos de Yahoo Finance (yfinance). No constituye asesoramiento financiero.")
+
+
+# ------------------------------------------------------------------ #
+#  About page                                                          #
+# ------------------------------------------------------------------ #
+
+def page_about():
+    st.title("ℹ️ About — Retirement Advisor")
+    st.caption("v8.0 — Fase 8: Producción Ready")
+
+    # Version table
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Versión", "8.0")
+    col2.metric("Tickers en universo", len(st.session_state.get("universe", DEFAULT_TICKERS)))
+    col3.metric("Tests", "114 passing")
+
+    st.divider()
+
+    # Config status
+    st.subheader("Estado de configuración")
+    issues = st.session_state.get("config_issues", [])
+    if not issues:
+        st.info("Validación de configuración no disponible. Recargá la página.")
+    else:
+        for level, msg in issues:
+            if level == "error":
+                st.error(msg, icon="🔴")
+            elif level == "warning":
+                st.warning(msg, icon="🟡")
+            else:
+                st.success(msg, icon="✅")
+
+    st.divider()
+
+    # Feature summary
+    st.subheader("Módulos activos")
     st.markdown("""
-    **Retirement Advisor** — v1.0
-
-    A long-term investment analysis tool combining:
-    - Fundamental quality scoring (100-point model)
-    - Technical trend confirmation (long-term, weekly bars)
-    - Benjamin Graham margin-of-safety valuation
-    - Portfolio risk management for retirement
-
-    > ⚠️ This tool is for educational purposes. Not financial advice.
-    > Always consult a licensed financial advisor before making investment decisions.
+    | Módulo | Descripción |
+    |--------|-------------|
+    | **Screener** | Ranking de 38+ tickers con score ajustado (0–100) y señal |
+    | **Stock Analysis** | Análisis profundo: Piotroski, Consistency, Economic Moat, AI |
+    | **Portfolio Tracker** | Posiciones, P&L, pesos por sector |
+    | **Asset Allocation** | Regla conservadora acciones/bonos/cash por edad |
+    | **Optimizer** | Mean-Variance SLSQP + 3 perfiles de riesgo |
+    | **Backtesting** | Curva de equity histórica, Sharpe, Sortino, Calmar |
+    | **Simulaciones** | Monte Carlo 10k sims + Stress Test 6 crisis históricas |
+    | **Alertas** | Motor inteligente con debounce + email/Telegram + PDF |
     """)
+
+    st.divider()
+
+    # Score formula
+    st.subheader("Fórmula del Score Ajustado")
+    st.code(
+        "adjusted_score = min(\n"
+        "    fundamental_score        (0–100)\n"
+        "  + consistency_score        (0–15)   # estabilidad ROE/EPS/márgenes\n"
+        "  + piotroski_bonus          (0–12)   # 9 checks YoY de calidad contable\n"
+        "  + moat_bonus               (0–10)   # min(moat_score × 0.5, 10)\n"
+        ", 100)",
+        language="python",
+    )
+
+    st.divider()
+
+    # Docs links
+    st.subheader("Documentación técnica")
+    st.markdown("""
+    - `docs/architecture.md` — Mapa de módulos y flujo de datos
+    - `docs/moat_methodology.md` — Economic Moat: metodología y umbrales
+    - `docs/portfolio_optimizer.md` — Optimizer: SLSQP, perfiles, ARS discount
+    - `docs/alert_system.md` — Alertas: tipos, cooldowns, scheduler
+    - `docs/ROADMAP.md` — Historial de fases (1 → 8)
+    """)
+
+    st.divider()
+
+    # Disclaimer
+    st.warning(
+        "**Aviso legal**: Esta herramienta es educativa. Los resultados no constituyen "
+        "asesoramiento financiero. Los datos provienen de Yahoo Finance y pueden contener "
+        "errores o estar desactualizados. Consultá con un asesor certificado antes de "
+        "tomar decisiones de inversión.",
+        icon="⚠️",
+    )
