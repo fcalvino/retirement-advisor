@@ -1,5 +1,7 @@
 # Retirement Advisor
 
+[![CI](https://github.com/fcalvino/retirement-advisor/actions/workflows/ci.yml/badge.svg)](https://github.com/fcalvino/retirement-advisor/actions/workflows/ci.yml)
+
 Herramienta de análisis de inversiones a largo plazo orientada al retiro. Combina análisis fundamental profundo, análisis técnico, Economic Moat, optimización de portafolio Mean-Variance, simulación Monte Carlo, stress testing y un motor de decisión con soporte AI para calificar acciones de 0 a 100 y emitir señales de inversión con razonamiento en lenguaje natural.
 
 ---
