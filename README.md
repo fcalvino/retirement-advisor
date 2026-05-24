@@ -246,7 +246,7 @@ pip install pytest
 pytest tests/ -v
 ```
 
-Cobertura actual: 114 tests — `StressTester`, `EnhancedScoring`, `Piotroski`, `MonteCarloSimulator`, `AlertEngine`, `PortfolioOptimizer`.
+Cobertura actual: 133 tests — `StressTester`, `EnhancedScoring`, `Piotroski`, `MonteCarloSimulator`, `AlertEngine`, `PortfolioOptimizer`, `ConfigValidator` (Hermes OAuth).
 
 Los tests de Monte Carlo y Optimizer mockean `get_history` para no hacer llamadas de red.
 

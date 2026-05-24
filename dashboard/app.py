@@ -248,7 +248,7 @@ def page_about():
     col1, col2, col3 = st.columns(3)
     col1.metric("Versión", "8.0")
     col2.metric("Tickers en universo", len(st.session_state.get("universe", DEFAULT_TICKERS)))
-    col3.metric("Tests", "114 passing")
+    col3.metric("Tests", "133 passing")
 
     st.divider()
 
@@ -2355,7 +2355,7 @@ def page_about():
     col1, col2, col3 = st.columns(3)
     col1.metric("Versión", "8.0")
     col2.metric("Tickers en universo", len(st.session_state.get("universe", DEFAULT_TICKERS)))
-    col3.metric("Tests", "114 passing")
+    col3.metric("Tests", "133 passing")
 
     st.divider()
 
