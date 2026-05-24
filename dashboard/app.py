@@ -761,7 +761,8 @@ elif page == "📈 Optimizer":
     st.title("📈 Portfolio Optimizer")
     st.caption(
         "Construye una cartera óptima combinando Score Ajustado, Moat y Dividend Yield "
-        "con restricciones de riesgo según tu perfil de retiro."
+        "con restricciones de riesgo según tu perfil de retiro. "
+        "💵 Todos los valores están denominados en **USD** (los ADRs argentinos cotizan en USD en NYSE/NASDAQ)."
     )
 
     # ------------------------------------------------------------------ #
@@ -778,13 +779,21 @@ elif page == "📈 Optimizer":
         st.session_state.optimizer_profile_key = "conservative"
 
     prev_profile_key = st.session_state.optimizer_profile_key
-    profile_label = st.sidebar.radio("Perfil de riesgo", list(_PROFILE_LABELS.values()), index=list(_PROFILE_LABELS.keys()).index(prev_profile_key))
+    profile_label = st.sidebar.radio(
+        "Perfil de riesgo",
+        list(_PROFILE_LABELS.values()),
+        index=list(_PROFILE_LABELS.keys()).index(prev_profile_key),
+        help="Conservador: preserva capital con dividendos. Moderado: balance crecimiento/ingreso. Agresivo: maximiza crecimiento a largo plazo.",
+    )
     profile_key = _PROFILE_KEYS[profile_label]
     profile_changed = profile_key != prev_profile_key
     st.session_state.optimizer_profile_key = profile_key
     prof = OPTIMIZER_PROFILES[profile_key]
 
-    max_tickers = st.sidebar.slider("Tickers a analizar", 10, len(st.session_state.universe), len(st.session_state.universe))
+    max_tickers = st.sidebar.slider(
+        "Tickers a analizar", 10, len(st.session_state.universe), len(st.session_state.universe),
+        help="Reducir el universo acelera el análisis. El optimizador filtrará tickers por score mínimo y tipo.",
+    )
     selected_universe = st.session_state.universe[:max_tickers]
 
     if st.sidebar.button("🔄 Re-analizar universo", type="secondary"):
@@ -1001,10 +1010,13 @@ elif page == "📈 Optimizer":
 
             if any(a.is_ars for a in result.tickers):
                 discount_pct = (1 - OPTIMIZER.ars_risk_discount) * 100
+                ars_syms = ", ".join(a.symbol for a in result.tickers if a.is_ars)
                 st.info(
-                    f"🇦🇷 Los ADRs argentinos operan en USD pero cargan riesgo macro ARS. "
-                    f"En perfil **{prof.name}** se aplica un descuento de **{discount_pct:.0f}%** al Score Ajustado "
-                    "para reflejar ese riesgo (no afecta el precio de compra, solo el peso asignado)."
+                    f"🇦🇷 **ADRs argentinos ({ars_syms}):** cotizan y liquidan en **USD** en NYSE/NASDAQ "
+                    f"— no hay conversión de moneda al comprar. Sin embargo, su valor en pesos argentinos "
+                    f"es vulnerable a devaluaciones y controles de capital. "
+                    f"Por eso, en perfil **{prof.name}**, se aplica un descuento de **{discount_pct:.0f}%** "
+                    "al Score Ajustado al calcular el peso óptimo (no afecta el precio ni el dividend yield reportado)."
                 )
 
         if result.excluded:
@@ -1110,11 +1122,22 @@ elif page == "📈 Optimizer":
     #  Tab 4: Rebalanceo                                                  #
     # ------------------------------------------------------------------ #
     with tab_rebal:
+        # Rebalancing frequency recommendation — always shown
+        if result.rebalance_frequency:
+            _freq_icon = {"Anual": "📅", "Semestral": "🗓️", "Trimestral": "⏱️"}.get(result.rebalance_frequency, "📅")
+            st.info(
+                f"{_freq_icon} **Frecuencia recomendada: {result.rebalance_frequency}** — "
+                f"{result.rebalance_rationale}"
+            )
+
         if not result.rebalance_suggestions:
             if not current_weights:
-                st.info("Agrega posiciones en la página 💼 Portfolio para ver sugerencias de rebalanceo vs. tu cartera actual.")
+                st.info(
+                    "Para ver las acciones de rebalanceo específicas, agrega tus posiciones actuales "
+                    "en la página 💼 **Portfolio**. El optimizador calculará cuánto comprar/vender de cada ticker."
+                )
             else:
-                st.success("Tu cartera actual ya está alineada con la asignación óptima.")
+                st.success("✅ Tu cartera actual ya está alineada con la asignación óptima.")
         else:
             buys  = [s for s in result.rebalance_suggestions if s.action == "BUY"]
             sells = [s for s in result.rebalance_suggestions if s.action == "SELL"]
@@ -1161,7 +1184,11 @@ elif page == "📈 Optimizer":
                     "Δ %": st.column_config.NumberColumn("Δ %", format="%.1f"),
                 },
             )
-            st.caption("Solo se muestran movimientos ≥ 0.5%. ⚠️ Sugerencias orientativas, no asesoramiento financiero.")
+            st.caption(
+                "Solo se muestran movimientos ≥ 0.5%. Los pesos son porcentajes sobre el total de la cartera. "
+                "⚠️ Estas sugerencias son orientativas y no constituyen asesoramiento financiero. "
+                "Consultá con un asesor antes de ejecutar operaciones."
+            )
 
 
 # ================================================================== #

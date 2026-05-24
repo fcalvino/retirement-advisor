@@ -95,6 +95,10 @@ class OptimizationResult:
     excluded: List[Tuple[str, str]] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
 
+    # Rebalancing recommendation
+    rebalance_frequency: str = ""       # e.g. "Anual", "Semestral", "Trimestral"
+    rebalance_rationale: str = ""       # one-line explanation
+
 
 class PortfolioOptimizer:
     """
@@ -213,6 +217,9 @@ class PortfolioOptimizer:
                 {t["symbol"]: w for t, w in zip(eligible_filtered, weights * 100)},
                 current_weights,
             )
+
+        # 9 — Rebalancing frequency recommendation
+        result.rebalance_frequency, result.rebalance_rationale = self._suggest_rebalance_frequency(result)
 
         return result
 
@@ -575,6 +582,48 @@ class PortfolioOptimizer:
     # ------------------------------------------------------------------ #
     #  Rebalancing                                                         #
     # ------------------------------------------------------------------ #
+
+    def _suggest_rebalance_frequency(self, result: OptimizationResult) -> Tuple[str, str]:
+        """
+        Recommend rebalancing cadence based on profile and portfolio drift.
+
+        Conservative: annual — minimize transaction costs and tax drag.
+        Moderate: semi-annual — capture drift without excessive churn.
+        Aggressive: quarterly — track growth opportunities and control risk.
+        High volatility portfolios get bumped up one tier.
+        """
+        high_vol = result.volatility_pct > 18.0
+
+        if self.profile_key == "conservative":
+            if high_vol:
+                return (
+                    "Semestral",
+                    "La volatilidad supera el objetivo del perfil — "
+                    "revisar cada 6 meses para contener la deriva.",
+                )
+            return (
+                "Anual",
+                "El perfil Conservador minimiza rotación para reducir costos y carga fiscal. "
+                "Rebalancear en enero con cada ciclo anual de revisión.",
+            )
+        elif self.profile_key == "moderate":
+            if high_vol:
+                return (
+                    "Trimestral",
+                    "Volatilidad elevada para el perfil — "
+                    "revisión trimestral para capturar la deriva de manera oportuna.",
+                )
+            return (
+                "Semestral",
+                "Rebalanceo cada 6 meses (enero y julio) captura la deriva del mercado "
+                "sin generar exceso de operaciones.",
+            )
+        else:  # aggressive
+            return (
+                "Trimestral",
+                "El perfil Agresivo se beneficia de revisión trimestral para capturar "
+                "oportunidades de crecimiento y reencuadrar el riesgo activamente.",
+            )
 
     def _rebalancing_suggestions(
         self,
