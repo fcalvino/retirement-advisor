@@ -370,14 +370,20 @@ class PortfolioOptimizer:
 
         # --- Bounds: [min_weight, max_position_pct] per ticker ---
         lb = self.opt.min_weight_pct / 100
-        ub = cfg.max_position_pct / 100
+        # Ensure ub ≥ 1/n so sum-to-1 constraint is always feasible
+        ub = max(cfg.max_position_pct / 100, 1.0 / n)
         bounds = [(lb, ub)] * n
 
-        # --- Initial guess: equal weight ---
+        # Check if dividend constraint is satisfiable at all
+        max_possible_div = float(np.sort(divs)[-min(n, cfg.min_positions):][::-1].mean()) * 100
+        if max_possible_div < cfg.min_dividend_yield_pct:
+            logger.warning(
+                f"Dividend constraint ({cfg.min_dividend_yield_pct}%) may be unsatisfiable "
+                f"— best avg div in universe: {max_possible_div:.1f}%"
+            )
+
+        # --- Initial guess: equal weight (always feasible with adjusted ub) ---
         w0 = np.ones(n) / n
-        # Clip to bounds
-        w0 = np.clip(w0, lb, ub)
-        w0 /= w0.sum()
 
         try:
             res = minimize(
@@ -529,7 +535,7 @@ class PortfolioOptimizer:
         result.moat_score_avg = round(float(moats @ w_arr), 1)
         result.adjusted_score_avg = round(float(scores @ w_arr), 1)
 
-        result.sector_weights = {k: round(v, 1) for k, v in sorted(sector_weights.items(), key=lambda x: -x[1])}
+        result.sector_weights = {k: round(float(v), 1) for k, v in sorted(sector_weights.items(), key=lambda x: -x[1])}
 
     # ------------------------------------------------------------------ #
     #  Rebalancing                                                         #
