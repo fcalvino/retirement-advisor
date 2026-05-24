@@ -182,9 +182,20 @@ class PiotroskiConfig:
     bonus_good: float = 6.0
 
 
+@dataclass
+class BacktestConfig:
+    default_period_years: int = 5
+    default_top_n: int = 10
+    default_benchmark: str = "SPY"
+    risk_free_rate: float = 0.045       # 4.5% annual (10Y Treasury proxy)
+    min_history_weeks: int = 52         # minimum weeks of price data required
+    results_max_saved: int = 10         # cap saved backtest files shown in UI
+
+
 THRESHOLDS = FundamentalThresholds()
 STRATEGY = StrategyConfig()
 ALERTS = AlertConfig()
 AI_CONFIG = AIConfig()
 CONSISTENCY = ConsistencyThresholds()
 PIOTROSKI = PiotroskiConfig()
+BACKTEST = BacktestConfig()
