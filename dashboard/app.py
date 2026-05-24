@@ -262,6 +262,8 @@ def page_about():
                 st.error(msg, icon="🔴")
             elif level == "warning":
                 st.warning(msg, icon="🟡")
+            elif "Hermes OAuth" in msg:
+                st.success(msg, icon="🔐")
             else:
                 st.success(msg, icon="✅")
 
@@ -2368,6 +2370,8 @@ def page_about():
                 st.error(msg, icon="🔴")
             elif level == "warning":
                 st.warning(msg, icon="🟡")
+            elif "Hermes OAuth" in msg:
+                st.success(msg, icon="🔐")
             else:
                 st.success(msg, icon="✅")
 

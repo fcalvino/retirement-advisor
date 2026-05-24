@@ -30,6 +30,9 @@ def validate_config() -> List[Issue]:
     ai_enabled = os.getenv("AI_ENABLED", "").lower() in ("true", "1", "yes")
     provider = os.getenv("AI_PROVIDER", "claude").lower()
 
+    # Providers that can authenticate via Hermes OAuth (no static API key required)
+    _OAUTH_PROVIDERS = {"xai", "nous"}
+
     if ai_enabled:
         key_map = {
             "claude": "ANTHROPIC_API_KEY",
@@ -40,7 +43,15 @@ def validate_config() -> List[Issue]:
         key_var = key_map.get(provider, "ANTHROPIC_API_KEY")
         api_key = os.getenv(key_var, "") or os.getenv("AI_API_KEY", "")
 
-        if not api_key:
+        # Hermes OAuth: active when HERMES_OAUTH_ENABLED=true or XAI_AUTH_TOKEN is present
+        hermes_oauth = (
+            os.getenv("HERMES_OAUTH_ENABLED", "").lower() in ("true", "1", "yes")
+            or bool(os.getenv("XAI_AUTH_TOKEN", ""))
+        )
+
+        if provider in _OAUTH_PROVIDERS and hermes_oauth:
+            issues.append(("info", f"AI habilitado — proveedor: {provider} (Hermes OAuth)"))
+        elif not api_key:
             issues.append((
                 "warning",
                 f"AI_ENABLED=true pero {key_var} no está configurada. "
@@ -52,7 +63,7 @@ def validate_config() -> List[Issue]:
                 f"{key_var} parece inválida (muy corta). Verificá tu API key.",
             ))
         else:
-            issues.append(("info", f"AI habilitado — proveedor: {provider}"))
+            issues.append(("info", f"AI habilitado — proveedor: {provider} (API Key)"))
     else:
         issues.append(("info", "AI deshabilitado — usando motor rule-based."))
 
