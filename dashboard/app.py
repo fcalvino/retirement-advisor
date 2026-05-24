@@ -865,9 +865,17 @@ elif page == "📊 Backtesting":
             ]
             tdf = pd.DataFrame(rows)
             st.dataframe(
-                tdf.style.background_gradient(subset=["CAGR %", "Alpha %"], cmap="RdYlGn"),
+                tdf,
                 use_container_width=True,
                 hide_index=True,
+                column_config={
+                    "CAGR %":    st.column_config.NumberColumn(format="%.1f%%"),
+                    "Alpha %":   st.column_config.NumberColumn(format="%.1f%%"),
+                    "Sharpe":    st.column_config.NumberColumn(format="%.2f"),
+                    "Sortino":   st.column_config.NumberColumn(format="%.2f"),
+                    "Max DD %":  st.column_config.NumberColumn(format="%.1f%%"),
+                    "Win Rate %":st.column_config.NumberColumn(format="%.0f%%"),
+                },
             )
 
             # Download
