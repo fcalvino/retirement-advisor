@@ -254,13 +254,81 @@ Los tests de Monte Carlo y Optimizer mockean `get_history` para no hacer llamada
 
 ## Scheduler de alertas y reportes
 
+El scheduler corre en background y realiza dos tareas:
+- **Chequeo de alertas** cada `ALERT_INTERVAL_HOURS` horas (default: 24) — analiza el universo completo y despacha notificaciones por email/Telegram si hay cambios de señal, caídas de score u oportunidades.
+- **Reporte PDF mensual** el día `REPORT_DAY` de cada mes a las 08:00 — genera y envía el informe completo.
+
+### Ejecución manual
+
 ```bash
+# Desde la raíz del proyecto, con el venv activado:
+source venv/bin/activate
 python scripts/run_scheduler.py
 ```
 
-Ejecuta:
-- Chequeo de alertas cada `ALERT_INTERVAL_HOURS` (default 24h)
-- Reporte PDF el día `REPORT_DAY` de cada mes a las 08:00
+Los logs se escriben en `logs/retirement_advisor.log` (rotación 10 MB, retención 7 días).
+
+### Cron (Linux/macOS)
+
+Para que corra automáticamente al reiniciar el sistema, agregá una entrada con `crontab -e`:
+
+```cron
+# Lanzar scheduler al reiniciar (redirige stderr al log)
+@reboot cd /ruta/a/retirement_advisor && /ruta/a/venv/bin/python scripts/run_scheduler.py >> logs/scheduler.log 2>&1
+```
+
+### systemd (Linux)
+
+Creá `/etc/systemd/system/retirement-advisor-scheduler.service`:
+
+```ini
+[Unit]
+Description=Retirement Advisor — Scheduler de alertas
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/ruta/a/retirement_advisor
+ExecStart=/ruta/a/venv/bin/python scripts/run_scheduler.py
+Restart=on-failure
+RestartSec=30
+EnvironmentFile=/ruta/a/retirement_advisor/.env
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable retirement-advisor-scheduler
+sudo systemctl start retirement-advisor-scheduler
+sudo systemctl status retirement-advisor-scheduler
+```
+
+### Docker (dashboard + scheduler juntos)
+
+Para correr ambos procesos con Docker, levantá cada uno en su propio contenedor compartiendo el volumen de datos:
+
+```bash
+# Dashboard
+docker run -d --name ra-dashboard \
+  -p 8501:8501 \
+  --env-file .env \
+  -v $(pwd)/data/db:/app/data/db \
+  -v $(pwd)/reports:/app/reports \
+  retirement-advisor
+
+# Scheduler (mismo imagen, comando distinto)
+docker run -d --name ra-scheduler \
+  --env-file .env \
+  -v $(pwd)/data/db:/app/data/db \
+  -v $(pwd)/reports:/app/reports \
+  retirement-advisor \
+  python scripts/run_scheduler.py
+```
+
+> Ambos contenedores comparten los volúmenes `data/db` (cache SQLite + alertas) y `reports` (PDFs generados).
 
 ---
 
