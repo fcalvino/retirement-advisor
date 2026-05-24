@@ -116,6 +116,21 @@ class AlertConfig:
     telegram_token: str = os.getenv("TELEGRAM_TOKEN", "")
     telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "")
 
+    # Alert engine thresholds (adjustable without touching code)
+    score_change_threshold: float = 8.0   # pts — minimum change to trigger score alert
+    alerts_enabled: bool = True            # master switch
+
+
+@dataclass
+class ReportConfig:
+    """PDF report configuration."""
+    output_dir: str = field(default_factory=lambda: os.getenv("REPORT_OUTPUT_DIR", "reports"))
+    top_n_opportunities: int = 10         # rows in the top-opportunities table
+    include_charts: bool = True           # embed matplotlib charts in PDF
+    # Scheduler cadence (used by scripts/run_scheduler.py)
+    alert_check_interval_hours: int = int(os.getenv("ALERT_INTERVAL_HOURS", "24"))
+    report_day_of_month: int = int(os.getenv("REPORT_DAY", "1"))  # 1 = first of month
+
 
 CACHE_TTL_HOURS: int = int(os.getenv("CACHE_TTL_HOURS", "24"))
 
@@ -328,3 +343,4 @@ PIOTROSKI = PiotroskiConfig()
 BACKTEST = BacktestConfig()
 MOAT = MoatConfig()
 OPTIMIZER = OptimizerConfig()
+REPORT = ReportConfig()
