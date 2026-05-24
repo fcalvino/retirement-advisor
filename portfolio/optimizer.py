@@ -190,6 +190,19 @@ class PortfolioOptimizer:
         # 6 — Build result
         self._populate_result(result, eligible_filtered, weights, mu, cov if cov_available else None)
 
+        # Post-build constraint warnings (score-weighted fallback may violate profile limits)
+        if result.method == "score-weighted":
+            if result.volatility_pct > self.cfg.max_volatility_pct:
+                result.warnings.append(
+                    f"⚠️ Vol {result.volatility_pct:.1f}% excede el techo del perfil ({self.cfg.max_volatility_pct:.0f}%). "
+                    "Considera cambiar al perfil Moderado o Agresivo."
+                )
+            if result.dividend_yield_pct < self.cfg.min_dividend_yield_pct:
+                result.warnings.append(
+                    f"⚠️ Div yield {result.dividend_yield_pct:.2f}% no alcanza el mínimo del perfil ({self.cfg.min_dividend_yield_pct:.1f}%). "
+                    "El universo actual no tiene suficientes tickers de alto dividendo para el perfil Conservador."
+                )
+
         # 7 — Frontier
         if cov_available and len(eligible_filtered) >= 4:
             self._compute_frontier(result, mu, cov, eligible_filtered)
@@ -236,6 +249,11 @@ class PortfolioOptimizer:
                 t["_ars_discounted"] = True
             result.append(t)
         return result
+
+    @staticmethod
+    def _clean_div_yield(raw: float) -> float:
+        """Cap suspicious dividend yields — yfinance sometimes returns bad data (>15%)."""
+        return raw if 0 <= raw <= 15.0 else 0.0
 
     # ------------------------------------------------------------------ #
     #  Price data                                                          #
@@ -290,7 +308,7 @@ class PortfolioOptimizer:
         mu = []
         for t in tickers:
             score = float(t.get("adjusted_score", 0) or 0)
-            div = float(t.get("dividend_yield", 0) or 0)
+            div = self._clean_div_yield(float(t.get("dividend_yield", 0) or 0))
             moat = float(t.get("moat_score", 0) or 0)
 
             # Normalised components → annualised return proxies
@@ -332,8 +350,8 @@ class PortfolioOptimizer:
         symbol_sector = {t["symbol"]: t.get("sector", "Unknown") for t in tickers}
         symbols = [t["symbol"] for t in tickers]
 
-        # Dividend yields as array
-        divs = np.array([float(t.get("dividend_yield", 0) or 0) / 100 for t in tickers])
+        # Dividend yields as array (cap bad data at 15%)
+        divs = np.array([self._clean_div_yield(float(t.get("dividend_yield", 0) or 0)) / 100 for t in tickers])
 
         def neg_sharpe(w: np.ndarray) -> float:
             port_ret = float(mu @ w)
@@ -382,13 +400,22 @@ class PortfolioOptimizer:
                 f"— best avg div in universe: {max_possible_div:.1f}%"
             )
 
-        # --- Initial guess: equal weight (always feasible with adjusted ub) ---
-        w0 = np.ones(n) / n
+        # --- Initial guess: bias toward high-div tickers when div constraint is tight ---
+        min_div_needed = cfg.min_dividend_yield_pct / 100
+        avg_div = float(divs.mean())
+        if avg_div < min_div_needed * 0.8:
+            # Weight initial guess by dividend yield to help SLSQP find a feasible start
+            raw = divs + 1e-4  # avoid zero
+            w0 = raw / raw.sum()
+        else:
+            w0 = np.ones(n) / n
+        w0 = np.clip(w0, lb, ub)
+        w0 /= w0.sum()
 
-        try:
+        def _try_minimize(start: np.ndarray) -> Optional[np.ndarray]:
             res = minimize(
                 neg_sharpe,
-                w0,
+                start,
                 method="SLSQP",
                 bounds=bounds,
                 constraints=constraints,
@@ -396,18 +423,26 @@ class PortfolioOptimizer:
             )
             if res.success:
                 w = np.clip(res.x, 0, 1)
-                w /= w.sum()
-                # Enforce min positions by zeroing tiny weights and re-normalising
+                if w.sum() > 0:
+                    w /= w.sum()
                 if n > cfg.min_positions:
-                    threshold = lb * 0.5
-                    w[w < threshold] = 0
+                    w[w < lb * 0.5] = 0
                     if w.sum() > 0:
                         w /= w.sum()
                 logger.info(f"SLSQP converged — Sharpe {-res.fun:.3f}")
                 return w
-            else:
-                logger.warning(f"SLSQP did not converge: {res.message}")
-                return None
+            return None
+
+        try:
+            w = _try_minimize(w0)
+            if w is not None:
+                return w
+            # Retry with equal-weight starting point if div-biased start failed
+            w = _try_minimize(np.ones(n) / n)
+            if w is not None:
+                return w
+            logger.warning("SLSQP did not converge after 2 attempts")
+            return None
         except Exception as exc:
             logger.error(f"SLSQP error: {exc}")
             return None
@@ -488,7 +523,7 @@ class PortfolioOptimizer:
                 continue
             sym = t["symbol"]
             sector = t.get("sector", "Unknown")
-            div = float(t.get("dividend_yield", 0) or 0)
+            div = self._clean_div_yield(float(t.get("dividend_yield", 0) or 0))
             score = float(t.get("adjusted_score", 0) or 0)
             moat = float(t.get("moat_score", 0) or 0)
 
@@ -527,7 +562,7 @@ class PortfolioOptimizer:
             if port_vol > 0:
                 result.sharpe_ratio = round((port_ret - rf) / port_vol, 2)
 
-        divs = np.array([float(t.get("dividend_yield", 0) or 0) / 100 for t in tickers])
+        divs = np.array([self._clean_div_yield(float(t.get("dividend_yield", 0) or 0)) / 100 for t in tickers])
         result.dividend_yield_pct = round(float(divs @ w_arr) * 100, 2)
 
         moats = np.array([float(t.get("moat_score", 0) or 0) for t in tickers])
