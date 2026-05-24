@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
+from analysis.moat import MoatAnalyzer, MoatDetail
 from analysis.scoring import ConsistencyDetail, EnhancedScoring, PiotroskiDetail
 from config import THRESHOLDS as T
 from data.fetcher import (
@@ -70,9 +71,15 @@ class FundamentalResult:
     consistency_score: float = 0.0          # 0–15 pts
     piotroski_score: int = 0                # 0–9
     piotroski_bonus: float = 0.0            # bonus applied to adjusted_score
-    adjusted_score: float = 0.0             # total_score + consistency + piotroski_bonus, capped at 100
+    adjusted_score: float = 0.0             # total_score + consistency + piotroski_bonus + moat_bonus, capped at 100
     consistency_detail: Optional[ConsistencyDetail] = None   # per-signal breakdown
     piotroski_detail: Optional[PiotroskiDetail] = None       # per-criterion F1–F9 breakdown
+
+    # Moat scoring (Phase 3)
+    moat_score: float = 0.0                 # 0–20 (quant 0–12 + AI qualitative 0–8)
+    moat_bonus: float = 0.0                 # min(moat_score * 0.5, 10.0) added to adjusted_score
+    moat_classification: str = "None"       # Wide | Narrow | Minimal | None
+    moat_detail: Optional[MoatDetail] = None
 
     # Human-readable breakdown
     notes: Dict[str, str] = field(default_factory=dict)
@@ -91,7 +98,7 @@ class FundamentalAnalyzer:
     a weighted 0–100 score. All data sourced from yfinance.
     """
 
-    def analyze(self, symbol: str) -> FundamentalResult:
+    def analyze(self, symbol: str, ai_config=None) -> FundamentalResult:
         symbol = symbol.upper()
         result = FundamentalResult(symbol=symbol)
 
@@ -151,15 +158,34 @@ class FundamentalAnalyzer:
         result.consistency_score = enhanced.consistency_score
         result.piotroski_score = enhanced.piotroski_score
         result.piotroski_bonus = enhanced.piotroski_bonus
-        result.adjusted_score = enhanced.adjusted_score
         result.consistency_detail = enhanced.consistency_detail
         result.piotroski_detail = enhanced.piotroski_detail
         for rec in enhanced.recommendations:
             result.notes[f"enhanced_{len(result.notes)}"] = rec
 
+        # Moat scoring: quantitative always, AI qualitative when ai_config is enabled
+        moat_analyzer = MoatAnalyzer()
+        moat = moat_analyzer.analyze(symbol, info, income_stmt, balance_sheet, cashflow)
+        if ai_config and getattr(ai_config, "enabled", False):
+            moat = moat_analyzer.analyze_with_ai(moat, symbol, info, ai_config)
+        result.moat_score = moat.total
+        result.moat_bonus = moat.bonus
+        result.moat_classification = moat.classification
+        result.moat_detail = moat
+
+        # Final adjusted_score = base + consistency + piotroski_bonus + moat_bonus (capped at 100)
+        result.adjusted_score = round(
+            min(
+                result.total_score + result.consistency_score +
+                result.piotroski_bonus + result.moat_bonus,
+                100.0,
+            ), 1
+        )
+
         logger.info(
             f"{symbol}: base={result.total_score:.1f} consistency={result.consistency_score:.1f} "
-            f"piotroski={result.piotroski_score}/9 adjusted={result.adjusted_score:.1f}"
+            f"piotroski={result.piotroski_score}/9 moat={result.moat_score:.1f}/{result.moat_classification} "
+            f"adjusted={result.adjusted_score:.1f}"
         )
         return result
 

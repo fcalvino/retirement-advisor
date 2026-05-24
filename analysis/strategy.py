@@ -219,7 +219,7 @@ def full_analysis(
     from analysis.fundamental import FundamentalAnalyzer
     from analysis.technical import TechnicalAnalyzer
 
-    fund = FundamentalAnalyzer().analyze(symbol)
+    fund = FundamentalAnalyzer().analyze(symbol, ai_config=ai_config)
     tech = TechnicalAnalyzer().analyze(symbol)
 
     if ai_config and ai_config.enabled:

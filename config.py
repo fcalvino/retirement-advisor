@@ -193,6 +193,15 @@ class BacktestConfig:
     default_rebalance_freq: str = "annual"  # "annual" | "quarterly" | "monthly" | "buy_and_hold"
 
 
+@dataclass
+class MoatConfig:
+    wide_threshold: float = 14.0        # ≥ this → Wide Moat
+    narrow_threshold: float = 8.0       # ≥ this → Narrow Moat
+    minimal_threshold: float = 4.0      # ≥ this → Minimal Moat
+    max_bonus: float = 10.0             # cap on bonus pts added to adjusted_score
+    ai_cache_ttl_hours: int = 168       # 7 days — AI moat results cached per ticker
+
+
 THRESHOLDS = FundamentalThresholds()
 STRATEGY = StrategyConfig()
 ALERTS = AlertConfig()
@@ -200,3 +209,4 @@ AI_CONFIG = AIConfig()
 CONSISTENCY = ConsistencyThresholds()
 PIOTROSKI = PiotroskiConfig()
 BACKTEST = BacktestConfig()
+MOAT = MoatConfig()

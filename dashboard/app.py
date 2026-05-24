@@ -24,7 +24,7 @@ from loguru import logger
 from pathlib import Path
 from analysis.backtesting import BacktestEngine, BacktestResult
 from analysis.strategy import full_analysis
-from config import BACKTEST, DEFAULT_TICKERS, SECTOR_MAP, AIConfig
+from config import BACKTEST, DEFAULT_TICKERS, MOAT, SECTOR_MAP, AIConfig
 
 _ENV_PATH = Path(__file__).parent.parent / ".env"
 
@@ -183,6 +183,8 @@ if page == "🏠 Screener":
                 "Score Bar": score_bar(fund.adjusted_score),
                 "Consistency": fund.consistency_score,
                 "Piotroski": fund.piotroski_score,
+                "Moat Score": getattr(fund, "moat_score", 0.0),
+                "Moat": getattr(fund, "moat_classification", "—"),
                 "Technical": tech.signal,
                 "P/E": fund.pe_ratio,
                 "ROE %": fund.roe,
@@ -217,9 +219,13 @@ if page == "🏠 Screener":
     st.dataframe(
         df[[
             "Ticker", "Company", "Sector", "Signal", "Score Bar",
-            "Consistency", "Piotroski",
+            "Consistency", "Piotroski", "Moat Score", "Moat",
             "Technical", "P/E", "ROE %", "Rev CAGR 5Y", "Div Yield %", "MoS %", "Price"
-        ]].rename(columns={"Consistency": "Consist./15", "Piotroski": "Piotroski/9"}),
+        ]].rename(columns={
+            "Consistency": "Consist./15",
+            "Piotroski": "Piotroski/9",
+            "Moat Score": "Moat/20",
+        }),
         use_container_width=True,
         hide_index=True,
     )
@@ -233,7 +239,7 @@ if page == "🏠 Screener":
         color="Adj. Score",
         color_continuous_scale="RdYlGn",
         range_color=[0, 100],
-        title="Adjusted Score Ranking (Base + Consistency + Piotroski)",
+        title="Adjusted Score Ranking (Base + Consistency + Piotroski + Moat)",
     )
     fig.add_vline(x=75, line_dash="dash", line_color="green", annotation_text="Strong Buy")
     fig.add_vline(x=60, line_dash="dash", line_color="orange", annotation_text="Buy")
@@ -286,7 +292,7 @@ elif page == "🔍 Stock Analysis":
         col4.metric("Growth", f"{fund.growth_score:.0f}/20")
         col5.metric("Dividend", f"{fund.dividend_score:.0f}/10")
 
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
         col1.metric("Base Score", f"{fund.total_score:.1f}/100")
         col2.metric(
             "Consistency",
@@ -298,7 +304,15 @@ elif page == "🔍 Stock Analysis":
             f"{fund.piotroski_score}/9",
             help="Calidad contable YoY (≥7 = fuerte, ≤3 = débil)",
         )
-        col4.metric("Score Ajustado", f"{fund.adjusted_score:.1f}/100")
+        _moat_score = getattr(fund, "moat_score", 0.0)
+        _moat_class = getattr(fund, "moat_classification", "—")
+        col4.metric(
+            "Economic Moat",
+            f"{_moat_score:.1f}/20",
+            delta=_moat_class,
+            help="Ventaja competitiva sostenible (Wide ≥14 | Narrow ≥8 | Minimal ≥4)",
+        )
+        col5.metric("Score Ajustado", f"{fund.adjusted_score:.1f}/100")
 
         # Consistency sub-scores
         if getattr(fund, "consistency_detail", None):
@@ -334,6 +348,41 @@ elif page == "🔍 Stock Analysis":
                 for attr, label in _piotroski_labels.items():
                     passed = getattr(pd_obj, attr, False)
                     st.markdown(f"{'✅' if passed else '❌'} {label}")
+
+        # Moat detail expander
+        _moat_detail = getattr(fund, "moat_detail", None)
+        if _moat_detail is not None:
+            _moat_class = getattr(fund, "moat_classification", "—")
+            _moat_score = getattr(fund, "moat_score", 0.0)
+            _moat_class_emoji = {"Wide": "🏰", "Narrow": "🟢", "Minimal": "🟡", "None": "⚪"}.get(_moat_class, "⚪")
+            with st.expander(
+                f"{_moat_class_emoji} Economic Moat — {_moat_class} ({_moat_score:.1f}/20, +{getattr(fund, 'moat_bonus', 0):.1f} pts)",
+                expanded=False,
+            ):
+                st.caption("**Cuantitativo (0–12 pts)** — calculado con datos financieros")
+                qc1, qc2, qc3 = st.columns(3)
+                qc1.metric("Gross Margin nivel", f"{_moat_detail.gross_margin_level:.1f}/2")
+                qc2.metric("Gross Margin estabilidad", f"{_moat_detail.gross_margin_stability:.1f}/2")
+                qc3.metric("ROIC sostenido", f"{_moat_detail.roic_sustained:.1f}/2")
+                qc1, qc2, qc3 = st.columns(3)
+                qc1.metric("Revenue defensividad", f"{_moat_detail.revenue_defensiveness:.1f}/2")
+                qc2.metric("FCF Conversion", f"{_moat_detail.fcf_conversion:.1f}/2")
+                qc3.metric("FCF Margin", f"{_moat_detail.fcf_margin:.1f}/2")
+                st.caption(f"**Subtotal cuantitativo: {_moat_detail.quant_total:.1f}/12**")
+
+                if _moat_detail.ai_available:
+                    st.divider()
+                    st.caption(f"**Cualitativo AI (0–8 pts)** — {ai_cfg.model}")
+                    ac1, ac2, ac3, ac4 = st.columns(4)
+                    ac1.metric("Brand Strength", f"{_moat_detail.brand_strength:.1f}/2")
+                    ac2.metric("Network Effects", f"{_moat_detail.network_effects:.1f}/2")
+                    ac3.metric("Switching Costs", f"{_moat_detail.switching_costs:.1f}/2")
+                    ac4.metric("Regulatory/IP", f"{_moat_detail.regulatory_ip:.1f}/2")
+                    st.caption(f"**Subtotal AI: {_moat_detail.ai_total:.1f}/8**")
+                    if _moat_detail.ai_reasoning:
+                        st.info(f"🤖 {_moat_detail.ai_reasoning}")
+                else:
+                    st.caption("_Análisis cualitativo AI no disponible — activá AI en Configuración para el análisis completo de moat._")
 
         # Tabs
         tab_fund, tab_tech, tab_chart, tab_decision = st.tabs(
