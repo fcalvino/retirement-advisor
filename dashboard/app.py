@@ -438,9 +438,10 @@ elif page == "🔍 Stock Analysis":
                         st.metric(label, f"{val:.1f}/2", help=tip)
                         st.markdown(_dim_bar_html(val), unsafe_allow_html=True)
 
+                _quant_pct = round(getattr(_moat_detail, "quant_total", 0) / 12 * 100)
                 st.markdown(
                     f"<small><b>Subtotal cuantitativo: {_moat_detail.quant_total:.1f}/12 "
-                    f"({_moat_detail.quant_pct:.0f}%)</b></small>",
+                    f"({_quant_pct:.0f}%)</b></small>",
                     unsafe_allow_html=True,
                 )
 
@@ -464,9 +465,10 @@ elif page == "🔍 Stock Analysis":
                             st.metric(label, f"{val:.1f}/2", help=tip)
                             st.markdown(_dim_bar_html(val), unsafe_allow_html=True)
 
+                    _ai_pct = round(getattr(_moat_detail, "ai_total", 0) / 8 * 100) if getattr(_moat_detail, "ai_total", 0) > 0 else 0
                     st.markdown(
                         f"<small><b>Subtotal AI: {_moat_detail.ai_total:.1f}/8 "
-                        f"({_moat_detail.ai_pct:.0f}%)</b></small>",
+                        f"({_ai_pct:.0f}%)</b></small>",
                         unsafe_allow_html=True,
                     )
                     if _moat_detail.ai_reasoning:
