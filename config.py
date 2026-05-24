@@ -195,11 +195,29 @@ class BacktestConfig:
 
 @dataclass
 class MoatConfig:
-    wide_threshold: float = 14.0        # ≥ this → Wide Moat
-    narrow_threshold: float = 8.0       # ≥ this → Narrow Moat
-    minimal_threshold: float = 4.0      # ≥ this → Minimal Moat
-    max_bonus: float = 10.0             # cap on bonus pts added to adjusted_score
-    ai_cache_ttl_hours: int = 168       # 7 days — AI moat results cached per ticker
+    """
+    Thresholds and limits for the Economic Moat scoring system.
+
+    Moat total score = quantitative (0–12) + AI qualitative (0–8) = 0–20.
+
+    Classification thresholds (tunable without touching analysis code):
+      wide_threshold    — total ≥ 14 → Wide Moat   (Buffett's 20-year moat)
+      narrow_threshold  — total ≥  8 → Narrow Moat  (solid but more vulnerable)
+      minimal_threshold — total ≥  4 → Minimal Moat  (some protection, eroding)
+      below minimal     — None Moat   (commodity / no identifiable advantage)
+
+    Bonus formula: min(moat_total × 0.5, max_bonus)
+      max_bonus = 10.0 → a Wide Moat (score ≥ 20) adds at most +10 pts to adjusted_score.
+      This is intentionally capped so moat never dominates the full fundamental score.
+
+    ai_cache_ttl_hours: how long AI qualitative results are cached per ticker.
+      Default 168h (7 days) — moat is structural and doesn't change week-to-week.
+    """
+    wide_threshold: float = 14.0
+    narrow_threshold: float = 8.0
+    minimal_threshold: float = 4.0
+    max_bonus: float = 10.0
+    ai_cache_ttl_hours: int = 168
 
 
 THRESHOLDS = FundamentalThresholds()

@@ -117,9 +117,57 @@ ACTION_COLOR = {
     "AVOID": "#cc0000",
 }
 
+_MOAT_COLOR = {
+    "Wide":    "#00C851",
+    "Narrow":  "#39b54a",
+    "Minimal": "#ffbb33",
+    "None":    "#888888",
+}
+
+_MOAT_EMOJI = {
+    "Wide":    "🏰",
+    "Narrow":  "🟢",
+    "Minimal": "🟡",
+    "None":    "⚪",
+}
+
+_MOAT_DESCRIPTION = {
+    "Wide":    "Ventaja duradera 20+ años — protección estructural fuerte (ej: MSFT, AAPL, V)",
+    "Narrow":  "Ventaja sólida ~10 años — más vulnerable a disrupción (ej: MELI, HD)",
+    "Minimal": "Protección limitada o erosionándose — monitorear cada año",
+    "None":    "Sin ventaja competitiva identificable — sensible a precios y competencia",
+}
+
 def score_bar(score: float) -> str:
     filled = int(score / 10)
     return "█" * filled + "░" * (10 - filled) + f"  {score:.0f}/100"
+
+def _moat_badge_html(classification: str, score: float, bonus: float) -> str:
+    """Return an HTML badge colored by moat classification for st.markdown()."""
+    color = _MOAT_COLOR.get(classification, "#888")
+    emoji = _MOAT_EMOJI.get(classification, "⚪")
+    return (
+        f'<span style="background:{color}22;border:1px solid {color};color:{color};'
+        f'padding:3px 12px;border-radius:14px;font-weight:700;font-size:0.9em;">'
+        f'{emoji} {classification} Moat &nbsp;·&nbsp; {score:.1f}/20 &nbsp;·&nbsp; +{bonus:.1f} pts</span>'
+    )
+
+def _dim_bar_html(score: float, max_score: float = 2.0) -> str:
+    """Inline HTML progress bar for a moat dimension (0–2 scale)."""
+    pct = score / max_score * 100
+    if pct >= 75:
+        color = "#00C851"
+    elif pct >= 40:
+        color = "#ffbb33"
+    elif pct > 0:
+        color = "#ff8800"
+    else:
+        color = "#dddddd"
+    return (
+        f'<div style="background:#e8e8e8;border-radius:4px;height:7px;margin-top:2px;">'
+        f'<div style="width:{pct:.0f}%;background:{color};height:7px;border-radius:4px;"></div>'
+        f'</div>'
+    )
 
 
 def _get_ai_config(context: str = "detailed_analysis") -> AIConfig:
@@ -184,7 +232,7 @@ if page == "🏠 Screener":
                 "Consistency": fund.consistency_score,
                 "Piotroski": fund.piotroski_score,
                 "Moat Score": getattr(fund, "moat_score", 0.0),
-                "Moat": getattr(fund, "moat_classification", "—"),
+                "Moat": f"{_MOAT_EMOJI.get(getattr(fund, 'moat_classification', ''), '⚪')} {getattr(fund, 'moat_classification', '—')}",
                 "Technical": tech.signal,
                 "P/E": fund.pe_ratio,
                 "ROE %": fund.roe,
@@ -352,37 +400,83 @@ elif page == "🔍 Stock Analysis":
         # Moat detail expander
         _moat_detail = getattr(fund, "moat_detail", None)
         if _moat_detail is not None:
-            _moat_class = getattr(fund, "moat_classification", "—")
+            _moat_class = getattr(fund, "moat_classification", "None")
             _moat_score = getattr(fund, "moat_score", 0.0)
-            _moat_class_emoji = {"Wide": "🏰", "Narrow": "🟢", "Minimal": "🟡", "None": "⚪"}.get(_moat_class, "⚪")
+            _moat_bonus = getattr(fund, "moat_bonus", 0.0)
+            _moat_emoji = _MOAT_EMOJI.get(_moat_class, "⚪")
             with st.expander(
-                f"{_moat_class_emoji} Economic Moat — {_moat_class} ({_moat_score:.1f}/20, +{getattr(fund, 'moat_bonus', 0):.1f} pts)",
+                f"{_moat_emoji} Economic Moat — {_moat_class} ({_moat_score:.1f}/20)",
                 expanded=False,
             ):
-                st.caption("**Cuantitativo (0–12 pts)** — calculado con datos financieros")
-                qc1, qc2, qc3 = st.columns(3)
-                qc1.metric("Gross Margin nivel", f"{_moat_detail.gross_margin_level:.1f}/2")
-                qc2.metric("Gross Margin estabilidad", f"{_moat_detail.gross_margin_stability:.1f}/2")
-                qc3.metric("ROIC sostenido", f"{_moat_detail.roic_sustained:.1f}/2")
-                qc1, qc2, qc3 = st.columns(3)
-                qc1.metric("Revenue defensividad", f"{_moat_detail.revenue_defensiveness:.1f}/2")
-                qc2.metric("FCF Conversion", f"{_moat_detail.fcf_conversion:.1f}/2")
-                qc3.metric("FCF Margin", f"{_moat_detail.fcf_margin:.1f}/2")
-                st.caption(f"**Subtotal cuantitativo: {_moat_detail.quant_total:.1f}/12**")
+                # Colored classification badge + description
+                st.markdown(
+                    _moat_badge_html(_moat_class, _moat_score, _moat_bonus),
+                    unsafe_allow_html=True,
+                )
+                st.caption(_MOAT_DESCRIPTION.get(_moat_class, ""))
+                st.divider()
 
+                # Quantitative breakdown with inline progress bars
+                st.markdown("**📊 Cuantitativo (0–12 pts)** — calculado con datos financieros reales")
+                _quant_dims = [
+                    ("Gross Margin nivel", _moat_detail.gross_margin_level,
+                     "Margen bruto % vs umbrales (≥50%=2, ≥35%=1, ≥20%=0.5) — proxy de pricing power"),
+                    ("Gross Margin estabilidad", _moat_detail.gross_margin_stability,
+                     "Desviación estándar del GM en 4Y (≤3pp=2, ≤8pp=1) — estabilidad del poder de precios"),
+                    ("ROIC sostenido", _moat_detail.roic_sustained,
+                     "ROIC promedio histórico (≥20%=2, ≥12%=1) — retorno sobre capital invertido"),
+                    ("Revenue defensividad", _moat_detail.revenue_defensiveness,
+                     "Años con caída de ingresos (0 años=2, 1 año=1) — resiliencia ante recesiones"),
+                    ("FCF Conversion", _moat_detail.fcf_conversion,
+                     "Promedio OCF/Net Income (≥1.2=2, ≥0.9=1) — ganancias respaldadas por caja real"),
+                    ("FCF Margin", _moat_detail.fcf_margin,
+                     "FCF/Revenue promedio % (≥20%=2, ≥10%=1) — escalabilidad del modelo de negocio"),
+                ]
+                qcols = st.columns(3)
+                for i, (label, val, tip) in enumerate(_quant_dims):
+                    with qcols[i % 3]:
+                        st.metric(label, f"{val:.1f}/2", help=tip)
+                        st.markdown(_dim_bar_html(val), unsafe_allow_html=True)
+
+                st.markdown(
+                    f"<small><b>Subtotal cuantitativo: {_moat_detail.quant_total:.1f}/12 "
+                    f"({_moat_detail.quant_pct:.0f}%)</b></small>",
+                    unsafe_allow_html=True,
+                )
+
+                # AI qualitative breakdown
+                st.divider()
                 if _moat_detail.ai_available:
-                    st.divider()
-                    st.caption(f"**Cualitativo AI (0–8 pts)** — {ai_cfg.model}")
-                    ac1, ac2, ac3, ac4 = st.columns(4)
-                    ac1.metric("Brand Strength", f"{_moat_detail.brand_strength:.1f}/2")
-                    ac2.metric("Network Effects", f"{_moat_detail.network_effects:.1f}/2")
-                    ac3.metric("Switching Costs", f"{_moat_detail.switching_costs:.1f}/2")
-                    ac4.metric("Regulatory/IP", f"{_moat_detail.regulatory_ip:.1f}/2")
-                    st.caption(f"**Subtotal AI: {_moat_detail.ai_total:.1f}/8**")
+                    st.markdown(f"**🤖 Cualitativo AI (0–8 pts)** — `{ai_cfg.model}`")
+                    _ai_dims = [
+                        ("Brand Strength", _moat_detail.brand_strength,
+                         "Reconocimiento de marca, confianza y poder de fijar precios premium"),
+                        ("Network Effects", _moat_detail.network_effects,
+                         "El valor del servicio aumenta con más usuarios (Ley de Metcalfe)"),
+                        ("Switching Costs", _moat_detail.switching_costs,
+                         "Fricción real para cambiar de proveedor: tiempo, integración, riesgo operativo"),
+                        ("Regulatory / IP", _moat_detail.regulatory_ip,
+                         "Patentes, licencias exclusivas o regulaciones que protegen la posición"),
+                    ]
+                    acols = st.columns(4)
+                    for i, (label, val, tip) in enumerate(_ai_dims):
+                        with acols[i]:
+                            st.metric(label, f"{val:.1f}/2", help=tip)
+                            st.markdown(_dim_bar_html(val), unsafe_allow_html=True)
+
+                    st.markdown(
+                        f"<small><b>Subtotal AI: {_moat_detail.ai_total:.1f}/8 "
+                        f"({_moat_detail.ai_pct:.0f}%)</b></small>",
+                        unsafe_allow_html=True,
+                    )
                     if _moat_detail.ai_reasoning:
-                        st.info(f"🤖 {_moat_detail.ai_reasoning}")
+                        st.info(f"💬 {_moat_detail.ai_reasoning}")
                 else:
-                    st.caption("_Análisis cualitativo AI no disponible — activá AI en Configuración para el análisis completo de moat._")
+                    st.caption(
+                        "🔒 Análisis cualitativo AI no disponible — "
+                        "activá un proveedor AI en **⚙️ Settings** para evaluar brand, "
+                        "network effects, switching costs y barreras regulatorias."
+                    )
 
         # Tabs
         tab_fund, tab_tech, tab_chart, tab_decision = st.tabs(
