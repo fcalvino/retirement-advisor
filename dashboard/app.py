@@ -623,7 +623,7 @@ elif page == "📊 Backtesting":
 
     # ---- Configuración ----
     with st.expander("⚙️ Configuración del backtest", expanded=True):
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3 = st.columns(3)
         with col1:
             period_years = st.selectbox(
                 "Período", [1, 3, 5, 10],
@@ -634,7 +634,23 @@ elif page == "📊 Backtesting":
             top_n = st.slider("Top-N tickers", min_value=3, max_value=20, value=BACKTEST.default_top_n)
         with col3:
             benchmark = st.selectbox("Benchmark", ["SPY", "QQQ", "VTI", "BND"], index=0)
-        with col4:
+
+        col1, col2 = st.columns(2)
+        with col1:
+            _FREQ_OPTIONS = {
+                "Anual": "annual",
+                "Trimestral": "quarterly",
+                "Mensual": "monthly",
+                "Buy & Hold (sin rebalanceo)": "buy_and_hold",
+            }
+            freq_label = st.selectbox(
+                "Frecuencia de rebalanceo",
+                list(_FREQ_OPTIONS.keys()),
+                index=0,
+                help="Con qué frecuencia se redistribuye el capital en partes iguales entre los top-N tickers.",
+            )
+            rebalance_freq = _FREQ_OPTIONS[freq_label]
+        with col2:
             universe_choice = st.selectbox(
                 "Universo",
                 ["Universo completo", "Solo US Large Cap", "Solo Argentina ADRs"],
@@ -694,13 +710,14 @@ elif page == "📊 Backtesting":
             st.error("No se pudieron obtener datos fundamentales.")
             st.stop()
 
-        with st.spinner(f"Calculando backtest {period_years}Y vs {benchmark}..."):
+        with st.spinner(f"Calculando backtest {period_years}Y vs {benchmark} ({freq_label})..."):
             engine = BacktestEngine()
             bt_result = engine.run(
                 fund_results,
                 period_years=period_years,
                 top_n=top_n,
                 benchmark=benchmark,
+                rebalance_freq=rebalance_freq,
             )
             saved_path = engine.save(bt_result)
             st.success(f"Backtest completado y guardado en `{saved_path.name}`")
@@ -715,7 +732,10 @@ elif page == "📊 Backtesting":
     st.subheader("📈 Performance Summary")
 
     alpha_color = "normal" if bt_result.alpha_pct >= 0 else "inverse"
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    rebal_label = bt_result.rebalance_freq.replace("_", " ").title()
+    st.caption(f"Rebalanceo: **{rebal_label}** · Top-{bt_result.top_n} · {bt_result.period_years}Y · vs {bt_result.benchmark}")
+
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric(
         "Portfolio CAGR",
         f"{bt_result.portfolio_cagr_pct:+.1f}%",
@@ -723,15 +743,19 @@ elif page == "📊 Backtesting":
         delta_color=alpha_color,
     )
     col2.metric("Benchmark CAGR", f"{bt_result.benchmark_cagr_pct:+.1f}%")
-    col3.metric("Sharpe Ratio", f"{bt_result.portfolio_sharpe:.2f}")
-    col4.metric("Max Drawdown", f"{bt_result.portfolio_max_drawdown_pct:.1f}%")
-    col5.metric("Win Rate vs Bench", f"{bt_result.portfolio_win_rate_pct:.0f}%")
-    col6.metric("Calmar Ratio", f"{bt_result.calmar_ratio:.2f}")
+    col3.metric("Total Return Portfolio", f"{bt_result.portfolio_total_return_pct:+.1f}%")
+    col4.metric("Total Return Benchmark", f"{bt_result.benchmark_total_return_pct:+.1f}%")
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Return Portfolio", f"{bt_result.portfolio_total_return_pct:+.1f}%")
-    col2.metric("Total Return Benchmark", f"{bt_result.benchmark_total_return_pct:+.1f}%")
-    col3.metric("Volatility (ann.)", f"{bt_result.portfolio_volatility_pct:.1f}%")
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Sharpe Ratio", f"{bt_result.portfolio_sharpe:.2f}", help="(CAGR − Rf) / Vol total")
+    col2.metric(
+        "Sortino Ratio",
+        f"{getattr(bt_result, 'portfolio_sortino', 0):.2f}",
+        help="(CAGR − Rf) / Vol bajista — penaliza solo pérdidas",
+    )
+    col3.metric("Max Drawdown", f"{bt_result.portfolio_max_drawdown_pct:.1f}%")
+    col4.metric("Win Rate vs Bench", f"{bt_result.portfolio_win_rate_pct:.0f}%")
+    col5.metric("Calmar Ratio", f"{bt_result.calmar_ratio:.2f}", help="CAGR / |Max Drawdown|")
 
     # ---- Charts ----
     tab_curve, tab_drawdown, tab_scatter, tab_tickers = st.tabs(
@@ -830,6 +854,7 @@ elif page == "📊 Backtesting":
                     "CAGR %": t.cagr_pct,
                     "Alpha %": t.alpha_pct,
                     "Sharpe": t.sharpe,
+                    "Sortino": getattr(t, "sortino", 0),
                     "Max DD %": t.max_drawdown_pct,
                     "Volatilidad %": t.volatility_pct,
                     "Win Rate %": t.win_rate_pct,

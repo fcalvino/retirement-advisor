@@ -48,6 +48,7 @@ class TickerPerformance:
     score: float            # adjusted_score used for ranking
     cagr_pct: float
     sharpe: float
+    sortino: float          # downside-risk adjusted return
     max_drawdown_pct: float
     volatility_pct: float
     win_rate_pct: float     # % of weeks beating benchmark
@@ -65,9 +66,12 @@ class BacktestResult:
     top_n: int
     universe_size: int
 
+    rebalance_freq: str = "annual"   # "annual" | "quarterly" | "monthly" | "buy_and_hold"
+
     # Portfolio-level metrics
     portfolio_cagr_pct: float = 0.0
     portfolio_sharpe: float = 0.0
+    portfolio_sortino: float = 0.0
     portfolio_max_drawdown_pct: float = 0.0
     portfolio_volatility_pct: float = 0.0
     portfolio_total_return_pct: float = 0.0
@@ -115,19 +119,22 @@ class BacktestEngine:
 
     def run(
         self,
-        scored_results: list,       # List[FundamentalResult] — already scored
+        scored_results: list,           # List[FundamentalResult] — already scored
         period_years: int = 5,
         top_n: int = 10,
         benchmark: str = "SPY",
+        rebalance_freq: str = "annual", # "annual" | "quarterly" | "monthly" | "buy_and_hold"
     ) -> BacktestResult:
         """
         Run backtest and return a fully populated BacktestResult.
 
         Args:
-            scored_results: FundamentalResult objects with adjusted_score populated.
-            period_years:   How many years of history to use (1–10).
-            top_n:          Number of top-scoring tickers to include in portfolio.
-            benchmark:      Ticker used as benchmark (default SPY).
+            scored_results:  FundamentalResult objects with adjusted_score populated.
+            period_years:    How many years of history to use (1–10).
+            top_n:           Number of top-scoring tickers to include in portfolio.
+            benchmark:       Ticker used as benchmark (default SPY).
+            rebalance_freq:  How often to rebalance back to equal weight.
+                             "buy_and_hold" skips rebalancing entirely.
         """
         end_dt = datetime.now()
         start_dt = end_dt - timedelta(days=period_years * 365 + 30)  # +30 day buffer
@@ -141,6 +148,7 @@ class BacktestEngine:
             benchmark=benchmark,
             top_n=top_n,
             universe_size=len(scored_results),
+            rebalance_freq=rebalance_freq,
         )
         result.notes.append(
             "⚠️ Scores use current financials — lookahead bias in fundamental signals. "
@@ -178,7 +186,7 @@ class BacktestEngine:
             return result
 
         # Build portfolio equity curve aligned to benchmark dates
-        port_curve = self._equal_weight_curve(top_prices, bench_prices.index)
+        port_curve = self._equal_weight_curve(top_prices, bench_prices.index, rebalance_freq)
         if len(port_curve) < 10:
             result.notes.append("Insufficient overlapping price data.")
             return result
@@ -198,6 +206,7 @@ class BacktestEngine:
         pm = self._metrics(port_curve, bench_curve)
         result.portfolio_cagr_pct = pm["cagr"]
         result.portfolio_sharpe = pm["sharpe"]
+        result.portfolio_sortino = pm["sortino"]
         result.portfolio_max_drawdown_pct = pm["max_drawdown"]
         result.portfolio_volatility_pct = pm["volatility"]
         result.portfolio_total_return_pct = pm["total_return"]
@@ -232,6 +241,7 @@ class BacktestEngine:
                 score=fund_result.adjusted_score,
                 cagr_pct=tm["cagr"],
                 sharpe=tm["sharpe"],
+                sortino=tm["sortino"],
                 max_drawdown_pct=tm["max_drawdown"],
                 volatility_pct=tm["volatility"],
                 win_rate_pct=tm["win_rate"],
@@ -324,19 +334,86 @@ class BacktestEngine:
         self,
         prices: Dict[str, pd.Series],
         reference_index: pd.DatetimeIndex,
+        rebalance_freq: str = "annual",
     ) -> pd.Series:
-        """Build an equal-weight buy-and-hold portfolio curve."""
-        frames = []
-        for sym, s in prices.items():
-            s_aligned = s.reindex(reference_index).ffill().dropna()
-            if len(s_aligned) < 5:
-                continue
-            # Normalize each stock to 1.0 at its first available date
-            frames.append(s_aligned / s_aligned.iloc[0])
-        if not frames:
+        """
+        Build an equal-weight portfolio curve with optional periodic rebalancing.
+
+        Buy-and-hold: each stock normalized to 1.0 at start, portfolio = mean.
+        Rebalanced: at each rebalancing date, reset shares so every position
+        is again worth 1/N of the total portfolio value.
+        """
+        # Align all price series to the reference (benchmark) index
+        prices_df = pd.DataFrame({
+            sym: s.reindex(reference_index).ffill()
+            for sym, s in prices.items()
+        }).dropna(how="all").ffill()
+
+        if prices_df.empty:
             return pd.Series(dtype=float)
-        combined = pd.concat(frames, axis=1).ffill()
-        return combined.mean(axis=1).dropna()
+
+        syms = prices_df.columns.tolist()
+        n = len(syms)
+
+        if rebalance_freq == "buy_and_hold":
+            # Simple normalized average — no rebalancing
+            norm = prices_df.apply(lambda col: col / col.dropna().iloc[0])
+            return norm.mean(axis=1).dropna()
+
+        # Determine rebalancing dates mapped to actual index dates
+        rebal_set = self._rebalance_dates(prices_df.index, rebalance_freq)
+
+        # Simulate share-level portfolio starting at portfolio value = 1.0
+        first_row = prices_df.iloc[0]
+        valid_syms = [s for s in syms if pd.notna(first_row[s]) and first_row[s] > 0]
+        n_valid = len(valid_syms)
+        if n_valid == 0:
+            return pd.Series(dtype=float)
+
+        # Initial shares: equal allocation of 1/n_valid per stock
+        shares: Dict[str, float] = {
+            sym: (1.0 / n_valid) / first_row[sym] for sym in valid_syms
+        }
+
+        portfolio = pd.Series(index=prices_df.index, dtype=float)
+
+        for date in prices_df.index:
+            row = prices_df.loc[date]
+            # Current portfolio value
+            value = sum(
+                shares.get(sym, 0.0) * row[sym]
+                for sym in valid_syms
+                if pd.notna(row[sym]) and row[sym] > 0
+            )
+            portfolio[date] = value
+
+            # Rebalance: redistribute value equally across available stocks
+            if date in rebal_set and date != prices_df.index[0] and value > 0:
+                avail = {sym: row[sym] for sym in valid_syms
+                         if pd.notna(row[sym]) and row[sym] > 0}
+                if avail:
+                    alloc = value / len(avail)
+                    shares = {sym: alloc / price for sym, price in avail.items()}
+
+        return portfolio.dropna()
+
+    @staticmethod
+    def _rebalance_dates(index: pd.DatetimeIndex, freq: str) -> set:
+        """Map target calendar rebalancing dates to the nearest actual trading dates."""
+        freq_map = {
+            "monthly":   "ME",
+            "quarterly": "QE",
+            "annual":    "YE",
+        }
+        pd_freq = freq_map.get(freq)
+        if pd_freq is None:
+            return set()
+        targets = pd.date_range(index[0], index[-1], freq=pd_freq)
+        actual = set()
+        for td in targets:
+            diffs = np.abs((index - td).view(np.int64))
+            actual.add(index[int(np.argmin(diffs))])
+        return actual
 
     def _metrics(
         self,
@@ -345,7 +422,7 @@ class BacktestEngine:
     ) -> dict:
         """Compute standard performance metrics from a weekly price series."""
         empty = {
-            "cagr": 0.0, "sharpe": 0.0, "max_drawdown": 0.0,
+            "cagr": 0.0, "sharpe": 0.0, "sortino": 0.0, "max_drawdown": 0.0,
             "volatility": 0.0, "total_return": 0.0, "win_rate": 0.0, "calmar": 0.0,
         }
         if prices is None or len(prices) < 4:
@@ -359,7 +436,13 @@ class BacktestEngine:
         cagr = ((prices.iloc[-1] / prices.iloc[0]) ** (1 / years) - 1) * 100
 
         vol = returns.std() * np.sqrt(annual_factor) * 100
-        sharpe = round((cagr / 100 - self.rf) / (vol / 100), 2) if vol > 0 else 0.0
+        excess = cagr / 100 - self.rf
+        sharpe = round(excess / (vol / 100), 2) if vol > 0 else 0.0
+
+        # Sortino: penalizes only downside volatility
+        downside = returns[returns < 0]
+        downside_vol = downside.std() * np.sqrt(annual_factor) if len(downside) > 1 else 0.0
+        sortino = round(excess / downside_vol, 2) if downside_vol > 0 else 0.0
 
         rolling_max = prices.cummax()
         drawdown = (prices - rolling_max) / rolling_max
@@ -377,6 +460,7 @@ class BacktestEngine:
         return {
             "cagr": round(cagr, 2),
             "sharpe": sharpe,
+            "sortino": sortino,
             "max_drawdown": round(max_dd, 2),
             "volatility": round(vol, 2),
             "total_return": round(total_return, 2),

@@ -190,6 +190,7 @@ class BacktestConfig:
     risk_free_rate: float = 0.045       # 4.5% annual (10Y Treasury proxy)
     min_history_weeks: int = 52         # minimum weeks of price data required
     results_max_saved: int = 10         # cap saved backtest files shown in UI
+    default_rebalance_freq: str = "annual"  # "annual" | "quarterly" | "monthly" | "buy_and_hold"
 
 
 THRESHOLDS = FundamentalThresholds()
