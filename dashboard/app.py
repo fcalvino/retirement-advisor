@@ -6,7 +6,9 @@ Pages:
   2. 🔍 Stock Analysis — deep-dive on a single ticker
   3. 💼 Portfolio      — current holdings + performance metrics
   4. 📐 Allocation     — asset allocation advisor
-  5. ⚙️  Settings       — adjust universe and thresholds
+  5. 📈 Optimizer      — Mean-Variance portfolio optimization with 3 risk profiles
+  6. 📊 Backtesting    — historical strategy simulation
+  7. ⚙️  Settings       — adjust universe and thresholds
 """
 
 import sys
@@ -80,7 +82,7 @@ st.sidebar.caption("Long-term investment decisions for retirement")
 
 page = st.sidebar.radio(
     "Navigation",
-    ["🏠 Screener", "🔍 Stock Analysis", "💼 Portfolio", "📐 Allocation", "📊 Backtesting", "⚙️ Settings"],
+    ["🏠 Screener", "🔍 Stock Analysis", "💼 Portfolio", "📐 Allocation", "📈 Optimizer", "📊 Backtesting", "⚙️ Settings"],
 )
 
 # ------------------------------------------------------------------ #
@@ -749,7 +751,273 @@ elif page == "📐 Allocation":
 
 
 # ================================================================== #
-#  PAGE 5: BACKTESTING                                                 #
+#  PAGE 5: OPTIMIZER                                                   #
+# ================================================================== #
+
+elif page == "📈 Optimizer":
+    from portfolio.optimizer import PortfolioOptimizer, _ARS_TICKERS
+    from config import OPTIMIZER_PROFILES, OPTIMIZER
+
+    st.title("📈 Portfolio Optimizer")
+    st.caption(
+        "Construye una cartera óptima combinando Score Ajustado, Moat y Dividend Yield "
+        "con restricciones de riesgo según tu perfil de retiro."
+    )
+
+    # --- Profile selector ---
+    _PROFILE_LABELS = {
+        "conservative": "🛡️  Conservador — capital preservation + dividendos (por defecto)",
+        "moderate":     "⚖️  Moderado — balance crecimiento / ingreso",
+        "aggressive":   "🚀 Agresivo — máximo crecimiento a largo plazo",
+    }
+    profile_label = st.sidebar.radio(
+        "Perfil de riesgo",
+        list(_PROFILE_LABELS.values()),
+        index=0,
+    )
+    profile_key = [k for k, v in _PROFILE_LABELS.items() if v == profile_label][0]
+    prof = OPTIMIZER_PROFILES[profile_key]
+
+    with st.sidebar.expander("📋 Restricciones del perfil", expanded=False):
+        st.markdown(f"""
+| Parámetro | Valor |
+|---|---|
+| Pos. máx. por ticker | {prof.max_position_pct:.0f}% |
+| Volatilidad máx. | {prof.max_volatility_pct:.0f}% anual |
+| Div. yield mínimo | {prof.min_dividend_yield_pct:.1f}% |
+| Sec. máx. por sector | {prof.max_sector_pct:.0f}% |
+| Posiciones mínimas | {prof.min_positions} |
+""")
+
+    max_tickers = st.sidebar.slider("Tickers a analizar", 10, len(st.session_state.universe), len(st.session_state.universe))
+    selected_universe = st.session_state.universe[:max_tickers]
+
+    if st.button("🔄 Actualizar análisis y optimizar", type="primary"):
+        st.cache_data.clear()
+
+    # --- Gather scored tickers from screener cache ---
+    st.info("Analizando tickers del universo… (usa cache de 1h si disponible)")
+    ai_cfg = _get_ai_config(context="screener")
+    scored = []
+    progress = st.progress(0)
+    status_ph = st.empty()
+    for i, sym in enumerate(selected_universe):
+        status_ph.text(f"Analizando {sym}… ({i+1}/{len(selected_universe)})")
+        progress.progress((i + 1) / len(selected_universe))
+        try:
+            fund, _tech, _dec = cached_full_analysis(
+                sym, ai_cfg.provider, ai_cfg.model, ai_cfg.enabled, ai_cfg.api_key
+            )
+            scored.append({
+                "symbol": sym,
+                "adjusted_score": fund.adjusted_score,
+                "total_score": fund.total_score,
+                "dividend_yield": fund.dividend_yield or 0.0,
+                "moat_score": getattr(fund, "moat_score", 0.0),
+                "moat_classification": getattr(fund, "moat_classification", "None"),
+                "sector": fund.sector or "Unknown",
+                "company_name": fund.company_name,
+            })
+        except Exception as exc:
+            logger.error(f"Optimizer analysis {sym}: {exc}")
+    progress.empty()
+    status_ph.empty()
+
+    if not scored:
+        st.error("No se pudo analizar ningún ticker.")
+        st.stop()
+
+    # --- Run optimizer ---
+    with st.spinner("Optimizando cartera…"):
+        opt = PortfolioOptimizer(profile=profile_key)
+        current_weights = {}
+        try:
+            current_weights = portfolio.get_position_weights()
+        except Exception:
+            pass
+        result = opt.optimize(scored, current_weights=current_weights or None)
+
+    st.success(f"✅ Optimización completada — método: **{result.method}** | Perfil: **{result.profile_name}**")
+
+    if result.warnings:
+        for w in result.warnings:
+            st.warning(w)
+
+    # --- Summary metrics row ---
+    mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+    mc1.metric("Retorno esperado", f"{result.expected_return_pct:.1f}%")
+    mc2.metric("Volatilidad", f"{result.volatility_pct:.1f}%")
+    mc3.metric("Sharpe Ratio", f"{result.sharpe_ratio:.2f}")
+    mc4.metric("Div. Yield", f"{result.dividend_yield_pct:.2f}%")
+    mc5.metric("Score Promedio", f"{result.adjusted_score_avg:.0f}/100")
+
+    # --- Tabs ---
+    tab_cart, tab_front, tab_metrics, tab_rebal = st.tabs(
+        ["🧺 Cartera", "📉 Frontier", "📊 Métricas", "🔄 Rebalanceo"]
+    )
+
+    # ---------- Tab 1: Cartera ----------
+    with tab_cart:
+        if not result.tickers:
+            st.warning("No hay posiciones en la cartera optimizada.")
+        else:
+            alloc_data = [
+                {
+                    "Ticker": a.symbol,
+                    "Empresa": next((t["company_name"] for t in scored if t["symbol"] == a.symbol), a.symbol),
+                    "Peso %": a.weight_pct,
+                    "Score": a.adjusted_score,
+                    "Moat": f"{_MOAT_EMOJI.get(next((t['moat_classification'] for t in scored if t['symbol'] == a.symbol), 'None'), '⚪')} {next((t['moat_classification'] for t in scored if t['symbol'] == a.symbol), '—')}",
+                    "Div Yield %": a.dividend_yield_pct,
+                    "Sector": a.sector,
+                    "ARS?": "🇦🇷" if a.is_ars else "",
+                }
+                for a in result.tickers
+            ]
+            df_alloc = pd.DataFrame(alloc_data)
+
+            col_pie, col_tbl = st.columns([1, 2])
+            with col_pie:
+                fig_pie = px.pie(
+                    df_alloc,
+                    values="Peso %",
+                    names="Ticker",
+                    title="Distribución por Ticker",
+                    hole=0.3,
+                )
+                fig_pie.update_traces(textposition="inside", textinfo="percent+label")
+                st.plotly_chart(fig_pie, use_container_width=True)
+
+            with col_tbl:
+                st.dataframe(
+                    df_alloc,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Peso %": st.column_config.ProgressColumn(
+                            "Peso %", min_value=0, max_value=100, format="%.1f%%"
+                        ),
+                    },
+                )
+
+            # Sector donut
+            if result.sector_weights:
+                sec_df = pd.DataFrame(
+                    [{"Sector": k, "Peso %": v} for k, v in result.sector_weights.items()]
+                )
+                fig_sec = px.pie(sec_df, values="Peso %", names="Sector", title="Distribución por Sector", hole=0.4)
+                st.plotly_chart(fig_sec, use_container_width=True)
+
+            if any(a.is_ars for a in result.tickers):
+                st.info(
+                    "🇦🇷 Los tickers argentinos (ADRs) operan en USD pero incorporan riesgo macro ARS. "
+                    f"En perfil {prof.name} se aplica un descuento del {(1-OPTIMIZER.ars_risk_discount)*100:.0f}% "
+                    "al composite score para reflejar ese riesgo."
+                )
+
+        # Excluded tickers
+        if result.excluded:
+            with st.expander(f"Tickers excluidos ({len(result.excluded)})"):
+                for sym, reason in result.excluded:
+                    st.caption(f"**{sym}** — {reason}")
+
+    # ---------- Tab 2: Frontier ----------
+    with tab_front:
+        if not result.frontier_returns:
+            st.info("Datos de precio insuficientes para calcular la Frontera Eficiente.")
+        else:
+            fig_front = px.scatter(
+                x=result.frontier_vols,
+                y=result.frontier_returns,
+                color=result.frontier_sharpes,
+                color_continuous_scale="RdYlGn",
+                labels={"x": "Volatilidad % (anual)", "y": "Retorno Esperado % (anual)", "color": "Sharpe"},
+                title="Frontera Eficiente — Monte Carlo",
+            )
+            # Highlight optimal portfolio
+            fig_front.add_scatter(
+                x=[result.volatility_pct],
+                y=[result.expected_return_pct],
+                mode="markers",
+                marker=dict(size=14, color="blue", symbol="star"),
+                name="Cartera Optimizada",
+            )
+            fig_front.update_layout(height=500)
+            st.plotly_chart(fig_front, use_container_width=True)
+            st.caption(f"Cada punto es una cartera aleatoria (N={OPTIMIZER.frontier_points}). La estrella azul es la cartera optimizada por Sharpe Ratio máximo.")
+
+    # ---------- Tab 3: Métricas ----------
+    with tab_metrics:
+        m1, m2 = st.columns(2)
+        with m1:
+            st.subheader("Estadísticas de cartera")
+            st.markdown(f"""
+| Métrica | Valor |
+|---|---|
+| Retorno esperado | **{result.expected_return_pct:.1f}%** anual |
+| Volatilidad | **{result.volatility_pct:.1f}%** anual |
+| Sharpe Ratio | **{result.sharpe_ratio:.2f}** |
+| Dividend Yield | **{result.dividend_yield_pct:.2f}%** |
+| Score promedio | **{result.adjusted_score_avg:.0f}**/100 |
+| Moat promedio | **{result.moat_score_avg:.1f}**/20 |
+| Posiciones | **{len(result.tickers)}** |
+| Método | {result.method} |
+""")
+        with m2:
+            st.subheader("Pesos por sector")
+            if result.sector_weights:
+                for sector, pct in result.sector_weights.items():
+                    bar_w = int(pct / prof.max_sector_pct * 100)
+                    color = "#ff4444" if pct > prof.max_sector_pct else "#00C851"
+                    st.markdown(
+                        f"**{sector}** — {pct:.1f}%"
+                        f'<div style="background:#e8e8e8;border-radius:4px;height:8px;margin-bottom:6px;">'
+                        f'<div style="width:{min(bar_w,100)}%;background:{color};height:8px;border-radius:4px;"></div>'
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+
+    # ---------- Tab 4: Rebalanceo ----------
+    with tab_rebal:
+        if not result.rebalance_suggestions:
+            if not current_weights:
+                st.info("Agrega posiciones en la página 💼 Portfolio para ver sugerencias de rebalanceo.")
+            else:
+                st.success("Tu cartera actual ya está alineada con la asignación óptima.")
+        else:
+            buys = [s for s in result.rebalance_suggestions if s.action == "BUY"]
+            sells = [s for s in result.rebalance_suggestions if s.action == "SELL"]
+            holds = [s for s in result.rebalance_suggestions if s.action == "HOLD"]
+
+            st.markdown(
+                f"**{len(buys)} compras** &nbsp;·&nbsp; **{len(sells)} ventas** &nbsp;·&nbsp; **{len(holds)} mantener**"
+            )
+
+            rebal_data = [
+                {
+                    "Ticker": s.symbol,
+                    "Actual %": s.current_pct,
+                    "Objetivo %": s.target_pct,
+                    "Δ %": s.delta_pct,
+                    "Acción": s.action,
+                }
+                for s in result.rebalance_suggestions
+            ]
+            df_rebal = pd.DataFrame(rebal_data)
+            st.dataframe(
+                df_rebal,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Δ %": st.column_config.NumberColumn("Δ %", format="%.1f"),
+                    "Acción": st.column_config.TextColumn("Acción"),
+                },
+            )
+            st.caption("⚠️ Sugerencias orientativas. No es asesoramiento financiero.")
+
+
+# ================================================================== #
+#  PAGE 6: BACKTESTING                                                 #
 # ================================================================== #
 
 elif page == "📊 Backtesting":

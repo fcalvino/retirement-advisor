@@ -220,6 +220,105 @@ class MoatConfig:
     ai_cache_ttl_hours: int = 168
 
 
+@dataclass
+class ProfileConfig:
+    """
+    Risk profile for portfolio optimization.
+
+    Constraints fed directly into the SLSQP optimizer:
+      max_position_pct   — hard upper bound per ticker (prevents concentration)
+      max_volatility_pct — annualized portfolio volatility ceiling
+      min_dividend_yield_pct — portfolio-level weighted dividend yield floor
+      max_sector_pct     — hard upper bound per GICS sector
+      min_positions      — minimum number of positions (diversification floor)
+
+    Objective function weights (must sum to 1.0):
+      score_weight    — weight of adjusted_score in composite expected-return proxy
+      dividend_weight — weight of dividend yield in composite expected-return proxy
+      moat_weight     — weight of moat score in composite expected-return proxy
+    """
+    name: str
+    description: str
+    max_position_pct: float
+    max_volatility_pct: float
+    min_dividend_yield_pct: float
+    max_sector_pct: float
+    min_positions: int
+    score_weight: float
+    dividend_weight: float
+    moat_weight: float
+
+
+# Module-level profile definitions (importable by name)
+CONSERVATIVE_PROFILE = ProfileConfig(
+    name="Conservador",
+    description="Preservación de capital + ingreso por dividendos. Volatilidad controlada.",
+    max_position_pct=8.0,
+    max_volatility_pct=12.0,
+    min_dividend_yield_pct=3.5,
+    max_sector_pct=20.0,
+    min_positions=10,
+    score_weight=0.35,
+    dividend_weight=0.45,
+    moat_weight=0.20,
+)
+
+MODERATE_PROFILE = ProfileConfig(
+    name="Moderado",
+    description="Balance entre crecimiento e ingreso. Exposición al riesgo controlada.",
+    max_position_pct=12.0,
+    max_volatility_pct=18.0,
+    min_dividend_yield_pct=2.5,
+    max_sector_pct=25.0,
+    min_positions=8,
+    score_weight=0.50,
+    dividend_weight=0.30,
+    moat_weight=0.20,
+)
+
+AGGRESSIVE_PROFILE = ProfileConfig(
+    name="Agresivo",
+    description="Maximización de crecimiento a largo plazo. Mayor tolerancia al riesgo.",
+    max_position_pct=18.0,
+    max_volatility_pct=25.0,
+    min_dividend_yield_pct=1.5,
+    max_sector_pct=30.0,
+    min_positions=5,
+    score_weight=0.65,
+    dividend_weight=0.15,
+    moat_weight=0.20,
+)
+
+OPTIMIZER_PROFILES: Dict[str, ProfileConfig] = {
+    "conservative": CONSERVATIVE_PROFILE,
+    "moderate":     MODERATE_PROFILE,
+    "aggressive":   AGGRESSIVE_PROFILE,
+}
+
+
+@dataclass
+class OptimizerConfig:
+    """
+    Global settings for the portfolio optimizer (profile-independent).
+
+    default_profile       — profile key used when no selection is made
+    risk_free_rate        — annual Rf for Sharpe calculation (mirrors BacktestConfig)
+    price_history_years   — years of weekly prices for covariance estimation
+    frontier_points       — Monte Carlo portfolios rendered on the Efficient Frontier
+    min_weight_pct        — minimum per-ticker allocation (avoids dust positions)
+    min_score_threshold   — tickers below this adjusted_score are excluded
+    ars_risk_discount     — composite-score multiplier for Argentine ADR tickers
+                            in conservative/moderate profiles (reflects currency risk)
+    """
+    default_profile: str = "conservative"
+    risk_free_rate: float = 0.045
+    price_history_years: int = 2
+    frontier_points: int = 300
+    min_weight_pct: float = 1.0
+    min_score_threshold: float = 30.0
+    ars_risk_discount: float = 0.85  # 15% discount on composite score
+
+
 THRESHOLDS = FundamentalThresholds()
 STRATEGY = StrategyConfig()
 ALERTS = AlertConfig()
@@ -228,3 +327,4 @@ CONSISTENCY = ConsistencyThresholds()
 PIOTROSKI = PiotroskiConfig()
 BACKTEST = BacktestConfig()
 MOAT = MoatConfig()
+OPTIMIZER = OptimizerConfig()
