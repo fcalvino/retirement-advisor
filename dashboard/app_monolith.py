@@ -1,0 +1,2540 @@
+"""
+Streamlit dashboard — main UI for the Retirement Advisor.
+
+Pages:
+  1. 🏠 Screener       — ranked opportunity table across the universe
+  2. 🔍 Stock Analysis — deep-dive on a single ticker
+  3. 💼 Portfolio      — current holdings + performance metrics
+  4. 📐 Allocation     — asset allocation advisor
+  5. 📈 Optimizer      — Mean-Variance portfolio optimization with 3 risk profiles
+  6. 📊 Backtesting    — historical strategy simulation
+  7. 🎲 Simulaciones   — Monte Carlo + Stress Testing
+  8. 🔔 Alertas        — alert history, manual trigger, PDF report generation
+  9. ⚙️  Settings       — adjust universe and thresholds
+ 10. ℹ️  About          — version, docs, configuration status
+"""
+
+import sys
+from pathlib import Path
+
+# Allow imports from project root
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
+from loguru import logger
+
+from analysis.backtesting import BacktestEngine, BacktestResult
+from analysis.strategy import full_analysis
+from config import BACKTEST, DEFAULT_TICKERS, MOAT, SECTOR_MAP, AIConfig
+
+_ENV_PATH = Path(__file__).parent.parent / ".env"
+
+def _load_env_vars() -> dict:
+    """Read key=value pairs from .env file."""
+    env = {}
+    if _ENV_PATH.exists():
+        for line in _ENV_PATH.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, _, v = line.partition("=")
+                env[k.strip()] = v.strip()
+    return env
+
+def _save_ai_config_to_env(provider: str, model: str, api_key: str, enabled: bool, use_in_screener: bool = False):
+    """Persist AI settings into .env without touching other keys."""
+    env = _load_env_vars()
+    env["AI_PROVIDER"] = provider
+    env["AI_MODEL"] = model
+    env["AI_ENABLED"] = "true" if enabled else "false"
+    env["AI_USE_IN_SCREENER"] = "true" if use_in_screener else "false"
+    if api_key:
+        env["AI_API_KEY"] = api_key
+    elif "AI_API_KEY" in env:
+        del env["AI_API_KEY"]
+
+    lines = []
+    for k, v in env.items():
+        lines.append(f"{k}={v}")
+    _ENV_PATH.write_text("\n".join(lines) + "\n")
+from config_validator import log_config_issues, validate_config  # noqa: E402
+from data.cache import cache  # noqa: E402
+from data.fetcher import get_history, get_info  # noqa: E402
+from data.preferences import UserPreferences  # noqa: E402
+from portfolio.allocation import AllocationAdvisor  # noqa: E402
+from portfolio.tracker import Portfolio  # noqa: E402
+
+# ------------------------------------------------------------------ #
+#  Production logging — rotate at 10 MB, keep 7 days                  #
+# ------------------------------------------------------------------ #
+
+_LOG_DIR = Path(__file__).parent.parent / "logs"
+_LOG_DIR.mkdir(exist_ok=True)
+logger.add(
+    _LOG_DIR / "retirement_advisor.log",
+    rotation="10 MB",
+    retention="7 days",
+    level="INFO",
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{line} | {message}",
+    enqueue=True,   # thread-safe writes from Streamlit's async context
+)
+
+# ------------------------------------------------------------------ #
+#  Page config                                                         #
+# ------------------------------------------------------------------ #
+
+st.set_page_config(
+    page_title="Retirement Advisor",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# ------------------------------------------------------------------ #
+#  Startup config validation (runs once per session)                   #
+# ------------------------------------------------------------------ #
+
+if "config_validated" not in st.session_state:
+    issues = validate_config()
+    log_config_issues(issues)
+    st.session_state.config_issues = issues
+    st.session_state.config_validated = True
+
+# ------------------------------------------------------------------ #
+#  Sidebar navigation                                                  #
+# ------------------------------------------------------------------ #
+
+st.sidebar.title("📈 Retirement Advisor")
+st.sidebar.caption("Long-term investment decisions for retirement")
+
+page = st.sidebar.radio(
+    "Navigation",
+    ["🏠 Screener", "🔍 Stock Analysis", "💼 Portfolio", "📐 Allocation", "📈 Optimizer", "📊 Backtesting", "🎲 Simulaciones", "🔔 Alertas", "⚙️ Settings", "ℹ️ About"],
+)
+
+# Show config warnings in sidebar (collapsed by default)
+config_issues = st.session_state.get("config_issues", [])
+warnings = [msg for lvl, msg in config_issues if lvl == "warning"]
+errors   = [msg for lvl, msg in config_issues if lvl == "error"]
+if errors or warnings:
+    with st.sidebar.expander("⚠️ Configuración", expanded=bool(errors)):
+        for msg in errors:
+            st.error(msg, icon="🔴")
+        for msg in warnings:
+            st.warning(msg, icon="🟡")
+
+# Subtle indicator when preferences were loaded from disk
+if "user_prefs" in st.session_state and st.session_state.get("prefs_loaded_toast_shown") is None:
+    from data.preferences import _PREFS_PATH
+    if _PREFS_PATH.exists():
+        st.sidebar.caption("✔ Preferencias cargadas")
+    st.session_state.prefs_loaded_toast_shown = True
+
+# ------------------------------------------------------------------ #
+#  Shared state                                                        #
+# ------------------------------------------------------------------ #
+
+# Load user preferences once per session
+if "user_prefs" not in st.session_state:
+    st.session_state.user_prefs = UserPreferences.load()
+
+_prefs: UserPreferences = st.session_state.user_prefs
+
+if "universe" not in st.session_state:
+    # Prefer last_used_universe from prefs if set, else fallback to defaults
+    st.session_state.universe = (
+        _prefs.last_used_universe if _prefs.last_used_universe else DEFAULT_TICKERS.copy()
+    )
+
+if "portfolio" not in st.session_state:
+    st.session_state.portfolio = Portfolio()
+
+# Load AI config from .env on first run
+if "ai_provider" not in st.session_state:
+    _env = _load_env_vars()
+    st.session_state.ai_provider = _env.get("AI_PROVIDER", "claude")
+    st.session_state.ai_model = _env.get("AI_MODEL", "claude-sonnet-4-6")
+    st.session_state.ai_api_key = _env.get("AI_API_KEY", "")
+    st.session_state.ai_enabled = _env.get("AI_ENABLED", "").lower() in ("true", "1", "yes")
+    st.session_state.ai_use_in_screener = (
+        _prefs.ai_enabled_in_screener
+        or _env.get("AI_USE_IN_SCREENER", "false").lower() in ("true", "1", "yes")
+    )
+
+portfolio: Portfolio = st.session_state.portfolio
+
+# ------------------------------------------------------------------ #
+#  Helper                                                              #
+# ------------------------------------------------------------------ #
+
+ACTION_COLOR = {
+    "STRONG BUY": "#00C851",
+    "BUY": "#39b54a",
+    "HOLD": "#ffbb33",
+    "REDUCE": "#ff8800",
+    "SELL": "#ff4444",
+    "AVOID": "#cc0000",
+}
+
+_MOAT_COLOR = {
+    "Wide":    "#00C851",
+    "Narrow":  "#39b54a",
+    "Minimal": "#ffbb33",
+    "None":    "#888888",
+}
+
+_MOAT_EMOJI = {
+    "Wide":    "🏰",
+    "Narrow":  "🟢",
+    "Minimal": "🟡",
+    "None":    "⚪",
+}
+
+_MOAT_DESCRIPTION = {
+    "Wide":    "Ventaja duradera 20+ años — protección estructural fuerte (ej: MSFT, AAPL, V)",
+    "Narrow":  "Ventaja sólida ~10 años — más vulnerable a disrupción (ej: MELI, HD)",
+    "Minimal": "Protección limitada o erosionándose — monitorear cada año",
+    "None":    "Sin ventaja competitiva identificable — sensible a precios y competencia",
+}
+
+def score_bar(score: float) -> str:
+    filled = int(score / 10)
+    return "█" * filled + "░" * (10 - filled) + f"  {score:.0f}/100"
+
+def _moat_badge_html(classification: str, score: float, bonus: float) -> str:
+    """Return an HTML badge colored by moat classification for st.markdown()."""
+    color = _MOAT_COLOR.get(classification, "#888")
+    emoji = _MOAT_EMOJI.get(classification, "⚪")
+    return (
+        f'<span style="background:{color}22;border:1px solid {color};color:{color};'
+        f'padding:3px 12px;border-radius:14px;font-weight:700;font-size:0.9em;">'
+        f'{emoji} {classification} Moat &nbsp;·&nbsp; {score:.1f}/20 &nbsp;·&nbsp; +{bonus:.1f} pts</span>'
+    )
+
+def _dim_bar_html(score: float, max_score: float = 2.0) -> str:
+    """Inline HTML progress bar for a moat dimension (0–2 scale)."""
+    pct = score / max_score * 100
+    if pct >= 75:
+        color = "#00C851"
+    elif pct >= 40:
+        color = "#ffbb33"
+    elif pct > 0:
+        color = "#ff8800"
+    else:
+        color = "#dddddd"
+    return (
+        f'<div style="background:#e8e8e8;border-radius:4px;height:7px;margin-top:2px;">'
+        f'<div style="width:{pct:.0f}%;background:{color};height:7px;border-radius:4px;"></div>'
+        f'</div>'
+    )
+
+
+def _get_ai_config(context: str = "detailed_analysis") -> AIConfig:
+    enabled = st.session_state.get("ai_enabled", False)
+    use_in_screener = st.session_state.get("ai_use_in_screener", False)
+    # Disable AI for screener unless explicitly opted-in
+    effective_enabled = enabled and (context != "screener" or use_in_screener)
+    return AIConfig(
+        provider=st.session_state.get("ai_provider", "claude"),
+        model=st.session_state.get("ai_model", "claude-sonnet-4-6"),
+        api_key=st.session_state.get("ai_api_key", ""),
+        enabled=effective_enabled,
+        use_in_screener=use_in_screener,
+    )
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_full_analysis(symbol: str, ai_provider: str = "", ai_model: str = "", ai_enabled: bool = False, ai_api_key: str = ""):
+    ai_cfg = AIConfig(
+        provider=ai_provider,
+        model=ai_model,
+        api_key=ai_api_key,
+        enabled=ai_enabled,
+    )
+    fund, tech, decision = full_analysis(symbol, ai_config=ai_cfg)
+    return fund, tech, decision
+
+
+def _analyse_universe_parallel(
+    symbols: list[str],
+    ai_cfg: AIConfig,
+    progress_bar,
+    status_text,
+) -> list[dict]:
+    """
+    Run cached_full_analysis for each symbol in a thread pool.
+    Workers capped at min(16, cpu_count*2) to avoid hammering yfinance.
+    A per-ticker exception never aborts the whole run — the ticker is skipped
+    and the error is logged.
+    """
+    import os
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    max_workers = min(16, (os.cpu_count() or 4) * 2)
+    total = len(symbols)
+    completed = 0
+    rows: list[dict] = []
+
+    def _analyse_one(sym: str) -> dict | None:
+        try:
+            fund, tech, decision = cached_full_analysis(
+                sym, ai_cfg.provider, ai_cfg.model, ai_cfg.enabled, ai_cfg.api_key
+            )
+            return {
+                "Ticker": sym,
+                "Company": fund.company_name[:25],
+                "Sector": fund.sector,
+                "Signal": f"{decision.action_emoji} {decision.action}",
+                "Adj. Score": fund.adjusted_score,
+                "Base Score": fund.total_score,
+                "Score Bar": score_bar(fund.adjusted_score),
+                "Consistency": fund.consistency_score,
+                "Piotroski": fund.piotroski_score,
+                "Moat Score": getattr(fund, "moat_score", 0.0),
+                "Moat": f"{_MOAT_EMOJI.get(getattr(fund, 'moat_classification', ''), '⚪')} {getattr(fund, 'moat_classification', '—')}",
+                "Technical": tech.signal,
+                "P/E": fund.pe_ratio,
+                "ROE %": fund.roe,
+                "Rev CAGR 5Y": fund.revenue_cagr_5y,
+                "Div Yield %": fund.dividend_yield,
+                "MoS %": fund.margin_of_safety_pct,
+                "Price": fund.current_price,
+            }
+        except Exception as exc:
+            logger.error(f"Screener: {sym} failed — {exc}")
+            return None
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_analyse_one, sym): sym for sym in symbols}
+        for future in as_completed(futures):
+            completed += 1
+            sym = futures[future]
+            status_text.text(f"Analyzing… {completed}/{total} done (last: {sym})")
+            progress_bar.progress(completed / total)
+            result = future.result()
+            if result is not None:
+                rows.append(result)
+
+    return rows
+
+
+# ------------------------------------------------------------------ #
+#  About page (defined before the page switch)                         #
+# ------------------------------------------------------------------ #
+
+def page_about():
+    st.title("ℹ️ About — Retirement Advisor")
+    st.caption("v8.0 — Fase 8: Producción Ready")
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Versión", "8.0")
+    col2.metric("Tickers en universo", len(st.session_state.get("universe", DEFAULT_TICKERS)))
+    col3.metric("Tests", "133 passing")
+
+    st.divider()
+
+    st.subheader("Estado de configuración")
+    issues = st.session_state.get("config_issues", [])
+    if not issues:
+        st.info("Validación de configuración no disponible. Recargá la página.")
+    else:
+        for level, msg in issues:
+            if level == "error":
+                st.error(msg, icon="🔴")
+            elif level == "warning":
+                st.warning(msg, icon="🟡")
+            elif "Hermes OAuth" in msg:
+                st.success(msg, icon="🔐")
+            else:
+                st.success(msg, icon="✅")
+
+    st.divider()
+
+    st.subheader("Módulos activos")
+    st.markdown("""
+    | Módulo | Descripción |
+    |--------|-------------|
+    | **Screener** | Ranking de 38+ tickers con score ajustado (0–100) y señal |
+    | **Stock Analysis** | Análisis profundo: Piotroski, Consistency, Economic Moat, AI |
+    | **Portfolio Tracker** | Posiciones, P&L, pesos por sector |
+    | **Asset Allocation** | Regla conservadora acciones/bonos/cash por edad |
+    | **Optimizer** | Mean-Variance SLSQP + 3 perfiles de riesgo |
+    | **Backtesting** | Curva de equity histórica, Sharpe, Sortino, Calmar |
+    | **Simulaciones** | Monte Carlo 10k sims + Stress Test 6 crisis históricas |
+    | **Alertas** | Motor inteligente con debounce + email/Telegram + PDF |
+    """)
+
+    st.divider()
+
+    st.subheader("Fórmula del Score Ajustado")
+    st.code(
+        "adjusted_score = min(\n"
+        "    fundamental_score        (0–100)\n"
+        "  + consistency_score        (0–15)   # estabilidad ROE/EPS/márgenes\n"
+        "  + piotroski_bonus          (0–12)   # 9 checks YoY de calidad contable\n"
+        "  + moat_bonus               (0–10)   # min(moat_score × 0.5, 10)\n"
+        ", 100)",
+        language="python",
+    )
+
+    st.divider()
+
+    st.subheader("Documentación técnica")
+    st.markdown("""
+    - `docs/architecture.md` — Mapa de módulos y flujo de datos
+    - `docs/moat_methodology.md` — Economic Moat: metodología y umbrales
+    - `docs/portfolio_optimizer.md` — Optimizer: SLSQP, perfiles, ARS discount
+    - `docs/alert_system.md` — Alertas: tipos, cooldowns, scheduler
+    - `docs/ROADMAP.md` — Historial de fases (1 → 8)
+    """)
+
+    st.divider()
+
+    st.warning(
+        "**Aviso legal**: Esta herramienta es educativa. Los resultados no constituyen "
+        "asesoramiento financiero. Los datos provienen de Yahoo Finance y pueden contener "
+        "errores o estar desactualizados. Consultá con un asesor certificado antes de "
+        "tomar decisiones de inversión.",
+        icon="⚠️",
+    )
+
+
+# ================================================================== #
+#  PAGE 1: SCREENER                                                    #
+# ================================================================== #
+
+if page == "🏠 Screener":
+    st.title("🏠 Opportunity Screener")
+    st.caption("Ranked by fundamental quality score. Updated every 24h via cache.")
+
+    tickers = st.session_state.universe
+    max_tickers = st.sidebar.slider("Max tickers to screen", 5, len(tickers), len(tickers))
+    selected = tickers[:max_tickers]
+
+    if st.sidebar.button("💾 Guardar como favorito", help="Guarda el universo como favorito y lo restaura en próximas sesiones"):
+        _prefs.last_used_universe = list(st.session_state.universe)
+        _prefs.favorite_universe = list(st.session_state.universe)
+        _prefs.save()
+        st.toast("Universo guardado como favorito", icon="💾")
+
+    if st.button("🔄 Refresh Analysis", type="primary"):
+        st.cache_data.clear()
+
+    progress = st.progress(0)
+    status = st.empty()
+
+    ai_cfg = _get_ai_config(context="screener")
+    rows = _analyse_universe_parallel(selected, ai_cfg, progress, status)
+
+    progress.empty()
+    status.empty()
+
+    # Auto-save last_used_universe silently after each successful run
+    if rows and list(st.session_state.universe) != _prefs.last_used_universe:
+        _prefs.last_used_universe = list(st.session_state.universe)
+        _prefs.save()
+
+    # Offer to save as favorite if universe differs from saved favorite
+    if rows and list(st.session_state.universe) != _prefs.favorite_universe:
+        if st.sidebar.button(
+            "⭐ Guardar como favorito",
+            help=f"Tu favorito actual tiene {len(_prefs.favorite_universe)} tickers. Reemplazar con el universo actual.",
+        ):
+            _prefs.favorite_universe = list(st.session_state.universe)
+            _prefs.save()
+            st.toast("Universo guardado como favorito", icon="⭐")
+
+    if not rows:
+        st.warning("No data returned. Check internet connection.")
+        st.stop()
+
+    df = pd.DataFrame(rows).sort_values("Adj. Score", ascending=False)
+
+    # Summary metrics
+    col1, col2, col3, col4 = st.columns(4)
+    buy_count = df["Signal"].str.contains("BUY").sum()
+    hold_count = df["Signal"].str.contains("HOLD").sum()
+    sell_count = df["Signal"].str.contains("SELL|REDUCE|AVOID").sum()
+    col1.metric("Strong/Buy signals", buy_count)
+    col2.metric("Hold signals", hold_count)
+    col3.metric("Sell/Reduce signals", sell_count)
+    col4.metric("Stocks screened", len(df))
+
+    # Table
+    st.dataframe(
+        df[[
+            "Ticker", "Company", "Sector", "Signal", "Score Bar",
+            "Consistency", "Piotroski", "Moat Score", "Moat",
+            "Technical", "P/E", "ROE %", "Rev CAGR 5Y", "Div Yield %", "MoS %", "Price"
+        ]].rename(columns={
+            "Consistency": "Consist./15",
+            "Piotroski": "Piotroski/9",
+            "Moat Score": "Moat/20",
+        }),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    # Score distribution chart
+    fig = px.bar(
+        df.sort_values("Adj. Score", ascending=True),
+        x="Adj. Score",
+        y="Ticker",
+        orientation="h",
+        color="Adj. Score",
+        color_continuous_scale="RdYlGn",
+        range_color=[0, 100],
+        title="Adjusted Score Ranking (Base + Consistency + Piotroski + Moat)",
+    )
+    fig.add_vline(x=75, line_dash="dash", line_color="green", annotation_text="Strong Buy")
+    fig.add_vline(x=60, line_dash="dash", line_color="orange", annotation_text="Buy")
+    fig.update_layout(height=max(400, len(df) * 22), yaxis_title="")
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# ================================================================== #
+#  PAGE 2: STOCK ANALYSIS                                              #
+# ================================================================== #
+
+elif page == "🔍 Stock Analysis":
+    st.title("🔍 Stock Deep Dive")
+
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        symbol = st.text_input("Ticker symbol", value="AAPL").upper().strip()
+    with col2:
+        analyze_btn = st.button("Analyze", type="primary", use_container_width=True)
+
+    if symbol:
+        ai_cfg = _get_ai_config()
+        with st.spinner(f"Analyzing {symbol}..."):
+            fund, tech, decision = cached_full_analysis(symbol, ai_cfg.provider, ai_cfg.model, ai_cfg.enabled, ai_cfg.api_key)
+
+        # Header
+        st.markdown(f"## {decision.action_emoji} {fund.company_name} ({symbol})")
+        caption = f"{fund.sector} · {fund.industry} · Market Cap: ${fund.market_cap/1e9:.1f}B"
+        if decision.ai_reasoning:
+            caption += f" · 🤖 {ai_cfg.model}"
+        st.caption(caption)
+
+        # Decision banner
+        action_color = ACTION_COLOR.get(decision.action, "#888")
+        st.markdown(
+            f"""<div style="background:{action_color}22;border-left:4px solid {action_color};
+            padding:12px;border-radius:4px;margin:8px 0">
+            <b style="color:{action_color};font-size:1.2em">{decision.action_emoji} {decision.action}</b>
+            &nbsp;|&nbsp; Confidence: {decision.confidence}
+            &nbsp;|&nbsp; Fundamental: {decision.score_badge}
+            </div>""",
+            unsafe_allow_html=True,
+        )
+
+        # Score breakdown
+        col1, col2, col3, col4, col5 = st.columns(5)
+        col1.metric("Profitability", f"{fund.profitability_score:.0f}/25")
+        col2.metric("Fin. Health", f"{fund.health_score:.0f}/20")
+        col3.metric("Valuation", f"{fund.valuation_score:.0f}/25")
+        col4.metric("Growth", f"{fund.growth_score:.0f}/20")
+        col5.metric("Dividend", f"{fund.dividend_score:.0f}/10")
+
+        col1, col2, col3, col4, col5 = st.columns(5)
+        col1.metric("Base Score", f"{fund.total_score:.1f}/100")
+        col2.metric(
+            "Consistency",
+            f"{fund.consistency_score:.1f}/15",
+            help="ROE stability + EPS growth CV + Net margin stability",
+        )
+        col3.metric(
+            "Piotroski F-Score",
+            f"{fund.piotroski_score}/9",
+            help="Calidad contable YoY (≥7 = fuerte, ≤3 = débil)",
+        )
+        _moat_score = getattr(fund, "moat_score", 0.0)
+        _moat_class = getattr(fund, "moat_classification", "—")
+        col4.metric(
+            "Economic Moat",
+            f"{_moat_score:.1f}/20",
+            delta=_moat_class,
+            help="Ventaja competitiva sostenible (Wide ≥14 | Narrow ≥8 | Minimal ≥4)",
+        )
+        col5.metric("Score Ajustado", f"{fund.adjusted_score:.1f}/100")
+
+        # Consistency sub-scores
+        if getattr(fund, "consistency_detail", None):
+            cd = fund.consistency_detail
+            with st.expander(f"📊 Detalle Consistency ({cd.total:.1f}/15)", expanded=False):
+                c1, c2, c3 = st.columns(3)
+                c1.metric("ROE Stability", f"{cd.roe_score:.1f}/5")
+                c2.metric("EPS Stability", f"{cd.eps_score:.1f}/5")
+                c3.metric("Margin Stability", f"{cd.margin_score:.1f}/5")
+                if cd.notes:
+                    for note in cd.notes:
+                        st.caption(f"⚠️ {note}")
+
+        # Piotroski F-score detail
+        if getattr(fund, "piotroski_detail", None):
+            pd_obj = fund.piotroski_detail
+            _piotroski_labels = {
+                "f1_roa_positive":          "F1 — ROA > 0 (actual)",
+                "f2_ocf_positive":          "F2 — Operating Cash Flow > 0",
+                "f3_roa_improving":         "F3 — ROA mejoró YoY",
+                "f4_leverage_decreasing":   "F4 — Deuda/Activos ↓ YoY",
+                "f5_liquidity_improving":   "F5 — Current Ratio ↑ YoY",
+                "f6_no_dilution":           "F6 — Sin dilución accionaria (≤2%)",
+                "f7_gross_margin_improving":"F7 — Margen bruto ↑ YoY",
+                "f8_asset_turnover_improving":"F8 — Asset Turnover ↑ YoY",
+                "f9_accruals_quality":      "F9 — OCF > Net Income (accruals)",
+            }
+            score_color = "#00C851" if pd_obj.score >= 7 else ("#ffbb33" if pd_obj.score >= 5 else "#ff4444")
+            with st.expander(
+                f"🏦 Detalle Piotroski F-Score ({pd_obj.score}/9)",
+                expanded=False,
+            ):
+                for attr, label in _piotroski_labels.items():
+                    passed = getattr(pd_obj, attr, False)
+                    st.markdown(f"{'✅' if passed else '❌'} {label}")
+
+        # Moat detail expander
+        _moat_detail = getattr(fund, "moat_detail", None)
+        if _moat_detail is not None:
+            _moat_class = getattr(fund, "moat_classification", "None")
+            _moat_score = getattr(fund, "moat_score", 0.0)
+            _moat_bonus = getattr(fund, "moat_bonus", 0.0)
+            _moat_emoji = _MOAT_EMOJI.get(_moat_class, "⚪")
+            with st.expander(
+                f"{_moat_emoji} Economic Moat — {_moat_class} ({_moat_score:.1f}/20)",
+                expanded=False,
+            ):
+                # Colored classification badge + description
+                st.markdown(
+                    _moat_badge_html(_moat_class, _moat_score, _moat_bonus),
+                    unsafe_allow_html=True,
+                )
+                st.caption(_MOAT_DESCRIPTION.get(_moat_class, ""))
+                st.divider()
+
+                # Quantitative breakdown with inline progress bars
+                st.markdown("**📊 Cuantitativo (0–12 pts)** — calculado con datos financieros reales")
+                _quant_dims = [
+                    ("Gross Margin nivel", _moat_detail.gross_margin_level,
+                     "Margen bruto % vs umbrales (≥50%=2, ≥35%=1, ≥20%=0.5) — proxy de pricing power"),
+                    ("Gross Margin estabilidad", _moat_detail.gross_margin_stability,
+                     "Desviación estándar del GM en 4Y (≤3pp=2, ≤8pp=1) — estabilidad del poder de precios"),
+                    ("ROIC sostenido", _moat_detail.roic_sustained,
+                     "ROIC promedio histórico (≥20%=2, ≥12%=1) — retorno sobre capital invertido"),
+                    ("Revenue defensividad", _moat_detail.revenue_defensiveness,
+                     "Años con caída de ingresos (0 años=2, 1 año=1) — resiliencia ante recesiones"),
+                    ("FCF Conversion", _moat_detail.fcf_conversion,
+                     "Promedio OCF/Net Income (≥1.2=2, ≥0.9=1) — ganancias respaldadas por caja real"),
+                    ("FCF Margin", _moat_detail.fcf_margin,
+                     "FCF/Revenue promedio % (≥20%=2, ≥10%=1) — escalabilidad del modelo de negocio"),
+                ]
+                qcols = st.columns(3)
+                for i, (label, val, tip) in enumerate(_quant_dims):
+                    with qcols[i % 3]:
+                        st.metric(label, f"{val:.1f}/2", help=tip)
+                        st.markdown(_dim_bar_html(val), unsafe_allow_html=True)
+
+                _quant_pct = round(getattr(_moat_detail, "quant_total", 0) / 12 * 100)
+                st.markdown(
+                    f"<small><b>Subtotal cuantitativo: {_moat_detail.quant_total:.1f}/12 "
+                    f"({_quant_pct:.0f}%)</b></small>",
+                    unsafe_allow_html=True,
+                )
+
+                # AI qualitative breakdown
+                st.divider()
+                if _moat_detail.ai_available:
+                    st.markdown(f"**🤖 Cualitativo AI (0–8 pts)** — `{ai_cfg.model}`")
+                    _ai_dims = [
+                        ("Brand Strength", _moat_detail.brand_strength,
+                         "Reconocimiento de marca, confianza y poder de fijar precios premium"),
+                        ("Network Effects", _moat_detail.network_effects,
+                         "El valor del servicio aumenta con más usuarios (Ley de Metcalfe)"),
+                        ("Switching Costs", _moat_detail.switching_costs,
+                         "Fricción real para cambiar de proveedor: tiempo, integración, riesgo operativo"),
+                        ("Regulatory / IP", _moat_detail.regulatory_ip,
+                         "Patentes, licencias exclusivas o regulaciones que protegen la posición"),
+                    ]
+                    acols = st.columns(4)
+                    for i, (label, val, tip) in enumerate(_ai_dims):
+                        with acols[i]:
+                            st.metric(label, f"{val:.1f}/2", help=tip)
+                            st.markdown(_dim_bar_html(val), unsafe_allow_html=True)
+
+                    _ai_pct = round(getattr(_moat_detail, "ai_total", 0) / 8 * 100) if getattr(_moat_detail, "ai_total", 0) > 0 else 0
+                    st.markdown(
+                        f"<small><b>Subtotal AI: {_moat_detail.ai_total:.1f}/8 "
+                        f"({_ai_pct:.0f}%)</b></small>",
+                        unsafe_allow_html=True,
+                    )
+                    if _moat_detail.ai_reasoning:
+                        st.info(f"💬 {_moat_detail.ai_reasoning}")
+                else:
+                    st.caption(
+                        "🔒 Análisis cualitativo AI no disponible — "
+                        "activá un proveedor AI en **⚙️ Settings** para evaluar brand, "
+                        "network effects, switching costs y barreras regulatorias."
+                    )
+
+        # Tabs
+        tab_fund, tab_tech, tab_chart, tab_decision = st.tabs(
+            ["📊 Fundamentals", "📈 Technical", "📉 Price Chart", "🎯 Decision"]
+        )
+
+        with tab_fund:
+            cols = st.columns(3)
+            metrics = [
+                ("ROE", fund.roe, "%"),
+                ("ROIC", fund.roic, "%"),
+                ("Net Margin", fund.net_margin, "%"),
+                ("Gross Margin", fund.gross_margin, "%"),
+                ("Debt/Equity", fund.debt_equity, "x"),
+                ("Current Ratio", fund.current_ratio, "x"),
+                ("Interest Coverage", fund.interest_coverage, "x"),
+                ("P/E Ratio", fund.pe_ratio, "x"),
+                ("PEG Ratio", fund.peg_ratio, "x"),
+                ("EV/EBITDA", fund.ev_ebitda, "x"),
+                ("P/B Ratio", fund.pb_ratio, "x"),
+                ("Revenue CAGR 5Y", fund.revenue_cagr_5y, "%"),
+                ("EPS CAGR 5Y", fund.eps_cagr_5y, "%"),
+                ("FCF Yield", fund.fcf_yield, "%"),
+                ("Dividend Yield", fund.dividend_yield, "%"),
+                ("Payout Ratio", fund.payout_ratio, "%"),
+            ]
+            for i, (label, value, unit) in enumerate(metrics):
+                with cols[i % 3]:
+                    if value is not None:
+                        st.metric(label, f"{value:.2f}{unit}")
+                    else:
+                        st.metric(label, "N/A")
+
+            if fund.graham_value:
+                st.divider()
+                col1, col2 = st.columns(2)
+                col1.metric("Graham Intrinsic Value", f"${fund.graham_value:.2f}")
+                if fund.margin_of_safety_pct is not None:
+                    delta_color = "normal" if fund.margin_of_safety_pct > 0 else "inverse"
+                    col2.metric(
+                        "Margin of Safety",
+                        f"{fund.margin_of_safety_pct:.1f}%",
+                        delta=f"vs ${fund.current_price:.2f} current",
+                        delta_color=delta_color,
+                    )
+
+        with tab_tech:
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Signal", f"{tech.signal}")
+            col2.metric("Signal Strength", f"{tech.signal_strength:+d}/100")
+            col3.metric("ADX (Trend Power)", f"{tech.adx:.1f}" if tech.adx else "N/A")
+
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Above SMA200", "✅" if tech.above_sma200 else "❌")
+            col2.metric("Above SMA100", "✅" if tech.above_sma100 else "❌")
+            col3.metric("MACD Bullish", "✅" if tech.macd_bullish else "❌")
+            col4.metric("RSI (weekly)", f"{tech.rsi_weekly:.1f}" if tech.rsi_weekly else "N/A")
+
+            col1, col2 = st.columns(2)
+            col1.metric("SMA200 Slope (26w)", f"{tech.sma200_slope_pct:+.1f}%")
+            col2.metric("vs 52w High", f"{tech.price_vs_52w_high_pct:+.1f}%")
+
+            if tech.notes:
+                st.success("  ·  ".join(tech.notes))
+            if tech.warnings:
+                st.warning("  ·  ".join(tech.warnings))
+
+        with tab_chart:
+            hist = get_history(symbol, period="10y", interval="1wk")
+            if not hist.empty:
+                price = hist["close"]
+                sma50 = price.rolling(50).mean()
+                sma200 = price.rolling(200).mean()
+
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=hist.index, y=price, name="Price", line=dict(color="#2196F3", width=2)))
+                fig.add_trace(go.Scatter(x=hist.index, y=sma50, name="SMA 50", line=dict(color="#FF9800", width=1.5, dash="dot")))
+                fig.add_trace(go.Scatter(x=hist.index, y=sma200, name="SMA 200", line=dict(color="#F44336", width=2)))
+                fig.update_layout(
+                    title=f"{symbol} — 10 Year Weekly Chart",
+                    yaxis_title="Price (USD)",
+                    xaxis_title="",
+                    height=500,
+                    legend=dict(orientation="h"),
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("Price history not available")
+
+        with tab_decision:
+            if decision.ai_reasoning:
+                st.subheader(f"🤖 Análisis AI — {ai_cfg.model}")
+                st.markdown(decision.ai_reasoning)
+                st.divider()
+
+            st.subheader("Investment Rationale")
+            if decision.rationale:
+                for r in decision.rationale:
+                    st.success(f"✅ {r}")
+            else:
+                st.info("No specific positive factors flagged.")
+
+            if decision.risks:
+                st.subheader("Risks & Concerns")
+                for risk in decision.risks:
+                    st.warning(f"⚠️ {risk}")
+
+            if decision.blocked:
+                st.error(f"🚫 BLOCKED: {decision.block_reason}")
+
+            # Add to watchlist / portfolio
+            st.divider()
+            st.subheader("Add to Portfolio")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                shares = st.number_input("Shares", min_value=0.01, value=10.0, step=1.0)
+            with col2:
+                cost = st.number_input("Avg Cost (USD)", min_value=0.01, value=fund.current_price or 100.0)
+            with col3:
+                buy_date = st.date_input("Purchase Date")
+            if st.button("Add Position", type="secondary"):
+                portfolio.add_position(symbol, shares, cost, str(buy_date))
+                st.success(f"Added {shares:.0f} × {symbol} @ ${cost:.2f}")
+                st.session_state.portfolio = portfolio
+
+
+# ================================================================== #
+#  PAGE 3: PORTFOLIO                                                   #
+# ================================================================== #
+
+elif page == "💼 Portfolio":
+    st.title("💼 My Portfolio")
+
+    if not portfolio.positions:
+        st.info("No positions yet. Analyze a stock and add it from the Stock Analysis page.")
+        st.stop()
+
+    values = portfolio.get_current_values()
+    metrics = portfolio.compute_metrics()
+
+    # Summary metrics
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Total Value", f"${metrics.total_value:,.0f}")
+    col2.metric("Total P&L", f"${metrics.total_pnl:,.0f}", f"{metrics.total_pnl_pct:.1f}%")
+    col3.metric("Ann. Return", f"{metrics.annualized_return_pct:.1f}%")
+    col4.metric("Sharpe Ratio", f"{metrics.sharpe_ratio:.2f}")
+    col5.metric("Max Drawdown", f"{metrics.max_drawdown_pct:.1f}%")
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Sortino Ratio", f"{metrics.sortino_ratio:.2f}")
+    col2.metric("Portfolio Beta", f"{metrics.beta:.2f}")
+    col3.metric("Positions", metrics.num_positions)
+
+    st.divider()
+
+    # Holdings table
+    st.subheader("Holdings")
+    rows = list(values.values())
+    df = pd.DataFrame(rows)
+    df["pnl_pct"] = df["pnl_pct"].round(1)
+    df["pnl"] = df["pnl"].round(0)
+    df["market_value"] = df["market_value"].round(0)
+    df["weight_pct"] = (df["market_value"] / metrics.total_value * 100).round(1)
+
+    st.dataframe(
+        df[["symbol", "sector", "shares", "avg_cost", "current_price",
+            "cost_basis", "market_value", "pnl", "pnl_pct", "weight_pct"]].rename(columns={
+            "symbol": "Ticker", "sector": "Sector", "shares": "Shares",
+            "avg_cost": "Avg Cost", "current_price": "Price",
+            "cost_basis": "Cost Basis", "market_value": "Mkt Value",
+            "pnl": "P&L ($)", "pnl_pct": "P&L %", "weight_pct": "Weight %",
+        }),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    # Charts
+    col1, col2 = st.columns(2)
+    with col1:
+        sector_weights = portfolio.get_sector_weights()
+        fig = px.pie(
+            names=list(sector_weights.keys()),
+            values=list(sector_weights.values()),
+            title="Sector Allocation",
+            hole=0.4,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        pos_weights = portfolio.get_position_weights()
+        fig = px.bar(
+            x=list(pos_weights.keys()),
+            y=list(pos_weights.values()),
+            title="Position Weights (%)",
+            color=list(pos_weights.values()),
+            color_continuous_scale="Blues",
+        )
+        fig.add_hline(y=8, line_dash="dash", line_color="red", annotation_text="Max 8%")
+        fig.update_layout(yaxis_title="%", showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Remove position
+    st.divider()
+    st.subheader("Remove / Trim Position")
+    col1, col2 = st.columns(2)
+    with col1:
+        sym_to_remove = st.selectbox("Ticker", list(portfolio.positions.keys()))
+    with col2:
+        shares_to_remove = st.number_input("Shares (blank = close all)", min_value=0.0, value=0.0)
+    if st.button("Remove", type="secondary"):
+        portfolio.remove_position(sym_to_remove, shares_to_remove if shares_to_remove > 0 else None)
+        st.session_state.portfolio = portfolio
+        st.rerun()
+
+
+# ================================================================== #
+#  PAGE 4: ALLOCATION                                                  #
+# ================================================================== #
+
+elif page == "📐 Allocation":
+    st.title("📐 Asset Allocation Advisor")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        age = st.slider("Your current age", 20, 80, 35)
+    with col2:
+        retirement_age = st.slider("Target retirement age", age + 1, 80, max(age + 5, 65))
+
+    sector_weights = portfolio.get_sector_weights() if portfolio.positions else {}
+    position_weights = portfolio.get_position_weights() if portfolio.positions else {}
+
+    advisor = AllocationAdvisor()
+    advice = advisor.advise(age, retirement_age, sector_weights, position_weights)
+
+    # Allocation pie
+    fig = px.pie(
+        names=["US Equities", "International", "Real Estate", "Bonds", "Cash"],
+        values=[
+            advice.us_large_cap_pct,
+            advice.international_pct,
+            advice.real_estate_pct,
+            advice.bonds_pct,
+            advice.cash_pct,
+        ],
+        title=f"Recommended Allocation — Age {age}",
+        color_discrete_sequence=px.colors.qualitative.Set2,
+        hole=0.3,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Detail
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Equities", f"{advice.equity_pct:.0f}%")
+    col2.metric("Bonds", f"{advice.bonds_pct:.0f}%")
+    col3.metric("Cash Buffer", f"{advice.cash_pct:.0f}%")
+
+    st.info(f"💡 {advice.inflation_note}")
+
+    if advice.concentration_warnings:
+        st.subheader("⚠️ Concentration Issues")
+        for w in advice.concentration_warnings:
+            st.warning(w)
+
+    if advice.rebalancing_actions:
+        st.subheader("🔄 Rebalancing Actions")
+        for a in advice.rebalancing_actions:
+            st.info(f"→ {a}")
+
+
+# ================================================================== #
+#  PAGE 5: OPTIMIZER                                                   #
+# ================================================================== #
+
+elif page == "📈 Optimizer":
+    from config import OPTIMIZER, OPTIMIZER_PROFILES
+    from portfolio.optimizer import _ARS_TICKERS, PortfolioOptimizer
+
+    st.title("📈 Portfolio Optimizer")
+    st.caption(
+        "Construye una cartera óptima combinando Score Ajustado, Moat y Dividend Yield "
+        "con restricciones de riesgo según tu perfil de retiro. "
+        "💵 Todos los valores están denominados en **USD** (los ADRs argentinos cotizan en USD en NYSE/NASDAQ)."
+    )
+
+    # ------------------------------------------------------------------ #
+    #  Profile selector — persisted in session state                      #
+    # ------------------------------------------------------------------ #
+    _PROFILE_LABELS = {
+        "conservative": "🛡️  Conservador",
+        "moderate":     "⚖️  Moderado",
+        "aggressive":   "🚀 Agresivo",
+    }
+    _PROFILE_KEYS = {v: k for k, v in _PROFILE_LABELS.items()}
+
+    if "optimizer_profile_key" not in st.session_state:
+        # Restore saved profile from preferences
+        _saved_profile = {"Conservador": "conservative", "Moderado": "moderate", "Agresivo": "aggressive"}.get(
+            _prefs.default_profile, "conservative"
+        )
+        st.session_state.optimizer_profile_key = _saved_profile
+
+    prev_profile_key = st.session_state.optimizer_profile_key
+    profile_label = st.sidebar.radio(
+        "Perfil de riesgo",
+        list(_PROFILE_LABELS.values()),
+        index=list(_PROFILE_LABELS.keys()).index(prev_profile_key),
+        help="Conservador: preserva capital con dividendos. Moderado: balance crecimiento/ingreso. Agresivo: maximiza crecimiento a largo plazo.",
+    )
+    profile_key = _PROFILE_KEYS[profile_label]
+    profile_changed = profile_key != prev_profile_key
+    st.session_state.optimizer_profile_key = profile_key
+    prof = OPTIMIZER_PROFILES[profile_key]
+
+    # Auto-save profile on change — no manual button needed
+    if profile_changed and _prefs.default_profile != prof.name:
+        _prefs.default_profile = prof.name
+        _prefs.save()
+        st.toast(f"Perfil '{prof.name}' guardado como favorito", icon="💾")
+
+    max_tickers = st.sidebar.slider(
+        "Tickers a analizar", 10, len(st.session_state.universe), len(st.session_state.universe),
+        help="Reducir el universo acelera el análisis. El optimizador filtrará tickers por score mínimo y tipo.",
+    )
+    selected_universe = st.session_state.universe[:max_tickers]
+
+    if st.sidebar.button("🔄 Re-analizar universo", type="secondary"):
+        for k in ["optimizer_scored", "optimizer_universe", "optimizer_prev_result"]:
+            st.session_state.pop(k, None)
+        st.cache_data.clear()
+
+    # ------------------------------------------------------------------ #
+    #  Profile card (main area)                                           #
+    # ------------------------------------------------------------------ #
+    _PROFILE_DESC = {
+        "conservative": "Preservación de capital + ingreso por dividendos. Volatilidad controlada.",
+        "moderate":     "Balance entre crecimiento e ingreso. Exposición al riesgo controlada.",
+        "aggressive":   "Maximización de crecimiento a largo plazo. Mayor tolerancia al riesgo.",
+    }
+    with st.expander(f"📋 Perfil: **{prof.name}** — {_PROFILE_DESC[profile_key]}", expanded=profile_changed):
+        pc1, pc2, pc3, pc4, pc5 = st.columns(5)
+        pc1.metric("Pos. máx.", f"{prof.max_position_pct:.0f}%")
+        pc2.metric("Vol. máx.", f"{prof.max_volatility_pct:.0f}%")
+        pc3.metric("Div. mín.", f"{prof.min_dividend_yield_pct:.1f}%")
+        pc4.metric("Sector máx.", f"{prof.max_sector_pct:.0f}%")
+        pc5.metric("Min. posiciones", prof.min_positions)
+        st.caption(f"Pesos objetivo — Score: {prof.score_weight:.0%} · Dividendo: {prof.dividend_weight:.0%} · Moat: {prof.moat_weight:.0%}")
+
+    # ------------------------------------------------------------------ #
+    #  Gather scored tickers — cached in session_state per universe       #
+    # ------------------------------------------------------------------ #
+    universe_key = tuple(selected_universe)
+    if "optimizer_scored" not in st.session_state or st.session_state.get("optimizer_universe") != universe_key:
+        st.info("Analizando tickers del universo… (primera vez tarda ~30s, luego usa cache)")
+        ai_cfg = _get_ai_config(context="screener")
+        scored = []
+        prog = st.progress(0)
+        stat = st.empty()
+        for i, sym in enumerate(selected_universe):
+            stat.text(f"Analizando {sym}… ({i+1}/{len(selected_universe)})")
+            prog.progress((i + 1) / len(selected_universe))
+            try:
+                fund, _tech, _dec = cached_full_analysis(sym, ai_cfg.provider, ai_cfg.model, ai_cfg.enabled, ai_cfg.api_key)
+                scored.append({
+                    "symbol": sym,
+                    "adjusted_score": fund.adjusted_score,
+                    "total_score": fund.total_score,
+                    "dividend_yield": fund.dividend_yield or 0.0,
+                    "moat_score": getattr(fund, "moat_score", 0.0),
+                    "moat_classification": getattr(fund, "moat_classification", "None"),
+                    "sector": fund.sector or "Unknown",
+                    "company_name": fund.company_name,
+                })
+            except Exception as exc:
+                logger.error(f"Optimizer {sym}: {exc}")
+        prog.empty()
+        stat.empty()
+        if not scored:
+            st.error("No se pudo analizar ningún ticker.")
+            st.stop()
+        st.session_state.optimizer_scored = scored
+        st.session_state.optimizer_universe = universe_key
+    else:
+        scored = st.session_state.optimizer_scored
+        st.caption(f"✓ Análisis cacheado — {len(scored)} tickers · cambia perfil instantáneamente · usa 'Re-analizar' para refrescar datos")
+
+    # ------------------------------------------------------------------ #
+    #  Run optimizer                                                      #
+    # ------------------------------------------------------------------ #
+    with st.spinner("Optimizando cartera…"):
+        opt = PortfolioOptimizer(profile=profile_key)
+        current_weights = {}
+        try:
+            current_weights = portfolio.get_position_weights()
+        except Exception:
+            pass
+        result = opt.optimize(scored, current_weights=current_weights or None)
+
+    # ------------------------------------------------------------------ #
+    #  Profile-change delta banner                                        #
+    # ------------------------------------------------------------------ #
+    if profile_changed and "optimizer_prev_result" in st.session_state:
+        prev = st.session_state.optimizer_prev_result
+        prev_name = OPTIMIZER_PROFILES[prev_profile_key].name
+        d_ret = result.expected_return_pct - prev.expected_return_pct
+        d_vol = result.volatility_pct - prev.volatility_pct
+        d_sh  = result.sharpe_ratio - prev.sharpe_ratio
+        d_div = result.dividend_yield_pct - prev.dividend_yield_pct
+        def _delta_str(v, unit="%", positive_good=True):
+            sign = "+" if v >= 0 else ""
+            color = "green" if (v >= 0) == positive_good else "red"
+            return f'<span style="color:{color}">{sign}{v:.1f}{unit}</span>'
+        st.markdown(
+            f"**Cambio de perfil:** {prev_name} → {prof.name} &nbsp;|&nbsp; "
+            f"Retorno {_delta_str(d_ret)} &nbsp; "
+            f"Volatilidad {_delta_str(d_vol, positive_good=False)} &nbsp; "
+            f"Sharpe {_delta_str(d_sh)} &nbsp; "
+            f"Div Yield {_delta_str(d_div)}",
+            unsafe_allow_html=True,
+        )
+        # Top movers between profiles
+        prev_w = {a.symbol: a.weight_pct for a in prev.tickers}
+        curr_w = {a.symbol: a.weight_pct for a in result.tickers}
+        all_syms = set(prev_w) | set(curr_w)
+        movers = sorted(
+            [(s, curr_w.get(s, 0) - prev_w.get(s, 0)) for s in all_syms],
+            key=lambda x: -abs(x[1])
+        )[:6]
+        mover_parts = []
+        for sym, delta in movers:
+            if abs(delta) >= 0.5:
+                arrow = "▲" if delta > 0 else "▼"
+                mover_parts.append(f"{sym} {arrow}{abs(delta):.1f}%")
+        if mover_parts:
+            st.caption("Principales cambios en posiciones: " + " · ".join(mover_parts))
+
+    st.session_state.optimizer_prev_result = result
+
+    # ------------------------------------------------------------------ #
+    #  Status bar                                                         #
+    # ------------------------------------------------------------------ #
+    _method_badge = "🧮 Mean-Variance" if result.method == "mean-variance" else "⚖️ Score-weighted"
+    st.success(f"{_method_badge} · Perfil **{result.profile_name}** · {len(result.tickers)} posiciones")
+    if result.warnings:
+        for w in result.warnings:
+            st.warning(w)
+
+    # ------------------------------------------------------------------ #
+    #  Summary metrics row with deltas vs. profile limits                 #
+    # ------------------------------------------------------------------ #
+    mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+    mc1.metric("Retorno esperado", f"{result.expected_return_pct:.1f}%")
+    mc2.metric("Volatilidad", f"{result.volatility_pct:.1f}%",
+               delta=f"límite {prof.max_volatility_pct:.0f}%",
+               delta_color="off")
+    mc3.metric("Sharpe Ratio", f"{result.sharpe_ratio:.2f}")
+    mc4.metric("Div. Yield", f"{result.dividend_yield_pct:.2f}%",
+               delta=f"mín {prof.min_dividend_yield_pct:.1f}%",
+               delta_color="off")
+    mc5.metric("Score Promedio", f"{result.adjusted_score_avg:.0f}/100")
+
+    # ------------------------------------------------------------------ #
+    #  Tabs                                                               #
+    # ------------------------------------------------------------------ #
+    tab_cart, tab_front, tab_metrics, tab_rebal = st.tabs(
+        ["🧺 Cartera", "📉 Frontier", "📊 Métricas", "🔄 Rebalanceo"]
+    )
+
+    # ------------------------------------------------------------------ #
+    #  Tab 1: Cartera                                                     #
+    # ------------------------------------------------------------------ #
+    with tab_cart:
+        if not result.tickers:
+            st.warning("No hay posiciones en la cartera optimizada.")
+        else:
+            scored_map = {t["symbol"]: t for t in scored}
+            alloc_data = []
+            for a in result.tickers:
+                t = scored_map.get(a.symbol, {})
+                moat_cls = t.get("moat_classification", "None")
+                discount_note = f" (−{(1-OPTIMIZER.ars_risk_discount)*100:.0f}% ARS)" if a.score_discounted else ""
+                alloc_data.append({
+                    "Ticker": a.symbol,
+                    "Empresa": (t.get("company_name", a.symbol) or a.symbol)[:28],
+                    "Peso %": a.weight_pct,
+                    "Score": a.adjusted_score,
+                    "Moat": f"{_MOAT_EMOJI.get(moat_cls, '⚪')} {moat_cls}",
+                    "Div %": a.dividend_yield_pct,
+                    "Sector": a.sector,
+                    "Notas": ("🇦🇷" + discount_note) if a.is_ars else "",
+                })
+            df_alloc = pd.DataFrame(alloc_data)
+
+            # Horizontal bar chart — readable for many tickers
+            df_bar = df_alloc[df_alloc["Peso %"] > 0].sort_values("Peso %")
+            fig_bar = px.bar(
+                df_bar, x="Peso %", y="Ticker", orientation="h",
+                color="Score", color_continuous_scale="RdYlGn",
+                range_color=[40, 100],
+                title="Peso por ticker (coloreado por Score Ajustado)",
+                text="Peso %",
+            )
+            fig_bar.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+            fig_bar.add_vline(x=prof.max_position_pct, line_dash="dash",
+                              line_color="orange", annotation_text=f"máx {prof.max_position_pct:.0f}%")
+            fig_bar.update_layout(height=max(350, len(df_bar) * 22), yaxis_title="", coloraxis_showscale=False)
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+            # Weights table
+            st.dataframe(
+                df_alloc,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Peso %": st.column_config.ProgressColumn("Peso %", min_value=0, max_value=prof.max_position_pct * 1.5, format="%.1f%%"),
+                    "Score":  st.column_config.NumberColumn("Score", format="%.0f"),
+                    "Div %":  st.column_config.NumberColumn("Div %", format="%.2f%%"),
+                },
+            )
+
+            # Sector donut + pie side by side
+            if result.sector_weights:
+                col_sec, col_tick = st.columns(2)
+                with col_sec:
+                    sec_df = pd.DataFrame([{"Sector": k, "Peso %": v} for k, v in result.sector_weights.items()])
+                    fig_sec = px.pie(sec_df, values="Peso %", names="Sector", title="Por Sector", hole=0.4)
+                    fig_sec.update_traces(textposition="inside", textinfo="percent+label")
+                    st.plotly_chart(fig_sec, use_container_width=True)
+                with col_tick:
+                    # Only top-10 tickers in pie to keep it readable
+                    df_top = df_alloc.nlargest(10, "Peso %")
+                    others_pct = 100 - df_top["Peso %"].sum()
+                    if others_pct > 0.5:
+                        df_top = pd.concat([df_top, pd.DataFrame([{"Ticker": "Otros", "Peso %": others_pct}])], ignore_index=True)
+                    fig_pie = px.pie(df_top, values="Peso %", names="Ticker", title="Top-10 por Ticker", hole=0.3)
+                    fig_pie.update_traces(textposition="inside", textinfo="percent+label")
+                    st.plotly_chart(fig_pie, use_container_width=True)
+
+            if any(a.is_ars for a in result.tickers):
+                discount_pct = (1 - OPTIMIZER.ars_risk_discount) * 100
+                ars_syms = ", ".join(a.symbol for a in result.tickers if a.is_ars)
+                st.info(
+                    f"🇦🇷 **ADRs argentinos ({ars_syms}):** cotizan y liquidan en **USD** en NYSE/NASDAQ "
+                    f"— no hay conversión de moneda al comprar. Sin embargo, su valor en pesos argentinos "
+                    f"es vulnerable a devaluaciones y controles de capital. "
+                    f"Por eso, en perfil **{prof.name}**, se aplica un descuento de **{discount_pct:.0f}%** "
+                    "al Score Ajustado al calcular el peso óptimo (no afecta el precio ni el dividend yield reportado)."
+                )
+
+        if result.excluded:
+            with st.expander(f"Tickers excluidos de la optimización ({len(result.excluded)})"):
+                for sym, reason in result.excluded:
+                    st.caption(f"**{sym}** — {reason}")
+
+    # ------------------------------------------------------------------ #
+    #  Tab 2: Efficient Frontier                                          #
+    # ------------------------------------------------------------------ #
+    with tab_front:
+        if not result.frontier_returns:
+            st.info("Datos de precio insuficientes para calcular la Frontera Eficiente.")
+        else:
+            fig_front = px.scatter(
+                x=result.frontier_vols,
+                y=result.frontier_returns,
+                color=result.frontier_sharpes,
+                color_continuous_scale="RdYlGn",
+                labels={"x": "Volatilidad % (anual)", "y": "Retorno Esperado % (anual)", "color": "Sharpe"},
+                title=f"Frontera Eficiente — Monte Carlo ({OPTIMIZER.frontier_points} carteras)",
+            )
+            fig_front.add_scatter(
+                x=[result.volatility_pct],
+                y=[result.expected_return_pct],
+                mode="markers",
+                marker=dict(size=16, color="blue", symbol="star", line=dict(width=1, color="white")),
+                name=f"Cartera {prof.name}",
+            )
+            # Vol ceiling line
+            fig_front.add_vline(
+                x=prof.max_volatility_pct,
+                line_dash="dash", line_color="red",
+                annotation_text=f"Vol máx. {prof.max_volatility_pct:.0f}%",
+                annotation_position="top right",
+            )
+            fig_front.update_layout(height=520, legend=dict(yanchor="bottom", y=0.01, xanchor="right", x=0.99))
+            st.plotly_chart(fig_front, use_container_width=True)
+            st.caption(
+                "La línea roja marca el techo de volatilidad del perfil. "
+                "La estrella azul es la cartera óptima (máximo Sharpe dentro de las restricciones)."
+            )
+
+    # ------------------------------------------------------------------ #
+    #  Tab 3: Métricas + Constraint Compliance                            #
+    # ------------------------------------------------------------------ #
+    with tab_metrics:
+        m1, m2 = st.columns(2)
+
+        with m1:
+            st.subheader("Estadísticas de cartera")
+            st.markdown(f"""
+| Métrica | Valor |
+|---|---|
+| Retorno esperado | **{result.expected_return_pct:.1f}%** anual |
+| Volatilidad | **{result.volatility_pct:.1f}%** anual |
+| Sharpe Ratio | **{result.sharpe_ratio:.2f}** |
+| Dividend Yield | **{result.dividend_yield_pct:.2f}%** |
+| Score promedio | **{result.adjusted_score_avg:.0f}**/100 |
+| Moat promedio | **{result.moat_score_avg:.1f}**/20 |
+| Posiciones | **{len(result.tickers)}** |
+| Método | {result.method} |
+""")
+
+            st.subheader("Compliance de restricciones")
+            _checks = [
+                ("Volatilidad ≤ " + f"{prof.max_volatility_pct:.0f}%",
+                 result.volatility_pct <= prof.max_volatility_pct,
+                 f"{result.volatility_pct:.1f}%"),
+                ("Div. Yield ≥ " + f"{prof.min_dividend_yield_pct:.1f}%",
+                 result.dividend_yield_pct >= prof.min_dividend_yield_pct,
+                 f"{result.dividend_yield_pct:.2f}%"),
+                ("Pos. máx. ≤ " + f"{prof.max_position_pct:.0f}%",
+                 all(a.weight_pct <= prof.max_position_pct + 0.1 for a in result.tickers),
+                 f"máx actual {max((a.weight_pct for a in result.tickers), default=0):.1f}%"),
+                ("Sector máx. ≤ " + f"{prof.max_sector_pct:.0f}%",
+                 all(v <= prof.max_sector_pct + 0.1 for v in result.sector_weights.values()),
+                 f"máx actual {max(result.sector_weights.values(), default=0):.1f}%"),
+                ("Posiciones ≥ " + str(prof.min_positions),
+                 len(result.tickers) >= prof.min_positions,
+                 f"{len(result.tickers)} posiciones"),
+            ]
+            for label, ok, detail in _checks:
+                icon = "✅" if ok else "❌"
+                st.markdown(f"{icon} **{label}** — {detail}")
+
+        with m2:
+            st.subheader("Pesos por sector")
+            if result.sector_weights:
+                for sector, pct in result.sector_weights.items():
+                    ratio = pct / prof.max_sector_pct
+                    bar_pct = min(int(ratio * 100), 100)
+                    color = "#ff4444" if pct > prof.max_sector_pct else ("#ffbb33" if pct > prof.max_sector_pct * 0.8 else "#00C851")
+                    st.markdown(
+                        f"**{sector}** — {pct:.1f}% / {prof.max_sector_pct:.0f}%"
+                        f'<div style="background:#e8e8e8;border-radius:4px;height:8px;margin-bottom:6px;">'
+                        f'<div style="width:{bar_pct}%;background:{color};height:8px;border-radius:4px;"></div>'
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+
+    # ------------------------------------------------------------------ #
+    #  Tab 4: Rebalanceo                                                  #
+    # ------------------------------------------------------------------ #
+    with tab_rebal:
+        # Rebalancing frequency recommendation — always shown
+        if result.rebalance_frequency:
+            _freq_icon = {"Anual": "📅", "Semestral": "🗓️", "Trimestral": "⏱️"}.get(result.rebalance_frequency, "📅")
+            st.info(
+                f"{_freq_icon} **Frecuencia recomendada: {result.rebalance_frequency}** — "
+                f"{result.rebalance_rationale}"
+            )
+
+        if not result.rebalance_suggestions:
+            if not current_weights:
+                st.info(
+                    "Para ver las acciones de rebalanceo específicas, agrega tus posiciones actuales "
+                    "en la página 💼 **Portfolio**. El optimizador calculará cuánto comprar/vender de cada ticker."
+                )
+            else:
+                st.success("✅ Tu cartera actual ya está alineada con la asignación óptima.")
+        else:
+            buys  = [s for s in result.rebalance_suggestions if s.action == "BUY"]
+            sells = [s for s in result.rebalance_suggestions if s.action == "SELL"]
+            holds = [s for s in result.rebalance_suggestions if s.action == "HOLD"]
+
+            rb1, rb2, rb3 = st.columns(3)
+            rb1.metric("Compras", len(buys))
+            rb2.metric("Ventas", len(sells))
+            rb3.metric("Sin cambio", len(holds))
+
+            # Waterfall-style bar chart for delta
+            rebal_data = [
+                {
+                    "Ticker": s.symbol,
+                    "Actual %": s.current_pct,
+                    "Objetivo %": s.target_pct,
+                    "Δ %": s.delta_pct,
+                    "Acción": s.action,
+                }
+                for s in result.rebalance_suggestions
+                if abs(s.delta_pct) >= 0.5  # hide trivial changes
+            ]
+            df_rebal = pd.DataFrame(rebal_data)
+            if not df_rebal.empty:
+                fig_rebal = px.bar(
+                    df_rebal.sort_values("Δ %"),
+                    x="Δ %", y="Ticker", orientation="h",
+                    color="Δ %", color_continuous_scale="RdYlGn",
+                    range_color=[-20, 20],
+                    title="Δ Peso recomendado vs. cartera actual",
+                )
+                fig_rebal.add_vline(x=0, line_color="gray", line_width=1)
+                fig_rebal.update_layout(height=max(300, len(df_rebal) * 22), coloraxis_showscale=False)
+                st.plotly_chart(fig_rebal, use_container_width=True)
+
+            st.dataframe(
+                pd.DataFrame(rebal_data) if rebal_data else pd.DataFrame(
+                    [{"Ticker": s.symbol, "Actual %": s.current_pct, "Objetivo %": s.target_pct, "Δ %": s.delta_pct, "Acción": s.action}
+                     for s in result.rebalance_suggestions]
+                ),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Δ %": st.column_config.NumberColumn("Δ %", format="%.1f"),
+                },
+            )
+            st.caption(
+                "Solo se muestran movimientos ≥ 0.5%. Los pesos son porcentajes sobre el total de la cartera. "
+                "⚠️ Estas sugerencias son orientativas y no constituyen asesoramiento financiero. "
+                "Consultá con un asesor antes de ejecutar operaciones."
+            )
+
+
+# ================================================================== #
+#  PAGE 6: BACKTESTING                                                 #
+# ================================================================== #
+
+elif page == "📊 Backtesting":
+    st.title("📊 Backtesting Engine")
+    st.caption(
+        "Simula una cartera equal-weight de los top-N tickers por score ajustado "
+        "y compara su performance histórica vs el benchmark."
+    )
+    st.warning(
+        "⚠️ **Limitación conocida:** Los scores se calculan con fundamentals actuales "
+        "(yfinance no provee snapshots históricos). Las métricas de precio (CAGR, Sharpe, "
+        "Drawdown) son limpias. Los resultados miden si las empresas que hoy puntúan alto "
+        "también tuvieron buenos retornos históricos.",
+        icon="⚠️",
+    )
+
+    # ---- Configuración ----
+    with st.expander("⚙️ Configuración del backtest", expanded=True):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            period_years = st.selectbox(
+                "Período", [1, 3, 5, 10],
+                index=2,
+                format_func=lambda y: f"{y} año{'s' if y > 1 else ''}",
+            )
+        with col2:
+            top_n = st.slider("Top-N tickers", min_value=3, max_value=20, value=BACKTEST.default_top_n)
+        with col3:
+            benchmark = st.selectbox("Benchmark", ["SPY", "QQQ", "VTI", "BND"], index=0)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            _FREQ_OPTIONS = {
+                "Anual": "annual",
+                "Trimestral": "quarterly",
+                "Mensual": "monthly",
+                "Buy & Hold (sin rebalanceo)": "buy_and_hold",
+            }
+            freq_label = st.selectbox(
+                "Frecuencia de rebalanceo",
+                list(_FREQ_OPTIONS.keys()),
+                index=0,
+                help="Con qué frecuencia se redistribuye el capital en partes iguales entre los top-N tickers.",
+            )
+            rebalance_freq = _FREQ_OPTIONS[freq_label]
+        with col2:
+            universe_choice = st.selectbox(
+                "Universo",
+                ["Universo completo", "Solo US Large Cap", "Solo Argentina ADRs"],
+            )
+
+    _US_LARGE_CAP = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "BRK-B",
+                     "JPM", "V", "MA", "JNJ", "UNH", "PG", "KO", "HD", "XOM"]
+    _ARGENTINA_ADR = ["YPF", "PAM", "CEPU", "LOMA", "MELI", "GLOB", "TEO", "EDN"]
+
+    if universe_choice == "Solo US Large Cap":
+        backtest_universe = _US_LARGE_CAP
+    elif universe_choice == "Solo Argentina ADRs":
+        backtest_universe = _ARGENTINA_ADR
+    else:
+        backtest_universe = [t for t in st.session_state.universe if t not in (benchmark,)]
+
+    st.caption(f"Universo seleccionado: {len(backtest_universe)} tickers — {', '.join(backtest_universe[:10])}{'...' if len(backtest_universe) > 10 else ''}")
+
+    col_run, col_load = st.columns([2, 1])
+    run_btn = col_run.button("▶ Correr Backtest", type="primary", use_container_width=True)
+    saved_files = BacktestEngine.list_saved()
+    load_choice = col_load.selectbox(
+        "Cargar resultado guardado",
+        ["— nuevo —"] + [f.name for f in saved_files[:BACKTEST.results_max_saved]],
+        label_visibility="collapsed",
+    )
+
+    # ---- Load or run ----
+    bt_result: BacktestResult | None = None
+
+    if load_choice != "— nuevo —":
+        target = next((f for f in saved_files if f.name == load_choice), None)
+        if target:
+            try:
+                bt_result = BacktestEngine.load(target)
+                st.info(f"Resultado cargado: **{load_choice}**")
+            except Exception as e:
+                st.error(f"Error al cargar: {e}")
+
+    if run_btn:
+        with st.spinner(f"Obteniendo scores para {len(backtest_universe)} tickers..."):
+            ai_cfg = _get_ai_config(context="screener")
+            fund_results = []
+            prog = st.progress(0)
+            for i, sym in enumerate(backtest_universe):
+                try:
+                    fund, _tech, _dec = cached_full_analysis(
+                        sym, ai_cfg.provider, ai_cfg.model, ai_cfg.enabled, ai_cfg.api_key
+                    )
+                    fund_results.append(fund)
+                except Exception as exc:
+                    logger.warning(f"Backtest: skipping {sym} — {exc}")
+                prog.progress((i + 1) / len(backtest_universe))
+            prog.empty()
+
+        if not fund_results:
+            st.error("No se pudieron obtener datos fundamentales.")
+            st.stop()
+
+        with st.spinner(f"Calculando backtest {period_years}Y vs {benchmark} ({freq_label})..."):
+            engine = BacktestEngine()
+            bt_result = engine.run(
+                fund_results,
+                period_years=period_years,
+                top_n=top_n,
+                benchmark=benchmark,
+                rebalance_freq=rebalance_freq,
+            )
+            saved_path = engine.save(bt_result)
+            st.success(f"Backtest completado y guardado en `{saved_path.name}`")
+
+    # ---- Display results ----
+    if bt_result is None:
+        st.info("Configurá los parámetros y presioná **▶ Correr Backtest**, o cargá un resultado anterior.")
+        st.stop()
+
+    # Summary metrics
+    st.divider()
+    st.subheader("📈 Performance Summary")
+
+    alpha_color = "normal" if bt_result.alpha_pct >= 0 else "inverse"
+    rebal_label = bt_result.rebalance_freq.replace("_", " ").title()
+    st.caption(f"Rebalanceo: **{rebal_label}** · Top-{bt_result.top_n} · {bt_result.period_years}Y · vs {bt_result.benchmark}")
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric(
+        "Portfolio CAGR",
+        f"{bt_result.portfolio_cagr_pct:+.1f}%",
+        f"α {bt_result.alpha_pct:+.1f}% vs {bt_result.benchmark}",
+        delta_color=alpha_color,
+    )
+    col2.metric("Benchmark CAGR", f"{bt_result.benchmark_cagr_pct:+.1f}%")
+    col3.metric("Total Return Portfolio", f"{bt_result.portfolio_total_return_pct:+.1f}%")
+    col4.metric("Total Return Benchmark", f"{bt_result.benchmark_total_return_pct:+.1f}%")
+
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Sharpe Ratio", f"{bt_result.portfolio_sharpe:.2f}", help="(CAGR − Rf) / Vol total")
+    col2.metric(
+        "Sortino Ratio",
+        f"{getattr(bt_result, 'portfolio_sortino', 0):.2f}",
+        help="(CAGR − Rf) / Vol bajista — penaliza solo pérdidas",
+    )
+    col3.metric("Max Drawdown", f"{bt_result.portfolio_max_drawdown_pct:.1f}%")
+    col4.metric("Win Rate vs Bench", f"{bt_result.portfolio_win_rate_pct:.0f}%")
+    col5.metric("Calmar Ratio", f"{bt_result.calmar_ratio:.2f}", help="CAGR / |Max Drawdown|")
+
+    # ---- Charts ----
+    tab_curve, tab_drawdown, tab_scatter, tab_tickers = st.tabs(
+        ["📈 Equity Curve", "📉 Drawdown", "🔵 Score vs Retorno", "📋 Por Ticker"]
+    )
+
+    with tab_curve:
+        if bt_result.portfolio_curve and bt_result.benchmark_curve:
+            port_s = pd.Series(bt_result.portfolio_curve)
+            bench_s = pd.Series(bt_result.benchmark_curve)
+            port_s.index = pd.to_datetime(port_s.index)
+            bench_s.index = pd.to_datetime(bench_s.index)
+
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=port_s.index, y=port_s.values,
+                name=f"Top-{bt_result.top_n} Portfolio",
+                line=dict(color="#2196F3", width=2.5),
+            ))
+            fig.add_trace(go.Scatter(
+                x=bench_s.index, y=bench_s.values,
+                name=bt_result.benchmark,
+                line=dict(color="#FF9800", width=2, dash="dot"),
+            ))
+            fig.update_layout(
+                title=f"Equity Curve — {bt_result.period_years}Y (base = 100)",
+                yaxis_title="Valor Normalizado",
+                height=420,
+                legend=dict(orientation="h"),
+                hovermode="x unified",
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Sin datos de curva de equity.")
+
+    with tab_drawdown:
+        if bt_result.drawdown_curve:
+            dd_s = pd.Series(bt_result.drawdown_curve)
+            dd_s.index = pd.to_datetime(dd_s.index)
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=dd_s.index, y=dd_s.values,
+                name="Drawdown %",
+                fill="tozeroy",
+                line=dict(color="#F44336", width=1.5),
+                fillcolor="rgba(244,67,54,0.15)",
+            ))
+            fig.update_layout(
+                title="Portfolio Drawdown",
+                yaxis_title="Drawdown %",
+                height=300,
+                hovermode="x unified",
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+    with tab_scatter:
+        if bt_result.score_vs_return:
+            scatter_df = pd.DataFrame(bt_result.score_vs_return)
+            fig = px.scatter(
+                scatter_df,
+                x="score",
+                y="cagr_pct",
+                text="symbol",
+                color="cagr_pct",
+                color_continuous_scale="RdYlGn",
+                size=[8] * len(scatter_df),
+                title="Score Ajustado vs CAGR Histórico",
+                labels={"score": "Score Ajustado", "cagr_pct": "CAGR % (histórico)"},
+            )
+            fig.update_traces(textposition="top center", marker=dict(size=10))
+            # Correlation annotation
+            if len(scatter_df) > 3:
+                corr = scatter_df["score"].corr(scatter_df["cagr_pct"])
+                fig.add_annotation(
+                    xref="paper", yref="paper", x=0.02, y=0.97,
+                    text=f"Correlación score↔CAGR: r = {corr:.2f}",
+                    showarrow=False,
+                    bgcolor="rgba(255,255,255,0.8)",
+                    bordercolor="#888",
+                )
+            fig.add_hline(
+                y=bt_result.benchmark_cagr_pct,
+                line_dash="dash", line_color="orange",
+                annotation_text=f"{bt_result.benchmark} CAGR",
+            )
+            fig.update_layout(height=480, showlegend=False)
+            st.plotly_chart(fig, use_container_width=True)
+            st.caption("Cada punto es un ticker del universo. La línea naranja es el CAGR del benchmark.")
+
+    with tab_tickers:
+        if bt_result.ticker_results:
+            rows = [
+                {
+                    "Ticker": t.symbol,
+                    "Score": t.score,
+                    "CAGR %": t.cagr_pct,
+                    "Alpha %": t.alpha_pct,
+                    "Sharpe": t.sharpe,
+                    "Sortino": getattr(t, "sortino", 0),
+                    "Max DD %": t.max_drawdown_pct,
+                    "Volatilidad %": t.volatility_pct,
+                    "Win Rate %": t.win_rate_pct,
+                    "Retorno Total %": t.total_return_pct,
+                    "En Portfolio": "✅" if t.symbol in [r["symbol"] for r in bt_result.score_vs_return[:bt_result.top_n]] else "",
+                }
+                for t in sorted(bt_result.ticker_results, key=lambda x: x.score, reverse=True)
+            ]
+            tdf = pd.DataFrame(rows)
+            st.dataframe(
+                tdf,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "CAGR %":    st.column_config.NumberColumn(format="%.1f%%"),
+                    "Alpha %":   st.column_config.NumberColumn(format="%.1f%%"),
+                    "Sharpe":    st.column_config.NumberColumn(format="%.2f"),
+                    "Sortino":   st.column_config.NumberColumn(format="%.2f"),
+                    "Max DD %":  st.column_config.NumberColumn(format="%.1f%%"),
+                    "Win Rate %":st.column_config.NumberColumn(format="%.0f%%"),
+                },
+            )
+
+            # Download
+            csv = tdf.to_csv(index=False)
+            st.download_button(
+                "⬇️ Descargar CSV",
+                data=csv,
+                file_name=f"backtest_{bt_result.period_years}y_{bt_result.run_date[:10]}.csv",
+                mime="text/csv",
+            )
+
+    # Notes
+    if bt_result.notes:
+        with st.expander("📝 Notas del backtest"):
+            for note in bt_result.notes:
+                st.caption(note)
+
+
+# ================================================================== #
+#  PAGE 7: ALERTAS                                                     #
+# ================================================================== #
+#  PAGE 7: SIMULACIONES (Monte Carlo + Stress Test)                    #
+# ================================================================== #
+
+elif page == "🎲 Simulaciones":
+    from config import MONTE_CARLO
+    from portfolio.monte_carlo import MonteCarloSimulator
+    from portfolio.stress_test import StressTester
+
+    st.title("🎲 Simulaciones & Stress Testing")
+    st.caption(
+        "Proyecta tu portafolio a largo plazo con simulación Monte Carlo y evalúa "
+        "su resistencia ante crisis históricas. "
+        "💵 Valores en USD. Esta simulación es orientativa, no una garantía de resultados."
+    )
+
+    # ------------------------------------------------------------------ #
+    #  Sidebar controls                                                    #
+    # ------------------------------------------------------------------ #
+    st.sidebar.subheader("Parámetros de simulación")
+
+    horizon_years = st.sidebar.selectbox(
+        "Horizonte de proyección",
+        [5, 10, 15, 20, 25, 30],
+        index=3,
+        format_func=lambda y: f"{y} años",
+        help="Años desde hoy hasta la meta de retiro.",
+    )
+    initial_value = st.sidebar.number_input(
+        "Capital inicial (USD)",
+        min_value=1_000,
+        max_value=10_000_000,
+        value=100_000,
+        step=5_000,
+        format="%d",
+        help="Valor actual del portafolio en dólares.",
+    )
+    annual_withdrawal = st.sidebar.number_input(
+        "Retiro anual (USD, 0 = acumulación)",
+        min_value=0,
+        max_value=500_000,
+        value=0,
+        step=1_000,
+        format="%d",
+        help="Cuánto retirás cada año (fase de desacumulación). 0 si todavía estás acumulando.",
+    )
+    target_value = st.sidebar.number_input(
+        "Meta de retiro (USD)",
+        min_value=0,
+        max_value=20_000_000,
+        value=500_000,
+        step=10_000,
+        format="%d",
+        help="Valor objetivo del portafolio al final del horizonte. Se calcula la probabilidad de alcanzarlo.",
+    )
+    n_sims = st.sidebar.select_slider(
+        "Número de simulaciones",
+        options=[1_000, 2_000, 5_000, 10_000],
+        value=MONTE_CARLO.default_n_sims,
+        help="Más simulaciones = más precisión pero más lento. 10 000 tarda < 3s.",
+    )
+
+    # ------------------------------------------------------------------ #
+    #  Resolve symbols and weights from session state                      #
+    # ------------------------------------------------------------------ #
+    # Use optimizer result if available, otherwise equal-weight universe
+    opt_scored  = st.session_state.get("optimizer_scored", [])
+    opt_result  = st.session_state.get("optimizer_prev_result", None)
+
+    if opt_result and opt_result.tickers:
+        symbols = [a.symbol for a in opt_result.tickers]
+        weights = [a.weight_pct / 100 for a in opt_result.tickers]
+        w_arr   = pd.Series(weights, index=symbols)
+        sector_weights = opt_result.sector_weights
+        data_source = f"Portafolio optimizado ({opt_result.profile_name}) — {len(symbols)} posiciones"
+    else:
+        universe = st.session_state.get("universe", ["SPY"])
+        symbols  = [s for s in universe if s not in {"SPY", "QQQ", "VTI", "BND"}][:20]
+        weights  = None
+        # Build sector weights from SECTOR_MAP
+        sector_weights = {}
+        for sect, tickers in SECTOR_MAP.items():
+            count = sum(1 for t in symbols if t in tickers)
+            if count > 0:
+                sector_weights[sect] = count / len(symbols) * 100
+        data_source = f"Universo equal-weight ({len(symbols)} tickers)"
+
+    st.caption(f"📊 Fuente de datos: **{data_source}**. "
+               f"Usa el Optimizer para definir pesos específicos por perfil de riesgo.")
+
+    # ------------------------------------------------------------------ #
+    #  Tabs                                                                #
+    # ------------------------------------------------------------------ #
+    tab_mc, tab_stress, tab_custom = st.tabs(
+        ["📈 Monte Carlo", "🌪️ Stress Test", "🎯 Escenario personalizado"]
+    )
+
+    # ================================================================== #
+    #  Tab 1: Monte Carlo                                                  #
+    # ================================================================== #
+    with tab_mc:
+        run_mc = st.button("▶ Ejecutar simulación Monte Carlo", type="primary")
+
+        if not run_mc and "mc_result" not in st.session_state:
+            st.info(
+                "Configurá los parámetros en el sidebar y hacé clic en "
+                "**▶ Ejecutar simulación Monte Carlo** para comenzar."
+            )
+        else:
+            if run_mc:
+                with st.spinner(f"Ejecutando {n_sims:,} simulaciones × {horizon_years} años…"):
+                    import numpy as np
+                    w_np = np.array(weights) if weights else None
+                    sim = MonteCarloSimulator(symbols, w_np, seed=42)
+                    mc  = sim.run(
+                        horizon_years=horizon_years,
+                        n_sims=n_sims,
+                        initial_value=initial_value,
+                        annual_withdrawal=annual_withdrawal,
+                        target_value=target_value,
+                    )
+                st.session_state["mc_result"] = mc
+                st.session_state["mc_params"]  = {
+                    "horizon": horizon_years, "initial": initial_value,
+                    "withdrawal": annual_withdrawal, "target": target_value,
+                }
+
+            mc = st.session_state.get("mc_result")
+            if mc is None:
+                st.warning("No hay resultado de simulación disponible.")
+                st.stop()
+
+            if mc.warnings:
+                for w in mc.warnings:
+                    st.warning(w)
+
+            # ---- KPI row ----
+            k1, k2, k3, k4, k5 = st.columns(5)
+            k1.metric("Capital inicial", f"${initial_value:,.0f}")
+            k2.metric("Mediana a " + str(horizon_years) + "a", f"${mc.median_terminal:,.0f}",
+                      delta=f"{mc.median_cagr_pct:.1f}% CAGR")
+            k3.metric("Peor 10% (P10)", f"${mc.p10_terminal:,.0f}",
+                      delta=f"{mc.p10_cagr_pct:.1f}% CAGR", delta_color="inverse")
+            k4.metric("Mejor 10% (P90)", f"${mc.p90_terminal:,.0f}")
+            if target_value > 0:
+                k5.metric(f"Prob. meta ${target_value:,.0f}",
+                          f"{mc.prob_achieve_target_pct:.1f}%",
+                          delta="Probabilidad" , delta_color="off")
+            else:
+                k5.metric("Prob. ruina", f"{mc.prob_ruin_pct:.1f}%",
+                          delta_color="inverse")
+
+            st.divider()
+
+            # ---- Fan chart ----
+            if mc.fan_paths:
+                _BAND_COLORS = {
+                    5:  ("rgba(220,53,69,0.15)",  "rgba(220,53,69,0.25)"),
+                    10: ("rgba(255,193,7,0.15)",   "rgba(255,193,7,0.30)"),
+                    25: ("rgba(40,167,69,0.15)",   "rgba(40,167,69,0.30)"),
+                    50: ("rgba(23,162,184,0.0)",   "rgba(23,162,184,0.0)"),
+                }
+                years_list = mc.years
+                fan_chart = go.Figure()
+
+                # Shaded bands: P5-P95, P10-P90, P25-P75
+                for lo, hi in [(5, 95), (10, 90), (25, 75)]:
+                    lo_vals = [mc.fan_paths[y][lo] for y in years_list]
+                    hi_vals = [mc.fan_paths[y][hi] for y in years_list]
+                    fill_color = _BAND_COLORS[lo][0]
+                    fan_chart.add_trace(go.Scatter(
+                        x=years_list + years_list[::-1],
+                        y=hi_vals + lo_vals[::-1],
+                        fill="toself", fillcolor=fill_color,
+                        line=dict(color="rgba(0,0,0,0)"),
+                        name=f"P{lo}–P{hi}", hoverinfo="skip",
+                    ))
+
+                # Median line
+                median_vals = [mc.fan_paths[y][50] for y in years_list]
+                fan_chart.add_trace(go.Scatter(
+                    x=years_list, y=median_vals,
+                    mode="lines", line=dict(color="#17A2B8", width=2.5),
+                    name="Mediana (P50)",
+                ))
+
+                # P10 pessimistic line
+                p10_vals = [mc.fan_paths[y][10] for y in years_list]
+                fan_chart.add_trace(go.Scatter(
+                    x=years_list, y=p10_vals,
+                    mode="lines", line=dict(color="#DC3545", width=1.5, dash="dot"),
+                    name="Pesimista (P10)",
+                ))
+
+                # P90 optimistic line
+                p90_vals = [mc.fan_paths[y][90] for y in years_list]
+                fan_chart.add_trace(go.Scatter(
+                    x=years_list, y=p90_vals,
+                    mode="lines", line=dict(color="#28A745", width=1.5, dash="dot"),
+                    name="Optimista (P90)",
+                ))
+
+                # Target line
+                if target_value > 0:
+                    fan_chart.add_hline(
+                        y=target_value, line_dash="dash", line_color="gold", line_width=2,
+                        annotation_text=f"Meta: ${target_value:,.0f}",
+                        annotation_position="right",
+                    )
+
+                fan_chart.update_layout(
+                    title=f"Fan Chart — {n_sims:,} simulaciones × {horizon_years} años",
+                    xaxis_title="Años desde hoy",
+                    yaxis_title="Valor del portafolio (USD)",
+                    yaxis_tickformat="$,.0f",
+                    height=500,
+                    legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
+                    hovermode="x unified",
+                )
+                st.plotly_chart(fan_chart, use_container_width=True)
+                st.caption(
+                    "Las bandas muestran el rango de resultados posibles. "
+                    "La línea azul es la mediana; la roja punteada el peor 10%; la verde el mejor 10%. "
+                    "⚠️ Ajuste conservador aplicado: +10% volatilidad, −20% retorno esperado vs. historia."
+                )
+
+            # ---- Terminal value histogram ----
+            if mc.fan_paths:
+                terminal_data = {
+                    "P5":  mc.fan_paths[horizon_years][5],
+                    "P10": mc.fan_paths[horizon_years][10],
+                    "P25": mc.fan_paths[horizon_years][25],
+                    "P50": mc.fan_paths[horizon_years][50],
+                    "P75": mc.fan_paths[horizon_years][75],
+                    "P90": mc.fan_paths[horizon_years][90],
+                    "P95": mc.fan_paths[horizon_years][95],
+                }
+                df_terminal = pd.DataFrame([
+                    {"Percentil": k, "Valor USD": v, "CAGR %": round(((v/initial_value)**(1/horizon_years)-1)*100, 1) if v > 0 else 0}
+                    for k, v in terminal_data.items()
+                ])
+                st.subheader(f"Distribución de resultados a {horizon_years} años")
+                st.dataframe(
+                    df_terminal,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Valor USD": st.column_config.NumberColumn("Valor USD", format="$%,.0f"),
+                        "CAGR %":   st.column_config.NumberColumn("CAGR %", format="%.1f%%"),
+                    },
+                )
+
+            # Disclaimers
+            with st.expander("ℹ️ Metodología y limitaciones"):
+                st.markdown(f"""
+**Metodología:** Block Bootstrap ({mc.n_weeks_history} semanas de historia real, bloques de 4 semanas).
+No asume distribución normal — captura fat tails y autocorrelación de corto plazo.
+
+**Ajuste conservador aplicado:**
+- Volatilidad histórica × **{MONTE_CARLO.vol_adjustment:.0%}** (+10%)
+- Retorno esperado × **{MONTE_CARLO.mean_haircut:.0%}** (−20%)
+
+**Por qué ser conservador:** Los retornos de 2010-2024 fueron excepcionales.
+La prima de riesgo histórica del S&P 500 (~7% real) probablemente no se repita a la misma tasa.
+
+**Limitaciones:** Esta simulación no predice el futuro. Los retornos pasados no garantizan resultados futuros.
+No considera inflación, impuestos, cambios en la asignación de activos, ni eventos imprevisibles.
+Consultá con un asesor financiero certificado antes de tomar decisiones de inversión.
+                """)
+
+    # ================================================================== #
+    #  Tab 2: Stress Test                                                  #
+    # ================================================================== #
+    with tab_stress:
+        st.subheader("Simulación de crisis históricas")
+        st.caption(
+            "Impacto estimado sobre el portafolio actual en cada crisis, "
+            "calculado desde los pesos por sector del optimizador."
+        )
+
+        if not sector_weights:
+            st.info("Ejecutá el Optimizer primero para obtener pesos por sector.")
+        else:
+            tester = StressTester()
+            stress_results = tester.run(sector_weights, initial_value=initial_value)
+
+            # Summary table
+            stress_data = []
+            for r in stress_results:
+                color_rel = "🟢" if r.better_than_spy else "🔴"
+                stress_data.append({
+                    "Escenario":         r.scenario.name,
+                    "Caída cartera %":   r.portfolio_drawdown_pct,
+                    "Caída SPY %":       r.benchmark_drawdown_pct,
+                    "vs SPY":            f"{color_rel} {r.relative_performance_pct:+.1f}%",
+                    "Pérdida USD":       r.portfolio_loss_usd,
+                    "Valor mínimo":      r.portfolio_trough_value,
+                    "Recuperación est.": f"{r.recovery_years_est:.1f} años",
+                })
+
+            df_stress = pd.DataFrame(stress_data)
+            st.dataframe(
+                df_stress,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Caída cartera %": st.column_config.NumberColumn(
+                        "Caída cartera %", format="%.1f%%"),
+                    "Caída SPY %": st.column_config.NumberColumn(
+                        "Caída SPY %", format="%.1f%%"),
+                    "Pérdida USD": st.column_config.NumberColumn(
+                        "Pérdida USD", format="$%,.0f"),
+                    "Valor mínimo": st.column_config.NumberColumn(
+                        "Valor mínimo", format="$%,.0f"),
+                },
+            )
+
+            # Bar chart comparison
+            fig_stress = go.Figure()
+            names  = [r.scenario.name.split("—")[0].strip() for r in stress_results]
+            port_dd = [r.portfolio_drawdown_pct for r in stress_results]
+            spy_dd  = [r.benchmark_drawdown_pct  for r in stress_results]
+
+            fig_stress.add_trace(go.Bar(
+                name="Cartera actual", x=names, y=port_dd,
+                marker_color="#17A2B8", text=[f"{v:.1f}%" for v in port_dd],
+                textposition="outside",
+            ))
+            fig_stress.add_trace(go.Bar(
+                name="SPY (benchmark)", x=names, y=spy_dd,
+                marker_color="#DC3545", text=[f"{v:.1f}%" for v in spy_dd],
+                textposition="outside",
+            ))
+            fig_stress.update_layout(
+                barmode="group",
+                title="Caída máxima por escenario: Cartera vs SPY",
+                yaxis_title="Caída % (negativo = pérdida)",
+                yaxis_tickformat=".0f%",
+                height=420,
+                legend=dict(yanchor="bottom", y=0.01, xanchor="right", x=0.99),
+            )
+            st.plotly_chart(fig_stress, use_container_width=True)
+
+            # Sector detail for worst scenario
+            worst = stress_results[0]
+            with st.expander(f"📊 Detalle por sector — {worst.scenario.name}"):
+                st.markdown(f"**Descripción:** {worst.scenario.description}")
+                sec_df = pd.DataFrame([
+                    {"Sector": s, "Shock %": v,
+                     "Peso cartera %": round(sector_weights.get(s, 0), 1),
+                     "Impacto %": round(v * sector_weights.get(s, 0) / 100, 1)}
+                    for s, v in sorted(worst.sector_impact.items(),
+                                       key=lambda x: x[1])
+                ])
+                st.dataframe(sec_df, use_container_width=True, hide_index=True,
+                             column_config={
+                                 "Shock %": st.column_config.NumberColumn("Shock %", format="%.1f%%"),
+                                 "Peso cartera %": st.column_config.NumberColumn("Peso cartera %", format="%.1f%%"),
+                                 "Impacto %": st.column_config.NumberColumn("Impacto %", format="%.1f%%"),
+                             })
+
+            st.caption(
+                "Los shocks son estimaciones calibradas con datos históricos reales. "
+                "Los resultados son ilustrativos — la magnitud real de una crisis depende "
+                "de muchos factores no modelables. ⚠️ No constituye asesoramiento financiero."
+            )
+
+    # ================================================================== #
+    #  Tab 3: Escenario personalizado                                      #
+    # ================================================================== #
+    with tab_custom:
+        st.subheader("Crear escenario personalizado")
+        st.caption("Definí una caída uniforme y calculá el impacto sobre tu portafolio.")
+
+        c1, c2, c3 = st.columns(3)
+        custom_drop = c1.slider(
+            "Caída del mercado (%)", min_value=-80, max_value=-5, value=-30, step=5,
+            help="Caída uniforme aplicada a todos los sectores.",
+        )
+        custom_months = c2.slider(
+            "Duración (meses)", min_value=1, max_value=36, value=12,
+        )
+        custom_recovery = c3.slider(
+            "Recuperación estimada (meses)", min_value=6, max_value=120, value=36,
+        )
+
+        if st.button("📊 Calcular impacto"):
+            from portfolio.stress_test import StressTester
+            if not sector_weights:
+                st.warning("Necesitás pesos por sector. Ejecuta el Optimizer primero.")
+            else:
+                r = StressTester.custom_scenario(
+                    name="Escenario personalizado",
+                    equity_shock_pct=float(custom_drop),
+                    duration_months=custom_months,
+                    recovery_months=custom_recovery,
+                    sector_weights=sector_weights,
+                    initial_value=float(initial_value),
+                )
+                cc1, cc2, cc3, cc4 = st.columns(4)
+                cc1.metric("Caída cartera", f"{r.portfolio_drawdown_pct:.1f}%",
+                           delta_color="inverse")
+                cc2.metric("Pérdida USD", f"${abs(r.portfolio_loss_usd):,.0f}",
+                           delta_color="inverse")
+                cc3.metric("Valor mínimo", f"${r.portfolio_trough_value:,.0f}")
+                cc4.metric("Recuperación est.", f"{r.recovery_years_est:.1f} años")
+
+                st.progress(min(int(abs(r.portfolio_drawdown_pct)), 100),
+                            text=f"Severidad: {abs(r.portfolio_drawdown_pct):.1f}% de caída")
+
+    st.divider()
+    st.caption(
+        "⚠️ **Aviso:** Todas las simulaciones son herramientas educativas. "
+        "Los resultados no predicen el futuro ni constituyen asesoramiento financiero. "
+        "Consultá con un asesor certificado antes de tomar decisiones de inversión."
+    )
+
+
+# ================================================================== #
+
+elif page == "🔔 Alertas":
+    from alerts.engine import AlertEngine
+    from alerts.reporter import ReportGenerator
+    from alerts.store import AlertSeverity, alert_store
+
+    st.title("🔔 Alertas & Reportes")
+    st.caption(
+        "Monitoreo proactivo del universo de inversión. "
+        "Detecta cambios de señal, caídas de score y nuevas oportunidades. "
+        "Genera reportes PDF profesionales."
+    )
+
+    # ------------------------------------------------------------------ #
+    #  Quick stats                                                         #
+    # ------------------------------------------------------------------ #
+    history = alert_store.get_history(limit=200)
+    critical_count = sum(1 for a in history if a.severity == AlertSeverity.CRITICAL)
+    warning_count  = sum(1 for a in history if a.severity == AlertSeverity.WARNING)
+    info_count     = sum(1 for a in history if a.severity == AlertSeverity.INFO)
+
+    qs1, qs2, qs3, qs4 = st.columns(4)
+    qs1.metric("Total alertas", len(history))
+    qs2.metric("🔴 Críticas", critical_count)
+    qs3.metric("🟡 Advertencias", warning_count)
+    qs4.metric("🔵 Info", info_count)
+
+    st.divider()
+
+    # ------------------------------------------------------------------ #
+    #  Actions row                                                         #
+    # ------------------------------------------------------------------ #
+    col_run, col_report, col_clear = st.columns([2, 2, 1])
+
+    with col_run:
+        st.subheader("🔍 Análisis de alertas")
+        st.caption(
+            "Analiza el universo completo contra el estado guardado y dispara "
+            "alertas si se detectan cambios significativos. "
+            "Primera ejecución: solo guarda baseline (no dispara alertas)."
+        )
+        if st.button("▶ Ejecutar análisis ahora", type="primary", use_container_width=True):
+            ai_cfg = _get_ai_config(context="screener")
+            scored_for_alerts = []
+            with st.spinner("Analizando universo para alertas…"):
+                prog = st.progress(0)
+                universe = st.session_state.universe
+                for i, sym in enumerate(universe):
+                    prog.progress((i + 1) / len(universe))
+                    try:
+                        fund, _t, dec = cached_full_analysis(
+                            sym, ai_cfg.provider, ai_cfg.model,
+                            ai_cfg.enabled, ai_cfg.api_key
+                        )
+                        scored_for_alerts.append({
+                            "symbol":              sym,
+                            "company_name":        fund.company_name,
+                            "adjusted_score":      fund.adjusted_score,
+                            "total_score":         fund.total_score,
+                            "moat_bonus":          getattr(fund, "moat_bonus", 0),
+                            "signal":              getattr(dec, "action", ""),
+                            "moat_classification": getattr(fund, "moat_classification", "None"),
+                            "moat_score":          getattr(fund, "moat_score", 0),
+                            "dividend_yield":      fund.dividend_yield or 0,
+                            "sector":              fund.sector or "Unknown",
+                        })
+                    except Exception as exc:
+                        logger.error(f"Alert scan {sym}: {exc}")
+                prog.empty()
+
+            engine = AlertEngine()
+            fired  = engine.run(scored_for_alerts)
+
+            if fired:
+                st.success(f"✅ {len(fired)} alertas detectadas y registradas.")
+                for a in fired[:10]:
+                    icon = {"critical": "🔴", "warning": "🟡", "info": "🔵"}.get(a.severity, "•")
+                    st.write(f"{icon} {a.message}")
+                if len(fired) > 10:
+                    st.caption(f"… y {len(fired) - 10} más. Ver historial abajo.")
+            else:
+                st.info("Sin cambios significativos detectados en esta ejecución.")
+            st.rerun()
+
+    with col_report:
+        st.subheader("📄 Reporte PDF")
+        st.caption(
+            "Genera un reporte PDF con el scorecard completo, oportunidades, "
+            "señales de riesgo y tabla del universo. "
+            "Requiere haber ejecutado al menos una vez el screener."
+        )
+        period_label = st.text_input(
+            "Período del reporte",
+            value=__import__("datetime").datetime.now().strftime("%B %Y").capitalize(),
+            help="Ej: 'Mayo 2026', 'Q2 2026'",
+        )
+        if st.button("📄 Generar reporte PDF", use_container_width=True):
+            scored_cache = st.session_state.get("optimizer_scored", [])
+            if not scored_cache:
+                st.warning(
+                    "Primero ejecuta el análisis en 🏠 Screener o 📈 Optimizer "
+                    "para tener datos del universo."
+                )
+            else:
+                with st.spinner("Generando reporte PDF…"):
+                    try:
+                        gen  = ReportGenerator()
+                        path = gen.generate(scored_cache, period=period_label)
+                        with open(path, "rb") as f:
+                            pdf_bytes = f.read()
+                        st.download_button(
+                            label="⬇️ Descargar PDF",
+                            data=pdf_bytes,
+                            file_name=__import__("pathlib").Path(path).name,
+                            mime="application/pdf",
+                            use_container_width=True,
+                        )
+                        st.success(f"Reporte generado: `{path}`")
+                    except Exception as exc:
+                        st.error(f"Error generando reporte: {exc}")
+                        logger.error(f"Report generation error: {exc}")
+
+    with col_clear:
+        st.subheader("🗑️ Limpiar")
+        st.caption("Elimina el historial de alertas registradas.")
+        if st.button("Limpiar historial", use_container_width=True):
+            alert_store.clear_history()
+            st.rerun()
+
+    st.divider()
+
+    # ------------------------------------------------------------------ #
+    #  Alert history table                                                 #
+    # ------------------------------------------------------------------ #
+    st.subheader("📋 Historial de alertas")
+
+    if not history:
+        st.info(
+            "No hay alertas registradas aún. "
+            "Ejecuta el análisis de alertas para comenzar a monitorear el universo."
+        )
+    else:
+        _SEVERITY_ICON = {
+            AlertSeverity.CRITICAL: "🔴",
+            AlertSeverity.WARNING:  "🟡",
+            AlertSeverity.INFO:     "🔵",
+        }
+        _TYPE_LABEL = {
+            "signal_change": "Cambio de señal",
+            "score_drop":    "Caída de score",
+            "score_surge":   "Suba de score",
+            "opportunity":   "Oportunidad",
+            "moat_change":   "Cambio de moat",
+        }
+
+        df_hist = pd.DataFrame([
+            {
+                "Fecha":    a.fired_at.strftime("%d/%m/%Y %H:%M") if a.fired_at else "",
+                "Sev.":     _SEVERITY_ICON.get(a.severity, "•"),
+                "Tipo":     _TYPE_LABEL.get(a.alert_type, a.alert_type),
+                "Ticker":   a.symbol,
+                "Mensaje":  a.message,
+            }
+            for a in history[:100]
+        ])
+        st.dataframe(df_hist, use_container_width=True, hide_index=True)
+
+    # ------------------------------------------------------------------ #
+    #  Scheduler instructions                                              #
+    # ------------------------------------------------------------------ #
+    with st.expander("⚙️ Cómo automatizar alertas (scheduler en background)"):
+        st.markdown("""
+**Para recibir alertas automáticas sin abrir el dashboard:**
+
+```bash
+# Desde la raíz del proyecto:
+python scripts/run_scheduler.py
+```
+
+El scheduler:
+- Corre el análisis completo cada `ALERT_INTERVAL_HOURS` horas (default: 24h)
+- Genera el reporte PDF el día `REPORT_DAY` de cada mes a las 08:00
+- Envía alertas por email y/o Telegram si están configurados en `.env`
+
+**Variables de entorno relevantes:**
+```
+ALERT_INTERVAL_HOURS=24    # cada cuántas horas revisar alertas
+REPORT_DAY=1               # día del mes para el reporte
+EMAIL_FROM=...             # habilita alertas por email
+TELEGRAM_TOKEN=...         # habilita alertas por Telegram
+```
+
+Para correr en background (macOS/Linux):
+```bash
+nohup python scripts/run_scheduler.py &> logs/scheduler.log &
+```
+        """)
+
+
+# ================================================================== #
+#  PAGE 8: SETTINGS                                                    #
+# ================================================================== #
+
+elif page == "ℹ️ About":
+    page_about()
+
+elif page == "⚙️ Settings":
+    st.title("⚙️ Settings")  # noqa: RUF001
+
+    st.subheader("Stock Universe")
+    universe_text = st.text_area(
+        "Tickers (one per line or comma-separated)",
+        value="\n".join(st.session_state.universe),
+        height=200,
+    )
+    col_save, col_restore = st.columns(2)
+    with col_save:
+        if st.button("Save Universe"):
+            raw = universe_text.replace(",", "\n").split()
+            st.session_state.universe = [t.upper().strip() for t in raw if t.strip()]
+            _prefs.last_used_universe = list(st.session_state.universe)
+            _prefs.save()
+            st.toast(f"Universo guardado: {len(st.session_state.universe)} tickers", icon="✅")
+    with col_restore:
+        if _prefs.favorite_universe and st.button("↩ Restaurar favorito", help=f"{len(_prefs.favorite_universe)} tickers guardados"):
+            st.session_state.universe = list(_prefs.favorite_universe)
+            st.toast(f"Universo favorito restaurado: {len(_prefs.favorite_universe)} tickers", icon="↩")
+            st.rerun()
+
+    st.divider()
+    st.subheader("📌 Watchlist")
+    watched_text = st.text_area(
+        "Tickers a seguir (uno por línea)",
+        value="\n".join(_prefs.watched_tickers),
+        height=100,
+        help="Tickers que querés monitorear de cerca. Se guardan automáticamente.",
+    )
+    if st.button("Guardar Watchlist"):
+        raw_w = watched_text.replace(",", "\n").split()
+        _prefs.watched_tickers = [t.upper().strip() for t in raw_w if t.strip()]
+        _prefs.save()
+        st.toast(f"Watchlist guardada: {len(_prefs.watched_tickers)} tickers", icon="📌")
+
+    st.divider()
+    st.subheader("🤖 AI Analysis")
+    st.caption("Activá un modelo de AI para reemplazar el scoring rule-based con análisis cualitativo.")
+
+    _MODEL_OPTIONS = {
+        "Claude (Anthropic)": ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5-20251001"],
+        "GPT-4o (OpenAI)": ["gpt-4o", "gpt-4o-mini"],
+        "xAI / Grok (via Hermes OAuth)": ["grok-4.3", "grok-4.20-0309-non-reasoning", "grok-4.20-0309-reasoning", "grok-build-0.1"],
+        "Hermes / Nous Research": [
+            "nousresearch/hermes-4-70b",
+            "nousresearch/hermes-4-405b",
+            "openrouter/owl-alpha",
+        ],
+    }
+    _PROVIDER_KEY_TO_LABEL = {
+        "claude": "Claude (Anthropic)",
+        "openai": "GPT-4o (OpenAI)",
+        "xai": "xAI / Grok (via Hermes OAuth)",
+        "nous": "Hermes / Nous Research",
+    }
+    current_provider = st.session_state.get("ai_provider", "claude")
+    default_provider_label = _PROVIDER_KEY_TO_LABEL.get(current_provider, "Claude (Anthropic)")
+    provider_label = st.selectbox("Proveedor", list(_MODEL_OPTIONS.keys()),
+                                  index=list(_MODEL_OPTIONS.keys()).index(default_provider_label))
+    if "Claude" in provider_label:
+        provider_key = "claude"
+    elif "xAI" in provider_label or "Grok" in provider_label:
+        provider_key = "xai"
+    elif "Nous" in provider_label or "Hermes" in provider_label:
+        provider_key = "nous"
+    else:
+        provider_key = "openai"
+
+    model_list = _MODEL_OPTIONS[provider_label]
+    current_model = st.session_state.get("ai_model", model_list[0])
+    model_index = model_list.index(current_model) if current_model in model_list else 0
+    ai_model_sel = st.selectbox("Modelo", model_list, index=model_index)
+
+    if provider_key in ("nous", "xai"):
+        st.info("🔐 Usa tu sesión local de Hermes OAuth. La API key es opcional.")
+        st.session_state.ai_enabled = True
+    ai_key_input = st.text_input(
+        "API Key" + (" (opcional para Hermes)" if provider_key == "nous" else ""),
+        type="password",
+        value=st.session_state.get("ai_api_key", ""),
+        placeholder="sk-ant-... / sk-... / dejar vacío si usás hermes login",
+    )
+    use_in_screener = st.toggle(
+        "Usar AI también en el Screener",
+        value=st.session_state.get("ai_use_in_screener", False),
+        help="Desactivado por defecto. El Screener usa scoring rule-based (rápido y sin costo).",
+    )
+    if use_in_screener:
+        n = len(st.session_state.get("universe", []))
+        st.warning(
+            f"⚠️ Activar AI en el Screener hará **{n} llamadas al API** por cada refresh "
+            f"(~{n * 2}–{n * 5} segundos y costo real de tokens). "
+            "Recomendado solo para universos pequeños (<10 tickers)."
+        )
+    ai_enabled_now = st.session_state.get("ai_enabled", False)
+    st.caption(f"Estado actual: {'🟢 AI activo' if ai_enabled_now else '⚪ Usando scoring clásico'} | Screener: {'🤖 AI' if use_in_screener else '⚡ Rule-based'}")
+
+    if st.button("Guardar configuración AI", type="primary"):
+        st.session_state.ai_provider = provider_key
+        st.session_state.ai_model = ai_model_sel
+        st.session_state.ai_api_key = ai_key_input
+        st.session_state.ai_use_in_screener = use_in_screener
+        # Nous activates via local hermes session even without explicit API key
+        ai_on = bool(ai_key_input.strip()) or provider_key in ("nous", "xai")
+        prev_provider = st.session_state.get("ai_provider", "")
+        prev_model = st.session_state.get("ai_model", "")
+        st.session_state.ai_enabled = ai_on
+        _save_ai_config_to_env(provider_key, ai_model_sel, ai_key_input, ai_on, use_in_screener)
+        # Only clear Streamlit cache if provider/model changed — avoids slow screener reload
+        if provider_key != prev_provider or ai_model_sel != prev_model:
+            st.cache_data.clear()
+        if provider_key == "xai":
+            st.success(f"✅ AI activado — {ai_model_sel} vía xAI OAuth (Hermes).")
+        elif provider_key == "nous":
+            st.success(f"✅ AI activado — {ai_model_sel} vía Hermes (sesión local).")
+        elif ai_key_input.strip():
+            st.success(f"✅ AI activado — {ai_model_sel}.")
+        else:
+            st.info("API Key vacía — se usará el scoring clásico.")
+
+    st.divider()
+    st.subheader("Cache")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Clear All Cache", type="secondary"):
+            cache.clear_all()
+            st.cache_data.clear()
+            st.success("Cache cleared — next analysis will re-fetch all data")
+    with col2:
+        st.caption("Cache stores fetched data for 24h to avoid API rate limits.")
+
+    st.divider()
+    st.caption("Retirement Advisor v8.0 — datos de Yahoo Finance (yfinance). No constituye asesoramiento financiero.")
+
+
+# ------------------------------------------------------------------ #
+#  About page                                                          #
+# ------------------------------------------------------------------ #
+
+def page_about():
+    st.title("ℹ️ About — Retirement Advisor")
+    st.caption("v8.0 — Fase 8: Producción Ready")
+
+    # Version table
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Versión", "8.0")
+    col2.metric("Tickers en universo", len(st.session_state.get("universe", DEFAULT_TICKERS)))
+    col3.metric("Tests", "133 passing")
+
+    st.divider()
+
+    # Config status
+    st.subheader("Estado de configuración")
+    issues = st.session_state.get("config_issues", [])
+    if not issues:
+        st.info("Validación de configuración no disponible. Recargá la página.")
+    else:
+        for level, msg in issues:
+            if level == "error":
+                st.error(msg, icon="🔴")
+            elif level == "warning":
+                st.warning(msg, icon="🟡")
+            elif "Hermes OAuth" in msg:
+                st.success(msg, icon="🔐")
+            else:
+                st.success(msg, icon="✅")
+
+    st.divider()
+
+    # Feature summary
+    st.subheader("Módulos activos")
+    st.markdown("""
+    | Módulo | Descripción |
+    |--------|-------------|
+    | **Screener** | Ranking de 38+ tickers con score ajustado (0–100) y señal |
+    | **Stock Analysis** | Análisis profundo: Piotroski, Consistency, Economic Moat, AI |
+    | **Portfolio Tracker** | Posiciones, P&L, pesos por sector |
+    | **Asset Allocation** | Regla conservadora acciones/bonos/cash por edad |
+    | **Optimizer** | Mean-Variance SLSQP + 3 perfiles de riesgo |
+    | **Backtesting** | Curva de equity histórica, Sharpe, Sortino, Calmar |
+    | **Simulaciones** | Monte Carlo 10k sims + Stress Test 6 crisis históricas |
+    | **Alertas** | Motor inteligente con debounce + email/Telegram + PDF |
+    """)
+
+    st.divider()
+
+    # Score formula
+    st.subheader("Fórmula del Score Ajustado")
+    st.code(
+        "adjusted_score = min(\n"
+        "    fundamental_score        (0–100)\n"
+        "  + consistency_score        (0–15)   # estabilidad ROE/EPS/márgenes\n"
+        "  + piotroski_bonus          (0–12)   # 9 checks YoY de calidad contable\n"
+        "  + moat_bonus               (0–10)   # min(moat_score × 0.5, 10)\n"
+        ", 100)",
+        language="python",
+    )
+
+    st.divider()
+
+    # Docs links
+    st.subheader("Documentación técnica")
+    st.markdown("""
+    - `docs/architecture.md` — Mapa de módulos y flujo de datos
+    - `docs/moat_methodology.md` — Economic Moat: metodología y umbrales
+    - `docs/portfolio_optimizer.md` — Optimizer: SLSQP, perfiles, ARS discount
+    - `docs/alert_system.md` — Alertas: tipos, cooldowns, scheduler
+    - `docs/ROADMAP.md` — Historial de fases (1 → 8)
+    """)
+
+    st.divider()
+
+    # Disclaimer
+    st.warning(
+        "**Aviso legal**: Esta herramienta es educativa. Los resultados no constituyen "
+        "asesoramiento financiero. Los datos provienen de Yahoo Finance y pueden contener "
+        "errores o estar desactualizados. Consultá con un asesor certificado antes de "
+        "tomar decisiones de inversión.",
+        icon="⚠️",
+    )
