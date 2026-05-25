@@ -520,13 +520,24 @@ class PortfolioOptimizer:
         mu: np.ndarray,
         cov: Optional[np.ndarray],
     ) -> None:
+        # Normalize to sum=1 before any display logic (guards against floating-point
+        # drift and the double-zeroing in _try_minimize leaving a sum < 1)
+        weights = np.asarray(weights, dtype=float).copy()
+        if weights.sum() > 0:
+            weights /= weights.sum()
+        # Zero dust positions
+        weights[weights < 0.001] = 0.0
+        # Re-normalize after zeroing so displayed weights sum exactly to 100 %
+        if weights.sum() > 0:
+            weights /= weights.sum()
+
         rf = self.opt.risk_free_rate
 
         sector_weights: Dict[str, float] = {}
         allocations = []
 
         for i, (t, w, er) in enumerate(zip(tickers, weights, mu)):
-            if w < 0.001:
+            if w < 1e-6:
                 continue
             sym = t["symbol"]
             sector = t.get("sector", "Unknown")

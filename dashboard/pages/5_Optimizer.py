@@ -242,6 +242,16 @@ with tab_cart:
     if not result.tickers:
         st.warning("No hay posiciones en la cartera optimizada.")
     else:
+        # Safety: re-normalize weight_pct so they always sum to ~100 %
+        _total_w = sum(a.weight_pct for a in result.tickers)
+        if _total_w > 0 and abs(_total_w - 100.0) > 0.5:
+            _scale = 100.0 / _total_w
+            for _a in result.tickers:
+                _a.weight_pct = round(_a.weight_pct * _scale, 1)
+            result.sector_weights = {
+                k: round(v * _scale, 1) for k, v in result.sector_weights.items()
+            }
+
         scored_map = {t["symbol"]: t for t in scored}
         alloc_data = []
         for a in result.tickers:
@@ -284,7 +294,7 @@ with tab_cart:
             hide_index=True,
             column_config={
                 "Peso %": st.column_config.ProgressColumn(
-                    "Peso %", min_value=0, max_value=prof.max_position_pct * 1.5, format="%.1f%%"
+                    "Peso %", min_value=0, max_value=100, format="%.1f%%"
                 ),
                 "Score":  st.column_config.NumberColumn("Score", format="%.0f"),
                 "Div %":  st.column_config.NumberColumn("Div %", format="%.2f%%"),
