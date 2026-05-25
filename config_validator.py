@@ -14,11 +14,35 @@ Usage:
 from __future__ import annotations
 
 import os
+import sys
 from typing import List, Tuple
 
 from loguru import logger
 
 Issue = Tuple[str, str]   # (level, message)
+
+
+def _hermes_oauth_available(provider: str) -> bool:
+    """
+    Mirror the credential-resolution logic in ai_analyzer._call_xai / _call_nous.
+    Returns True only if ~/.hermes/hermes-agent exists AND the provider-specific
+    resolver can produce credentials without raising.
+    """
+    hermes_path = os.path.expanduser("~/.hermes/hermes-agent")
+    if not os.path.isdir(hermes_path):
+        return False
+    if hermes_path not in sys.path:
+        sys.path.insert(0, hermes_path)
+    try:
+        if provider == "xai":
+            from hermes_cli.auth import resolve_xai_oauth_runtime_credentials
+            resolve_xai_oauth_runtime_credentials()
+        else:  # nous
+            from hermes_cli.auth import resolve_nous_runtime_credentials
+            resolve_nous_runtime_credentials()
+        return True
+    except Exception:
+        return False
 
 
 def validate_config() -> List[Issue]:
@@ -43,11 +67,10 @@ def validate_config() -> List[Issue]:
         key_var = key_map.get(provider, "ANTHROPIC_API_KEY")
         api_key = os.getenv(key_var, "") or os.getenv("AI_API_KEY", "")
 
-        # Hermes OAuth: active when HERMES_OAUTH_ENABLED=true or XAI_AUTH_TOKEN is present
-        hermes_oauth = (
-            os.getenv("HERMES_OAUTH_ENABLED", "").lower() in ("true", "1", "yes")
-            or bool(os.getenv("XAI_AUTH_TOKEN", ""))
-        )
+        if provider in _OAUTH_PROVIDERS and not api_key:
+            hermes_oauth = _hermes_oauth_available(provider)
+        else:
+            hermes_oauth = False
 
         if provider in _OAUTH_PROVIDERS and hermes_oauth:
             issues.append(("info", f"AI habilitado — proveedor: {provider} (Hermes OAuth)"))

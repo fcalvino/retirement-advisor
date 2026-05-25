@@ -1,22 +1,33 @@
 """Tests for config_validator.validate_config() — AI section focus."""
 
+from unittest.mock import patch
+
 import pytest
 
 from config_validator import validate_config
 
 
-def _ai_issues(monkeypatch, **env):
-    """Run validate_config() with a clean environment plus the given overrides."""
+def _ai_issues(monkeypatch, hermes_available=False, **env):
+    """
+    Run validate_config() with a clean environment plus the given overrides.
+    hermes_available controls what _hermes_oauth_available() returns (avoids
+    needing ~/.hermes/hermes-agent installed in CI).
+    """
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("XAI_API_KEY", raising=False)
     monkeypatch.delenv("NOUS_API_KEY", raising=False)
     monkeypatch.delenv("AI_API_KEY", raising=False)
-    monkeypatch.delenv("HERMES_OAUTH_ENABLED", raising=False)
-    monkeypatch.delenv("XAI_AUTH_TOKEN", raising=False)
     for k, v in env.items():
         monkeypatch.setenv(k, v)
-    return [(lvl, msg) for lvl, msg in validate_config() if "AI" in msg or "rule-based" in msg or "proveedor" in msg or "OAuth" in msg or "inválida" in msg or "_API_KEY" in msg]
+
+    with patch("config_validator._hermes_oauth_available", return_value=hermes_available):
+        all_issues = validate_config()
+
+    return [
+        (lvl, msg) for lvl, msg in all_issues
+        if any(kw in msg for kw in ("AI", "rule-based", "proveedor", "OAuth", "inválida", "_API_KEY"))
+    ]
 
 
 # ------------------------------------------------------------------ #
@@ -48,7 +59,7 @@ class TestAPIKeyMode:
                             OPENAI_API_KEY="sk-" + "x" * 40)
         assert any(lvl == "info" and "API Key" in msg for lvl, msg in issues)
 
-    def test_xai_with_valid_api_key_no_oauth(self, monkeypatch):
+    def test_xai_with_valid_api_key(self, monkeypatch):
         issues = _ai_issues(monkeypatch, AI_ENABLED="true", AI_PROVIDER="xai",
                             XAI_API_KEY="xai-" + "x" * 40)
         assert any(lvl == "info" and "API Key" in msg for lvl, msg in issues)
@@ -68,41 +79,28 @@ class TestAPIKeyMode:
 # ------------------------------------------------------------------ #
 
 class TestHermesOAuthXAI:
-    def test_oauth_enabled_flag_skips_key_check(self, monkeypatch):
-        issues = _ai_issues(monkeypatch, AI_ENABLED="true", AI_PROVIDER="xai",
-                            HERMES_OAUTH_ENABLED="true")
+    def test_oauth_active_skips_key_check(self, monkeypatch):
+        issues = _ai_issues(monkeypatch, hermes_available=True,
+                            AI_ENABLED="true", AI_PROVIDER="xai")
         assert not any(lvl == "warning" for lvl, msg in issues)
 
-    def test_oauth_enabled_produces_info_with_oauth_label(self, monkeypatch):
-        issues = _ai_issues(monkeypatch, AI_ENABLED="true", AI_PROVIDER="xai",
-                            HERMES_OAUTH_ENABLED="true")
+    def test_oauth_active_produces_info_with_oauth_label(self, monkeypatch):
+        issues = _ai_issues(monkeypatch, hermes_available=True,
+                            AI_ENABLED="true", AI_PROVIDER="xai")
         assert any(lvl == "info" and "Hermes OAuth" in msg for lvl, msg in issues)
 
-    def test_auth_token_presence_skips_key_check(self, monkeypatch):
-        issues = _ai_issues(monkeypatch, AI_ENABLED="true", AI_PROVIDER="xai",
-                            XAI_AUTH_TOKEN="oauth-token-abc123")
+    def test_oauth_inactive_without_key_warns(self, monkeypatch):
+        issues = _ai_issues(monkeypatch, hermes_available=False,
+                            AI_ENABLED="true", AI_PROVIDER="xai")
+        assert any(lvl == "warning" and "XAI_API_KEY" in msg for lvl, msg in issues)
+
+    def test_api_key_takes_precedence_over_oauth_check(self, monkeypatch):
+        # When API key is present, _hermes_oauth_available is never called
+        issues = _ai_issues(monkeypatch, hermes_available=False,
+                            AI_ENABLED="true", AI_PROVIDER="xai",
+                            XAI_API_KEY="xai-" + "x" * 40)
+        assert any(lvl == "info" and "API Key" in msg for lvl, msg in issues)
         assert not any(lvl == "warning" for lvl, msg in issues)
-
-    def test_auth_token_produces_info_with_oauth_label(self, monkeypatch):
-        issues = _ai_issues(monkeypatch, AI_ENABLED="true", AI_PROVIDER="xai",
-                            XAI_AUTH_TOKEN="oauth-token-abc123")
-        assert any(lvl == "info" and "Hermes OAuth" in msg for lvl, msg in issues)
-
-    def test_oauth_truthy_values(self, monkeypatch):
-        for truthy in ("true", "1", "yes"):
-            issues = _ai_issues(monkeypatch, AI_ENABLED="true", AI_PROVIDER="xai",
-                                HERMES_OAUTH_ENABLED=truthy)
-            assert any(lvl == "info" and "Hermes OAuth" in msg for lvl, msg in issues), \
-                f"HERMES_OAUTH_ENABLED={truthy!r} should activate OAuth mode"
-
-    def test_oauth_false_without_key_still_warns(self, monkeypatch):
-        issues = _ai_issues(monkeypatch, AI_ENABLED="true", AI_PROVIDER="xai",
-                            HERMES_OAUTH_ENABLED="false")
-        assert any(lvl == "warning" and "XAI_API_KEY" in msg for lvl, msg in issues)
-
-    def test_xai_without_oauth_and_without_key_warns(self, monkeypatch):
-        issues = _ai_issues(monkeypatch, AI_ENABLED="true", AI_PROVIDER="xai")
-        assert any(lvl == "warning" and "XAI_API_KEY" in msg for lvl, msg in issues)
 
 
 # ------------------------------------------------------------------ #
@@ -110,18 +108,19 @@ class TestHermesOAuthXAI:
 # ------------------------------------------------------------------ #
 
 class TestHermesOAuthNous:
-    def test_nous_with_oauth_enabled(self, monkeypatch):
-        issues = _ai_issues(monkeypatch, AI_ENABLED="true", AI_PROVIDER="nous",
-                            HERMES_OAUTH_ENABLED="true")
+    def test_oauth_active_skips_key_check(self, monkeypatch):
+        issues = _ai_issues(monkeypatch, hermes_available=True,
+                            AI_ENABLED="true", AI_PROVIDER="nous")
+        assert not any(lvl == "warning" for lvl, msg in issues)
+
+    def test_oauth_active_produces_info_with_oauth_label(self, monkeypatch):
+        issues = _ai_issues(monkeypatch, hermes_available=True,
+                            AI_ENABLED="true", AI_PROVIDER="nous")
         assert any(lvl == "info" and "Hermes OAuth" in msg for lvl, msg in issues)
 
-    def test_nous_with_auth_token(self, monkeypatch):
-        issues = _ai_issues(monkeypatch, AI_ENABLED="true", AI_PROVIDER="nous",
-                            XAI_AUTH_TOKEN="some-token")
-        assert any(lvl == "info" and "Hermes OAuth" in msg for lvl, msg in issues)
-
-    def test_nous_without_oauth_and_without_key_warns(self, monkeypatch):
-        issues = _ai_issues(monkeypatch, AI_ENABLED="true", AI_PROVIDER="nous")
+    def test_oauth_inactive_without_key_warns(self, monkeypatch):
+        issues = _ai_issues(monkeypatch, hermes_available=False,
+                            AI_ENABLED="true", AI_PROVIDER="nous")
         assert any(lvl == "warning" and "NOUS_API_KEY" in msg for lvl, msg in issues)
 
 
@@ -130,13 +129,52 @@ class TestHermesOAuthNous:
 # ------------------------------------------------------------------ #
 
 class TestOAuthDoesNotApplyToOtherProviders:
-    def test_claude_ignores_hermes_oauth_flag(self, monkeypatch):
-        # Claude requires ANTHROPIC_API_KEY regardless of OAuth flag
-        issues = _ai_issues(monkeypatch, AI_ENABLED="true", AI_PROVIDER="claude",
-                            HERMES_OAUTH_ENABLED="true")
+    def test_claude_requires_key_regardless_of_hermes(self, monkeypatch):
+        # _hermes_oauth_available is never called for claude — still warns
+        issues = _ai_issues(monkeypatch, hermes_available=True,
+                            AI_ENABLED="true", AI_PROVIDER="claude")
         assert any(lvl == "warning" and "ANTHROPIC_API_KEY" in msg for lvl, msg in issues)
 
-    def test_openai_ignores_hermes_oauth_flag(self, monkeypatch):
-        issues = _ai_issues(monkeypatch, AI_ENABLED="true", AI_PROVIDER="openai",
-                            HERMES_OAUTH_ENABLED="true")
+    def test_openai_requires_key_regardless_of_hermes(self, monkeypatch):
+        issues = _ai_issues(monkeypatch, hermes_available=True,
+                            AI_ENABLED="true", AI_PROVIDER="openai")
         assert any(lvl == "warning" and "OPENAI_API_KEY" in msg for lvl, msg in issues)
+
+
+# ------------------------------------------------------------------ #
+#  _hermes_oauth_available unit tests                                  #
+# ------------------------------------------------------------------ #
+
+class TestHermesOAuthAvailable:
+    def test_returns_false_when_hermes_dir_missing(self, tmp_path):
+        from config_validator import _hermes_oauth_available
+        with patch("config_validator.os.path.expanduser", return_value=str(tmp_path / "nonexistent")):
+            assert _hermes_oauth_available("xai") is False
+
+    def test_returns_false_when_import_raises(self, tmp_path):
+        from config_validator import _hermes_oauth_available
+        hermes_dir = tmp_path / ".hermes" / "hermes-agent"
+        hermes_dir.mkdir(parents=True)
+        with patch("config_validator.os.path.expanduser", return_value=str(hermes_dir)), \
+             patch("builtins.__import__", side_effect=ImportError("no module")):
+            assert _hermes_oauth_available("xai") is False
+
+    def test_returns_true_when_resolver_succeeds(self, tmp_path):
+        from config_validator import _hermes_oauth_available
+        hermes_dir = tmp_path / ".hermes" / "hermes-agent"
+        hermes_dir.mkdir(parents=True)
+
+        fake_creds = {"api_key": "fake-oauth-token"}
+        mock_resolver = lambda: fake_creds  # noqa: E731
+
+        with patch("config_validator.os.path.expanduser", return_value=str(hermes_dir)), \
+             patch("config_validator.os.path.isdir", return_value=True):
+            import importlib
+            import types
+            fake_auth = types.ModuleType("hermes_cli.auth")
+            fake_auth.resolve_xai_oauth_runtime_credentials = mock_resolver
+            fake_auth.resolve_nous_runtime_credentials = mock_resolver
+            with patch.dict("sys.modules", {"hermes_cli": types.ModuleType("hermes_cli"),
+                                            "hermes_cli.auth": fake_auth}):
+                assert _hermes_oauth_available("xai") is True
+                assert _hermes_oauth_available("nous") is True
