@@ -62,6 +62,7 @@ def _save_ai_config_to_env(provider: str, model: str, api_key: str, enabled: boo
 from config_validator import log_config_issues, validate_config  # noqa: E402
 from data.cache import cache  # noqa: E402
 from data.fetcher import get_history, get_info  # noqa: E402
+from data.preferences import UserPreferences  # noqa: E402
 from portfolio.allocation import AllocationAdvisor  # noqa: E402
 from portfolio.tracker import Portfolio  # noqa: E402
 
@@ -128,8 +129,17 @@ if errors or warnings:
 #  Shared state                                                        #
 # ------------------------------------------------------------------ #
 
+# Load user preferences once per session
+if "user_prefs" not in st.session_state:
+    st.session_state.user_prefs = UserPreferences.load()
+
+_prefs: UserPreferences = st.session_state.user_prefs
+
 if "universe" not in st.session_state:
-    st.session_state.universe = DEFAULT_TICKERS.copy()
+    # Prefer last_used_universe from prefs if set, else fallback to defaults
+    st.session_state.universe = (
+        _prefs.last_used_universe if _prefs.last_used_universe else DEFAULT_TICKERS.copy()
+    )
 
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = Portfolio()
@@ -141,7 +151,10 @@ if "ai_provider" not in st.session_state:
     st.session_state.ai_model = _env.get("AI_MODEL", "claude-sonnet-4-6")
     st.session_state.ai_api_key = _env.get("AI_API_KEY", "")
     st.session_state.ai_enabled = _env.get("AI_ENABLED", "").lower() in ("true", "1", "yes")
-    st.session_state.ai_use_in_screener = _env.get("AI_USE_IN_SCREENER", "false").lower() in ("true", "1", "yes")
+    st.session_state.ai_use_in_screener = (
+        _prefs.ai_enabled_in_screener
+        or _env.get("AI_USE_IN_SCREENER", "false").lower() in ("true", "1", "yes")
+    )
 
 portfolio: Portfolio = st.session_state.portfolio
 
@@ -392,6 +405,12 @@ if page == "🏠 Screener":
     tickers = st.session_state.universe
     max_tickers = st.sidebar.slider("Max tickers to screen", 5, len(tickers), len(tickers))
     selected = tickers[:max_tickers]
+
+    if st.sidebar.button("💾 Guardar universo actual", help="Guarda el universo como favorito y lo restaura en próximas sesiones"):
+        _prefs.last_used_universe = list(st.session_state.universe)
+        _prefs.favorite_universe = list(st.session_state.universe)
+        _prefs.save()
+        st.sidebar.success("Universo guardado.")
 
     if st.button("🔄 Refresh Analysis", type="primary"):
         st.cache_data.clear()
@@ -932,7 +951,11 @@ elif page == "📈 Optimizer":
     _PROFILE_KEYS = {v: k for k, v in _PROFILE_LABELS.items()}
 
     if "optimizer_profile_key" not in st.session_state:
-        st.session_state.optimizer_profile_key = "conservative"
+        # Restore saved profile from preferences
+        _saved_profile = {"Conservador": "conservative", "Moderado": "moderate", "Agresivo": "aggressive"}.get(
+            _prefs.default_profile, "conservative"
+        )
+        st.session_state.optimizer_profile_key = _saved_profile
 
     prev_profile_key = st.session_state.optimizer_profile_key
     profile_label = st.sidebar.radio(
@@ -945,6 +968,11 @@ elif page == "📈 Optimizer":
     profile_changed = profile_key != prev_profile_key
     st.session_state.optimizer_profile_key = profile_key
     prof = OPTIMIZER_PROFILES[profile_key]
+
+    if st.sidebar.button("💾 Guardar perfil como favorito", help="Restaura este perfil automáticamente en próximas sesiones"):
+        _prefs.default_profile = prof.name
+        _prefs.save()
+        st.sidebar.success(f"Perfil '{prof.name}' guardado.")
 
     max_tickers = st.sidebar.slider(
         "Tickers a analizar", 10, len(st.session_state.universe), len(st.session_state.universe),
@@ -2274,10 +2302,33 @@ elif page == "⚙️ Settings":
         value="\n".join(st.session_state.universe),
         height=200,
     )
-    if st.button("Save Universe"):
-        raw = universe_text.replace(",", "\n").split()
-        st.session_state.universe = [t.upper().strip() for t in raw if t.strip()]
-        st.success(f"Universe updated: {len(st.session_state.universe)} tickers")
+    col_save, col_restore = st.columns(2)
+    with col_save:
+        if st.button("Save Universe"):
+            raw = universe_text.replace(",", "\n").split()
+            st.session_state.universe = [t.upper().strip() for t in raw if t.strip()]
+            _prefs.last_used_universe = list(st.session_state.universe)
+            _prefs.save()
+            st.success(f"Universe updated: {len(st.session_state.universe)} tickers")
+    with col_restore:
+        if _prefs.favorite_universe and st.button("↩ Restaurar favorito", help=f"{len(_prefs.favorite_universe)} tickers guardados"):
+            st.session_state.universe = list(_prefs.favorite_universe)
+            st.success(f"Universo favorito restaurado: {len(_prefs.favorite_universe)} tickers")
+            st.rerun()
+
+    st.divider()
+    st.subheader("📌 Watchlist")
+    watched_text = st.text_area(
+        "Tickers a seguir (uno por línea)",
+        value="\n".join(_prefs.watched_tickers),
+        height=100,
+        help="Tickers que querés monitorear de cerca. Se guardan automáticamente.",
+    )
+    if st.button("Guardar Watchlist"):
+        raw_w = watched_text.replace(",", "\n").split()
+        _prefs.watched_tickers = [t.upper().strip() for t in raw_w if t.strip()]
+        _prefs.save()
+        st.success(f"Watchlist guardada: {len(_prefs.watched_tickers)} tickers")
 
     st.divider()
     st.subheader("🤖 AI Analysis")
