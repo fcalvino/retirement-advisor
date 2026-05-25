@@ -26,12 +26,43 @@ st.set_page_config(
 # ------------------------------------------------------------------ #
 
 st.title("ℹ️ About — Retirement Advisor")
-st.caption("v8.0 — Fase 8: Producción Ready")
+st.caption("v1.0.0 — Motor de análisis de inversiones para el retiro")
 
-col1, col2, col3 = st.columns(3)
-col1.metric("Versión", "8.0")
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Versión", "1.0.0")
 col2.metric("Tickers en universo", len(st.session_state.get("universe", DEFAULT_TICKERS)))
 col3.metric("Tests", "133 passing")
+col4.metric("Páginas", "11")
+
+st.divider()
+
+# Project highlights
+st.subheader("Highlights del proyecto")
+h1, h2, h3 = st.columns(3)
+with h1:
+    st.markdown("""
+**📊 Análisis cuantitativo**
+- Score fundamental 0–100 en 5 dimensiones
+- Consistency Score + Piotroski F-Score
+- Economic Moat cuantitativo 0–20 pts
+- Análisis técnico en barras semanales de 10 años
+""")
+with h2:
+    st.markdown("""
+**🤖 Decisión asistida por AI**
+- Claude, GPT-4o, Grok o Nous Research
+- Moat cualitativo: network effects, switching costs, brand, regulatory
+- Razonamiento en lenguaje natural por ticker
+- Fallback rule-based si no hay API key
+""")
+with h3:
+    st.markdown("""
+**📈 Gestión de portafolio**
+- Optimizer Mean-Variance (SLSQP) con 3 perfiles
+- Monte Carlo block-bootstrap 10 000 sims
+- Stress test en 6 crisis históricas
+- Watchlist con alertas de precio en tiempo real
+""")
 
 st.divider()
 
@@ -58,14 +89,16 @@ st.subheader("Módulos activos")
 st.markdown("""
 | Módulo | Descripción |
 |--------|-------------|
-| **Screener** | Ranking de 38+ tickers con score ajustado (0–100) y señal |
-| **Stock Analysis** | Análisis profundo: Piotroski, Consistency, Economic Moat, AI |
-| **Portfolio Tracker** | Posiciones, P&L, pesos por sector |
-| **Asset Allocation** | Regla conservadora acciones/bonos/cash por edad |
-| **Optimizer** | Mean-Variance SLSQP + 3 perfiles de riesgo |
-| **Backtesting** | Curva de equity histórica, Sharpe, Sortino, Calmar |
-| **Simulaciones** | Monte Carlo 10k sims + Stress Test 6 crisis históricas |
-| **Alertas** | Motor inteligente con debounce + email/Telegram + PDF |
+| **🏠 Screener** | Ranking de 38+ tickers con score ajustado (0–100) y señal — paralelo con cache 1h |
+| **🔍 Stock Analysis** | Análisis profundo: Piotroski, Consistency, Economic Moat, decisión AI |
+| **💼 Portfolio** | Posiciones abiertas, P&L, gráficos de pesos por sector |
+| **📊 Allocation** | Regla conservadora acciones/bonos/cash según edad |
+| **📈 Optimizer** | Mean-Variance SLSQP + 3 perfiles + Efficient Frontier Monte Carlo |
+| **📉 Backtesting** | Curva de equity histórica, Sharpe, Sortino, Calmar, scatter Score↔CAGR |
+| **🎲 Simulaciones** | Monte Carlo 10k sims (block-bootstrap) + Stress Test 6 crisis históricas |
+| **🔔 Alertas** | Motor inteligente con debounce SQLite + email/Telegram + PDF mensual |
+| **📋 Watchlist** | Tickers favoritos con alertas de precio en tiempo real |
+| **⚙️ Settings** | Editor de universo, configuración AI, limpieza de caché |
 """)
 
 st.divider()

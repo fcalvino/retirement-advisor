@@ -194,6 +194,6 @@ with col2:
 
 st.divider()
 st.caption(
-    "Retirement Advisor v8.0 — datos de Yahoo Finance (yfinance). "
+    "Retirement Advisor v1.0.0 — datos de Yahoo Finance (yfinance). "
     "No constituye asesoramiento financiero."
 )
