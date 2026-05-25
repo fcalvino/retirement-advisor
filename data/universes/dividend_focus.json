@@ -1,0 +1,22 @@
+{
+  "name": "Dividend Focus",
+  "description": "Dividend Aristocrats, Dividend Kings, REITs sólidos y utilities de alta calidad. Foco en ingreso pasivo creciente.",
+  "tickers": [
+    "JNJ", "PG", "KO", "PEP", "ABT", "EMR", "ITW", "SWK",
+    "MCD", "MDT", "SYY", "GWW", "ADP", "CLX", "DOV",
+    "HRL", "LOW", "NUE", "PPG", "AFL", "CINF",
+    "MMM", "TGT", "GPC", "AOS",
+
+    "O", "AMT", "PLD", "WELL", "DLR", "PSA", "SPG", "NNN", "WPC",
+    "EXR", "AVB", "EQR", "MAA",
+
+    "JPM", "BAC", "WFC", "TFC", "PRU", "MET", "ALL", "SPGI", "MCO",
+
+    "NEE", "DUK", "SO", "D", "AEP", "XEL", "ED", "WEC",
+    "T", "VZ",
+
+    "XOM", "CVX", "PSX", "VLO",
+
+    "SCHD", "VYM", "HDV", "DGRO", "NOBL"
+  ]
+}

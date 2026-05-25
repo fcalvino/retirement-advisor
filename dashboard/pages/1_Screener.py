@@ -37,15 +37,6 @@ max_tickers = st.sidebar.slider(
 )
 selected = tickers[:max_tickers]
 
-if st.sidebar.button(
-    "💾 Guardar como favorito",
-    help="Guarda el universo como favorito y lo restaura en próximas sesiones",
-):
-    _prefs.last_used_universe = list(st.session_state.universe)
-    _prefs.favorite_universe = list(st.session_state.universe)
-    _prefs.save()
-    st.toast("Universo guardado como favorito", icon="💾")
-
 # Quick-add to watchlist from Screener sidebar
 st.sidebar.divider()
 st.sidebar.subheader("📋 Watchlist")
@@ -82,23 +73,6 @@ rows = _analyse_universe_parallel(selected, ai_cfg, progress, status)
 progress.empty()
 status.empty()
 
-# Auto-save last_used_universe silently after each successful run
-if rows and list(st.session_state.universe) != _prefs.last_used_universe:
-    _prefs.last_used_universe = list(st.session_state.universe)
-    _prefs.save()
-
-# Offer to save as favorite if universe differs from saved favorite
-if rows and list(st.session_state.universe) != _prefs.favorite_universe:
-    if st.sidebar.button(
-        "⭐ Guardar como favorito",
-        help=(
-            f"Tu favorito actual tiene {len(_prefs.favorite_universe)} tickers. "
-            "Reemplazar con el universo actual."
-        ),
-    ):
-        _prefs.favorite_universe = list(st.session_state.universe)
-        _prefs.save()
-        st.toast("Universo guardado como favorito", icon="⭐")
 
 if not rows:
     st.error(

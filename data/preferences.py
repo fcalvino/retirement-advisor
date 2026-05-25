@@ -29,6 +29,7 @@ class UserPreferences:
     default_profile: str = "Conservador"
 
     # Universes
+    active_universe: str = "default"        # key matching data/universes/<key>.json
     favorite_universe: List[str] = field(default_factory=list)
     last_used_universe: List[str] = field(default_factory=list)
 

@@ -24,6 +24,7 @@ from config import DEFAULT_TICKERS
 from config_validator import log_config_issues, validate_config
 from dashboard.shared import _load_env_vars
 from data.preferences import _PREFS_PATH, UserPreferences
+from data.universe_loader import UNIVERSE_META, list_universes, load_universe
 from portfolio.tracker import Portfolio
 
 # ------------------------------------------------------------------ #
@@ -72,9 +73,9 @@ if "user_prefs" not in st.session_state:
 _prefs: UserPreferences = st.session_state.user_prefs
 
 if "universe" not in st.session_state:
-    st.session_state.universe = (
-        _prefs.last_used_universe if _prefs.last_used_universe else DEFAULT_TICKERS.copy()
-    )
+    _saved_key = _prefs.active_universe or "default"
+    st.session_state.universe = load_universe(_saved_key)
+    st.session_state.active_universe_key = _saved_key
 
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = Portfolio()
@@ -97,10 +98,13 @@ if "ai_provider" not in st.session_state:
 def _home_page() -> None:
     st.title("📈 Retirement Advisor")
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Tickers en universo", len(st.session_state.universe))
-    col2.metric("Perfil guardado", st.session_state.user_prefs.default_profile)
-    col3.metric("Tests", "133 passing")
+    _u_key  = st.session_state.get("active_universe_key", "default")
+    _u_meta = UNIVERSE_META.get(_u_key, {})
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Universo activo", _u_meta.get("name", _u_key))
+    col2.metric("Tickers en universo", len(st.session_state.universe))
+    col3.metric("Perfil guardado", st.session_state.user_prefs.default_profile)
+    col4.metric("Tests", "133 passing")
 
     st.divider()
 
@@ -159,12 +163,45 @@ pg = st.navigation(
 )
 
 # ------------------------------------------------------------------ #
-#  Sidebar branding + config warnings                                  #
+#  Sidebar branding + universe selector + config warnings              #
 # ------------------------------------------------------------------ #
 
 st.sidebar.title("📈 Retirement Advisor")
 st.sidebar.caption("Long-term investment decisions for retirement")
 
+# --- Universe selector ------------------------------------------------
+_universe_keys   = list_universes()
+_universe_labels = {k: f"{UNIVERSE_META[k]['name']} ({UNIVERSE_META[k]['count']})" for k in _universe_keys}
+
+_current_key = st.session_state.get("active_universe_key", _prefs.active_universe or "default")
+if _current_key not in _universe_keys:
+    _current_key = "default"
+
+_selected_label = st.sidebar.selectbox(
+    "Universo",
+    options=list(_universe_labels.values()),
+    index=_universe_keys.index(_current_key),
+    help="Cambiá el universo de análisis. El cambio se aplica inmediatamente a todas las páginas.",
+    key="sidebar_universe_selector",
+)
+_selected_key = _universe_keys[list(_universe_labels.values()).index(_selected_label)]
+
+if _selected_key != _current_key:
+    st.session_state.universe = load_universe(_selected_key)
+    st.session_state.active_universe_key = _selected_key
+    _prefs.active_universe = _selected_key
+    _prefs.last_used_universe = list(st.session_state.universe)
+    _prefs.save()
+    st.cache_data.clear()
+    st.rerun()
+
+_meta = UNIVERSE_META.get(_selected_key, {})
+if _meta.get("description"):
+    st.sidebar.caption(_meta["description"])
+
+st.sidebar.divider()
+
+# --- Config warnings --------------------------------------------------
 config_issues = st.session_state.get("config_issues", [])
 warnings_msgs = [msg for lvl, msg in config_issues if lvl == "warning"]
 error_msgs    = [msg for lvl, msg in config_issues if lvl == "error"]

@@ -1,0 +1,12 @@
+{
+  "name": "LATAM ADRs",
+  "description": "ADRs latinoamericanos y emergentes de calidad: Argentina, Brasil, México, Chile, Colombia y ETFs regionales.",
+  "tickers": [
+    "MELI", "GLOB", "VIST",
+    "YPF", "PAM", "CEPU", "LOMA", "TEO", "EDN", "IRCP",
+    "ITUB", "PBR", "VALE", "ABEV", "SBS", "BSBR", "BRFS",
+    "AMX",
+    "LTM", "BSAC", "SQM", "ERJ", "CIB", "BAP",
+    "EWZ", "EWW", "ILF"
+  ]
+}
