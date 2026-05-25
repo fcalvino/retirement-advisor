@@ -4,7 +4,8 @@ Shared helpers, constants and cached functions used by every dashboard page.
 Import pattern in each page:
     from dashboard.shared import (
         cached_full_analysis, _analyse_universe_parallel,
-        _get_ai_config, score_bar, _MOAT_EMOJI, ACTION_COLOR, ...
+        _fetch_universe_parallel, _get_ai_config,
+        score_bar, _MOAT_EMOJI, ACTION_COLOR, ...
     )
 """
 
@@ -174,6 +175,45 @@ def cached_full_analysis(
     return fund, tech, decision
 
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def cached_monte_carlo(
+    symbols: tuple[str, ...],
+    weights_tuple: tuple[float, ...] | None,
+    horizon_years: int,
+    n_sims: int,
+    initial_value: float,
+    annual_withdrawal: float,
+    target_value: float,
+    seed: int = 42,
+):
+    """Cache Monte Carlo runs for 30 min — same params = instant re-render."""
+    import numpy as np
+
+    from portfolio.monte_carlo import MonteCarloSimulator
+
+    w_np = np.array(weights_tuple) if weights_tuple else None
+    sim  = MonteCarloSimulator(list(symbols), w_np, seed=seed)
+    return sim.run(
+        horizon_years=horizon_years,
+        n_sims=n_sims,
+        initial_value=initial_value,
+        annual_withdrawal=annual_withdrawal,
+        target_value=target_value,
+    )
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_stress_test(
+    sector_weights: dict[str, float],
+    initial_value: float,
+):
+    """Cache stress test results per sector allocation — recomputes only when weights change."""
+    from portfolio.stress_test import StressTester
+
+    tester = StressTester()
+    return tester.run(sector_weights, initial_value=initial_value)
+
+
 def _analyse_universe_parallel(
     symbols: list[str],
     ai_cfg: AIConfig,
@@ -234,3 +274,45 @@ def _analyse_universe_parallel(
                 rows.append(result)
 
     return rows
+
+
+def _fetch_universe_parallel(
+    symbols: list[str],
+    ai_cfg: AIConfig,
+    progress_bar,
+    status_text,
+    label: str = "Analizando",
+) -> list[tuple]:
+    """
+    Generic parallel fetcher — returns (symbol, fund, tech, decision) tuples.
+    Callers build their own output dicts from the raw analysis results.
+    Workers capped at min(16, cpu_count*2). Per-ticker exceptions are logged
+    and that ticker is silently dropped so the rest of the run continues.
+    """
+    max_workers = min(16, (os.cpu_count() or 4) * 2)
+    total     = len(symbols)
+    completed = 0
+    results: list[tuple] = []
+
+    def _fetch_one(sym: str) -> tuple | None:
+        try:
+            fund, tech, decision = cached_full_analysis(
+                sym, ai_cfg.provider, ai_cfg.model, ai_cfg.enabled, ai_cfg.api_key
+            )
+            return (sym, fund, tech, decision)
+        except Exception as exc:
+            logger.error(f"{label}: {sym} failed — {exc}")
+            return None
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_fetch_one, sym): sym for sym in symbols}
+        for future in as_completed(futures):
+            completed += 1
+            sym = futures[future]
+            status_text.text(f"{label}… {completed}/{total} (último: {sym})")
+            progress_bar.progress(completed / total)
+            result = future.result()
+            if result is not None:
+                results.append(result)
+
+    return results

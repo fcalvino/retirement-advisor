@@ -15,7 +15,7 @@ from loguru import logger
 from alerts.engine import AlertEngine
 from alerts.reporter import ReportGenerator
 from alerts.store import AlertSeverity, alert_store
-from dashboard.shared import _get_ai_config, cached_full_analysis
+from dashboard.shared import _fetch_universe_parallel, _get_ai_config
 
 # ------------------------------------------------------------------ #
 #  Page config                                                         #
@@ -69,33 +69,31 @@ with col_run:
         "Primera ejecución: solo guarda baseline (no dispara alertas)."
     )
     if st.button("▶ Ejecutar análisis ahora", type="primary", use_container_width=True):
-        ai_cfg = _get_ai_config(context="screener")
-        scored_for_alerts: list[dict] = []
-        with st.spinner("Analizando universo para alertas…"):
-            prog     = st.progress(0)
-            universe = st.session_state.universe
-            for i, sym in enumerate(universe):
-                prog.progress((i + 1) / len(universe))
-                try:
-                    fund, _t, dec = cached_full_analysis(
-                        sym, ai_cfg.provider, ai_cfg.model,
-                        ai_cfg.enabled, ai_cfg.api_key,
-                    )
-                    scored_for_alerts.append({
-                        "symbol":              sym,
-                        "company_name":        fund.company_name,
-                        "adjusted_score":      fund.adjusted_score,
-                        "total_score":         fund.total_score,
-                        "moat_bonus":          getattr(fund, "moat_bonus", 0),
-                        "signal":              getattr(dec, "action", ""),
-                        "moat_classification": getattr(fund, "moat_classification", "None"),
-                        "moat_score":          getattr(fund, "moat_score", 0),
-                        "dividend_yield":      fund.dividend_yield or 0,
-                        "sector":              fund.sector or "Unknown",
-                    })
-                except Exception as exc:
-                    logger.error(f"Alert scan {sym}: {exc}")
-            prog.empty()
+        ai_cfg   = _get_ai_config(context="screener")
+        universe = st.session_state.universe
+        n        = len(universe)
+        st.info(f"⚡ Analizando {n} tickers en paralelo…")
+        prog = st.progress(0)
+        stat = st.empty()
+        raw  = _fetch_universe_parallel(universe, ai_cfg, prog, stat, label="Alertas")
+        prog.empty()
+        stat.empty()
+
+        scored_for_alerts: list[dict] = [
+            {
+                "symbol":              sym,
+                "company_name":        fund.company_name,
+                "adjusted_score":      fund.adjusted_score,
+                "total_score":         fund.total_score,
+                "moat_bonus":          getattr(fund, "moat_bonus", 0),
+                "signal":              getattr(dec, "action", ""),
+                "moat_classification": getattr(fund, "moat_classification", "None"),
+                "moat_score":          getattr(fund, "moat_score", 0),
+                "dividend_yield":      fund.dividend_yield or 0,
+                "sector":              fund.sector or "Unknown",
+            }
+            for sym, fund, _tech, dec in raw
+        ]
 
         engine = AlertEngine()
         fired  = engine.run(scored_for_alerts)

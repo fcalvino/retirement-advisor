@@ -7,14 +7,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
 from config import MONTE_CARLO, SECTOR_MAP
-from portfolio.monte_carlo import MonteCarloSimulator
-from portfolio.stress_test import StressTester
+from dashboard.shared import cached_monte_carlo, cached_stress_test
 
 # ------------------------------------------------------------------ #
 #  Page config                                                         #
@@ -133,20 +131,17 @@ with tab_mc:
     else:
         if run_mc:
             with st.spinner(f"Ejecutando {n_sims:,} simulaciones × {horizon_years} años…"):
-                w_np = np.array(weights) if weights else None
-                sim  = MonteCarloSimulator(symbols, w_np, seed=42)
-                mc   = sim.run(
+                weights_tuple = tuple(weights) if weights else None
+                mc = cached_monte_carlo(
+                    symbols=tuple(symbols),
+                    weights_tuple=weights_tuple,
                     horizon_years=horizon_years,
                     n_sims=n_sims,
-                    initial_value=initial_value,
-                    annual_withdrawal=annual_withdrawal,
-                    target_value=target_value,
+                    initial_value=float(initial_value),
+                    annual_withdrawal=float(annual_withdrawal),
+                    target_value=float(target_value),
                 )
             st.session_state["mc_result"] = mc
-            st.session_state["mc_params"] = {
-                "horizon": horizon_years, "initial": initial_value,
-                "withdrawal": annual_withdrawal, "target": target_value,
-            }
 
         mc = st.session_state.get("mc_result")
         if mc is None:
@@ -294,8 +289,10 @@ with tab_stress:
     if not sector_weights:
         st.info("Ejecutá el Optimizer primero para obtener pesos por sector.")
     else:
-        tester        = StressTester()
-        stress_results = tester.run(sector_weights, initial_value=initial_value)
+        stress_results = cached_stress_test(
+            sector_weights=dict(sector_weights),
+            initial_value=float(initial_value),
+        )
 
         stress_data = []
         for r in stress_results:
@@ -392,6 +389,7 @@ with tab_custom:
         if not sector_weights:
             st.warning("Necesitás pesos por sector. Ejecuta el Optimizer primero.")
         else:
+            from portfolio.stress_test import StressTester
             r = StressTester.custom_scenario(
                 name="Escenario personalizado",
                 equity_shock_pct=float(custom_drop),

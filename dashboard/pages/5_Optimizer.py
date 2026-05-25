@@ -10,13 +10,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from loguru import logger
 
 from config import OPTIMIZER, OPTIMIZER_PROFILES
 from dashboard.shared import (
     _MOAT_EMOJI,
+    _fetch_universe_parallel,
     _get_ai_config,
-    cached_full_analysis,
 )
 from data.preferences import UserPreferences
 from portfolio.optimizer import PortfolioOptimizer
@@ -122,34 +121,33 @@ with st.expander(f"📋 Perfil: **{prof.name}** — {_PROFILE_DESC[profile_key]}
 
 universe_key = tuple(selected_universe)
 if "optimizer_scored" not in st.session_state or st.session_state.get("optimizer_universe") != universe_key:
-    st.info("Analizando tickers del universo… (primera vez tarda ~30s, luego usa cache)")
     ai_cfg = _get_ai_config(context="screener")
-    scored: list[dict] = []
+    n = len(selected_universe)
+    st.info(
+        f"⚡ Analizando {n} tickers en paralelo… "
+        "(primera vez tarda ~15s, luego usa cache instantánea)"
+    )
     prog = st.progress(0)
     stat = st.empty()
-    for i, sym in enumerate(selected_universe):
-        stat.text(f"Analizando {sym}… ({i+1}/{len(selected_universe)})")
-        prog.progress((i + 1) / len(selected_universe))
-        try:
-            fund, _tech, _dec = cached_full_analysis(
-                sym, ai_cfg.provider, ai_cfg.model, ai_cfg.enabled, ai_cfg.api_key
-            )
-            scored.append({
-                "symbol":           sym,
-                "adjusted_score":   fund.adjusted_score,
-                "total_score":      fund.total_score,
-                "dividend_yield":   fund.dividend_yield or 0.0,
-                "moat_score":       getattr(fund, "moat_score", 0.0),
-                "moat_classification": getattr(fund, "moat_classification", "None"),
-                "sector":           fund.sector or "Unknown",
-                "company_name":     fund.company_name,
-            })
-        except Exception as exc:
-            logger.error(f"Optimizer {sym}: {exc}")
+    raw = _fetch_universe_parallel(selected_universe, ai_cfg, prog, stat, label="Optimizer")
     prog.empty()
     stat.empty()
+
+    scored: list[dict] = [
+        {
+            "symbol":              sym,
+            "adjusted_score":      fund.adjusted_score,
+            "total_score":         fund.total_score,
+            "dividend_yield":      fund.dividend_yield or 0.0,
+            "moat_score":          getattr(fund, "moat_score", 0.0),
+            "moat_classification": getattr(fund, "moat_classification", "None"),
+            "sector":              fund.sector or "Unknown",
+            "company_name":        fund.company_name,
+        }
+        for sym, fund, _tech, _dec in raw
+    ]
     if not scored:
-        st.error("No se pudo analizar ningún ticker.")
+        st.error("No se pudo analizar ningún ticker. Verificá la conexión a internet.")
         st.stop()
     st.session_state.optimizer_scored   = scored
     st.session_state.optimizer_universe = universe_key

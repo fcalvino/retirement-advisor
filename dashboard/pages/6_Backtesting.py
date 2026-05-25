@@ -11,11 +11,10 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from loguru import logger
 
 from analysis.backtesting import BacktestEngine, BacktestResult
 from config import BACKTEST
-from dashboard.shared import _get_ai_config, cached_full_analysis
+from dashboard.shared import _fetch_universe_parallel, _get_ai_config
 
 # ------------------------------------------------------------------ #
 #  Page config                                                         #
@@ -123,23 +122,18 @@ if load_choice != "— nuevo —":
             st.error(f"Error al cargar: {e}")
 
 if run_btn:
-    with st.spinner(f"Obteniendo scores para {len(backtest_universe)} tickers..."):
-        ai_cfg = _get_ai_config(context="screener")
-        fund_results = []
-        prog = st.progress(0)
-        for i, sym in enumerate(backtest_universe):
-            try:
-                fund, _tech, _dec = cached_full_analysis(
-                    sym, ai_cfg.provider, ai_cfg.model, ai_cfg.enabled, ai_cfg.api_key
-                )
-                fund_results.append(fund)
-            except Exception as exc:
-                logger.warning(f"Backtest: skipping {sym} — {exc}")
-            prog.progress((i + 1) / len(backtest_universe))
-        prog.empty()
+    ai_cfg = _get_ai_config(context="screener")
+    n = len(backtest_universe)
+    st.info(f"⚡ Obteniendo scores para {n} tickers en paralelo…")
+    prog = st.progress(0)
+    stat = st.empty()
+    raw = _fetch_universe_parallel(backtest_universe, ai_cfg, prog, stat, label="Backtest")
+    prog.empty()
+    stat.empty()
 
+    fund_results = [fund for _sym, fund, _tech, _dec in raw]
     if not fund_results:
-        st.error("No se pudieron obtener datos fundamentales.")
+        st.error("No se pudieron obtener datos fundamentales. Verificá la conexión a internet.")
         st.stop()
 
     with st.spinner(f"Calculando backtest {period_years}Y vs {benchmark} ({freq_label})..."):
