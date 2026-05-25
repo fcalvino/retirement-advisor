@@ -1,0 +1,123 @@
+"""Opportunity Screener — ranked table of the full ticker universe."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+
+from dashboard.shared import (
+    _analyse_universe_parallel,
+    _get_ai_config,
+)
+from data.preferences import UserPreferences
+
+# ------------------------------------------------------------------ #
+#  Page config                                                         #
+# ------------------------------------------------------------------ #
+
+st.set_page_config(page_title="Screener — Retirement Advisor", page_icon="🏠", layout="wide")
+
+# ------------------------------------------------------------------ #
+#  Page                                                                #
+# ------------------------------------------------------------------ #
+
+st.title("🏠 Opportunity Screener")
+st.caption("Ranked by fundamental quality score. Updated every 24h via cache.")
+
+_prefs: UserPreferences = st.session_state.user_prefs
+
+tickers = st.session_state.universe
+max_tickers = st.sidebar.slider("Max tickers to screen", 5, len(tickers), len(tickers))
+selected = tickers[:max_tickers]
+
+if st.sidebar.button(
+    "💾 Guardar como favorito",
+    help="Guarda el universo como favorito y lo restaura en próximas sesiones",
+):
+    _prefs.last_used_universe = list(st.session_state.universe)
+    _prefs.favorite_universe = list(st.session_state.universe)
+    _prefs.save()
+    st.toast("Universo guardado como favorito", icon="💾")
+
+if st.button("🔄 Refresh Analysis", type="primary"):
+    st.cache_data.clear()
+
+progress = st.progress(0)
+status = st.empty()
+
+ai_cfg = _get_ai_config(context="screener")
+rows = _analyse_universe_parallel(selected, ai_cfg, progress, status)
+
+progress.empty()
+status.empty()
+
+# Auto-save last_used_universe silently after each successful run
+if rows and list(st.session_state.universe) != _prefs.last_used_universe:
+    _prefs.last_used_universe = list(st.session_state.universe)
+    _prefs.save()
+
+# Offer to save as favorite if universe differs from saved favorite
+if rows and list(st.session_state.universe) != _prefs.favorite_universe:
+    if st.sidebar.button(
+        "⭐ Guardar como favorito",
+        help=(
+            f"Tu favorito actual tiene {len(_prefs.favorite_universe)} tickers. "
+            "Reemplazar con el universo actual."
+        ),
+    ):
+        _prefs.favorite_universe = list(st.session_state.universe)
+        _prefs.save()
+        st.toast("Universo guardado como favorito", icon="⭐")
+
+if not rows:
+    st.warning("No data returned. Check internet connection.")
+    st.stop()
+
+df = pd.DataFrame(rows).sort_values("Adj. Score", ascending=False)
+
+# Summary metrics
+col1, col2, col3, col4 = st.columns(4)
+buy_count  = df["Signal"].str.contains("BUY").sum()
+hold_count = df["Signal"].str.contains("HOLD").sum()
+sell_count = df["Signal"].str.contains("SELL|REDUCE|AVOID").sum()
+col1.metric("Strong/Buy signals", buy_count)
+col2.metric("Hold signals", hold_count)
+col3.metric("Sell/Reduce signals", sell_count)
+col4.metric("Stocks screened", len(df))
+
+# Table
+st.dataframe(
+    df[[
+        "Ticker", "Company", "Sector", "Signal", "Score Bar",
+        "Consistency", "Piotroski", "Moat Score", "Moat",
+        "Technical", "P/E", "ROE %", "Rev CAGR 5Y", "Div Yield %", "MoS %", "Price",
+    ]].rename(columns={
+        "Consistency": "Consist./15",
+        "Piotroski":   "Piotroski/9",
+        "Moat Score":  "Moat/20",
+    }),
+    use_container_width=True,
+    hide_index=True,
+)
+
+# Score distribution chart
+fig = px.bar(
+    df.sort_values("Adj. Score", ascending=True),
+    x="Adj. Score",
+    y="Ticker",
+    orientation="h",
+    color="Adj. Score",
+    color_continuous_scale="RdYlGn",
+    range_color=[0, 100],
+    title="Adjusted Score Ranking (Base + Consistency + Piotroski + Moat)",
+)
+fig.add_vline(x=75, line_dash="dash", line_color="green",  annotation_text="Strong Buy")
+fig.add_vline(x=60, line_dash="dash", line_color="orange", annotation_text="Buy")
+fig.update_layout(height=max(400, len(df) * 22), yaxis_title="")
+st.plotly_chart(fig, use_container_width=True)
