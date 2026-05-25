@@ -52,6 +52,24 @@ if st.sidebar.button(
     _prefs.save()
     st.toast("Universo guardado como favorito", icon="💾")
 
+# Quick-add to watchlist from Screener sidebar
+st.sidebar.divider()
+st.sidebar.subheader("📋 Watchlist")
+if _prefs.watched_tickers:
+    st.sidebar.caption(f"{len(_prefs.watched_tickers)} tickers seguidos")
+_wl_input = st.sidebar.text_input(
+    "Agregar a watchlist",
+    placeholder="AAPL…",
+    label_visibility="collapsed",
+    key="screener_wl_input",
+).upper().strip()
+if st.sidebar.button("➕ Agregar", key="screener_wl_btn") and _wl_input:
+    if _prefs.watch(_wl_input):
+        st.session_state.user_prefs = _prefs
+        st.sidebar.success(f"✓ {_wl_input} agregado")
+    else:
+        st.sidebar.info(f"{_wl_input} ya está en la watchlist.")
+
 col_btn, col_hint = st.columns([1, 4])
 with col_btn:
     refresh = st.button("🔄 Refresh Analysis", type="primary", use_container_width=True)

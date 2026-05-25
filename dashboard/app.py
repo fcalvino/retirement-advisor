@@ -112,6 +112,15 @@ if st.session_state.get("prefs_loaded_toast_shown") is None:
         st.sidebar.caption("✔ Preferencias cargadas")
     st.session_state.prefs_loaded_toast_shown = True
 
+# Watchlist badge — show count + triggered alert indicator
+_wl = _prefs.watched_tickers
+_alerts_triggered = sum(1 for a in _prefs.price_alerts if a.get("triggered"))
+if _wl:
+    _badge = f"📋 Watchlist: {len(_wl)} ticker{'s' if len(_wl) != 1 else ''}"
+    if _alerts_triggered:
+        _badge += f" · 🔔 {_alerts_triggered} alerta{'s' if _alerts_triggered != 1 else ''}"
+    st.sidebar.caption(_badge)
+
 # ------------------------------------------------------------------ #
 #  Home page content                                                   #
 # ------------------------------------------------------------------ #

@@ -34,6 +34,8 @@ class UserPreferences:
 
     # Watchlist
     watched_tickers: List[str] = field(default_factory=list)
+    # Each alert: {"symbol", "condition" ("above"|"below"), "target", "created_at", "triggered"}
+    price_alerts: List[dict] = field(default_factory=list)
 
     # Display
     preferred_currency: str = "USD"  # "USD" | "ARS"
@@ -76,3 +78,70 @@ class UserPreferences:
         """Helper: update last_used_universe and persist."""
         self.last_used_universe = list(tickers)
         self.save()
+
+    def watch(self, symbol: str) -> bool:
+        """Add symbol to watchlist. Returns True if it was newly added."""
+        sym = symbol.upper().strip()
+        if sym and sym not in self.watched_tickers:
+            self.watched_tickers.append(sym)
+            self.save()
+            return True
+        return False
+
+    def unwatch(self, symbol: str) -> None:
+        """Remove symbol from watchlist and its price alerts."""
+        sym = symbol.upper().strip()
+        self.watched_tickers = [t for t in self.watched_tickers if t != sym]
+        self.price_alerts = [a for a in self.price_alerts if a.get("symbol") != sym]
+        self.save()
+
+    def add_price_alert(self, symbol: str, condition: str, target: float) -> None:
+        """Add a price alert. Replaces existing alert for same symbol+condition."""
+        import datetime
+        sym = symbol.upper().strip()
+        self.price_alerts = [
+            a for a in self.price_alerts
+            if not (a.get("symbol") == sym and a.get("condition") == condition)
+        ]
+        self.price_alerts.append({
+            "symbol":     sym,
+            "condition":  condition,
+            "target":     target,
+            "created_at": datetime.date.today().isoformat(),
+            "triggered":  False,
+        })
+        self.save()
+
+    def remove_price_alert(self, symbol: str, condition: str) -> None:
+        """Remove a specific price alert."""
+        sym = symbol.upper().strip()
+        self.price_alerts = [
+            a for a in self.price_alerts
+            if not (a.get("symbol") == sym and a.get("condition") == condition)
+        ]
+        self.save()
+
+    def check_price_alerts(self, prices: dict[str, float]) -> list[dict]:
+        """
+        Return list of newly-triggered alerts given current prices dict.
+        Marks triggered alerts in-place and persists.
+        """
+        triggered = []
+        changed = False
+        for alert in self.price_alerts:
+            if alert.get("triggered"):
+                continue
+            sym   = alert.get("symbol", "")
+            price = prices.get(sym)
+            if price is None:
+                continue
+            cond   = alert.get("condition")
+            target = alert.get("target", 0)
+            fired  = (cond == "above" and price >= target) or (cond == "below" and price <= target)
+            if fired:
+                alert["triggered"] = True
+                triggered.append(alert)
+                changed = True
+        if changed:
+            self.save()
+        return triggered

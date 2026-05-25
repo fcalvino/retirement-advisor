@@ -20,6 +20,7 @@ from dashboard.shared import (
     cached_full_analysis,
 )
 from data.fetcher import get_history
+from data.preferences import UserPreferences
 from portfolio.tracker import Portfolio
 
 # ------------------------------------------------------------------ #
@@ -52,11 +53,30 @@ if symbol:
         )
 
     # Header
-    st.markdown(f"## {decision.action_emoji} {fund.company_name} ({symbol})")
-    caption = f"{fund.sector} · {fund.industry} · Market Cap: ${fund.market_cap/1e9:.1f}B"
-    if decision.ai_reasoning:
-        caption += f" · 🤖 {ai_cfg.model}"
-    st.caption(caption)
+    _prefs: UserPreferences = st.session_state.user_prefs
+    _in_watchlist = symbol in _prefs.watched_tickers
+
+    h_col, wl_col = st.columns([5, 1])
+    with h_col:
+        st.markdown(f"## {decision.action_emoji} {fund.company_name} ({symbol})")
+        caption = f"{fund.sector} · {fund.industry} · Market Cap: ${fund.market_cap/1e9:.1f}B"
+        if decision.ai_reasoning:
+            caption += f" · 🤖 {ai_cfg.model}"
+        st.caption(caption)
+    with wl_col:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if _in_watchlist:
+            if st.button("❌ Quitar watchlist", use_container_width=True, key="wl_rm"):
+                _prefs.unwatch(symbol)
+                st.session_state.user_prefs = _prefs
+                st.toast(f"{symbol} eliminado de la watchlist", icon="❌")
+                st.rerun()
+        else:
+            if st.button("📋 Watchlist", type="secondary", use_container_width=True, key="wl_add"):
+                _prefs.watch(symbol)
+                st.session_state.user_prefs = _prefs
+                st.toast(f"{symbol} agregado a la watchlist", icon="📋")
+                st.rerun()
 
     # Decision banner
     action_color = ACTION_COLOR.get(decision.action, "#888")
