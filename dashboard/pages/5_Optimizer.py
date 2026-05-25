@@ -36,7 +36,7 @@ _prefs: UserPreferences = st.session_state.user_prefs
 portfolio: Portfolio = st.session_state.portfolio
 
 # ------------------------------------------------------------------ #
-#  Profile selector — persisted in session state                      #
+#  Profile selector — persisted via UserPreferences                   #
 # ------------------------------------------------------------------ #
 
 _PROFILE_LABELS = {
@@ -45,32 +45,38 @@ _PROFILE_LABELS = {
     "aggressive":   "🚀 Agresivo",
 }
 _PROFILE_KEYS = {v: k for k, v in _PROFILE_LABELS.items()}
+_PREFS_TO_KEY = {
+    "Conservador": "conservative",
+    "Moderado":    "moderate",
+    "Agresivo":    "aggressive",
+}
 
 if "optimizer_profile_key" not in st.session_state:
-    _saved_profile = {
-        "Conservador": "conservative",
-        "Moderado":    "moderate",
-        "Agresivo":    "aggressive",
-    }.get(_prefs.default_profile, "conservative")
-    st.session_state.optimizer_profile_key = _saved_profile
+    st.session_state.optimizer_profile_key = _PREFS_TO_KEY.get(
+        _prefs.default_profile, "conservative"
+    )
 
 prev_profile_key = st.session_state.optimizer_profile_key
 profile_label = st.sidebar.radio(
     "Perfil de riesgo",
     list(_PROFILE_LABELS.values()),
     index=list(_PROFILE_LABELS.keys()).index(prev_profile_key),
-    help="Conservador: preserva capital con dividendos. Moderado: balance crecimiento/ingreso. Agresivo: maximiza crecimiento a largo plazo.",
+    help=(
+        "Conservador: preserva capital con dividendos. "
+        "Moderado: balance crecimiento/ingreso. "
+        "Agresivo: maximiza crecimiento a largo plazo."
+    ),
 )
 profile_key     = _PROFILE_KEYS[profile_label]
 profile_changed = profile_key != prev_profile_key
 st.session_state.optimizer_profile_key = profile_key
 prof = OPTIMIZER_PROFILES[profile_key]
 
-# Auto-save profile on change
+# Auto-save profile preference when user changes the selector
 if profile_changed and _prefs.default_profile != prof.name:
     _prefs.default_profile = prof.name
     _prefs.save()
-    st.toast(f"Perfil '{prof.name}' guardado como favorito", icon="💾")
+    st.toast(f"Perfil '{prof.name}' guardado como preferencia", icon="💾")
 
 max_tickers = st.sidebar.slider(
     "Tickers a analizar", 10, len(st.session_state.universe), len(st.session_state.universe),
@@ -79,9 +85,11 @@ max_tickers = st.sidebar.slider(
 selected_universe = st.session_state.universe[:max_tickers]
 
 if st.sidebar.button("🔄 Re-analizar universo", type="secondary"):
-    for k in ["optimizer_scored", "optimizer_universe", "optimizer_prev_result"]:
+    for k in ["optimizer_scored", "optimizer_universe",
+              "optimizer_result", "optimizer_result_key", "optimizer_prev_result"]:
         st.session_state.pop(k, None)
     st.cache_data.clear()
+    st.rerun()
 
 # ------------------------------------------------------------------ #
 #  Profile card                                                        #
@@ -92,12 +100,12 @@ _PROFILE_DESC = {
     "moderate":     "Balance entre crecimiento e ingreso. Exposición al riesgo controlada.",
     "aggressive":   "Maximización de crecimiento a largo plazo. Mayor tolerancia al riesgo.",
 }
-with st.expander(f"📋 Perfil: **{prof.name}** — {_PROFILE_DESC[profile_key]}", expanded=profile_changed):
+with st.expander(f"📋 Perfil: **{prof.name}** — {_PROFILE_DESC[profile_key]}", expanded=True):
     pc1, pc2, pc3, pc4, pc5 = st.columns(5)
-    pc1.metric("Pos. máx.",     f"{prof.max_position_pct:.0f}%")
-    pc2.metric("Vol. máx.",     f"{prof.max_volatility_pct:.0f}%")
-    pc3.metric("Div. mín.",     f"{prof.min_dividend_yield_pct:.1f}%")
-    pc4.metric("Sector máx.",   f"{prof.max_sector_pct:.0f}%")
+    pc1.metric("Pos. máx.",       f"{prof.max_position_pct:.0f}%")
+    pc2.metric("Vol. máx.",       f"{prof.max_volatility_pct:.0f}%")
+    pc3.metric("Div. mín.",       f"{prof.min_dividend_yield_pct:.1f}%")
+    pc4.metric("Sector máx.",     f"{prof.max_sector_pct:.0f}%")
     pc5.metric("Min. posiciones", prof.min_positions)
     st.caption(
         f"Pesos objetivo — Score: {prof.score_weight:.0%} "
@@ -106,102 +114,160 @@ with st.expander(f"📋 Perfil: **{prof.name}** — {_PROFILE_DESC[profile_key]}
     )
 
 # ------------------------------------------------------------------ #
-#  Gather scored tickers — cached in session_state per universe       #
+#  Determine if cached result is still valid                          #
 # ------------------------------------------------------------------ #
 
 universe_key = tuple(selected_universe)
-if "optimizer_scored" not in st.session_state or st.session_state.get("optimizer_universe") != universe_key:
-    ai_cfg = _get_ai_config(context="screener")
-    n = len(selected_universe)
+result_key   = (profile_key, universe_key)
+has_valid_result = (
+    "optimizer_result" in st.session_state
+    and st.session_state.get("optimizer_result_key") == result_key
+)
+
+# If profile or universe changed since last run, show a notice
+if "optimizer_result" in st.session_state and not has_valid_result:
+    prev_result_key = st.session_state.get("optimizer_result_key", (None, None))
+    prev_prof_name  = OPTIMIZER_PROFILES.get(prev_result_key[0], prof).name if prev_result_key[0] else "—"
     st.info(
-        f"⚡ Analizando {n} tickers en paralelo… "
-        "(primera vez tarda ~15s, luego usa cache instantánea)"
+        f"ℹ️ El resultado anterior corresponde al perfil **{prev_prof_name}**. "
+        "Presioná **Ejecutar Optimización** para actualizar con el perfil actual."
     )
-    prog = st.progress(0)
-    stat = st.empty()
-    raw = _fetch_universe_parallel(selected_universe, ai_cfg, prog, stat, label="Optimizer")
-    prog.empty()
-    stat.empty()
 
-    scored: list[dict] = [
-        {
-            "symbol":              sym,
-            "adjusted_score":      fund.adjusted_score,
-            "total_score":         fund.total_score,
-            "dividend_yield":      fund.dividend_yield or 0.0,
-            "moat_score":          getattr(fund, "moat_score", 0.0),
-            "moat_classification": getattr(fund, "moat_classification", "None"),
-            "sector":              fund.sector or "Unknown",
-            "company_name":        fund.company_name,
-        }
-        for sym, fund, _tech, _dec in raw
-    ]
-    if not scored:
-        st.error("No se pudo analizar ningún ticker. Verificá la conexión a internet.")
-        st.stop()
-    st.session_state.optimizer_scored   = scored
-    st.session_state.optimizer_universe = universe_key
+# ------------------------------------------------------------------ #
+#  Run button                                                         #
+# ------------------------------------------------------------------ #
+
+scored: list[dict] = []
+current_weights: dict = {}
+
+btn_col, hint_col = st.columns([1, 3])
+with btn_col:
+    run_now = st.button(
+        "🚀 Ejecutar Optimización",
+        type="primary",
+        use_container_width=True,
+        disabled=False,
+    )
+with hint_col:
+    if "optimizer_scored" in st.session_state and st.session_state.get("optimizer_universe") == universe_key:
+        st.caption(f"✓ Análisis cacheado ({len(st.session_state.optimizer_scored)} tickers) — la optimización será instantánea.")
+    else:
+        st.caption(f"⚡ Primera ejecución analizará {len(selected_universe)} tickers en paralelo (~15s). Las siguientes usan caché.")
+
+if not run_now and not has_valid_result:
+    st.stop()
+
+# ------------------------------------------------------------------ #
+#  Fetch scored tickers (cached per universe)                        #
+# ------------------------------------------------------------------ #
+
+if run_now or not has_valid_result:
+    # Fetch / use cached scored data
+    if (
+        "optimizer_scored" not in st.session_state
+        or st.session_state.get("optimizer_universe") != universe_key
+    ):
+        ai_cfg = _get_ai_config(context="screener")
+        n = len(selected_universe)
+        st.info(f"⚡ Analizando {n} tickers en paralelo… (primera vez tarda ~15s)")
+        prog = st.progress(0)
+        stat = st.empty()
+        raw = _fetch_universe_parallel(selected_universe, ai_cfg, prog, stat, label="Optimizer")
+        prog.empty()
+        stat.empty()
+
+        scored = [
+            {
+                "symbol":              sym,
+                "adjusted_score":      fund.adjusted_score,
+                "total_score":         fund.total_score,
+                "dividend_yield":      fund.dividend_yield or 0.0,
+                "moat_score":          getattr(fund, "moat_score", 0.0),
+                "moat_classification": getattr(fund, "moat_classification", "None"),
+                "sector":              fund.sector or "Unknown",
+                "company_name":        fund.company_name,
+            }
+            for sym, fund, _tech, _dec in raw
+        ]
+        if not scored:
+            st.error("No se pudo analizar ningún ticker. Verificá la conexión a internet.")
+            st.stop()
+        st.session_state.optimizer_scored   = scored
+        st.session_state.optimizer_universe = universe_key
+    else:
+        scored = st.session_state.optimizer_scored
+
+    # ------------------------------------------------------------------ #
+    #  Run optimizer                                                      #
+    # ------------------------------------------------------------------ #
+
+    with st.spinner("Optimizando cartera…"):
+        opt = PortfolioOptimizer(profile=profile_key)
+        try:
+            current_weights = portfolio.get_position_weights()
+        except Exception:
+            current_weights = {}
+        result = opt.optimize(scored, current_weights=current_weights or None)
+
+    # Store previous result for delta banner before overwriting
+    if "optimizer_result" in st.session_state:
+        st.session_state.optimizer_prev_result = st.session_state.optimizer_result
+        st.session_state.optimizer_prev_result_key = st.session_state.get("optimizer_result_key")
+
+    st.session_state.optimizer_result     = result
+    st.session_state.optimizer_result_key = result_key
+
 else:
+    # Use cached result
+    result = st.session_state.optimizer_result
     scored = st.session_state.optimizer_scored
-    st.caption(
-        f"✓ Análisis cacheado — {len(scored)} tickers "
-        "· cambia perfil instantáneamente · usa 'Re-analizar' para refrescar datos"
-    )
-
-# ------------------------------------------------------------------ #
-#  Run optimizer                                                      #
-# ------------------------------------------------------------------ #
-
-with st.spinner("Optimizando cartera…"):
-    opt = PortfolioOptimizer(profile=profile_key)
-    current_weights: dict = {}
     try:
         current_weights = portfolio.get_position_weights()
     except Exception:
-        pass
-    result = opt.optimize(scored, current_weights=current_weights or None)
+        current_weights = {}
 
 # ------------------------------------------------------------------ #
 #  Profile-change delta banner                                        #
 # ------------------------------------------------------------------ #
 
-if profile_changed and "optimizer_prev_result" in st.session_state:
+if run_now and "optimizer_prev_result" in st.session_state:
     prev      = st.session_state.optimizer_prev_result
-    prev_name = OPTIMIZER_PROFILES[prev_profile_key].name
-    d_ret = result.expected_return_pct - prev.expected_return_pct
-    d_vol = result.volatility_pct      - prev.volatility_pct
-    d_sh  = result.sharpe_ratio        - prev.sharpe_ratio
-    d_div = result.dividend_yield_pct  - prev.dividend_yield_pct
+    prev_key  = st.session_state.get("optimizer_prev_result_key", (None,))
+    prev_name = OPTIMIZER_PROFILES.get(prev_key[0], prof).name if prev_key[0] else "—"
 
-    def _delta_str(v: float, unit: str = "%", positive_good: bool = True) -> str:
-        sign  = "+" if v >= 0 else ""
-        color = "green" if (v >= 0) == positive_good else "red"
-        return f'<span style="color:{color}">{sign}{v:.1f}{unit}</span>'
+    if prev_name != prof.name:
+        d_ret = result.expected_return_pct - prev.expected_return_pct
+        d_vol = result.volatility_pct      - prev.volatility_pct
+        d_sh  = result.sharpe_ratio        - prev.sharpe_ratio
+        d_div = result.dividend_yield_pct  - prev.dividend_yield_pct
 
-    st.markdown(
-        f"**Cambio de perfil:** {prev_name} → {prof.name} &nbsp;|&nbsp; "
-        f"Retorno {_delta_str(d_ret)} &nbsp; "
-        f"Volatilidad {_delta_str(d_vol, positive_good=False)} &nbsp; "
-        f"Sharpe {_delta_str(d_sh)} &nbsp; "
-        f"Div Yield {_delta_str(d_div)}",
-        unsafe_allow_html=True,
-    )
-    prev_w  = {a.symbol: a.weight_pct for a in prev.tickers}
-    curr_w  = {a.symbol: a.weight_pct for a in result.tickers}
-    all_syms = set(prev_w) | set(curr_w)
-    movers = sorted(
-        [(s, curr_w.get(s, 0) - prev_w.get(s, 0)) for s in all_syms],
-        key=lambda x: -abs(x[1]),
-    )[:6]
-    mover_parts = [
-        f"{sym} {'▲' if delta > 0 else '▼'}{abs(delta):.1f}%"
-        for sym, delta in movers
-        if abs(delta) >= 0.5
-    ]
-    if mover_parts:
-        st.caption("Principales cambios en posiciones: " + " · ".join(mover_parts))
+        def _delta_str(v: float, unit: str = "%", positive_good: bool = True) -> str:
+            sign  = "+" if v >= 0 else ""
+            color = "green" if (v >= 0) == positive_good else "red"
+            return f'<span style="color:{color}">{sign}{v:.1f}{unit}</span>'
 
-st.session_state.optimizer_prev_result = result
+        st.markdown(
+            f"**Cambio de perfil:** {prev_name} → {prof.name} &nbsp;|&nbsp; "
+            f"Retorno {_delta_str(d_ret)} &nbsp; "
+            f"Volatilidad {_delta_str(d_vol, positive_good=False)} &nbsp; "
+            f"Sharpe {_delta_str(d_sh)} &nbsp; "
+            f"Div Yield {_delta_str(d_div)}",
+            unsafe_allow_html=True,
+        )
+        prev_w  = {a.symbol: a.weight_pct for a in prev.tickers}
+        curr_w  = {a.symbol: a.weight_pct for a in result.tickers}
+        all_syms = set(prev_w) | set(curr_w)
+        movers = sorted(
+            [(s, curr_w.get(s, 0) - prev_w.get(s, 0)) for s in all_syms],
+            key=lambda x: -abs(x[1]),
+        )[:6]
+        mover_parts = [
+            f"{sym} {'▲' if delta > 0 else '▼'}{abs(delta):.1f}%"
+            for sym, delta in movers
+            if abs(delta) >= 0.5
+        ]
+        if mover_parts:
+            st.caption("Principales cambios en posiciones: " + " · ".join(mover_parts))
 
 # ------------------------------------------------------------------ #
 #  Status bar                                                         #
@@ -270,9 +336,9 @@ with tab_cart:
             })
         df_alloc = pd.DataFrame(alloc_data)
 
-        df_bar = df_alloc[df_alloc["Peso %"] > 0].sort_values("Peso %")
+        df_bar   = df_alloc[df_alloc["Peso %"] > 0].sort_values("Peso %")
         _max_val = df_bar["Peso %"].max() if not df_bar.empty else prof.max_position_pct
-        fig_bar = px.bar(
+        fig_bar  = px.bar(
             df_bar, x="Peso %", y="Ticker", orientation="h",
             color="Score", color_continuous_scale="RdYlGn",
             range_color=[40, 100],
@@ -490,17 +556,17 @@ with tab_rebal:
         holds = [s for s in result.rebalance_suggestions if s.action == "HOLD"]
 
         rb1, rb2, rb3 = st.columns(3)
-        rb1.metric("Compras",   len(buys))
-        rb2.metric("Ventas",    len(sells))
+        rb1.metric("Compras",    len(buys))
+        rb2.metric("Ventas",     len(sells))
         rb3.metric("Sin cambio", len(holds))
 
         rebal_data = [
             {
-                "Ticker":    s.symbol,
-                "Actual %":  s.current_pct,
+                "Ticker":     s.symbol,
+                "Actual %":   s.current_pct,
                 "Objetivo %": s.target_pct,
-                "Δ %":       s.delta_pct,
-                "Acción":    s.action,
+                "Δ %":        s.delta_pct,
+                "Acción":     s.action,
             }
             for s in result.rebalance_suggestions
             if abs(s.delta_pct) >= 0.5
@@ -520,19 +586,18 @@ with tab_rebal:
             )
             st.plotly_chart(fig_rebal, use_container_width=True)
 
+        all_rebal_data = [
+            {
+                "Ticker":     s.symbol,
+                "Actual %":   s.current_pct,
+                "Objetivo %": s.target_pct,
+                "Δ %":        s.delta_pct,
+                "Acción":     s.action,
+            }
+            for s in result.rebalance_suggestions
+        ]
         st.dataframe(
-            pd.DataFrame(rebal_data) if rebal_data else pd.DataFrame(
-                [
-                    {
-                        "Ticker":    s.symbol,
-                        "Actual %":  s.current_pct,
-                        "Objetivo %": s.target_pct,
-                        "Δ %":       s.delta_pct,
-                        "Acción":    s.action,
-                    }
-                    for s in result.rebalance_suggestions
-                ]
-            ),
+            pd.DataFrame(rebal_data if rebal_data else all_rebal_data),
             use_container_width=True,
             hide_index=True,
             column_config={"Δ %": st.column_config.NumberColumn("Δ %", format="%.1f")},

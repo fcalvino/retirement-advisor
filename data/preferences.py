@@ -26,7 +26,7 @@ _PREFS_PATH = Path(__file__).parent / "user_preferences.json"
 @dataclass
 class UserPreferences:
     # Optimizer
-    default_profile: str = "Moderado"
+    default_profile: str = "Conservador"
 
     # Universes
     favorite_universe: List[str] = field(default_factory=list)
