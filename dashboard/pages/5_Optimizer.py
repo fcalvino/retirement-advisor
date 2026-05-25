@@ -271,6 +271,7 @@ with tab_cart:
         df_alloc = pd.DataFrame(alloc_data)
 
         df_bar = df_alloc[df_alloc["Peso %"] > 0].sort_values("Peso %")
+        _max_val = df_bar["Peso %"].max() if not df_bar.empty else prof.max_position_pct
         fig_bar = px.bar(
             df_bar, x="Peso %", y="Ticker", orientation="h",
             color="Score", color_continuous_scale="RdYlGn",
@@ -278,13 +279,24 @@ with tab_cart:
             title="Peso por ticker (coloreado por Score Ajustado)",
             text="Peso %",
         )
-        fig_bar.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+        fig_bar.update_traces(
+            texttemplate="%{text:.1f}%",
+            textposition="inside",
+            insidetextanchor="end",
+        )
         fig_bar.add_vline(
-            x=prof.max_position_pct, line_dash="dash", line_color="orange",
+            x=prof.max_position_pct,
+            line_dash="dash",
+            line_color="orange",
             annotation_text=f"máx {prof.max_position_pct:.0f}%",
+            annotation_position="bottom right",
+            annotation_font_color="orange",
         )
         fig_bar.update_layout(
-            height=max(350, len(df_bar) * 22), yaxis_title="", coloraxis_showscale=False,
+            height=max(350, len(df_bar) * 22),
+            yaxis_title="",
+            coloraxis_showscale=False,
+            xaxis_range=[0, max(_max_val, prof.max_position_pct) * 1.15],
         )
         st.plotly_chart(fig_bar, use_container_width=True)
 

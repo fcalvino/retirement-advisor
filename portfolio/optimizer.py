@@ -429,7 +429,9 @@ class PortfolioOptimizer:
                 options={"maxiter": 1000, "ftol": 1e-9},
             )
             if res.success:
-                w = np.clip(res.x, 0, 1)
+                # Clip to actual bounds (not just [0,1]) so numerical overflow
+                # from SLSQP doesn't allow any ticker to exceed max_position_pct
+                w = np.clip(res.x, lb, ub)
                 if w.sum() > 0:
                     w /= w.sum()
                 if n > cfg.min_positions:
@@ -525,6 +527,13 @@ class PortfolioOptimizer:
         weights = np.asarray(weights, dtype=float).copy()
         if weights.sum() > 0:
             weights /= weights.sum()
+        # Hard-cap each position to profile max (defensive: SLSQP can overshoot
+        # bounds by a small epsilon; renormalization can amplify this)
+        max_w = self.cfg.max_position_pct / 100
+        if weights.max() > max_w + 0.001:
+            weights = np.clip(weights, 0, max_w)
+            if weights.sum() > 0:
+                weights /= weights.sum()
         # Zero dust positions
         weights[weights < 0.001] = 0.0
         # Re-normalize after zeroing so displayed weights sum exactly to 100 %
