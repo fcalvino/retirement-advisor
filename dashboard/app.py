@@ -237,6 +237,69 @@ def cached_full_analysis(symbol: str, ai_provider: str = "", ai_model: str = "",
     return fund, tech, decision
 
 
+def _analyse_universe_parallel(
+    symbols: list[str],
+    ai_cfg: AIConfig,
+    progress_bar,
+    status_text,
+) -> list[dict]:
+    """
+    Run cached_full_analysis for each symbol in a thread pool.
+    Workers capped at min(16, cpu_count*2) to avoid hammering yfinance.
+    A per-ticker exception never aborts the whole run — the ticker is skipped
+    and the error is logged.
+    """
+    import os
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    max_workers = min(16, (os.cpu_count() or 4) * 2)
+    total = len(symbols)
+    completed = 0
+    rows: list[dict] = []
+
+    def _analyse_one(sym: str) -> dict | None:
+        try:
+            fund, tech, decision = cached_full_analysis(
+                sym, ai_cfg.provider, ai_cfg.model, ai_cfg.enabled, ai_cfg.api_key
+            )
+            return {
+                "Ticker": sym,
+                "Company": fund.company_name[:25],
+                "Sector": fund.sector,
+                "Signal": f"{decision.action_emoji} {decision.action}",
+                "Adj. Score": fund.adjusted_score,
+                "Base Score": fund.total_score,
+                "Score Bar": score_bar(fund.adjusted_score),
+                "Consistency": fund.consistency_score,
+                "Piotroski": fund.piotroski_score,
+                "Moat Score": getattr(fund, "moat_score", 0.0),
+                "Moat": f"{_MOAT_EMOJI.get(getattr(fund, 'moat_classification', ''), '⚪')} {getattr(fund, 'moat_classification', '—')}",
+                "Technical": tech.signal,
+                "P/E": fund.pe_ratio,
+                "ROE %": fund.roe,
+                "Rev CAGR 5Y": fund.revenue_cagr_5y,
+                "Div Yield %": fund.dividend_yield,
+                "MoS %": fund.margin_of_safety_pct,
+                "Price": fund.current_price,
+            }
+        except Exception as exc:
+            logger.error(f"Screener: {sym} failed — {exc}")
+            return None
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_analyse_one, sym): sym for sym in symbols}
+        for future in as_completed(futures):
+            completed += 1
+            sym = futures[future]
+            status_text.text(f"Analyzing… {completed}/{total} done (last: {sym})")
+            progress_bar.progress(completed / total)
+            result = future.result()
+            if result is not None:
+                rows.append(result)
+
+    return rows
+
+
 # ------------------------------------------------------------------ #
 #  About page (defined before the page switch)                         #
 # ------------------------------------------------------------------ #
@@ -333,38 +396,11 @@ if page == "🏠 Screener":
     if st.button("🔄 Refresh Analysis", type="primary"):
         st.cache_data.clear()
 
-    rows = []
     progress = st.progress(0)
     status = st.empty()
 
     ai_cfg = _get_ai_config(context="screener")
-    for i, sym in enumerate(selected):
-        status.text(f"Analyzing {sym}... ({i+1}/{len(selected)})")
-        progress.progress((i + 1) / len(selected))
-        try:
-            fund, tech, decision = cached_full_analysis(sym, ai_cfg.provider, ai_cfg.model, ai_cfg.enabled, ai_cfg.api_key)
-            rows.append({
-                "Ticker": sym,
-                "Company": fund.company_name[:25],
-                "Sector": fund.sector,
-                "Signal": f"{decision.action_emoji} {decision.action}",
-                "Adj. Score": fund.adjusted_score,
-                "Base Score": fund.total_score,
-                "Score Bar": score_bar(fund.adjusted_score),
-                "Consistency": fund.consistency_score,
-                "Piotroski": fund.piotroski_score,
-                "Moat Score": getattr(fund, "moat_score", 0.0),
-                "Moat": f"{_MOAT_EMOJI.get(getattr(fund, 'moat_classification', ''), '⚪')} {getattr(fund, 'moat_classification', '—')}",
-                "Technical": tech.signal,
-                "P/E": fund.pe_ratio,
-                "ROE %": fund.roe,
-                "Rev CAGR 5Y": fund.revenue_cagr_5y,
-                "Div Yield %": fund.dividend_yield,
-                "MoS %": fund.margin_of_safety_pct,
-                "Price": fund.current_price,
-            })
-        except Exception as exc:
-            logger.error(f"{sym}: {exc}")
+    rows = _analyse_universe_parallel(selected, ai_cfg, progress, status)
 
     progress.empty()
     status.empty()
