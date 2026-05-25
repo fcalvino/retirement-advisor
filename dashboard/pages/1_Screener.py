@@ -28,12 +28,19 @@ st.set_page_config(page_title="Screener — Retirement Advisor", page_icon="🏠
 # ------------------------------------------------------------------ #
 
 st.title("🏠 Opportunity Screener")
-st.caption("Ranked by fundamental quality score. Updated every 24h via cache.")
+st.caption(
+    "Análisis fundamental + técnico del universo completo. "
+    "Cache de 1h por ticker — warm cache es instantáneo. "
+    "Usá **🔍 Stock Analysis** para profundizar en cualquier ticker."
+)
 
 _prefs: UserPreferences = st.session_state.user_prefs
 
 tickers = st.session_state.universe
-max_tickers = st.sidebar.slider("Max tickers to screen", 5, len(tickers), len(tickers))
+max_tickers = st.sidebar.slider(
+    "Max tickers to screen", 5, len(tickers), len(tickers),
+    help="Reducí el número para ver resultados más rápido. Los primeros N tickers del universo son analizados.",
+)
 selected = tickers[:max_tickers]
 
 if st.sidebar.button(
@@ -45,7 +52,13 @@ if st.sidebar.button(
     _prefs.save()
     st.toast("Universo guardado como favorito", icon="💾")
 
-if st.button("🔄 Refresh Analysis", type="primary"):
+col_btn, col_hint = st.columns([1, 4])
+with col_btn:
+    refresh = st.button("🔄 Refresh Analysis", type="primary", use_container_width=True)
+with col_hint:
+    st.caption("⚡ El análisis corre en paralelo. Primera vez ~15s · Después usa cache.")
+
+if refresh:
     st.cache_data.clear()
 
 progress = st.progress(0)
@@ -76,7 +89,10 @@ if rows and list(st.session_state.universe) != _prefs.favorite_universe:
         st.toast("Universo guardado como favorito", icon="⭐")
 
 if not rows:
-    st.warning("No data returned. Check internet connection.")
+    st.error(
+        "No se pudieron obtener datos. Verificá la conexión a internet y volvé a intentar. "
+        "Si el problema persiste, reducí el universo en **⚙️ Settings**."
+    )
     st.stop()
 
 df = pd.DataFrame(rows).sort_values("Adj. Score", ascending=False)
@@ -86,9 +102,16 @@ col1, col2, col3, col4 = st.columns(4)
 buy_count  = df["Signal"].str.contains("BUY").sum()
 hold_count = df["Signal"].str.contains("HOLD").sum()
 sell_count = df["Signal"].str.contains("SELL|REDUCE|AVOID").sum()
-col1.metric("Strong/Buy signals", buy_count)
-col2.metric("Hold signals", hold_count)
-col3.metric("Sell/Reduce signals", sell_count)
+col1.metric(
+    "Strong/Buy signals", buy_count,
+    help="Tickers con score ajustado ≥ 60 y señal técnica positiva",
+)
+col2.metric("Hold signals", hold_count,
+    help="Tickers con señal neutral — mantener si ya están en cartera",
+)
+col3.metric("Sell/Reduce signals", sell_count,
+    help="Tickers con fundamentos débiles o deterioro técnico",
+)
 col4.metric("Stocks screened", len(df))
 
 # Table
@@ -116,8 +139,14 @@ fig = px.bar(
     color_continuous_scale="RdYlGn",
     range_color=[0, 100],
     title="Adjusted Score Ranking (Base + Consistency + Piotroski + Moat)",
+    labels={"Adj. Score": "Score Ajustado"},
 )
-fig.add_vline(x=75, line_dash="dash", line_color="green",  annotation_text="Strong Buy")
-fig.add_vline(x=60, line_dash="dash", line_color="orange", annotation_text="Buy")
+fig.add_vline(x=75, line_dash="dash", line_color="green",  annotation_text="Strong Buy ≥75")
+fig.add_vline(x=60, line_dash="dash", line_color="orange", annotation_text="Buy ≥60")
 fig.update_layout(height=max(400, len(df) * 22), yaxis_title="")
 st.plotly_chart(fig, use_container_width=True)
+
+st.caption(
+    "💡 Hacé clic en cualquier ticker en la tabla y luego abrí **🔍 Stock Analysis** "
+    "para ver el análisis completo con Piotroski, Moat y AI."
+)

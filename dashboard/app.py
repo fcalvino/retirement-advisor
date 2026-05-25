@@ -117,12 +117,30 @@ if st.session_state.get("prefs_loaded_toast_shown") is None:
 # ------------------------------------------------------------------ #
 
 st.title("📈 Retirement Advisor")
-st.markdown(
-    "Seleccioná una página en el menú de la izquierda para comenzar. "
-    "Empezá por **🏠 Screener** para ver el ranking de oportunidades."
-)
 
 col1, col2, col3 = st.columns(3)
 col1.metric("Tickers en universo", len(st.session_state.universe))
-col2.metric("Perfil guardado", st.session_state.user_prefs.default_profile)
-col3.metric("Tests", "133 passing")
+col2.metric("Perfil guardado",     st.session_state.user_prefs.default_profile)
+col3.metric("Tests",               "133 passing")
+
+st.divider()
+
+st.markdown("""
+### ¿Por dónde empezar?
+
+| Página | ¿Cuándo usarla? |
+|---|---|
+| **🏠 Screener** | Ver el ranking completo del universo — empezá aquí |
+| **🔍 Stock Analysis** | Análisis profundo de un ticker específico |
+| **💼 Portfolio** | Ver y gestionar tus posiciones actuales |
+| **📈 Optimizer** | Construir una cartera óptima por perfil de riesgo |
+| **📊 Backtesting** | Simular performance histórica de la estrategia |
+| **🎲 Simulaciones** | Monte Carlo + Stress Test para proyecciones |
+| **🔔 Alertas** | Monitoreo automático y reportes PDF |
+| **⚙️ Settings** | Configurar universo, AI y preferencias |
+""")
+
+st.info(
+    "💡 **Flujo recomendado:** Screener → Stock Analysis → Optimizer → Portfolio",
+    icon="💡",
+)
