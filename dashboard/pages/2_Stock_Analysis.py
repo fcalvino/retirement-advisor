@@ -24,16 +24,6 @@ from data.preferences import UserPreferences
 from portfolio.tracker import Portfolio
 
 # ------------------------------------------------------------------ #
-#  Page config                                                         #
-# ------------------------------------------------------------------ #
-
-st.set_page_config(
-    page_title="Stock Analysis — Retirement Advisor",
-    page_icon="🔍",
-    layout="wide",
-)
-
-# ------------------------------------------------------------------ #
 #  Page                                                                #
 # ------------------------------------------------------------------ #
 

@@ -15,16 +15,6 @@ from config import MONTE_CARLO, SECTOR_MAP
 from dashboard.shared import cached_monte_carlo, cached_stress_test
 
 # ------------------------------------------------------------------ #
-#  Page config                                                         #
-# ------------------------------------------------------------------ #
-
-st.set_page_config(
-    page_title="Simulaciones — Retirement Advisor",
-    page_icon="🎲",
-    layout="wide",
-)
-
-# ------------------------------------------------------------------ #
 #  Page                                                                #
 # ------------------------------------------------------------------ #
 

@@ -22,16 +22,6 @@ from portfolio.optimizer import PortfolioOptimizer
 from portfolio.tracker import Portfolio
 
 # ------------------------------------------------------------------ #
-#  Page config                                                         #
-# ------------------------------------------------------------------ #
-
-st.set_page_config(
-    page_title="Optimizer — Retirement Advisor",
-    page_icon="📈",
-    layout="wide",
-)
-
-# ------------------------------------------------------------------ #
 #  Page                                                                #
 # ------------------------------------------------------------------ #
 

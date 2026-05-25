@@ -1,8 +1,8 @@
 """
 Retirement Advisor — Streamlit entry point.
 
-This file is intentionally minimal: it only handles page config,
-one-time startup validation, and shared session_state initialization.
+Handles page config, one-time startup validation, shared session_state
+initialization, sidebar branding, and multipage navigation.
 All page logic lives in dashboard/pages/*.py.
 All shared helpers live in dashboard/shared.py.
 
@@ -91,6 +91,74 @@ if "ai_provider" not in st.session_state:
     )
 
 # ------------------------------------------------------------------ #
+#  Navigation — must be defined before any sidebar content             #
+# ------------------------------------------------------------------ #
+
+def _home_page() -> None:
+    st.title("📈 Retirement Advisor")
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Tickers en universo", len(st.session_state.universe))
+    col2.metric("Perfil guardado", st.session_state.user_prefs.default_profile)
+    col3.metric("Tests", "133 passing")
+
+    st.divider()
+
+    st.markdown("""
+### ¿Por dónde empezar?
+
+| Página | ¿Cuándo usarla? |
+|---|---|
+| **🏠 Screener** | Ver el ranking completo del universo — empezá aquí |
+| **🔍 Stock Analysis** | Análisis profundo de un ticker específico |
+| **💼 Portfolio** | Ver y gestionar tus posiciones actuales |
+| **📊 Allocation** | Recomendación de acciones/bonos/cash según tu edad |
+| **📈 Optimizer** | Construir una cartera óptima por perfil de riesgo |
+| **📉 Backtesting** | Simular performance histórica de la estrategia |
+| **🎲 Simulaciones** | Monte Carlo + Stress Test para proyecciones |
+| **🔔 Alertas** | Monitoreo automático y reportes PDF |
+| **📋 Watchlist** | Tickers favoritos con alertas de precio en tiempo real |
+| **⚙️ Settings** | Configurar universo, AI y preferencias |
+""")
+
+    st.info(
+        "💡 **Flujo recomendado:** Screener → Stock Analysis → Optimizer → Portfolio",
+        icon="💡",
+    )
+
+
+_pages_dir = Path(__file__).parent / "pages"
+
+pg = st.navigation(
+    {
+        "": [
+            st.Page(_home_page, title="Inicio", icon="📈", default=True),
+        ],
+        "Análisis": [
+            st.Page(str(_pages_dir / "1_Screener.py"),       title="Screener",       icon="🏠"),
+            st.Page(str(_pages_dir / "2_Stock_Analysis.py"), title="Stock Analysis", icon="🔍"),
+        ],
+        "Portfolio": [
+            st.Page(str(_pages_dir / "3_Portfolio.py"),  title="Portfolio",  icon="💼"),
+            st.Page(str(_pages_dir / "4_Allocation.py"), title="Allocation", icon="📊"),
+            st.Page(str(_pages_dir / "5_Optimizer.py"),  title="Optimizer",  icon="📈"),
+        ],
+        "Simulaciones": [
+            st.Page(str(_pages_dir / "6_Backtesting.py"),  title="Backtesting",  icon="📉"),
+            st.Page(str(_pages_dir / "7_Simulaciones.py"), title="Simulaciones", icon="🎲"),
+        ],
+        "Alertas": [
+            st.Page(str(_pages_dir / "8_Alertas.py"),   title="Alertas",   icon="🔔"),
+            st.Page(str(_pages_dir / "11_Watchlist.py"), title="Watchlist", icon="📋"),
+        ],
+        "Info": [
+            st.Page(str(_pages_dir / "9_Settings.py"), title="Settings", icon="⚙️"),
+            st.Page(str(_pages_dir / "10_About.py"),   title="About",    icon="ℹ️"),
+        ],
+    }
+)
+
+# ------------------------------------------------------------------ #
 #  Sidebar branding + config warnings                                  #
 # ------------------------------------------------------------------ #
 
@@ -112,7 +180,7 @@ if st.session_state.get("prefs_loaded_toast_shown") is None:
         st.sidebar.caption("✔ Preferencias cargadas")
     st.session_state.prefs_loaded_toast_shown = True
 
-# Watchlist badge — show count + triggered alert indicator
+# Watchlist badge — count + triggered alert indicator
 _wl = _prefs.watched_tickers
 _alerts_triggered = sum(1 for a in _prefs.price_alerts if a.get("triggered"))
 if _wl:
@@ -122,34 +190,7 @@ if _wl:
     st.sidebar.caption(_badge)
 
 # ------------------------------------------------------------------ #
-#  Home page content                                                   #
+#  Run selected page                                                   #
 # ------------------------------------------------------------------ #
 
-st.title("📈 Retirement Advisor")
-
-col1, col2, col3 = st.columns(3)
-col1.metric("Tickers en universo", len(st.session_state.universe))
-col2.metric("Perfil guardado",     st.session_state.user_prefs.default_profile)
-col3.metric("Tests",               "133 passing")
-
-st.divider()
-
-st.markdown("""
-### ¿Por dónde empezar?
-
-| Página | ¿Cuándo usarla? |
-|---|---|
-| **🏠 Screener** | Ver el ranking completo del universo — empezá aquí |
-| **🔍 Stock Analysis** | Análisis profundo de un ticker específico |
-| **💼 Portfolio** | Ver y gestionar tus posiciones actuales |
-| **📈 Optimizer** | Construir una cartera óptima por perfil de riesgo |
-| **📊 Backtesting** | Simular performance histórica de la estrategia |
-| **🎲 Simulaciones** | Monte Carlo + Stress Test para proyecciones |
-| **🔔 Alertas** | Monitoreo automático y reportes PDF |
-| **⚙️ Settings** | Configurar universo, AI y preferencias |
-""")
-
-st.info(
-    "💡 **Flujo recomendado:** Screener → Stock Analysis → Optimizer → Portfolio",
-    icon="💡",
-)
+pg.run()

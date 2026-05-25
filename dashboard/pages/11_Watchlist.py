@@ -19,16 +19,6 @@ from dashboard.shared import (
 from data.preferences import UserPreferences
 
 # ------------------------------------------------------------------ #
-#  Page config                                                         #
-# ------------------------------------------------------------------ #
-
-st.set_page_config(
-    page_title="Watchlist — Retirement Advisor",
-    page_icon="📋",
-    layout="wide",
-)
-
-# ------------------------------------------------------------------ #
 #  Page                                                                #
 # ------------------------------------------------------------------ #
 

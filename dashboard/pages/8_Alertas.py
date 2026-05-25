@@ -18,16 +18,6 @@ from alerts.store import AlertSeverity, alert_store
 from dashboard.shared import _fetch_universe_parallel, _get_ai_config
 
 # ------------------------------------------------------------------ #
-#  Page config                                                         #
-# ------------------------------------------------------------------ #
-
-st.set_page_config(
-    page_title="Alertas — Retirement Advisor",
-    page_icon="🔔",
-    layout="wide",
-)
-
-# ------------------------------------------------------------------ #
 #  Page                                                                #
 # ------------------------------------------------------------------ #
 

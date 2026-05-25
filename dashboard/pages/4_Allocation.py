@@ -14,16 +14,6 @@ from portfolio.allocation import AllocationAdvisor
 from portfolio.tracker import Portfolio
 
 # ------------------------------------------------------------------ #
-#  Page config                                                         #
-# ------------------------------------------------------------------ #
-
-st.set_page_config(
-    page_title="Allocation — Retirement Advisor",
-    page_icon="📐",
-    layout="wide",
-)
-
-# ------------------------------------------------------------------ #
 #  Page                                                                #
 # ------------------------------------------------------------------ #
 
