@@ -125,6 +125,13 @@ if errors or warnings:
         for msg in warnings:
             st.warning(msg, icon="🟡")
 
+# Subtle indicator when preferences were loaded from disk
+if "user_prefs" in st.session_state and st.session_state.get("prefs_loaded_toast_shown") is None:
+    from data.preferences import _PREFS_PATH
+    if _PREFS_PATH.exists():
+        st.sidebar.caption("✔ Preferencias cargadas")
+    st.session_state.prefs_loaded_toast_shown = True
+
 # ------------------------------------------------------------------ #
 #  Shared state                                                        #
 # ------------------------------------------------------------------ #
@@ -406,11 +413,11 @@ if page == "🏠 Screener":
     max_tickers = st.sidebar.slider("Max tickers to screen", 5, len(tickers), len(tickers))
     selected = tickers[:max_tickers]
 
-    if st.sidebar.button("💾 Guardar universo actual", help="Guarda el universo como favorito y lo restaura en próximas sesiones"):
+    if st.sidebar.button("💾 Guardar como favorito", help="Guarda el universo como favorito y lo restaura en próximas sesiones"):
         _prefs.last_used_universe = list(st.session_state.universe)
         _prefs.favorite_universe = list(st.session_state.universe)
         _prefs.save()
-        st.sidebar.success("Universo guardado.")
+        st.toast("Universo guardado como favorito", icon="💾")
 
     if st.button("🔄 Refresh Analysis", type="primary"):
         st.cache_data.clear()
@@ -423,6 +430,21 @@ if page == "🏠 Screener":
 
     progress.empty()
     status.empty()
+
+    # Auto-save last_used_universe silently after each successful run
+    if rows and list(st.session_state.universe) != _prefs.last_used_universe:
+        _prefs.last_used_universe = list(st.session_state.universe)
+        _prefs.save()
+
+    # Offer to save as favorite if universe differs from saved favorite
+    if rows and list(st.session_state.universe) != _prefs.favorite_universe:
+        if st.sidebar.button(
+            "⭐ Guardar como favorito",
+            help=f"Tu favorito actual tiene {len(_prefs.favorite_universe)} tickers. Reemplazar con el universo actual.",
+        ):
+            _prefs.favorite_universe = list(st.session_state.universe)
+            _prefs.save()
+            st.toast("Universo guardado como favorito", icon="⭐")
 
     if not rows:
         st.warning("No data returned. Check internet connection.")
@@ -969,10 +991,11 @@ elif page == "📈 Optimizer":
     st.session_state.optimizer_profile_key = profile_key
     prof = OPTIMIZER_PROFILES[profile_key]
 
-    if st.sidebar.button("💾 Guardar perfil como favorito", help="Restaura este perfil automáticamente en próximas sesiones"):
+    # Auto-save profile on change — no manual button needed
+    if profile_changed and _prefs.default_profile != prof.name:
         _prefs.default_profile = prof.name
         _prefs.save()
-        st.sidebar.success(f"Perfil '{prof.name}' guardado.")
+        st.toast(f"Perfil '{prof.name}' guardado como favorito", icon="💾")
 
     max_tickers = st.sidebar.slider(
         "Tickers a analizar", 10, len(st.session_state.universe), len(st.session_state.universe),
@@ -2309,11 +2332,11 @@ elif page == "⚙️ Settings":
             st.session_state.universe = [t.upper().strip() for t in raw if t.strip()]
             _prefs.last_used_universe = list(st.session_state.universe)
             _prefs.save()
-            st.success(f"Universe updated: {len(st.session_state.universe)} tickers")
+            st.toast(f"Universo guardado: {len(st.session_state.universe)} tickers", icon="✅")
     with col_restore:
         if _prefs.favorite_universe and st.button("↩ Restaurar favorito", help=f"{len(_prefs.favorite_universe)} tickers guardados"):
             st.session_state.universe = list(_prefs.favorite_universe)
-            st.success(f"Universo favorito restaurado: {len(_prefs.favorite_universe)} tickers")
+            st.toast(f"Universo favorito restaurado: {len(_prefs.favorite_universe)} tickers", icon="↩")
             st.rerun()
 
     st.divider()
@@ -2328,7 +2351,7 @@ elif page == "⚙️ Settings":
         raw_w = watched_text.replace(",", "\n").split()
         _prefs.watched_tickers = [t.upper().strip() for t in raw_w if t.strip()]
         _prefs.save()
-        st.success(f"Watchlist guardada: {len(_prefs.watched_tickers)} tickers")
+        st.toast(f"Watchlist guardada: {len(_prefs.watched_tickers)} tickers", icon="📌")
 
     st.divider()
     st.subheader("🤖 AI Analysis")
