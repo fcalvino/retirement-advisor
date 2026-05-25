@@ -36,8 +36,13 @@ _prefs: UserPreferences = st.session_state.user_prefs
 portfolio: Portfolio = st.session_state.portfolio
 
 # ------------------------------------------------------------------ #
-#  Profile selector — persisted via UserPreferences                   #
+#  Profile selector — key= lets Streamlit own the widget state        #
 # ------------------------------------------------------------------ #
+# Using index= to set the initial position of a radio widget conflicts
+# with Streamlit's internal widget state on the first rerun after a
+# user interaction, causing the selection to revert to the old value.
+# The fix: initialize the session_state key once and use key= so
+# Streamlit is the single source of truth for the widget's value.
 
 _PROFILE_LABELS = {
     "conservative": "🛡️  Conservador",
@@ -51,31 +56,35 @@ _PREFS_TO_KEY = {
     "Agresivo":    "aggressive",
 }
 
-if "optimizer_profile_key" not in st.session_state:
-    st.session_state.optimizer_profile_key = _PREFS_TO_KEY.get(
-        _prefs.default_profile, "conservative"
-    )
+# Seed the widget's session_state key exactly once (from saved preference).
+# After this, Streamlit manages it automatically when the user interacts.
+if "optimizer_profile_label" not in st.session_state:
+    _init_key = _PREFS_TO_KEY.get(_prefs.default_profile, "conservative")
+    st.session_state["optimizer_profile_label"] = _PROFILE_LABELS[_init_key]
 
-prev_profile_key = st.session_state.optimizer_profile_key
 profile_label = st.sidebar.radio(
     "Perfil de riesgo",
     list(_PROFILE_LABELS.values()),
-    index=list(_PROFILE_LABELS.keys()).index(prev_profile_key),
+    key="optimizer_profile_label",   # Streamlit keeps session_state in sync
     help=(
         "Conservador: preserva capital con dividendos. "
         "Moderado: balance crecimiento/ingreso. "
         "Agresivo: maximiza crecimiento a largo plazo."
     ),
 )
-profile_key     = _PROFILE_KEYS[profile_label]
-profile_changed = profile_key != prev_profile_key
-st.session_state.optimizer_profile_key = profile_key
+profile_key = _PROFILE_KEYS[profile_label]
 prof = OPTIMIZER_PROFILES[profile_key]
 
-# Auto-save profile preference when user changes the selector
-if profile_changed and _prefs.default_profile != prof.name:
+# Auto-save preference when the selection changes.
+# Compare against a separate tracker (not prefs.default_profile directly,
+# which could lag behind in the same session after the first save).
+if "optimizer_last_saved_profile" not in st.session_state:
+    st.session_state.optimizer_last_saved_profile = _prefs.default_profile
+
+if prof.name != st.session_state.optimizer_last_saved_profile:
     _prefs.default_profile = prof.name
     _prefs.save()
+    st.session_state.optimizer_last_saved_profile = prof.name
     st.toast(f"Perfil '{prof.name}' guardado como preferencia", icon="💾")
 
 max_tickers = st.sidebar.slider(
