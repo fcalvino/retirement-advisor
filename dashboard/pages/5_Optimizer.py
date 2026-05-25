@@ -1,4 +1,4 @@
-"""Portfolio Optimizer — Mean-Variance optimization with 3 risk profiles."""
+"""Portfolio Optimizer — Mean-Variance con universos múltiples y presets de retiro."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 from config import OPTIMIZER, OPTIMIZER_PROFILES
@@ -18,31 +19,13 @@ from dashboard.shared import (
     _get_ai_config,
 )
 from data.preferences import UserPreferences
+from data.universe_loader import UNIVERSE_META, list_universes, load_universe
 from portfolio.optimizer import PortfolioOptimizer
 from portfolio.tracker import Portfolio
 
 # ------------------------------------------------------------------ #
-#  Page                                                                #
+#  Constants                                                           #
 # ------------------------------------------------------------------ #
-
-st.title("📈 Portfolio Optimizer")
-st.caption(
-    "Construye una cartera óptima combinando Score Ajustado, Moat y Dividend Yield "
-    "con restricciones de riesgo según tu perfil de retiro. "
-    "💵 Todos los valores están denominados en **USD** (los ADRs argentinos cotizan en USD en NYSE/NASDAQ)."
-)
-
-_prefs: UserPreferences = st.session_state.user_prefs
-portfolio: Portfolio = st.session_state.portfolio
-
-# ------------------------------------------------------------------ #
-#  Profile selector — key= lets Streamlit own the widget state        #
-# ------------------------------------------------------------------ #
-# Using index= to set the initial position of a radio widget conflicts
-# with Streamlit's internal widget state on the first rerun after a
-# user interaction, causing the selection to revert to the old value.
-# The fix: initialize the session_state key once and use key= so
-# Streamlit is the single source of truth for the widget's value.
 
 _PROFILE_LABELS = {
     "conservative": "🛡️  Conservador",
@@ -56,8 +39,116 @@ _PREFS_TO_KEY = {
     "Agresivo":    "aggressive",
 }
 
-# Seed the widget's session_state key exactly once (from saved preference).
-# After this, Streamlit manages it automatically when the user interacts.
+# Presets: universe + profile combinations with a retirement objective
+_PRESETS = [
+    {
+        "label":       "💰 Alto Dividendo",
+        "universe":    "dividend_focus",
+        "profile":     "conservative",
+        "description": "Dividend Aristocrats + REITs. Ingreso pasivo con bajo riesgo.",
+    },
+    {
+        "label":       "⚖️ Balanced Quality",
+        "universe":    "us_quality",
+        "profile":     "moderate",
+        "description": "Blue chips US de calidad. Crecimiento balanceado con ingreso.",
+    },
+    {
+        "label":       "🚀 Growth con Moat",
+        "universe":    "us_quality",
+        "profile":     "aggressive",
+        "description": "Tech + Healthcare + Consumer. Ventaja competitiva duradera.",
+    },
+    {
+        "label":       "🌎 LATAM + ADRs",
+        "universe":    "latam_adrs",
+        "profile":     "moderate",
+        "description": "ADRs latinoamericanos. Alto potencial, mayor volatilidad.",
+    },
+]
+
+# ------------------------------------------------------------------ #
+#  Page                                                                #
+# ------------------------------------------------------------------ #
+
+st.title("📈 Portfolio Optimizer")
+st.caption(
+    "Construye una cartera óptima combinando Score Ajustado, Moat y Dividend Yield "
+    "con restricciones de riesgo según tu perfil de retiro. "
+    "💵 Todos los valores están denominados en **USD**."
+)
+
+_prefs: UserPreferences = st.session_state.user_prefs
+portfolio: Portfolio = st.session_state.portfolio
+
+# ------------------------------------------------------------------ #
+#  Helpers                                                             #
+# ------------------------------------------------------------------ #
+
+def _universe_display_label(key: str) -> str:
+    """Build the exact label string used by the sidebar selectbox."""
+    meta  = UNIVERSE_META.get(key, {})
+    name  = meta.get("name", key)
+    count = meta.get("count", len(load_universe(key)))
+    return f"{name} ({count})"
+
+
+def _apply_preset(universe_key: str, profile_key: str) -> None:
+    """Switch universe + profile atomically and trigger a full rerun."""
+    new_universe_label = _universe_display_label(universe_key)
+
+    # Universe state — must match what app.py reads
+    st.session_state["sidebar_universe_selector"] = new_universe_label
+    st.session_state.active_universe_key          = universe_key
+    st.session_state.universe                     = load_universe(universe_key)
+
+    # Profile state — owned by Streamlit via key=
+    st.session_state["optimizer_profile_label"]   = _PROFILE_LABELS[profile_key]
+    st.session_state.optimizer_last_saved_profile = OPTIMIZER_PROFILES[profile_key].name
+
+    # Persist both preferences
+    _prefs.active_universe = universe_key
+    _prefs.default_profile = OPTIMIZER_PROFILES[profile_key].name
+    _prefs.save()
+
+    # Wipe optimizer caches so the new run starts fresh
+    for k in [
+        "optimizer_scored", "optimizer_universe",
+        "optimizer_result", "optimizer_result_key",
+        "optimizer_prev_result", "optimizer_prev_result_key",
+        "optimizer_extra_universes", "optimizer_comparison_results",
+        "optimizer_comparison_profile",
+    ]:
+        st.session_state.pop(k, None)
+
+    st.rerun()
+
+
+# ------------------------------------------------------------------ #
+#  Sidebar — Presets                                                   #
+# ------------------------------------------------------------------ #
+
+st.sidebar.subheader("🎯 Presets de retiro")
+_pcols = st.sidebar.columns(2)
+for _i, _preset in enumerate(_PRESETS):
+    with _pcols[_i % 2]:
+        if st.button(
+            _preset["label"],
+            key=f"preset_{_i}",
+            use_container_width=True,
+            help=_preset["description"],
+        ):
+            _apply_preset(_preset["universe"], _preset["profile"])
+
+st.sidebar.divider()
+
+# ------------------------------------------------------------------ #
+#  Sidebar — Profile selector                                          #
+# ------------------------------------------------------------------ #
+# Using key= (not index=) so Streamlit owns the widget state and avoids
+# the "revert on first click" bug caused by index= conflicting with
+# internal session_state on reruns.
+
 if "optimizer_profile_label" not in st.session_state:
     _init_key = _PREFS_TO_KEY.get(_prefs.default_profile, "conservative")
     st.session_state["optimizer_profile_label"] = _PROFILE_LABELS[_init_key]
@@ -65,7 +156,7 @@ if "optimizer_profile_label" not in st.session_state:
 profile_label = st.sidebar.radio(
     "Perfil de riesgo",
     list(_PROFILE_LABELS.values()),
-    key="optimizer_profile_label",   # Streamlit keeps session_state in sync
+    key="optimizer_profile_label",
     help=(
         "Conservador: preserva capital con dividendos. "
         "Moderado: balance crecimiento/ingreso. "
@@ -73,11 +164,8 @@ profile_label = st.sidebar.radio(
     ),
 )
 profile_key = _PROFILE_KEYS[profile_label]
-prof = OPTIMIZER_PROFILES[profile_key]
+prof        = OPTIMIZER_PROFILES[profile_key]
 
-# Auto-save preference when the selection changes.
-# Compare against a separate tracker (not prefs.default_profile directly,
-# which could lag behind in the same session after the first save).
 if "optimizer_last_saved_profile" not in st.session_state:
     st.session_state.optimizer_last_saved_profile = _prefs.default_profile
 
@@ -87,15 +175,61 @@ if prof.name != st.session_state.optimizer_last_saved_profile:
     st.session_state.optimizer_last_saved_profile = prof.name
     st.toast(f"Perfil '{prof.name}' guardado como preferencia", icon="💾")
 
-max_tickers = st.sidebar.slider(
-    "Tickers a analizar", 10, len(st.session_state.universe), len(st.session_state.universe),
-    help="Reducir el universo acelera el análisis.",
+st.sidebar.divider()
+
+# ------------------------------------------------------------------ #
+#  Sidebar — Universe combination                                      #
+# ------------------------------------------------------------------ #
+
+_active_key  = st.session_state.get("active_universe_key", _prefs.active_universe or "default")
+_other_keys  = [k for k in list_universes() if k != _active_key]
+
+st.sidebar.subheader("🔗 Combinar universos")
+_extra_keys: list[str] = st.sidebar.multiselect(
+    "Agregar tickers de",
+    options=_other_keys,
+    format_func=lambda k: f"{UNIVERSE_META[k]['name']} (+{UNIVERSE_META[k]['count']})",
+    help="Se combinan con el universo activo (sin duplicados, máx 2 adicionales).",
+    key="optimizer_extra_universes",
+    max_selections=2,
+    default=[],
 )
-selected_universe = st.session_state.universe[:max_tickers]
+
+# Build effective ticker list: base + extras (deduped, preserving order)
+_base_tickers  = list(st.session_state.universe)
+_extra_tickers = [
+    t for k in _extra_keys
+    for t in load_universe(k)
+    if t not in _base_tickers
+]
+_combined = _base_tickers + _extra_tickers
+
+# Universe display name
+_active_meta  = UNIVERSE_META.get(_active_key, {})
+_active_name  = _active_meta.get("name", _active_key)
+if _extra_keys:
+    _extra_names         = " + ".join(UNIVERSE_META.get(k, {}).get("name", k) for k in _extra_keys)
+    _display_universe    = f"{_active_name} + {_extra_names}"
+else:
+    _display_universe    = _active_name
+
+st.sidebar.divider()
+
+# ------------------------------------------------------------------ #
+#  Sidebar — Ticker slider + Re-analyze                               #
+# ------------------------------------------------------------------ #
+
+max_tickers = st.sidebar.slider(
+    "Tickers a analizar", 10, max(10, len(_combined)), len(_combined),
+    help="Reducir el universo acelera el análisis. Se toman los primeros N tickers.",
+)
+selected_universe = _combined[:max_tickers]
 
 if st.sidebar.button("🔄 Re-analizar universo", type="secondary"):
-    for k in ["optimizer_scored", "optimizer_universe",
-              "optimizer_result", "optimizer_result_key", "optimizer_prev_result"]:
+    for k in [
+        "optimizer_scored", "optimizer_universe",
+        "optimizer_result", "optimizer_result_key", "optimizer_prev_result",
+    ]:
         st.session_state.pop(k, None)
     st.cache_data.clear()
     st.rerun()
@@ -123,65 +257,70 @@ with st.expander(f"📋 Perfil: **{prof.name}** — {_PROFILE_DESC[profile_key]}
     )
 
 # ------------------------------------------------------------------ #
-#  Determine if cached result is still valid                          #
+#  Cache validity                                                      #
 # ------------------------------------------------------------------ #
 
-universe_key = tuple(selected_universe)
-result_key   = (profile_key, universe_key)
+universe_key     = tuple(selected_universe)
+result_key       = (profile_key, universe_key)
 has_valid_result = (
     "optimizer_result" in st.session_state
     and st.session_state.get("optimizer_result_key") == result_key
 )
 
-# If profile or universe changed since last run, show a notice
 if "optimizer_result" in st.session_state and not has_valid_result:
-    prev_result_key = st.session_state.get("optimizer_result_key", (None, None))
-    prev_prof_name  = OPTIMIZER_PROFILES.get(prev_result_key[0], prof).name if prev_result_key[0] else "—"
+    prev_rk        = st.session_state.get("optimizer_result_key", (None, None))
+    prev_prof_name = OPTIMIZER_PROFILES.get(prev_rk[0], prof).name if prev_rk[0] else "—"
     st.info(
         f"ℹ️ El resultado anterior corresponde al perfil **{prev_prof_name}**. "
-        "Presioná **Ejecutar Optimización** para actualizar con el perfil actual."
+        "Presioná **Ejecutar Optimización** para actualizar."
     )
 
 # ------------------------------------------------------------------ #
-#  Run button                                                         #
+#  Run button + context banner                                         #
 # ------------------------------------------------------------------ #
 
-scored: list[dict] = []
-current_weights: dict = {}
-
-btn_col, hint_col = st.columns([1, 3])
+btn_col, ctx_col = st.columns([1, 3])
 with btn_col:
     run_now = st.button(
         "🚀 Ejecutar Optimización",
         type="primary",
         use_container_width=True,
-        disabled=False,
     )
-with hint_col:
+with ctx_col:
     if "optimizer_scored" in st.session_state and st.session_state.get("optimizer_universe") == universe_key:
-        st.caption(f"✓ Análisis cacheado ({len(st.session_state.optimizer_scored)} tickers) — la optimización será instantánea.")
+        st.info(
+            f"🗂️ **{_display_universe}** · {len(selected_universe)} tickers · "
+            f"perfil **{prof.name}** — análisis en caché, optimización instantánea.",
+            icon="✅",
+        )
     else:
-        st.caption(f"⚡ Primera ejecución analizará {len(selected_universe)} tickers en paralelo (~15s). Las siguientes usan caché.")
+        st.info(
+            f"🗂️ Optimizando **{len(selected_universe)} tickers** del universo "
+            f"**{_display_universe}** para perfil **{prof.name}**.",
+            icon="ℹ️",
+        )
 
 if not run_now and not has_valid_result:
     st.stop()
 
 # ------------------------------------------------------------------ #
-#  Fetch scored tickers (cached per universe)                        #
+#  Fetch + score tickers                                               #
 # ------------------------------------------------------------------ #
 
+scored: list[dict] = []
+current_weights: dict = {}
+
 if run_now or not has_valid_result:
-    # Fetch / use cached scored data
     if (
         "optimizer_scored" not in st.session_state
         or st.session_state.get("optimizer_universe") != universe_key
     ):
         ai_cfg = _get_ai_config(context="screener")
-        n = len(selected_universe)
+        n      = len(selected_universe)
         st.info(f"⚡ Analizando {n} tickers en paralelo… (primera vez tarda ~15s)")
         prog = st.progress(0)
         stat = st.empty()
-        raw = _fetch_universe_parallel(selected_universe, ai_cfg, prog, stat, label="Optimizer")
+        raw  = _fetch_universe_parallel(selected_universe, ai_cfg, prog, stat, label="Optimizer")
         prog.empty()
         stat.empty()
 
@@ -207,7 +346,7 @@ if run_now or not has_valid_result:
         scored = st.session_state.optimizer_scored
 
     # ------------------------------------------------------------------ #
-    #  Run optimizer                                                      #
+    #  Optimize                                                            #
     # ------------------------------------------------------------------ #
 
     with st.spinner("Optimizando cartera…"):
@@ -218,16 +357,14 @@ if run_now or not has_valid_result:
             current_weights = {}
         result = opt.optimize(scored, current_weights=current_weights or None)
 
-    # Store previous result for delta banner before overwriting
     if "optimizer_result" in st.session_state:
-        st.session_state.optimizer_prev_result = st.session_state.optimizer_result
+        st.session_state.optimizer_prev_result     = st.session_state.optimizer_result
         st.session_state.optimizer_prev_result_key = st.session_state.get("optimizer_result_key")
 
     st.session_state.optimizer_result     = result
     st.session_state.optimizer_result_key = result_key
 
 else:
-    # Use cached result
     result = st.session_state.optimizer_result
     scored = st.session_state.optimizer_scored
     try:
@@ -236,7 +373,7 @@ else:
         current_weights = {}
 
 # ------------------------------------------------------------------ #
-#  Profile-change delta banner                                        #
+#  Profile-change delta banner                                         #
 # ------------------------------------------------------------------ #
 
 if run_now and "optimizer_prev_result" in st.session_state:
@@ -263,10 +400,10 @@ if run_now and "optimizer_prev_result" in st.session_state:
             f"Div Yield {_delta_str(d_div)}",
             unsafe_allow_html=True,
         )
-        prev_w  = {a.symbol: a.weight_pct for a in prev.tickers}
-        curr_w  = {a.symbol: a.weight_pct for a in result.tickers}
+        prev_w   = {a.symbol: a.weight_pct for a in prev.tickers}
+        curr_w   = {a.symbol: a.weight_pct for a in result.tickers}
         all_syms = set(prev_w) | set(curr_w)
-        movers = sorted(
+        movers   = sorted(
             [(s, curr_w.get(s, 0) - prev_w.get(s, 0)) for s in all_syms],
             key=lambda x: -abs(x[1]),
         )[:6]
@@ -279,17 +416,20 @@ if run_now and "optimizer_prev_result" in st.session_state:
             st.caption("Principales cambios en posiciones: " + " · ".join(mover_parts))
 
 # ------------------------------------------------------------------ #
-#  Status bar                                                         #
+#  Status bar                                                          #
 # ------------------------------------------------------------------ #
 
 _method_badge = "🧮 Mean-Variance" if result.method == "mean-variance" else "⚖️ Score-weighted"
-st.success(f"{_method_badge} · Perfil **{result.profile_name}** · {len(result.tickers)} posiciones")
+st.success(
+    f"{_method_badge} · 🗂️ **{_display_universe}** · "
+    f"Perfil **{result.profile_name}** · {len(result.tickers)} posiciones"
+)
 if result.warnings:
     for w in result.warnings:
         st.warning(w)
 
 # ------------------------------------------------------------------ #
-#  Summary metrics                                                    #
+#  Summary metrics                                                     #
 # ------------------------------------------------------------------ #
 
 mc1, mc2, mc3, mc4, mc5 = st.columns(5)
@@ -302,22 +442,22 @@ mc4.metric("Div. Yield",       f"{result.dividend_yield_pct:.2f}%",
 mc5.metric("Score Promedio",   f"{result.adjusted_score_avg:.0f}/100")
 
 # ------------------------------------------------------------------ #
-#  Tabs                                                               #
+#  Tabs                                                                #
 # ------------------------------------------------------------------ #
 
-tab_cart, tab_front, tab_metrics, tab_rebal = st.tabs(
-    ["🧺 Cartera", "📉 Frontier", "📊 Métricas", "🔄 Rebalanceo"]
+tab_cart, tab_front, tab_metrics, tab_rebal, tab_compare = st.tabs(
+    ["🧺 Cartera", "📉 Frontier", "📊 Métricas", "🔄 Rebalanceo", "⚖️ Comparar"]
 )
 
 # ------------------------------------------------------------------ #
-#  Tab 1: Cartera                                                     #
+#  Tab 1: Cartera                                                      #
 # ------------------------------------------------------------------ #
 
 with tab_cart:
     if not result.tickers:
         st.warning("No hay posiciones en la cartera optimizada.")
     else:
-        # Safety: re-normalize weight_pct so they always sum to ~100 %
+        # Safety: renormalize weight_pct to always sum to ~100 %
         _total_w = sum(a.weight_pct for a in result.tickers)
         if _total_w > 0 and abs(_total_w - 100.0) > 0.5:
             _scale = 100.0 / _total_w
@@ -331,7 +471,7 @@ with tab_cart:
         alloc_data = []
         for a in result.tickers:
             t = scored_map.get(a.symbol, {})
-            moat_cls = t.get("moat_classification", "None")
+            moat_cls      = t.get("moat_classification", "None")
             discount_note = f" (−{(1-OPTIMIZER.ars_risk_discount)*100:.0f}% ARS)" if a.score_discounted else ""
             alloc_data.append({
                 "Ticker":  a.symbol,
@@ -351,7 +491,7 @@ with tab_cart:
             df_bar, x="Peso %", y="Ticker", orientation="h",
             color="Score", color_continuous_scale="RdYlGn",
             range_color=[40, 100],
-            title="Peso por ticker (coloreado por Score Ajustado)",
+            title=f"Peso por ticker — {_display_universe} · Perfil {prof.name}",
             text="Peso %",
         )
         fig_bar.update_traces(
@@ -396,7 +536,7 @@ with tab_cart:
                 fig_sec.update_traces(textposition="inside", textinfo="percent+label")
                 st.plotly_chart(fig_sec, use_container_width=True)
             with col_tick:
-                df_top = df_alloc.nlargest(10, "Peso %")
+                df_top     = df_alloc.nlargest(10, "Peso %")
                 others_pct = 100 - df_top["Peso %"].sum()
                 if others_pct > 0.5:
                     df_top = pd.concat(
@@ -409,13 +549,12 @@ with tab_cart:
 
         if any(a.is_ars for a in result.tickers):
             discount_pct = (1 - OPTIMIZER.ars_risk_discount) * 100
-            ars_syms = ", ".join(a.symbol for a in result.tickers if a.is_ars)
+            ars_syms     = ", ".join(a.symbol for a in result.tickers if a.is_ars)
             st.info(
-                f"🇦🇷 **ADRs argentinos ({ars_syms}):** cotizan y liquidan en **USD** en NYSE/NASDAQ "
-                f"— no hay conversión de moneda al comprar. Sin embargo, su valor en pesos argentinos "
-                f"es vulnerable a devaluaciones y controles de capital. "
-                f"Por eso, en perfil **{prof.name}**, se aplica un descuento de **{discount_pct:.0f}%** "
-                "al Score Ajustado al calcular el peso óptimo (no afecta el precio ni el dividend yield reportado)."
+                f"🇦🇷 **ADRs argentinos ({ars_syms}):** cotizan y liquidan en **USD** en NYSE/NASDAQ. "
+                f"En perfil **{prof.name}** se aplica un descuento de **{discount_pct:.0f}%** "
+                "al Score Ajustado para calcular el peso óptimo "
+                "(no afecta el precio ni el dividend yield reportado)."
             )
 
     if result.excluded:
@@ -424,7 +563,7 @@ with tab_cart:
                 st.caption(f"**{sym}** — {reason}")
 
 # ------------------------------------------------------------------ #
-#  Tab 2: Efficient Frontier                                          #
+#  Tab 2: Efficient Frontier                                           #
 # ------------------------------------------------------------------ #
 
 with tab_front:
@@ -441,7 +580,7 @@ with tab_front:
                 "y": "Retorno Esperado % (anual)",
                 "color": "Sharpe",
             },
-            title=f"Frontera Eficiente — Monte Carlo ({OPTIMIZER.frontier_points} carteras)",
+            title=f"Frontera Eficiente — {_display_universe} · Monte Carlo ({OPTIMIZER.frontier_points} carteras)",
         )
         fig_front.add_scatter(
             x=[result.volatility_pct],
@@ -466,7 +605,7 @@ with tab_front:
         )
 
 # ------------------------------------------------------------------ #
-#  Tab 3: Métricas + Constraint Compliance                           #
+#  Tab 3: Métricas + Constraint Compliance                            #
 # ------------------------------------------------------------------ #
 
 with tab_metrics:
@@ -477,6 +616,7 @@ with tab_metrics:
         st.markdown(f"""
 | Métrica | Valor |
 |---|---|
+| Universo | **{_display_universe}** |
 | Retorno esperado | **{result.expected_return_pct:.1f}%** anual |
 | Volatilidad | **{result.volatility_pct:.1f}%** anual |
 | Sharpe Ratio | **{result.sharpe_ratio:.2f}** |
@@ -538,7 +678,7 @@ with tab_metrics:
                 )
 
 # ------------------------------------------------------------------ #
-#  Tab 4: Rebalanceo                                                  #
+#  Tab 4: Rebalanceo                                                   #
 # ------------------------------------------------------------------ #
 
 with tab_rebal:
@@ -612,7 +752,175 @@ with tab_rebal:
             column_config={"Δ %": st.column_config.NumberColumn("Δ %", format="%.1f")},
         )
         st.caption(
-            "Solo se muestran movimientos ≥ 0.5%. Los pesos son porcentajes sobre el total de la cartera. "
-            "⚠️ Estas sugerencias son orientativas y no constituyen asesoramiento financiero. "
-            "Consultá con un asesor antes de ejecutar operaciones."
+            "Solo se muestran movimientos ≥ 0.5%. "
+            "⚠️ Estas sugerencias son orientativas y no constituyen asesoramiento financiero."
+        )
+
+# ------------------------------------------------------------------ #
+#  Tab 5: Comparar universos                                           #
+# ------------------------------------------------------------------ #
+
+with tab_compare:
+    st.subheader(f"Comparación de universos — perfil {prof.name}")
+    st.caption(
+        "Corre el optimizer en todos los universos disponibles con el perfil actual. "
+        "Usa los **top 25 tickers** de cada universo para mantener la comparación rápida (~30s primera vez, "
+        "instantánea cuando hay caché). Los tickers ya analizados en esta sesión son reutilizados."
+    )
+
+    _COMPARE_CAP = 25  # tickers por universo para la comparación rápida
+
+    run_compare = st.button(
+        f"🔄 Comparar todos los universos ({len(list_universes())} disponibles)",
+        type="secondary",
+        key="run_compare_btn",
+    )
+
+    _comp_stale = (
+        st.session_state.get("optimizer_comparison_profile") != profile_key
+        and "optimizer_comparison_results" in st.session_state
+    )
+    if _comp_stale:
+        st.warning(
+            f"Los resultados de comparación son del perfil anterior. "
+            "Presioná el botón para actualizar."
+        )
+
+    if run_compare:
+        _comp_universes = list_universes()
+        _comp_results: dict = {}
+        _comp_prog = st.progress(0.0)
+        _comp_status = st.empty()
+
+        _comp_ai_cfg = _get_ai_config(context="screener")
+
+        for _ci, _uk in enumerate(_comp_universes):
+            _u_name    = UNIVERSE_META.get(_uk, {}).get("name", _uk)
+            _u_tickers = load_universe(_uk)[:_COMPARE_CAP]
+            _comp_status.text(f"Analizando {_u_name} ({len(_u_tickers)} tickers)…")
+
+            _dummy_prog = st.empty()  # silent progress for sub-fetches
+            _dummy_stat = st.empty()
+            try:
+                _u_raw = _fetch_universe_parallel(
+                    _u_tickers, _comp_ai_cfg, _dummy_prog, _dummy_stat,
+                    label=f"Compare-{_uk}",
+                )
+                _dummy_prog.empty()
+                _dummy_stat.empty()
+            except Exception:
+                _dummy_prog.empty()
+                _dummy_stat.empty()
+                _comp_prog.progress((_ci + 1) / len(_comp_universes))
+                continue
+
+            _u_scored = [
+                {
+                    "symbol":              sym,
+                    "adjusted_score":      fund.adjusted_score,
+                    "total_score":         fund.total_score,
+                    "dividend_yield":      fund.dividend_yield or 0.0,
+                    "moat_score":          getattr(fund, "moat_score", 0.0),
+                    "moat_classification": getattr(fund, "moat_classification", "None"),
+                    "sector":              fund.sector or "Unknown",
+                    "company_name":        fund.company_name,
+                }
+                for sym, fund, _t, _d in _u_raw
+            ]
+            if _u_scored:
+                try:
+                    _u_opt    = PortfolioOptimizer(profile=profile_key)
+                    _u_result = _u_opt.optimize(_u_scored)
+                    _comp_results[_uk] = _u_result
+                except Exception:
+                    pass
+
+            _comp_prog.progress((_ci + 1) / len(_comp_universes))
+
+        _comp_prog.progress(1.0, text="¡Listo!")
+        _comp_status.empty()
+        _comp_prog.empty()
+
+        st.session_state.optimizer_comparison_results = _comp_results
+        st.session_state.optimizer_comparison_profile = profile_key
+
+    # Render comparison table
+    if (
+        "optimizer_comparison_results" in st.session_state
+        and st.session_state.get("optimizer_comparison_profile") == profile_key
+    ):
+        _comp_rows = []
+        for _uk, _ures in st.session_state.optimizer_comparison_results.items():
+            _u_meta = UNIVERSE_META.get(_uk, {})
+            _comp_rows.append({
+                "Universo":      _u_meta.get("name", _uk),
+                "Tickers base":  _u_meta.get("count", "?"),
+                "Analizados":    len(st.session_state.optimizer_comparison_results[_uk].tickers),
+                "Posiciones":    len(_ures.tickers),
+                "Retorno %":     round(_ures.expected_return_pct, 1),
+                "Volatilidad %": round(_ures.volatility_pct, 1),
+                "Sharpe":        round(_ures.sharpe_ratio, 2),
+                "Div Yield %":   round(_ures.dividend_yield_pct, 2),
+                "Score Avg":     round(_ures.adjusted_score_avg, 0),
+                "Método":        _ures.method,
+            })
+
+        if _comp_rows:
+            _comp_df = pd.DataFrame(_comp_rows)
+            # Highlight current universe row
+            st.dataframe(
+                _comp_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Retorno %":     st.column_config.NumberColumn("Retorno %", format="%.1f%%"),
+                    "Volatilidad %": st.column_config.NumberColumn("Vol %", format="%.1f%%"),
+                    "Sharpe":        st.column_config.NumberColumn("Sharpe", format="%.2f"),
+                    "Div Yield %":   st.column_config.NumberColumn("Div %", format="%.2f%%"),
+                    "Score Avg":     st.column_config.NumberColumn("Score", format="%.0f"),
+                },
+            )
+
+            # Grouped bar chart comparing key metrics
+            _bar_metrics = ["Retorno %", "Volatilidad %", "Div Yield %"]
+            _fig_comp    = go.Figure()
+            for _metric in _bar_metrics:
+                _fig_comp.add_trace(go.Bar(
+                    name=_metric,
+                    x=_comp_df["Universo"],
+                    y=_comp_df[_metric],
+                    text=_comp_df[_metric].apply(lambda v: f"{v:.1f}%"),
+                    textposition="outside",
+                ))
+            _fig_comp.update_layout(
+                barmode="group",
+                title=f"Retorno · Volatilidad · Div Yield — perfil {prof.name} (top {_COMPARE_CAP} tickers por universo)",
+                height=420,
+                yaxis_title="%",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            )
+            st.plotly_chart(_fig_comp, use_container_width=True)
+
+            # Sharpe comparison as horizontal bar
+            _fig_sharpe = px.bar(
+                _comp_df.sort_values("Sharpe"),
+                x="Sharpe", y="Universo", orientation="h",
+                color="Sharpe", color_continuous_scale="RdYlGn",
+                text="Sharpe",
+                title=f"Sharpe Ratio por universo — perfil {prof.name}",
+            )
+            _fig_sharpe.update_traces(texttemplate="%{text:.2f}", textposition="inside")
+            _fig_sharpe.update_layout(height=300, coloraxis_showscale=False)
+            st.plotly_chart(_fig_sharpe, use_container_width=True)
+
+            st.caption(
+                f"⚠️ Comparación basada en los primeros {_COMPARE_CAP} tickers de cada universo. "
+                "Para análisis completo, seleccioná el universo en el sidebar y ejecutá el optimizer completo."
+            )
+        else:
+            st.warning("No se pudo obtener resultados para ningún universo.")
+    elif "optimizer_comparison_results" not in st.session_state:
+        st.info(
+            "Presioná **Comparar todos los universos** para ver qué universo "
+            f"rinde mejor con el perfil **{prof.name}**."
         )
