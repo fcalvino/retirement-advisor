@@ -21,8 +21,22 @@ from dashboard.shared import (
 )
 from data.fetcher import get_history
 from data.preferences import UserPreferences
+from data.universe_loader import load_universe
 from portfolio.tracker import Portfolio
 from config import TICKER_ALIASES
+
+# ------------------------------------------------------------------ #
+#  Session guard (fresh-session direct navigation)                     #
+# ------------------------------------------------------------------ #
+
+if "user_prefs" not in st.session_state:
+    st.session_state.user_prefs = UserPreferences.load()
+if "universe" not in st.session_state:
+    _uk = getattr(st.session_state.user_prefs, "active_universe", "default") or "default"
+    st.session_state.universe = load_universe(_uk)
+    st.session_state.active_universe_key = _uk
+if "portfolio" not in st.session_state:
+    st.session_state.portfolio = Portfolio()
 
 # ------------------------------------------------------------------ #
 #  Page                                                                #
@@ -30,14 +44,75 @@ from config import TICKER_ALIASES
 
 st.title("🔍 Análisis Profundo")
 
-col1, col2 = st.columns([2, 1])
-with col1:
-    _raw_input = st.text_input("Ticker", value="AAPL").upper().strip()
-    symbol = TICKER_ALIASES.get(_raw_input, _raw_input)
-    if symbol != _raw_input:
-        st.caption(f"🔄 '{_raw_input}' → `{symbol}`")
-with col2:
-    st.button("Analizar", type="primary", use_container_width=True)
+_universe_tickers = sorted(st.session_state.get("universe", []))
+
+# Build display labels: crypto tickers get full name so "Bitcoin"/"BTC" both match
+_option_labels = [_TICKER_DISPLAY_NAMES.get(t, t) for t in _universe_tickers]
+_label_to_ticker = {_TICKER_DISPLAY_NAMES.get(t, t): t for t in _universe_tickers}
+
+# --- Ticker selector -------------------------------------------------
+_sc1, _sc2 = st.columns([3, 1])
+with _sc1:
+    _selected_label = st.selectbox(
+        "ticker_select",
+        options=_option_labels,
+        index=None,
+        placeholder="🔍 Escribí para buscar... (Ej: AAPL, MSFT, BTC, Bitcoin)",
+        label_visibility="collapsed",
+    )
+_selected = _label_to_ticker.get(_selected_label) if _selected_label else None
+with _sc2:
+    _analyze_btn = st.button(
+        "🔍 Analizar",
+        type="primary",
+        disabled=_selected is None,
+        use_container_width=True,
+    )
+
+# Manual ticker outside universe (with crypto alias resolution)
+with st.expander("¿No está en el universo? Ingresalo manualmente"):
+    _mc1, _mc2 = st.columns([3, 1])
+    with _mc1:
+        _manual_raw = st.text_input(
+            "manual_ticker",
+            placeholder="Ej: NVDA, BRK-B, MELI, BTC, BITCOIN",
+            label_visibility="collapsed",
+        ).upper().strip()
+        _manual = normalize_crypto_ticker(_manual_raw) if _manual_raw else ""
+        if _manual and _manual != _manual_raw:
+            st.caption(f"🔄 '{_manual_raw}' → `{_manual}`")
+    with _mc2:
+        if st.button("Analizar", key="analyze_manual", disabled=not _manual,
+                     use_container_width=True):
+            st.session_state.analysis_target = _manual
+
+# Gate: only trigger analysis on explicit button click
+if _analyze_btn and _selected:
+    st.session_state.analysis_target = _selected
+
+# Empty state — no ticker analyzed yet
+_target = st.session_state.get("analysis_target")
+if not _target:
+    st.info(
+        "👆 Seleccioná un ticker del universo activo y presioná **Analizar** para ver el análisis completo.",
+        icon="🔍",
+    )
+    if _universe_tickers:
+        st.caption(
+            f"Universo activo: **{len(_universe_tickers)} tickers** disponibles — "
+            "podés buscar por símbolo o nombre (ej: BTC, Bitcoin, AAPL, Apple)."
+        )
+    st.stop()
+
+# Stale warning: selected ≠ analyzed
+if _selected and _selected != _target:
+    st.info(
+        f"Mostrando análisis de **{_target}**. "
+        f"Seleccionaste **{_selected}** — presioná **Analizar** para actualizarlo.",
+        icon="ℹ️",
+    )
+
+symbol = _target
 
 if symbol:
     ai_cfg = _get_ai_config()
