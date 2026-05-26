@@ -12,6 +12,7 @@ import streamlit as st
 from dashboard.shared import _save_ai_config_to_env
 from data.cache import cache
 from data.preferences import UserPreferences
+from data.universe_loader import UNIVERSE_META, load_universe
 
 # ------------------------------------------------------------------ #
 #  Page                                                                #
@@ -66,7 +67,7 @@ watched_text = st.text_area(
     height=100,
     help="Tickers que querés monitorear de cerca. Se guardan automáticamente.",
 )
-if st.button("Guardar Watchlist"):
+if st.button("💾 Guardar watchlist"):
     raw_w = watched_text.replace(",", "\n").split()
     _prefs.watched_tickers = [t.upper().strip() for t in raw_w if t.strip()]
     _prefs.save()
@@ -174,21 +175,102 @@ if st.button("Guardar configuración AI", type="primary"):
 st.divider()
 
 # ------------------------------------------------------------------ #
-#  Cache                                                              #
+#  Caché                                                              #
 # ------------------------------------------------------------------ #
 
 st.subheader("🗄️ Caché")
-st.caption("El caché almacena datos de Yahoo Finance para evitar llamadas repetidas a la API.")
-col1, col2 = st.columns(2)
-with col1:
+st.caption("Almacena respuestas de Yahoo Finance para reducir llamadas a la API y acelerar el análisis.")
+
+_stats = cache.get_stats()
+_cs1, _cs2, _cs3, _cs4 = st.columns(4)
+_cs1.metric("Entradas válidas",   _stats["valid"])
+_cs2.metric("Entradas expiradas", _stats["expired"])
+_cs3.metric("Tamaño DB",          f"{_stats['db_size_mb']} MB")
+_cs4.metric("TTL configurado",    f"{_stats['ttl_hours']}h")
+
+if _stats["newest"]:
+    _newest_str = _stats["newest"].strftime("%d/%m %H:%M")
+    _oldest_str = _stats["oldest"].strftime("%d/%m %H:%M") if _stats["oldest"] else "—"
+    st.caption(f"Entrada más reciente: **{_newest_str}** · Entrada más antigua: **{_oldest_str}** (UTC)")
+
+_cc1, _cc2 = st.columns(2)
+with _cc1:
     if st.button("🗑️ Limpiar todo el caché", type="secondary"):
         cache.clear_all()
         st.cache_data.clear()
-        st.success("Caché limpiado — el próximo análisis va a re-obtener todos los datos.")
-with col2:
+        st.success("✅ Caché limpiado — el próximo análisis va a re-obtener todos los datos.")
+        st.rerun()
+with _cc2:
     st.caption(
-        f"TTL configurado: **{cache.ttl}**. "
-        "Los datos se refrescan automáticamente cuando expiran."
+        f"El caché expira automáticamente a las **{_stats['ttl_hours']} horas**. "
+        "Limpiar es útil si los datos parecen desactualizados."
+    )
+
+st.divider()
+
+# ------------------------------------------------------------------ #
+#  Preferencias — Reset a valores predeterminados                     #
+# ------------------------------------------------------------------ #
+
+st.subheader("🔄 Preferencias")
+st.caption(
+    "Restablece las preferencias del sistema a sus valores predeterminados. "
+    "**No afecta la Watchlist ni las alertas de precio.**"
+)
+
+_r1, _r2 = st.columns([1, 2])
+with _r1:
+    with st.popover("🔴 Resetear a defaults", use_container_width=True):
+        st.warning(
+            "**¿Confirmar reset?**\n\n"
+            "Se restablecerán:\n"
+            "- Universo activo → **Default** (38 tickers)\n"
+            "- Perfil del Optimizer → **Conservador**\n"
+            "- AI en el Screener → **desactivado**\n\n"
+            "La Watchlist y las alertas de precio **no se modifican**.",
+            icon="⚠️",
+        )
+        if st.button("✅ Sí, resetear preferencias", type="primary", use_container_width=True):
+            # Reset UserPreferences fields
+            _prefs.active_universe        = "default"
+            _prefs.default_profile        = "Conservador"
+            _prefs.ai_enabled_in_screener = False
+            _prefs.preferred_currency     = "USD"
+            _prefs.last_used_universe     = []
+            _prefs.save()
+
+            # Sync session_state: universe
+            _default_tickers = load_universe("default")
+            st.session_state.universe          = _default_tickers
+            st.session_state.active_universe_key = "default"
+
+            # Sync sidebar universe selectbox key
+            _default_label = f"{UNIVERSE_META['default']['name']} ({UNIVERSE_META['default']['count']})"
+            st.session_state["sidebar_universe_selector"] = _default_label
+
+            # Sync Optimizer profile
+            st.session_state["optimizer_profile_label"]   = "🛡️  Conservador"
+            st.session_state.optimizer_last_saved_profile = "Conservador"
+
+            # Clear optimizer + screener caches
+            for _k in [
+                "optimizer_scored", "optimizer_universe",
+                "optimizer_result", "optimizer_result_key",
+                "optimizer_prev_result", "optimizer_prev_result_key",
+                "optimizer_comparison_results", "optimizer_comparison_profile",
+            ]:
+                st.session_state.pop(_k, None)
+            st.cache_data.clear()
+
+            st.toast("✅ Preferencias restablecidas a valores predeterminados", icon="🔄")
+            st.rerun()
+
+with _r2:
+    st.caption(
+        f"Universo activo: **{UNIVERSE_META.get(st.session_state.get('active_universe_key', 'default'), {}).get('name', 'Default')}** "
+        f"({len(st.session_state.get('universe', []))} tickers) · "
+        f"Perfil: **{_prefs.default_profile}** · "
+        f"AI Screener: {'🟢 activo' if _prefs.ai_enabled_in_screener else '⚪ inactivo'}"
     )
 
 st.divider()

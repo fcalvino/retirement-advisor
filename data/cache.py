@@ -74,6 +74,41 @@ class DataCache:
             session.commit()
         logger.info("Cache cleared.")
 
+    def get_stats(self) -> dict:
+        """Return live cache statistics for display in Settings."""
+        now = datetime.utcnow()
+        try:
+            with self._Session() as session:
+                total   = session.query(CacheEntry).count()
+                valid   = session.query(CacheEntry).filter(
+                    CacheEntry.cached_at > now - self.ttl
+                ).count()
+                oldest_row = (
+                    session.query(CacheEntry)
+                    .order_by(CacheEntry.cached_at.asc())
+                    .first()
+                )
+                newest_row = (
+                    session.query(CacheEntry)
+                    .order_by(CacheEntry.cached_at.desc())
+                    .first()
+                )
+        except Exception:
+            total = valid = 0
+            oldest_row = newest_row = None
+
+        db_size_mb = DB_PATH.stat().st_size / 1_048_576 if DB_PATH.exists() else 0.0
+
+        return {
+            "total":      total,
+            "valid":      valid,
+            "expired":    total - valid,
+            "oldest":     oldest_row.cached_at if oldest_row else None,
+            "newest":     newest_row.cached_at if newest_row else None,
+            "db_size_mb": round(db_size_mb, 2),
+            "ttl_hours":  int(self.ttl.total_seconds() / 3600),
+        }
+
 
 # Module-level singleton
 cache = DataCache()
