@@ -173,6 +173,16 @@ st.sidebar.caption("Long-term investment decisions for retirement")
 _universe_keys   = list_universes()
 _universe_labels = {k: f"{UNIVERSE_META[k]['name']} ({UNIVERSE_META[k]['count']})" for k in _universe_keys}
 
+# Consume pending universe from preset (must happen before widget instantiation)
+if "_preset_universe_key" in st.session_state:
+    _puk = st.session_state.pop("_preset_universe_key")
+    if _puk in _universe_keys:
+        st.session_state.universe             = load_universe(_puk)
+        st.session_state.active_universe_key  = _puk
+        _prefs.active_universe                = _puk
+        _prefs.save()
+        st.cache_data.clear()
+
 _current_key = st.session_state.get("active_universe_key", getattr(_prefs, "active_universe", "default") or "default")
 if _current_key not in _universe_keys:
     _current_key = "default"

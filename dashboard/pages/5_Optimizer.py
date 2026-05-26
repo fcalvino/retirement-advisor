@@ -94,19 +94,17 @@ def _universe_display_label(key: str) -> str:
 
 
 def _apply_preset(universe_key: str, profile_key: str) -> None:
-    """Switch universe + profile atomically and trigger a full rerun."""
-    new_universe_label = _universe_display_label(universe_key)
+    """Switch universe + profile atomically and trigger a full rerun.
 
-    # Universe state — must match what app.py reads
-    st.session_state["sidebar_universe_selector"] = new_universe_label
-    st.session_state.active_universe_key          = universe_key
-    st.session_state.universe                     = load_universe(universe_key)
+    Uses pending keys so app.py can consume them before widget instantiation,
+    avoiding the 'cannot modify after instantiation' Streamlit error.
+    """
+    # Pending keys: consumed by app.py (universe) and this page (profile)
+    # before their respective widgets are created on the next render.
+    st.session_state["_preset_universe_key"] = universe_key
+    st.session_state["_preset_profile_key"]  = profile_key
 
-    # Profile state — owned by Streamlit via key=
-    st.session_state["optimizer_profile_label"]   = _PROFILE_LABELS[profile_key]
-    st.session_state.optimizer_last_saved_profile = OPTIMIZER_PROFILES[profile_key].name
-
-    # Persist both preferences
+    # Persist preferences immediately
     _prefs.active_universe = universe_key
     _prefs.default_profile = OPTIMIZER_PROFILES[profile_key].name
     _prefs.save()
@@ -148,6 +146,13 @@ st.sidebar.divider()
 # Using key= (not index=) so Streamlit owns the widget state and avoids
 # the "revert on first click" bug caused by index= conflicting with
 # internal session_state on reruns.
+
+# Consume pending profile from preset (must happen before widget instantiation)
+if "_preset_profile_key" in st.session_state:
+    _ppk = st.session_state.pop("_preset_profile_key")
+    if _ppk in _PROFILE_LABELS:
+        st.session_state["optimizer_profile_label"]   = _PROFILE_LABELS[_ppk]
+        st.session_state.optimizer_last_saved_profile = OPTIMIZER_PROFILES[_ppk].name
 
 if "optimizer_profile_label" not in st.session_state:
     _init_key = _PREFS_TO_KEY.get(_prefs.default_profile, "conservative")
