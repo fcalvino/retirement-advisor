@@ -73,7 +73,7 @@ if "user_prefs" not in st.session_state or not hasattr(st.session_state.user_pre
 _prefs: UserPreferences = st.session_state.user_prefs
 
 if "universe" not in st.session_state:
-    _saved_key = _prefs.active_universe or "default"
+    _saved_key = getattr(_prefs, "active_universe", "default") or "default"
     st.session_state.universe = load_universe(_saved_key)
     st.session_state.active_universe_key = _saved_key
 
@@ -173,7 +173,7 @@ st.sidebar.caption("Long-term investment decisions for retirement")
 _universe_keys   = list_universes()
 _universe_labels = {k: f"{UNIVERSE_META[k]['name']} ({UNIVERSE_META[k]['count']})" for k in _universe_keys}
 
-_current_key = st.session_state.get("active_universe_key", _prefs.active_universe or "default")
+_current_key = st.session_state.get("active_universe_key", getattr(_prefs, "active_universe", "default") or "default")
 if _current_key not in _universe_keys:
     _current_key = "default"
 
