@@ -316,6 +316,28 @@ with ctx_col:
         )
 
 if not run_now and not has_valid_result:
+    st.info(
+        f"👆 Configurá el perfil y el universo en el sidebar, luego presioná "
+        f"**🚀 Ejecutar Optimización** para generar tu cartera óptima.",
+        icon="📈",
+    )
+    # Profile quick-reference cards
+    _prof_cards = st.columns(3)
+    for _ci, (_pk, _pcfg) in enumerate(OPTIMIZER_PROFILES.items()):
+        _active = (_pk == profile_key)
+        with _prof_cards[_ci]:
+            _border = "2px solid #1f77b4" if _active else "1px solid #ddd"
+            st.markdown(
+                f'<div style="border:{_border};border-radius:8px;padding:12px;'
+                f'background:{"#e8f4fd" if _active else "#fafafa"}">'
+                f'<b>{"✅ " if _active else ""}{_pcfg.name}</b><br>'
+                f'<small style="color:#666">{_pcfg.description}</small><br><br>'
+                f'<small>📊 Vol máx: <b>{_pcfg.max_volatility_pct:.0f}%</b> &nbsp;'
+                f'💰 Div mín: <b>{_pcfg.min_dividend_yield_pct:.1f}%</b> &nbsp;'
+                f'📌 Pos máx: <b>{_pcfg.max_position_pct:.0f}%</b></small>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
     st.stop()
 
 # ------------------------------------------------------------------ #
@@ -364,7 +386,7 @@ if run_now or not has_valid_result:
     #  Optimize                                                            #
     # ------------------------------------------------------------------ #
 
-    with st.spinner("Optimizando cartera…"):
+    with st.spinner(f"Generando portafolio {prof.name}…"):
         opt = PortfolioOptimizer(profile=profile_key)
         try:
             current_weights = portfolio.get_position_weights()
@@ -447,7 +469,7 @@ if result.warnings:
 #  Summary metrics                                                     #
 # ------------------------------------------------------------------ #
 
-mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+mc1, mc2, mc3, mc4, mc5, mc6 = st.columns(6)
 mc1.metric("Retorno esperado", f"{result.expected_return_pct:.1f}%")
 mc2.metric("Volatilidad",      f"{result.volatility_pct:.1f}%",
            delta=f"límite {prof.max_volatility_pct:.0f}%", delta_color="off")
@@ -455,6 +477,12 @@ mc3.metric("Sharpe Ratio",     f"{result.sharpe_ratio:.2f}")
 mc4.metric("Div. Yield",       f"{result.dividend_yield_pct:.2f}%",
            delta=f"mín {prof.min_dividend_yield_pct:.1f}%", delta_color="off")
 mc5.metric("Score Promedio",   f"{result.adjusted_score_avg:.0f}/100")
+mc6.metric(
+    "Max Drawdown est.",
+    f"{result.max_drawdown_estimate_pct:.1f}%",
+    help="Estimación del peor escenario anual: ≈ 1.5× volatilidad (regla empírica)",
+    delta_color="off",
+)
 
 # ------------------------------------------------------------------ #
 #  Tabs                                                                #
@@ -572,6 +600,19 @@ with tab_cart:
                 "(no afecta el precio ni el dividend yield reportado)."
             )
 
+    # CSV export
+    if result.tickers:
+        import io
+        _csv_buf = io.StringIO()
+        df_alloc.to_csv(_csv_buf, index=False)
+        st.download_button(
+            label="⬇️ Exportar cartera a CSV",
+            data=_csv_buf.getvalue(),
+            file_name=f"portfolio_{prof.name.lower()}_{_display_universe.replace(' ', '_')}.csv",
+            mime="text/csv",
+            use_container_width=False,
+        )
+
     if result.excluded:
         with st.expander(f"Tickers excluidos de la optimización ({len(result.excluded)})"):
             for sym, reason in result.excluded:
@@ -628,6 +669,7 @@ with tab_metrics:
 
     with m1:
         st.subheader("Estadísticas de cartera")
+        _dd_str = f"{result.max_drawdown_estimate_pct:.1f}%" if result.max_drawdown_estimate_pct else "—"
         st.markdown(f"""
 | Métrica | Valor |
 |---|---|
@@ -635,6 +677,7 @@ with tab_metrics:
 | Retorno esperado | **{result.expected_return_pct:.1f}%** anual |
 | Volatilidad | **{result.volatility_pct:.1f}%** anual |
 | Sharpe Ratio | **{result.sharpe_ratio:.2f}** |
+| Max Drawdown est. | **{_dd_str}** (1 año) |
 | Dividend Yield | **{result.dividend_yield_pct:.2f}%** |
 | Score promedio | **{result.adjusted_score_avg:.0f}**/100 |
 | Moat promedio | **{result.moat_score_avg:.1f}**/20 |

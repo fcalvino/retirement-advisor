@@ -99,6 +99,9 @@ class OptimizationResult:
     rebalance_frequency: str = ""       # e.g. "Anual", "Semestral", "Trimestral"
     rebalance_rationale: str = ""       # one-line explanation
 
+    # Max drawdown estimate (1-year horizon, approximated as 1.5× annualised vol)
+    max_drawdown_estimate_pct: float = 0.0
+
 
 class PortfolioOptimizer:
     """
@@ -588,6 +591,8 @@ class PortfolioOptimizer:
             result.volatility_pct = round(port_vol * 100, 1)
             if port_vol > 0:
                 result.sharpe_ratio = round((port_ret - rf) / port_vol, 2)
+                # 1-year max drawdown estimate: empirical rule MaxDD ≈ 1.5 × annual vol
+                result.max_drawdown_estimate_pct = round(-result.volatility_pct * 1.5, 1)
 
         divs = np.array([self._clean_div_yield(float(t.get("dividend_yield", 0) or 0)) / 100 for t in tickers])
         result.dividend_yield_pct = round(float(divs @ w_arr) * 100, 2)
