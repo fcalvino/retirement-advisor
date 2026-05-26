@@ -192,7 +192,6 @@ _selected_label = st.sidebar.selectbox(
     options=list(_universe_labels.values()),
     index=_universe_keys.index(_current_key),
     help="Cambiá el universo de análisis. El cambio se aplica inmediatamente a todas las páginas.",
-    key="sidebar_universe_selector",
 )
 _selected_key = _universe_keys[list(_universe_labels.values()).index(_selected_label)]
 

@@ -244,10 +244,6 @@ with _r1:
             st.session_state.universe          = _default_tickers
             st.session_state.active_universe_key = "default"
 
-            # Sync sidebar universe selectbox key
-            _default_label = f"{UNIVERSE_META['default']['name']} ({UNIVERSE_META['default']['count']})"
-            st.session_state["sidebar_universe_selector"] = _default_label
-
             # Sync Optimizer profile
             st.session_state["optimizer_profile_label"]   = "🛡️  Conservador"
             st.session_state.optimizer_last_saved_profile = "Conservador"

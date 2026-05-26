@@ -78,6 +78,16 @@ st.caption(
     "💵 Todos los valores están denominados en **USD**."
 )
 
+# Guard: initialize shared state if navigated directly (fresh session)
+if "user_prefs" not in st.session_state:
+    st.session_state.user_prefs = UserPreferences.load()
+if "universe" not in st.session_state:
+    _uk = getattr(st.session_state.user_prefs, "active_universe", "default") or "default"
+    st.session_state.universe = load_universe(_uk)
+    st.session_state.active_universe_key = _uk
+if "portfolio" not in st.session_state:
+    st.session_state.portfolio = Portfolio()
+
 _prefs: UserPreferences = st.session_state.user_prefs
 portfolio: Portfolio = st.session_state.portfolio
 
