@@ -185,14 +185,21 @@ def cached_monte_carlo(
     annual_withdrawal: float,
     target_value: float,
     seed: int = 42,
+    vol_scale: float = 1.0,
+    return_scale: float = 1.0,
 ):
-    """Cache Monte Carlo runs for 30 min — same params = instant re-render."""
+    """Cache Monte Carlo runs for 30 min — same params = instant re-render.
+
+    vol_scale / return_scale: applied on top of the global conservative adjustment.
+    Used by the profile-comparison tab to show Conservador/Moderado/Agresivo on one chart.
+    """
     import numpy as np
 
     from portfolio.monte_carlo import MonteCarloSimulator
 
     w_np = np.array(weights_tuple) if weights_tuple else None
-    sim  = MonteCarloSimulator(list(symbols), w_np, seed=seed)
+    sim  = MonteCarloSimulator(list(symbols), w_np, seed=seed,
+                               vol_scale=vol_scale, return_scale=return_scale)
     return sim.run(
         horizon_years=horizon_years,
         n_sims=n_sims,

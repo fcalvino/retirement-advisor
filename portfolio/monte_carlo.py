@@ -95,11 +95,17 @@ class MonteCarloSimulator:
         symbols: List[str],
         weights: Optional[np.ndarray] = None,
         seed: int = 42,
+        vol_scale: float = 1.0,
+        return_scale: float = 1.0,
     ) -> None:
         self.symbols = symbols
         self._weights_input = weights
         self._rng = np.random.default_rng(seed)
-        self._port_returns: Optional[np.ndarray] = None  # historical weekly portfolio returns
+        self._port_returns: Optional[np.ndarray] = None
+        # Profile-specific adjustment multipliers applied ON TOP of the global
+        # conservative adjustments (vol_adjustment, mean_haircut from config).
+        self.vol_scale = vol_scale
+        self.return_scale = return_scale
 
     # ------------------------------------------------------------------ #
     #  Public API                                                          #
@@ -272,16 +278,17 @@ class MonteCarloSimulator:
     #  Conservative adjustment                                             #
     # ------------------------------------------------------------------ #
 
-    @staticmethod
-    def _conservative_adjustment(returns: np.ndarray) -> np.ndarray:
+    def _conservative_adjustment(self, returns: np.ndarray) -> np.ndarray:
         """
         Apply conservative bias to historical returns:
-          - Inflate volatility by +10% (fat tails / model uncertainty)
-          - Reduce expected return by 20% (mean reversion / lower future premia)
+          - Inflate volatility by vol_adjustment × vol_scale
+          - Reduce expected return by mean_haircut × return_scale
+        vol_scale / return_scale are profile-specific overrides (default 1.0 = no extra adjustment).
         """
         mean = returns.mean()
-        adjusted = (returns - mean) * MONTE_CARLO.vol_adjustment + mean * MONTE_CARLO.mean_haircut
-        return adjusted
+        vol_adj    = MONTE_CARLO.vol_adjustment * self.vol_scale
+        return_adj = MONTE_CARLO.mean_haircut   * self.return_scale
+        return (returns - mean) * vol_adj + mean * return_adj
 
     # ------------------------------------------------------------------ #
     #  Simulation (vectorised)                                             #
