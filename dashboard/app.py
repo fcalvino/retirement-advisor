@@ -67,7 +67,7 @@ if "config_validated" not in st.session_state:
 #  Shared session_state initialization                                 #
 # ------------------------------------------------------------------ #
 
-if "user_prefs" not in st.session_state:
+if "user_prefs" not in st.session_state or not hasattr(st.session_state.user_prefs, "active_universe"):
     st.session_state.user_prefs = UserPreferences.load()
 
 _prefs: UserPreferences = st.session_state.user_prefs
