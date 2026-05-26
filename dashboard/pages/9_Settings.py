@@ -17,23 +17,28 @@ from data.preferences import UserPreferences
 #  Page                                                                #
 # ------------------------------------------------------------------ #
 
-st.title("⚙️ Settings")  # noqa: RUF001
+st.title("⚙️ Configuración")  # noqa: RUF001
 
 _prefs: UserPreferences = st.session_state.user_prefs
 
 # ------------------------------------------------------------------ #
-#  Stock Universe                                                     #
+#  Universo personalizado                                             #
 # ------------------------------------------------------------------ #
 
-st.subheader("Stock Universe")
+st.subheader("🗂️ Universo personalizado")
+st.caption(
+    "Editá manualmente los tickers del universo activo. "
+    "Para cambiar entre universos predefinidos (Default, Dividend Focus, etc.) "
+    "usá el **selector en el sidebar izquierdo**, visible en todas las páginas."
+)
 universe_text = st.text_area(
-    "Tickers (one per line or comma-separated)",
+    "Tickers (uno por línea o separados por comas)",
     value="\n".join(st.session_state.universe),
     height=200,
 )
 col_save, col_restore = st.columns(2)
 with col_save:
-    if st.button("Save Universe"):
+    if st.button("💾 Guardar cambios"):
         raw = universe_text.replace(",", "\n").split()
         st.session_state.universe = [t.upper().strip() for t in raw if t.strip()]
         _prefs.last_used_universe = list(st.session_state.universe)
@@ -41,11 +46,11 @@ with col_save:
         st.toast(f"Universo guardado: {len(st.session_state.universe)} tickers", icon="✅")
 with col_restore:
     if _prefs.favorite_universe and st.button(
-        "↩ Restaurar favorito",
-        help=f"{len(_prefs.favorite_universe)} tickers guardados",
+        "↩️ Restaurar favorito",
+        help=f"{len(_prefs.favorite_universe)} tickers guardados como favorito",
     ):
         st.session_state.universe = list(_prefs.favorite_universe)
-        st.toast(f"Universo favorito restaurado: {len(_prefs.favorite_universe)} tickers", icon="↩")
+        st.toast(f"Universo favorito restaurado: {len(_prefs.favorite_universe)} tickers", icon="↩️")
         st.rerun()
 
 st.divider()
@@ -73,7 +78,7 @@ st.divider()
 #  AI Analysis                                                        #
 # ------------------------------------------------------------------ #
 
-st.subheader("🤖 AI Analysis")
+st.subheader("🤖 Análisis con AI")
 st.caption("Activá un modelo de AI para reemplazar el scoring rule-based con análisis cualitativo.")
 
 _MODEL_OPTIONS = {
@@ -172,18 +177,22 @@ st.divider()
 #  Cache                                                              #
 # ------------------------------------------------------------------ #
 
-st.subheader("Cache")
+st.subheader("🗄️ Caché")
+st.caption("El caché almacena datos de Yahoo Finance para evitar llamadas repetidas a la API.")
 col1, col2 = st.columns(2)
 with col1:
-    if st.button("Clear All Cache", type="secondary"):
+    if st.button("🗑️ Limpiar todo el caché", type="secondary"):
         cache.clear_all()
         st.cache_data.clear()
-        st.success("Cache cleared — next analysis will re-fetch all data")
+        st.success("Caché limpiado — el próximo análisis va a re-obtener todos los datos.")
 with col2:
-    st.caption("Cache stores fetched data for 24h to avoid API rate limits.")
+    st.caption(
+        f"TTL configurado: **{cache.ttl}**. "
+        "Los datos se refrescan automáticamente cuando expiran."
+    )
 
 st.divider()
 st.caption(
-    "Retirement Advisor v1.0.0 — datos de Yahoo Finance (yfinance). "
+    "Retirement Advisor v1.1.0 — datos de Yahoo Finance (yfinance). "
     "No constituye asesoramiento financiero."
 )

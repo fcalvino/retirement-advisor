@@ -140,7 +140,7 @@ s4.metric(
 #  Main watchlist table                                               #
 # ------------------------------------------------------------------ #
 
-st.subheader("Tickers seguidos")
+st.subheader("📊 Tickers seguidos")
 
 if not raw_results:
     st.warning("No se pudieron obtener datos. Verificá la conexión a internet.")
@@ -198,7 +198,7 @@ else:
 #  Per-ticker action expanders                                        #
 # ------------------------------------------------------------------ #
 
-st.subheader("Acciones por ticker")
+st.subheader("🔧 Acciones por ticker")
 
 for sym in list(_prefs.watched_tickers):
     label = sym
@@ -309,7 +309,7 @@ else:
     )
 
     # Remove individual alerts
-    st.caption("Eliminar alerta:")
+    st.caption("🗑️ Eliminar alerta individual:")
     rem_cols = st.columns(min(len(_prefs.price_alerts), 4))
     for i, alert in enumerate(_prefs.price_alerts):
         arrow = "▲" if alert["condition"] == "above" else "▼"

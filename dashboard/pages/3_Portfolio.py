@@ -17,12 +17,15 @@ from portfolio.tracker import Portfolio
 #  Page                                                                #
 # ------------------------------------------------------------------ #
 
-st.title("💼 My Portfolio")
+st.title("💼 Mi Portfolio")
 
 portfolio: Portfolio = st.session_state.portfolio
 
 if not portfolio.positions:
-    st.info("No positions yet. Analyze a stock and add it from the Stock Analysis page.")
+    st.info(
+        "Sin posiciones todavía. Analizá una acción en **🔍 Stock Analysis** "
+        "y usá el botón **Agregar al Portfolio** para comenzar."
+    )
     st.stop()
 
 values = portfolio.get_current_values()
@@ -30,21 +33,21 @@ metrics = portfolio.compute_metrics()
 
 # Summary metrics
 col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("Total Value",   f"${metrics.total_value:,.0f}")
-col2.metric("Total P&L",     f"${metrics.total_pnl:,.0f}", f"{metrics.total_pnl_pct:.1f}%")
-col3.metric("Ann. Return",   f"{metrics.annualized_return_pct:.1f}%")
-col4.metric("Sharpe Ratio",  f"{metrics.sharpe_ratio:.2f}")
-col5.metric("Max Drawdown",  f"{metrics.max_drawdown_pct:.1f}%")
+col1.metric("Valor total",     f"${metrics.total_value:,.0f}")
+col2.metric("P&L total",       f"${metrics.total_pnl:,.0f}", f"{metrics.total_pnl_pct:.1f}%")
+col3.metric("Retorno anual",   f"{metrics.annualized_return_pct:.1f}%")
+col4.metric("Sharpe Ratio",    f"{metrics.sharpe_ratio:.2f}")
+col5.metric("Max Drawdown",    f"{metrics.max_drawdown_pct:.1f}%")
 
 col1, col2, col3 = st.columns(3)
-col1.metric("Sortino Ratio",  f"{metrics.sortino_ratio:.2f}")
-col2.metric("Portfolio Beta", f"{metrics.beta:.2f}")
-col3.metric("Positions",      metrics.num_positions)
+col1.metric("Sortino Ratio",   f"{metrics.sortino_ratio:.2f}")
+col2.metric("Beta del portfolio", f"{metrics.beta:.2f}")
+col3.metric("Posiciones",      metrics.num_positions)
 
 st.divider()
 
 # Holdings table
-st.subheader("Holdings")
+st.subheader("📊 Posiciones actuales")
 rows = list(values.values())
 df = pd.DataFrame(rows)
 df["pnl_pct"]      = df["pnl_pct"].round(1)
@@ -79,7 +82,7 @@ with col1:
     fig = px.pie(
         names=list(sector_weights.keys()),
         values=list(sector_weights.values()),
-        title="Sector Allocation",
+        title="Distribución sectorial",
         hole=0.4,
     )
     st.plotly_chart(fig, use_container_width=True)
@@ -89,23 +92,25 @@ with col2:
     fig = px.bar(
         x=list(pos_weights.keys()),
         y=list(pos_weights.values()),
-        title="Position Weights (%)",
+        title="Peso por posición (%)",
         color=list(pos_weights.values()),
         color_continuous_scale="Blues",
     )
-    fig.add_hline(y=8, line_dash="dash", line_color="red", annotation_text="Max 8%")
+    fig.add_hline(y=8, line_dash="dash", line_color="red", annotation_text="Máx 8%")
     fig.update_layout(yaxis_title="%", showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
 
 # Remove position
 st.divider()
-st.subheader("Remove / Trim Position")
+st.subheader("🗑️ Cerrar / Reducir posición")
 col1, col2 = st.columns(2)
 with col1:
     sym_to_remove = st.selectbox("Ticker", list(portfolio.positions.keys()))
 with col2:
-    shares_to_remove = st.number_input("Shares (blank = close all)", min_value=0.0, value=0.0)
-if st.button("Remove", type="secondary"):
+    shares_to_remove = st.number_input(
+        "Acciones (vacío = cerrar todo)", min_value=0.0, value=0.0,
+    )
+if st.button("Cerrar posición", type="secondary"):
     portfolio.remove_position(sym_to_remove, shares_to_remove if shares_to_remove > 0 else None)
     st.session_state.portfolio = portfolio
     st.rerun()

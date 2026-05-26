@@ -27,17 +27,17 @@ from portfolio.tracker import Portfolio
 #  Page                                                                #
 # ------------------------------------------------------------------ #
 
-st.title("🔍 Stock Deep Dive")
+st.title("🔍 Análisis Profundo")
 
 col1, col2 = st.columns([2, 1])
 with col1:
-    symbol = st.text_input("Ticker symbol", value="AAPL").upper().strip()
+    symbol = st.text_input("Ticker", value="AAPL").upper().strip()
 with col2:
-    st.button("Analyze", type="primary", use_container_width=True)
+    st.button("Analizar", type="primary", use_container_width=True)
 
 if symbol:
     ai_cfg = _get_ai_config()
-    with st.spinner(f"Analyzing {symbol}..."):
+    with st.spinner(f"Analizando {symbol}…"):
         fund, tech, decision = cached_full_analysis(
             symbol, ai_cfg.provider, ai_cfg.model, ai_cfg.enabled, ai_cfg.api_key
         )
@@ -305,7 +305,7 @@ if symbol:
             )
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.warning("Price history not available")
+            st.warning("Historial de precios no disponible.")
 
     with tab_decision:
         if decision.ai_reasoning:
@@ -313,33 +313,33 @@ if symbol:
             st.markdown(decision.ai_reasoning)
             st.divider()
 
-        st.subheader("Investment Rationale")
+        st.subheader("💡 Fundamentos de inversión")
         if decision.rationale:
             for r in decision.rationale:
                 st.success(f"✅ {r}")
         else:
-            st.info("No specific positive factors flagged.")
+            st.info("Sin factores positivos identificados.")
 
         if decision.risks:
-            st.subheader("Risks & Concerns")
+            st.subheader("⚠️ Riesgos a considerar")
             for risk in decision.risks:
                 st.warning(f"⚠️ {risk}")
 
         if decision.blocked:
-            st.error(f"🚫 BLOCKED: {decision.block_reason}")
+            st.error(f"🚫 BLOQUEADO: {decision.block_reason}")
 
         # Add to portfolio
         st.divider()
-        st.subheader("Add to Portfolio")
+        st.subheader("➕ Agregar al Portfolio")
         col1, col2, col3 = st.columns(3)
         with col1:
-            shares = st.number_input("Shares", min_value=0.01, value=10.0, step=1.0)
+            shares = st.number_input("Acciones", min_value=0.01, value=10.0, step=1.0)
         with col2:
-            cost = st.number_input("Avg Cost (USD)", min_value=0.01, value=fund.current_price or 100.0)
+            cost = st.number_input("Costo promedio (USD)", min_value=0.01, value=fund.current_price or 100.0)
         with col3:
-            buy_date = st.date_input("Purchase Date")
-        if st.button("Add Position", type="secondary"):
+            buy_date = st.date_input("Fecha de compra")
+        if st.button("Agregar posición", type="secondary"):
             portfolio: Portfolio = st.session_state.portfolio
             portfolio.add_position(symbol, shares, cost, str(buy_date))
-            st.success(f"Added {shares:.0f} × {symbol} @ ${cost:.2f}")
+            st.success(f"✅ {shares:.0f} × {symbol} agregado @ ${cost:.2f}")
             st.session_state.portfolio = portfolio

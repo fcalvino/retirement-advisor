@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -10,19 +11,46 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import streamlit as st
 
 from config import DEFAULT_TICKERS
+from data.universe_loader import UNIVERSE_META, list_universes
+
+_VERSION = "1.1.0"
+_BASE_DIR = Path(__file__).parent.parent.parent
+
+
+def _count_tests() -> int:
+    """Run pytest --collect-only to get live test count. Falls back to 133."""
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", str(_BASE_DIR / "tests"), "--collect-only", "-q"],
+            capture_output=True, text=True, timeout=10,
+        )
+        for line in result.stdout.splitlines():
+            if "selected" in line or "test" in line.lower():
+                parts = line.split()
+                for p in parts:
+                    if p.isdigit():
+                        return int(p)
+    except Exception:
+        pass
+    return 133
+
 
 # ------------------------------------------------------------------ #
 #  Page                                                                #
 # ------------------------------------------------------------------ #
 
 st.title("ℹ️ About — Retirement Advisor")
-st.caption("v1.0.0 — Motor de análisis de inversiones para el retiro")
+st.caption(f"v{_VERSION} — Motor de análisis de inversiones para el retiro")
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Versión", "1.0.0")
-col2.metric("Tickers en universo", len(st.session_state.get("universe", DEFAULT_TICKERS)))
-col3.metric("Tests", "133 passing")
-col4.metric("Páginas", "11")
+_universe_count = len(st.session_state.get("universe", DEFAULT_TICKERS))
+_n_universes    = len(list_universes())
+
+col1, col2, col3, col4, col5 = st.columns(5)
+col1.metric("Versión",            _VERSION)
+col2.metric("Tickers en universo", _universe_count)
+col3.metric("Universos",           _n_universes)
+col4.metric("Tests",               "133 passing")
+col5.metric("Páginas",             "11")
 
 st.divider()
 
@@ -49,9 +77,9 @@ with h3:
     st.markdown("""
 **📈 Gestión de portafolio**
 - Optimizer Mean-Variance (SLSQP) con 3 perfiles
+- 4 presets de retiro + combinación de universos
 - Monte Carlo block-bootstrap 10 000 sims
 - Stress test en 6 crisis históricas
-- Watchlist con alertas de precio en tiempo real
 """)
 
 st.divider()
@@ -76,19 +104,27 @@ st.divider()
 
 # Feature summary
 st.subheader("Módulos activos")
+
+# Show universe summary
+_u_rows = []
+for _uk in list_universes():
+    _um = UNIVERSE_META.get(_uk, {})
+    _u_rows.append(f"**{_um.get('name', _uk)}** ({_um.get('count', '?')} tickers) — {_um.get('description', '')}")
+st.caption("Universos disponibles: " + " · ".join(_u_rows))
+
 st.markdown("""
 | Módulo | Descripción |
 |--------|-------------|
-| **🏠 Screener** | Ranking de 38+ tickers con score ajustado (0–100) y señal — paralelo con cache 1h |
-| **🔍 Stock Analysis** | Análisis profundo: Piotroski, Consistency, Economic Moat, decisión AI |
-| **💼 Portfolio** | Posiciones abiertas, P&L, gráficos de pesos por sector |
+| **🏠 Screener** | Ranking del universo con score ajustado (0–100) y señal — paralelo con caché 1h |
+| **🔍 Análisis Profundo** | Piotroski, Consistency, Economic Moat cuantitativo + decisión AI |
+| **💼 Mi Portfolio** | Posiciones abiertas, P&L, gráficos de pesos por sector |
 | **📊 Allocation** | Regla conservadora acciones/bonos/cash según edad |
-| **📈 Optimizer** | Mean-Variance SLSQP + 3 perfiles + Efficient Frontier Monte Carlo |
+| **📈 Optimizer** | Mean-Variance SLSQP + 3 perfiles + 4 presets + combinación de universos |
 | **📉 Backtesting** | Curva de equity histórica, Sharpe, Sortino, Calmar, scatter Score↔CAGR |
 | **🎲 Simulaciones** | Monte Carlo 10k sims (block-bootstrap) + Stress Test 6 crisis históricas |
 | **🔔 Alertas** | Motor inteligente con debounce SQLite + email/Telegram + PDF mensual |
 | **📋 Watchlist** | Tickers favoritos con alertas de precio en tiempo real |
-| **⚙️ Settings** | Editor de universo, configuración AI, limpieza de caché |
+| **⚙️ Configuración** | Universo personalizado, configuración AI, limpieza de caché |
 """)
 
 st.divider()
@@ -114,7 +150,7 @@ st.markdown("""
 - `docs/moat_methodology.md` — Economic Moat: metodología y umbrales
 - `docs/portfolio_optimizer.md` — Optimizer: SLSQP, perfiles, ARS discount
 - `docs/alert_system.md` — Alertas: tipos, cooldowns, scheduler
-- `docs/ROADMAP.md` — Historial de fases (1 → 8)
+- `docs/ROADMAP.md` — Historial de fases (1 → 15)
 """)
 
 st.divider()

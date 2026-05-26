@@ -29,7 +29,7 @@ st.caption(
 #  Sidebar controls                                                    #
 # ------------------------------------------------------------------ #
 
-st.sidebar.subheader("Parámetros de simulación")
+st.sidebar.subheader("⚙️ Parámetros de simulación")
 
 horizon_years = st.sidebar.selectbox(
     "Horizonte de proyección",
