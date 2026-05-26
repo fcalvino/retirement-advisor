@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import sys
 from pathlib import Path
 
@@ -39,7 +40,12 @@ _PREFS_TO_KEY = {
     "Agresivo":    "aggressive",
 }
 
-# Presets: universe + profile combinations with a retirement objective
+_PROFILE_COLORS = {
+    "conservative": {"bg": "#e8f5e9", "border": "#43a047", "accent": "#2e7d32", "icon": "🛡️"},
+    "moderate":     {"bg": "#fff3e0", "border": "#fb8c00", "accent": "#e65100", "icon": "⚖️"},
+    "aggressive":   {"bg": "#fce4ec", "border": "#e91e63", "accent": "#880e4f", "icon": "🚀"},
+}
+
 _PRESETS = [
     {
         "label":       "💰 Alto Dividendo",
@@ -66,6 +72,13 @@ _PRESETS = [
         "description": "ADRs latinoamericanos. Alto potencial, mayor volatilidad.",
     },
 ]
+
+# Static benchmark reference data (annualized avg ~2014–2024)
+_BENCHMARKS = {
+    "SPY (S&P 500)":   {"return": 10.5, "vol": 15.2, "sharpe": 0.52, "div": 1.35, "max_dd": -22.8},
+    "60/40 Portfolio": {"return": 7.8,  "vol": 9.5,  "sharpe": 0.58, "div": 2.10, "max_dd": -14.3},
+    "BND (Bonos)":     {"return": 4.2,  "vol": 5.8,  "sharpe": 0.35, "div": 3.80, "max_dd": -8.7},
+}
 
 # ------------------------------------------------------------------ #
 #  Page                                                                #
@@ -95,31 +108,13 @@ portfolio: Portfolio = st.session_state.portfolio
 #  Helpers                                                             #
 # ------------------------------------------------------------------ #
 
-def _universe_display_label(key: str) -> str:
-    """Build the exact label string used by the sidebar selectbox."""
-    meta  = UNIVERSE_META.get(key, {})
-    name  = meta.get("name", key)
-    count = meta.get("count", len(load_universe(key)))
-    return f"{name} ({count})"
-
-
 def _apply_preset(universe_key: str, profile_key: str) -> None:
-    """Switch universe + profile atomically and trigger a full rerun.
-
-    Uses pending keys so app.py can consume them before widget instantiation,
-    avoiding the 'cannot modify after instantiation' Streamlit error.
-    """
-    # Pending keys: consumed by app.py (universe) and this page (profile)
-    # before their respective widgets are created on the next render.
+    """Switch universe + profile atomically via pending keys (avoids widget-state conflict)."""
     st.session_state["_preset_universe_key"] = universe_key
     st.session_state["_preset_profile_key"]  = profile_key
-
-    # Persist preferences immediately
     _prefs.active_universe = universe_key
     _prefs.default_profile = OPTIMIZER_PROFILES[profile_key].name
     _prefs.save()
-
-    # Wipe optimizer caches so the new run starts fresh
     for k in [
         "optimizer_scored", "optimizer_universe",
         "optimizer_result", "optimizer_result_key",
@@ -128,7 +123,6 @@ def _apply_preset(universe_key: str, profile_key: str) -> None:
         "optimizer_comparison_profile",
     ]:
         st.session_state.pop(k, None)
-
     st.rerun()
 
 
@@ -153,11 +147,8 @@ st.sidebar.divider()
 # ------------------------------------------------------------------ #
 #  Sidebar — Profile selector                                          #
 # ------------------------------------------------------------------ #
-# Using key= (not index=) so Streamlit owns the widget state and avoids
-# the "revert on first click" bug caused by index= conflicting with
-# internal session_state on reruns.
 
-# Consume pending profile from preset (must happen before widget instantiation)
+# Consume pending profile from preset before widget instantiation
 if "_preset_profile_key" in st.session_state:
     _ppk = st.session_state.pop("_preset_profile_key")
     if _ppk in _PROFILE_LABELS:
@@ -184,11 +175,13 @@ prof        = OPTIMIZER_PROFILES[profile_key]
 if "optimizer_last_saved_profile" not in st.session_state:
     st.session_state.optimizer_last_saved_profile = _prefs.default_profile
 
-if prof.name != st.session_state.optimizer_last_saved_profile:
+# Detect profile change BEFORE updating last_saved (used to auto-expand constraint card)
+_profile_just_changed = prof.name != st.session_state.optimizer_last_saved_profile
+if _profile_just_changed:
     _prefs.default_profile = prof.name
     _prefs.save()
     st.session_state.optimizer_last_saved_profile = prof.name
-    st.toast(f"Perfil '{prof.name}' guardado como preferencia", icon="💾")
+    st.toast(f"Perfil '{prof.name}' guardado", icon="💾")
 
 st.sidebar.divider()
 
@@ -196,7 +189,7 @@ st.sidebar.divider()
 #  Sidebar — Universe combination                                      #
 # ------------------------------------------------------------------ #
 
-_active_key  = st.session_state.get("active_universe_key", _prefs.active_universe or "default")
+_active_key  = st.session_state.get("active_universe_key", getattr(_prefs, "active_universe", "default") or "default")
 _other_keys  = [k for k in list_universes() if k != _active_key]
 
 st.sidebar.subheader("🔗 Combinar universos")
@@ -210,35 +203,38 @@ _extra_keys: list[str] = st.sidebar.multiselect(
     default=[],
 )
 
-# Build effective ticker list: base + extras (deduped, preserving order)
 _base_tickers  = list(st.session_state.universe)
-_extra_tickers = [
-    t for k in _extra_keys
-    for t in load_universe(k)
-    if t not in _base_tickers
-]
-_combined = _base_tickers + _extra_tickers
+_extra_tickers = [t for k in _extra_keys for t in load_universe(k) if t not in _base_tickers]
+_combined      = _base_tickers + _extra_tickers
 
-# Universe display name
 _active_meta  = UNIVERSE_META.get(_active_key, {})
 _active_name  = _active_meta.get("name", _active_key)
-if _extra_keys:
-    _extra_names         = " + ".join(UNIVERSE_META.get(k, {}).get("name", k) for k in _extra_keys)
-    _display_universe    = f"{_active_name} + {_extra_names}"
-else:
-    _display_universe    = _active_name
+_display_universe = (
+    f"{_active_name} + " + " + ".join(UNIVERSE_META.get(k, {}).get("name", k) for k in _extra_keys)
+    if _extra_keys else _active_name
+)
 
 st.sidebar.divider()
 
 # ------------------------------------------------------------------ #
-#  Sidebar — Ticker slider + Re-analyze                               #
+#  Sidebar — Ticker slider + Portfolio value + Re-analyze             #
 # ------------------------------------------------------------------ #
 
 max_tickers = st.sidebar.slider(
     "Tickers a analizar", 10, max(10, len(_combined)), len(_combined),
-    help="Reducir el universo acelera el análisis. Se toman los primeros N tickers.",
+    help="Reducir el universo acelera el análisis.",
 )
 selected_universe = _combined[:max_tickers]
+
+total_capital = st.sidebar.number_input(
+    "Capital a invertir (USD)",
+    min_value=0,
+    value=st.session_state.get("optimizer_total_capital", 0),
+    step=1000,
+    help="Opcional: ingresá el total para ver el valor en USD de cada posición.",
+    format="%d",
+)
+st.session_state["optimizer_total_capital"] = int(total_capital)
 
 if st.sidebar.button("🔄 Re-analizar universo", type="secondary"):
     for k in [
@@ -250,15 +246,19 @@ if st.sidebar.button("🔄 Re-analizar universo", type="secondary"):
     st.rerun()
 
 # ------------------------------------------------------------------ #
-#  Profile card                                                        #
+#  Profile constraint card                                             #
 # ------------------------------------------------------------------ #
 
 _PROFILE_DESC = {
-    "conservative": "Preservación de capital + ingreso por dividendos. Volatilidad controlada.",
-    "moderate":     "Balance entre crecimiento e ingreso. Exposición al riesgo controlada.",
-    "aggressive":   "Maximización de crecimiento a largo plazo. Mayor tolerancia al riesgo.",
+    "conservative": "Preservación de capital + ingreso por dividendos.",
+    "moderate":     "Balance entre crecimiento e ingreso.",
+    "aggressive":   "Maximización de crecimiento a largo plazo.",
 }
-with st.expander(f"📋 Perfil: **{prof.name}** — {_PROFILE_DESC[profile_key]}", expanded=True):
+_pc = _PROFILE_COLORS[profile_key]
+with st.expander(
+    f"{_pc['icon']} Perfil **{prof.name}** — {_PROFILE_DESC[profile_key]}",
+    expanded=_profile_just_changed,
+):
     pc1, pc2, pc3, pc4, pc5 = st.columns(5)
     pc1.metric("Pos. máx.",       f"{prof.max_position_pct:.0f}%")
     pc2.metric("Vol. máx.",       f"{prof.max_volatility_pct:.0f}%")
@@ -270,6 +270,8 @@ with st.expander(f"📋 Perfil: **{prof.name}** — {_PROFILE_DESC[profile_key]}
         f"· Dividendo: {prof.dividend_weight:.0%} "
         f"· Moat: {prof.moat_weight:.0%}"
     )
+    if _profile_just_changed:
+        st.info("Presioná **🚀 Ejecutar Optimización** para generar la cartera con el nuevo perfil.", icon="🔄")
 
 # ------------------------------------------------------------------ #
 #  Cache validity                                                      #
@@ -296,11 +298,7 @@ if "optimizer_result" in st.session_state and not has_valid_result:
 
 btn_col, ctx_col = st.columns([1, 3])
 with btn_col:
-    run_now = st.button(
-        "🚀 Ejecutar Optimización",
-        type="primary",
-        use_container_width=True,
-    )
+    run_now = st.button("🚀 Ejecutar Optimización", type="primary", use_container_width=True)
 with ctx_col:
     if "optimizer_scored" in st.session_state and st.session_state.get("optimizer_universe") == universe_key:
         st.info(
@@ -310,34 +308,59 @@ with ctx_col:
         )
     else:
         st.info(
-            f"🗂️ Optimizando **{len(selected_universe)} tickers** del universo "
-            f"**{_display_universe}** para perfil **{prof.name}**.",
+            f"🗂️ **{len(selected_universe)} tickers** · universo **{_display_universe}** · perfil **{prof.name}**.",
             icon="ℹ️",
         )
 
+# ------------------------------------------------------------------ #
+#  Welcome state                                                       #
+# ------------------------------------------------------------------ #
+
 if not run_now and not has_valid_result:
-    st.info(
-        f"👆 Configurá el perfil y el universo en el sidebar, luego presioná "
-        f"**🚀 Ejecutar Optimización** para generar tu cartera óptima.",
-        icon="📈",
-    )
-    # Profile quick-reference cards
+    st.markdown("---")
+    st.markdown("### Seleccioná un perfil y ejecutá la optimización")
+
     _prof_cards = st.columns(3)
     for _ci, (_pk, _pcfg) in enumerate(OPTIMIZER_PROFILES.items()):
         _active = (_pk == profile_key)
+        _clr    = _PROFILE_COLORS[_pk]
+        _border = f"3px solid {_clr['border']}" if _active else f"1px solid {_clr['border']}88"
         with _prof_cards[_ci]:
-            _border = "2px solid #1f77b4" if _active else "1px solid #ddd"
             st.markdown(
-                f'<div style="border:{_border};border-radius:8px;padding:12px;'
-                f'background:{"#e8f4fd" if _active else "#fafafa"}">'
-                f'<b>{"✅ " if _active else ""}{_pcfg.name}</b><br>'
-                f'<small style="color:#666">{_pcfg.description}</small><br><br>'
-                f'<small>📊 Vol máx: <b>{_pcfg.max_volatility_pct:.0f}%</b> &nbsp;'
-                f'💰 Div mín: <b>{_pcfg.min_dividend_yield_pct:.1f}%</b> &nbsp;'
-                f'📌 Pos máx: <b>{_pcfg.max_position_pct:.0f}%</b></small>'
-                f'</div>',
+                f"""<div style="
+                    border:{_border};
+                    border-radius:12px;
+                    padding:20px 16px;
+                    background:{_clr['bg']};
+                    min-height:190px;
+                ">
+                    <div style="font-size:2em;margin-bottom:4px">{_clr['icon']}</div>
+                    <div style="font-size:1.1em;font-weight:700;color:{_clr['accent']}">
+                        {"✅ " if _active else ""}{_pcfg.name}
+                    </div>
+                    <div style="font-size:0.82em;color:#555;margin:6px 0 10px">{_pcfg.description}</div>
+                    <div style="font-size:0.78em;color:{_clr['accent']}">
+                        📊 Vol ≤ <b>{_pcfg.max_volatility_pct:.0f}%</b> &nbsp;
+                        💰 Div ≥ <b>{_pcfg.min_dividend_yield_pct:.1f}%</b><br>
+                        📌 Pos ≤ <b>{_pcfg.max_position_pct:.0f}%</b> &nbsp;
+                        🔢 Min <b>{_pcfg.min_positions}</b> activos
+                    </div>
+                </div>""",
                 unsafe_allow_html=True,
             )
+
+    st.markdown("&nbsp;", unsafe_allow_html=True)
+    st.markdown("##### O elegí un preset de retiro:")
+    _qcols = st.columns(len(_PRESETS))
+    for _qi, _preset in enumerate(_PRESETS):
+        with _qcols[_qi]:
+            if st.button(
+                _preset["label"],
+                key=f"welcome_preset_{_qi}",
+                use_container_width=True,
+                help=_preset["description"],
+            ):
+                _apply_preset(_preset["universe"], _preset["profile"])
     st.stop()
 
 # ------------------------------------------------------------------ #
@@ -382,11 +405,7 @@ if run_now or not has_valid_result:
     else:
         scored = st.session_state.optimizer_scored
 
-    # ------------------------------------------------------------------ #
-    #  Optimize                                                            #
-    # ------------------------------------------------------------------ #
-
-    with st.spinner(f"Generando portafolio {prof.name}…"):
+    with st.spinner(f"⚙️ Generando portafolio {prof.name} · Maximizando Sharpe Ratio…"):
         opt = PortfolioOptimizer(profile=profile_key)
         try:
             current_weights = portfolio.get_position_weights()
@@ -430,7 +449,7 @@ if run_now and "optimizer_prev_result" in st.session_state:
             return f'<span style="color:{color}">{sign}{v:.1f}{unit}</span>'
 
         st.markdown(
-            f"**Cambio de perfil:** {prev_name} → {prof.name} &nbsp;|&nbsp; "
+            f"**Cambio de perfil:** {prev_name} → **{prof.name}** &nbsp;|&nbsp; "
             f"Retorno {_delta_str(d_ret)} &nbsp; "
             f"Volatilidad {_delta_str(d_vol, positive_good=False)} &nbsp; "
             f"Sharpe {_delta_str(d_sh)} &nbsp; "
@@ -445,9 +464,8 @@ if run_now and "optimizer_prev_result" in st.session_state:
             key=lambda x: -abs(x[1]),
         )[:6]
         mover_parts = [
-            f"{sym} {'▲' if delta > 0 else '▼'}{abs(delta):.1f}%"
-            for sym, delta in movers
-            if abs(delta) >= 0.5
+            f"{sym} {'▲' if d > 0 else '▼'}{abs(d):.1f}%"
+            for sym, d in movers if abs(d) >= 0.5
         ]
         if mover_parts:
             st.caption("Principales cambios en posiciones: " + " · ".join(mover_parts))
@@ -456,31 +474,46 @@ if run_now and "optimizer_prev_result" in st.session_state:
 #  Status bar                                                          #
 # ------------------------------------------------------------------ #
 
-_method_badge = "🧮 Mean-Variance" if result.method == "mean-variance" else "⚖️ Score-weighted"
-st.success(
-    f"{_method_badge} · 🗂️ **{_display_universe}** · "
-    f"Perfil **{result.profile_name}** · {len(result.tickers)} posiciones"
-)
-if result.warnings:
-    for w in result.warnings:
-        st.warning(w)
+_method_badge = "🧮 Mean-Variance" if result.method == "mean-variance" else "⚖️ Score-weighted (fallback)"
+if result.method == "mean-variance":
+    st.success(
+        f"{_method_badge} · 🗂️ **{_display_universe}** · "
+        f"Perfil **{result.profile_name}** · {len(result.tickers)} posiciones"
+    )
+else:
+    st.warning(
+        f"{_method_badge} · 🗂️ **{_display_universe}** · "
+        f"Perfil **{result.profile_name}** · {len(result.tickers)} posiciones — "
+        "datos de precio insuficientes para Mean-Variance completo."
+    )
+for w in result.warnings:
+    st.warning(w, icon="⚠️")
 
 # ------------------------------------------------------------------ #
 #  Summary metrics                                                     #
 # ------------------------------------------------------------------ #
 
 mc1, mc2, mc3, mc4, mc5, mc6 = st.columns(6)
-mc1.metric("Retorno esperado", f"{result.expected_return_pct:.1f}%")
-mc2.metric("Volatilidad",      f"{result.volatility_pct:.1f}%",
-           delta=f"límite {prof.max_volatility_pct:.0f}%", delta_color="off")
-mc3.metric("Sharpe Ratio",     f"{result.sharpe_ratio:.2f}")
-mc4.metric("Div. Yield",       f"{result.dividend_yield_pct:.2f}%",
-           delta=f"mín {prof.min_dividend_yield_pct:.1f}%", delta_color="off")
-mc5.metric("Score Promedio",   f"{result.adjusted_score_avg:.0f}/100")
+mc1.metric(
+    "Retorno esperado", f"{result.expected_return_pct:.1f}%",
+    help="Retorno anual proxy (score + dividendo + moat).",
+)
+mc2.metric(
+    "Volatilidad", f"{result.volatility_pct:.1f}%",
+    delta=f"límite {prof.max_volatility_pct:.0f}%", delta_color="off",
+)
+mc3.metric(
+    "Sharpe Ratio", f"{result.sharpe_ratio:.2f}",
+    help="Retorno ajustado por riesgo (rf = 4.5%). Por encima de 0.5 es bueno.",
+)
+mc4.metric(
+    "Div. Yield", f"{result.dividend_yield_pct:.2f}%",
+    delta=f"mín {prof.min_dividend_yield_pct:.1f}%", delta_color="off",
+)
+mc5.metric("Score Promedio", f"{result.adjusted_score_avg:.0f}/100")
 mc6.metric(
-    "Max Drawdown est.",
-    f"{result.max_drawdown_estimate_pct:.1f}%",
-    help="Estimación del peor escenario anual: ≈ 1.5× volatilidad (regla empírica)",
+    "Max Drawdown est.", f"{result.max_drawdown_estimate_pct:.1f}%",
+    help="Estimación peor escenario 1 año: ≈ 1.5× volatilidad (regla empírica).",
     delta_color="off",
 )
 
@@ -500,109 +533,107 @@ with tab_cart:
     if not result.tickers:
         st.warning("No hay posiciones en la cartera optimizada.")
     else:
-        # Safety: renormalize weight_pct to always sum to ~100 %
+        # Renormalize weights to exactly 100 % (guards floating-point drift)
         _total_w = sum(a.weight_pct for a in result.tickers)
         if _total_w > 0 and abs(_total_w - 100.0) > 0.5:
             _scale = 100.0 / _total_w
             for _a in result.tickers:
                 _a.weight_pct = round(_a.weight_pct * _scale, 1)
-            result.sector_weights = {
-                k: round(v * _scale, 1) for k, v in result.sector_weights.items()
-            }
+            result.sector_weights = {k: round(v * _scale, 1) for k, v in result.sector_weights.items()}
 
         scored_map = {t["symbol"]: t for t in scored}
+        _total_val = st.session_state.get("optimizer_total_capital", 0)
+
         alloc_data = []
         for a in result.tickers:
-            t = scored_map.get(a.symbol, {})
+            t             = scored_map.get(a.symbol, {})
             moat_cls      = t.get("moat_classification", "None")
             discount_note = f" (−{(1-OPTIMIZER.ars_risk_discount)*100:.0f}% ARS)" if a.score_discounted else ""
-            alloc_data.append({
+            row = {
                 "Ticker":  a.symbol,
-                "Empresa": (t.get("company_name", a.symbol) or a.symbol)[:28],
+                "Empresa": (t.get("company_name", a.symbol) or a.symbol)[:32],
                 "Peso %":  a.weight_pct,
                 "Score":   a.adjusted_score,
                 "Moat":    f"{_MOAT_EMOJI.get(moat_cls, '⚪')} {moat_cls}",
                 "Div %":   a.dividend_yield_pct,
                 "Sector":  a.sector,
                 "Notas":   ("🇦🇷" + discount_note) if a.is_ars else "",
-            })
+            }
+            if _total_val > 0:
+                row["Valor USD"] = round(a.weight_pct / 100 * _total_val)
+            alloc_data.append(row)
+
         df_alloc = pd.DataFrame(alloc_data)
 
-        df_bar   = df_alloc[df_alloc["Peso %"] > 0].sort_values("Peso %")
-        _max_val = df_bar["Peso %"].max() if not df_bar.empty else prof.max_position_pct
-        fig_bar  = px.bar(
-            df_bar, x="Peso %", y="Ticker", orientation="h",
-            color="Score", color_continuous_scale="RdYlGn",
-            range_color=[40, 100],
-            title=f"Peso por ticker — {_display_universe} · Perfil {prof.name}",
-            text="Peso %",
-        )
-        fig_bar.update_traces(
-            texttemplate="%{text:.1f}%",
-            textposition="inside",
-            insidetextanchor="end",
-        )
-        fig_bar.add_vline(
-            x=prof.max_position_pct,
-            line_dash="dash",
-            line_color="orange",
-            annotation_text=f"máx {prof.max_position_pct:.0f}%",
-            annotation_position="bottom right",
-            annotation_font_color="orange",
-        )
-        fig_bar.update_layout(
-            height=max(350, len(df_bar) * 22),
-            yaxis_title="",
-            coloraxis_showscale=False,
-            xaxis_range=[0, max(_max_val, prof.max_position_pct) * 1.15],
-        )
-        st.plotly_chart(fig_bar, use_container_width=True)
+        # ---- Hero: allocation donut (left) + bar chart (right) ----
+        col_donut, col_bar = st.columns(2)
 
-        st.dataframe(
-            df_alloc,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Peso %": st.column_config.ProgressColumn(
-                    "Peso %", min_value=0, max_value=100, format="%.1f%%"
-                ),
-                "Score":  st.column_config.NumberColumn("Score", format="%.0f"),
-                "Div %":  st.column_config.NumberColumn("Div %", format="%.2f%%"),
-            },
-        )
-
-        if result.sector_weights:
-            col_sec, col_tick = st.columns(2)
-            with col_sec:
-                sec_df  = pd.DataFrame([{"Sector": k, "Peso %": v} for k, v in result.sector_weights.items()])
-                fig_sec = px.pie(sec_df, values="Peso %", names="Sector", title="Por Sector", hole=0.4)
-                fig_sec.update_traces(textposition="inside", textinfo="percent+label")
-                st.plotly_chart(fig_sec, use_container_width=True)
-            with col_tick:
-                df_top     = df_alloc.nlargest(10, "Peso %")
-                others_pct = 100 - df_top["Peso %"].sum()
-                if others_pct > 0.5:
-                    df_top = pd.concat(
-                        [df_top, pd.DataFrame([{"Ticker": "Otros", "Peso %": others_pct}])],
-                        ignore_index=True,
-                    )
-                fig_pie = px.pie(df_top, values="Peso %", names="Ticker", title="Top-10 por Ticker", hole=0.3)
-                fig_pie.update_traces(textposition="inside", textinfo="percent+label")
-                st.plotly_chart(fig_pie, use_container_width=True)
-
-        if any(a.is_ars for a in result.tickers):
-            discount_pct = (1 - OPTIMIZER.ars_risk_discount) * 100
-            ars_syms     = ", ".join(a.symbol for a in result.tickers if a.is_ars)
-            st.info(
-                f"🇦🇷 **ADRs argentinos ({ars_syms}):** cotizan y liquidan en **USD** en NYSE/NASDAQ. "
-                f"En perfil **{prof.name}** se aplica un descuento de **{discount_pct:.0f}%** "
-                "al Score Ajustado para calcular el peso óptimo "
-                "(no afecta el precio ni el dividend yield reportado)."
+        with col_donut:
+            fig_donut = px.pie(
+                df_alloc[df_alloc["Peso %"] > 0],
+                values="Peso %",
+                names="Ticker",
+                title=f"Asignación — {len(result.tickers)} posiciones",
+                hole=0.45,
+                color_discrete_sequence=px.colors.qualitative.Set3,
             )
+            fig_donut.update_traces(
+                textposition="outside",
+                textinfo="label+percent",
+                pull=[0.02] * len(df_alloc),
+            )
+            fig_donut.update_layout(
+                height=420,
+                showlegend=False,
+                margin=dict(t=40, b=10, l=10, r=10),
+                title_font_size=14,
+            )
+            st.plotly_chart(fig_donut, use_container_width=True)
 
-    # CSV export
-    if result.tickers:
-        import io
+        with col_bar:
+            df_bar   = df_alloc[df_alloc["Peso %"] > 0].sort_values("Peso %")
+            _max_val = df_bar["Peso %"].max() if not df_bar.empty else prof.max_position_pct
+            fig_bar  = px.bar(
+                df_bar, x="Peso %", y="Ticker", orientation="h",
+                color="Score", color_continuous_scale="RdYlGn",
+                range_color=[40, 100],
+                title="Peso por ticker (color = Score Ajustado)",
+                text="Peso %",
+            )
+            fig_bar.update_traces(
+                texttemplate="%{text:.1f}%",
+                textposition="inside",
+                insidetextanchor="end",
+            )
+            fig_bar.add_vline(
+                x=prof.max_position_pct,
+                line_dash="dash", line_color="orange",
+                annotation_text=f"máx {prof.max_position_pct:.0f}%",
+                annotation_position="bottom right",
+                annotation_font_color="orange",
+            )
+            fig_bar.update_layout(
+                height=max(320, len(df_bar) * 22 + 60),
+                yaxis_title="",
+                coloraxis_showscale=False,
+                xaxis_range=[0, max(_max_val, prof.max_position_pct) * 1.15],
+                margin=dict(t=40, b=10),
+                title_font_size=14,
+            )
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+        # ---- Allocation table ----
+        _col_cfg: dict = {
+            "Peso %": st.column_config.ProgressColumn("Peso %", min_value=0, max_value=100, format="%.1f%%"),
+            "Score":  st.column_config.NumberColumn("Score",  format="%.0f"),
+            "Div %":  st.column_config.NumberColumn("Div %",  format="%.2f%%"),
+        }
+        if _total_val > 0:
+            _col_cfg["Valor USD"] = st.column_config.NumberColumn("Valor USD", format="$%d")
+
+        st.dataframe(df_alloc, use_container_width=True, hide_index=True, column_config=_col_cfg)
+
+        # ---- CSV export ----
         _csv_buf = io.StringIO()
         df_alloc.to_csv(_csv_buf, index=False)
         st.download_button(
@@ -610,8 +641,50 @@ with tab_cart:
             data=_csv_buf.getvalue(),
             file_name=f"portfolio_{prof.name.lower()}_{_display_universe.replace(' ', '_')}.csv",
             mime="text/csv",
-            use_container_width=False,
         )
+
+        # ---- Sector breakdown ----
+        if result.sector_weights:
+            st.markdown("---")
+            col_sec, col_top = st.columns(2)
+            with col_sec:
+                sec_df  = pd.DataFrame([{"Sector": k, "Peso %": v} for k, v in result.sector_weights.items()])
+                fig_sec = px.pie(
+                    sec_df, values="Peso %", names="Sector",
+                    title="Diversificación por Sector",
+                    hole=0.4,
+                    color_discrete_sequence=px.colors.qualitative.Pastel,
+                )
+                fig_sec.update_traces(textposition="inside", textinfo="percent+label")
+                fig_sec.update_layout(height=340, title_font_size=14)
+                st.plotly_chart(fig_sec, use_container_width=True)
+            with col_top:
+                df_top     = df_alloc.nlargest(10, "Peso %")
+                others_pct = 100 - df_top["Peso %"].sum()
+                if others_pct > 0.5:
+                    df_top = pd.concat(
+                        [df_top, pd.DataFrame([{"Ticker": "Otros", "Peso %": others_pct}])],
+                        ignore_index=True,
+                    )
+                fig_top = px.pie(
+                    df_top, values="Peso %", names="Ticker",
+                    title="Top-10 por Ticker",
+                    hole=0.3,
+                    color_discrete_sequence=px.colors.qualitative.Set2,
+                )
+                fig_top.update_traces(textposition="inside", textinfo="percent+label")
+                fig_top.update_layout(height=340, title_font_size=14)
+                st.plotly_chart(fig_top, use_container_width=True)
+
+        # ARS disclaimer
+        if any(a.is_ars for a in result.tickers):
+            discount_pct = (1 - OPTIMIZER.ars_risk_discount) * 100
+            ars_syms     = ", ".join(a.symbol for a in result.tickers if a.is_ars)
+            st.info(
+                f"🇦🇷 **ADRs argentinos ({ars_syms}):** cotizan y liquidan en **USD** en NYSE/NASDAQ. "
+                f"En perfil **{prof.name}** se aplica un descuento de **{discount_pct:.0f}%** al Score "
+                "Ajustado para el cálculo del peso óptimo (no afecta precio ni dividend yield)."
+            )
 
     if result.excluded:
         with st.expander(f"Tickers excluidos de la optimización ({len(result.excluded)})"):
@@ -636,15 +709,28 @@ with tab_front:
                 "y": "Retorno Esperado % (anual)",
                 "color": "Sharpe",
             },
-            title=f"Frontera Eficiente — {_display_universe} · Monte Carlo ({OPTIMIZER.frontier_points} carteras)",
+            title=f"Frontera Eficiente — Monte Carlo ({OPTIMIZER.frontier_points} carteras)",
         )
+        # Optimal portfolio star
         fig_front.add_scatter(
             x=[result.volatility_pct],
             y=[result.expected_return_pct],
             mode="markers",
-            marker=dict(size=16, color="blue", symbol="star", line=dict(width=1, color="white")),
-            name=f"Cartera {prof.name}",
+            marker=dict(size=16, color="royalblue", symbol="star", line=dict(width=1, color="white")),
+            name=f"Óptima ({prof.name})",
         )
+        # Benchmark reference points
+        for _bname, _bd in _BENCHMARKS.items():
+            fig_front.add_scatter(
+                x=[_bd["vol"]],
+                y=[_bd["return"]],
+                mode="markers+text",
+                marker=dict(size=10, color="#888", symbol="diamond"),
+                text=[_bname.split("(")[0].strip()],
+                textposition="top right",
+                textfont=dict(size=9, color="#888"),
+                showlegend=False,
+            )
         fig_front.add_vline(
             x=prof.max_volatility_pct,
             line_dash="dash", line_color="red",
@@ -652,16 +738,18 @@ with tab_front:
             annotation_position="top right",
         )
         fig_front.update_layout(
-            height=520, legend=dict(yanchor="bottom", y=0.01, xanchor="right", x=0.99),
+            height=540,
+            legend=dict(yanchor="bottom", y=0.01, xanchor="right", x=0.99),
         )
         st.plotly_chart(fig_front, use_container_width=True)
         st.caption(
-            "La línea roja marca el techo de volatilidad del perfil. "
-            "La estrella azul es la cartera óptima (máximo Sharpe dentro de las restricciones)."
+            "⭐ Estrella azul = cartera óptima del perfil. "
+            "💎 Diamantes grises = benchmarks de referencia (SPY, 60/40, BND). "
+            "Línea roja = techo de volatilidad del perfil."
         )
 
 # ------------------------------------------------------------------ #
-#  Tab 3: Métricas + Constraint Compliance                            #
+#  Tab 3: Métricas + Compliance + Benchmarks                          #
 # ------------------------------------------------------------------ #
 
 with tab_metrics:
@@ -714,8 +802,7 @@ with tab_metrics:
             ),
         ]
         for label, ok, detail in _checks:
-            icon = "✅" if ok else "❌"
-            st.markdown(f"{icon} **{label}** — {detail}")
+            st.markdown(f"{'✅' if ok else '❌'} **{label}** — {detail}")
 
     with m2:
         st.subheader("Pesos por sector")
@@ -734,6 +821,70 @@ with tab_metrics:
                     f"</div>",
                     unsafe_allow_html=True,
                 )
+
+    # ---- Benchmark comparison ----
+    st.divider()
+    st.subheader("📊 Comparación vs. Benchmarks")
+    st.caption("Referencia histórica anualizada 2014–2024. Los datos del portafolio son estimaciones del modelo.")
+
+    _bench_rows = [
+        {
+            "Portafolio / Benchmark": f"🧺 Tu Cartera ({prof.name})",
+            "Retorno %":     result.expected_return_pct,
+            "Vol %":         result.volatility_pct,
+            "Sharpe":        result.sharpe_ratio,
+            "Div Yield %":   result.dividend_yield_pct,
+            "Max DD %":      result.max_drawdown_estimate_pct,
+        }
+    ] + [
+        {
+            "Portafolio / Benchmark": f"📈 {name}",
+            "Retorno %":   bd["return"],
+            "Vol %":       bd["vol"],
+            "Sharpe":      bd["sharpe"],
+            "Div Yield %": bd["div"],
+            "Max DD %":    bd["max_dd"],
+        }
+        for name, bd in _BENCHMARKS.items()
+    ]
+    _bench_df = pd.DataFrame(_bench_rows)
+    st.dataframe(
+        _bench_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Portafolio / Benchmark": st.column_config.TextColumn("Portafolio / Benchmark"),
+            "Retorno %":  st.column_config.NumberColumn("Retorno %",  format="%.1f%%"),
+            "Vol %":      st.column_config.NumberColumn("Vol %",      format="%.1f%%"),
+            "Sharpe":     st.column_config.NumberColumn("Sharpe",     format="%.2f"),
+            "Div Yield %":st.column_config.NumberColumn("Div Yield %",format="%.2f%%"),
+            "Max DD %":   st.column_config.NumberColumn("Max DD %",   format="%.1f%%"),
+        },
+    )
+
+    # Grouped bar: Retorno vs Sharpe vs Div Yield
+    _metrics_to_plot = ["Retorno %", "Sharpe", "Div Yield %"]
+    _fig_bench = go.Figure()
+    for _, row in _bench_df.iterrows():
+        _fig_bench.add_trace(go.Bar(
+            name=row["Portafolio / Benchmark"],
+            x=_metrics_to_plot,
+            y=[row[m] for m in _metrics_to_plot],
+            text=[f"{row[m]:.2f}" for m in _metrics_to_plot],
+            textposition="outside",
+        ))
+    _fig_bench.update_layout(
+        barmode="group",
+        title="Tu cartera vs. Benchmarks — Retorno · Sharpe · Div Yield",
+        height=380,
+        yaxis_title="Valor",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    st.plotly_chart(_fig_bench, use_container_width=True)
+    st.caption(
+        "⚠️ Los retornos del portafolio son proyecciones del modelo, no retornos históricos reales. "
+        "Los benchmarks reflejan performance pasada y no garantizan resultados futuros."
+    )
 
 # ------------------------------------------------------------------ #
 #  Tab 4: Rebalanceo                                                   #
@@ -788,9 +939,7 @@ with tab_rebal:
                 title="Δ Peso recomendado vs. cartera actual",
             )
             fig_rebal.add_vline(x=0, line_color="gray", line_width=1)
-            fig_rebal.update_layout(
-                height=max(300, len(df_rebal) * 22), coloraxis_showscale=False,
-            )
+            fig_rebal.update_layout(height=max(300, len(df_rebal) * 22), coloraxis_showscale=False)
             st.plotly_chart(fig_rebal, use_container_width=True)
 
         all_rebal_data = [
@@ -826,7 +975,7 @@ with tab_compare:
         "instantánea cuando hay caché). Los tickers ya analizados en esta sesión son reutilizados."
     )
 
-    _COMPARE_CAP = 25  # tickers por universo para la comparación rápida
+    _COMPARE_CAP = 25
 
     run_compare = st.button(
         f"🔄 Comparar todos los universos ({len(list_universes())} disponibles)",
@@ -839,17 +988,13 @@ with tab_compare:
         and "optimizer_comparison_results" in st.session_state
     )
     if _comp_stale:
-        st.warning(
-            f"Los resultados de comparación son del perfil anterior. "
-            "Presioná el botón para actualizar."
-        )
+        st.warning("Los resultados de comparación son del perfil anterior. Presioná el botón para actualizar.")
 
     if run_compare:
         _comp_universes = list_universes()
         _comp_results: dict = {}
-        _comp_prog = st.progress(0.0)
+        _comp_prog   = st.progress(0.0)
         _comp_status = st.empty()
-
         _comp_ai_cfg = _get_ai_config(context="screener")
 
         for _ci, _uk in enumerate(_comp_universes):
@@ -857,7 +1002,7 @@ with tab_compare:
             _u_tickers = load_universe(_uk)[:_COMPARE_CAP]
             _comp_status.text(f"Analizando {_u_name} ({len(_u_tickers)} tickers)…")
 
-            _dummy_prog = st.empty()  # silent progress for sub-fetches
+            _dummy_prog = st.empty()
             _dummy_stat = st.empty()
             try:
                 _u_raw = _fetch_universe_parallel(
@@ -887,8 +1032,7 @@ with tab_compare:
             ]
             if _u_scored:
                 try:
-                    _u_opt    = PortfolioOptimizer(profile=profile_key)
-                    _u_result = _u_opt.optimize(_u_scored)
+                    _u_result = PortfolioOptimizer(profile=profile_key).optimize(_u_scored)
                     _comp_results[_uk] = _u_result
                 except Exception:
                     pass
@@ -898,11 +1042,9 @@ with tab_compare:
         _comp_prog.progress(1.0, text="¡Listo!")
         _comp_status.empty()
         _comp_prog.empty()
-
         st.session_state.optimizer_comparison_results = _comp_results
         st.session_state.optimizer_comparison_profile = profile_key
 
-    # Render comparison table
     if (
         "optimizer_comparison_results" in st.session_state
         and st.session_state.get("optimizer_comparison_profile") == profile_key
@@ -913,7 +1055,6 @@ with tab_compare:
             _comp_rows.append({
                 "Universo":      _u_meta.get("name", _uk),
                 "Tickers base":  _u_meta.get("count", "?"),
-                "Analizados":    len(st.session_state.optimizer_comparison_results[_uk].tickers),
                 "Posiciones":    len(_ures.tickers),
                 "Retorno %":     round(_ures.expected_return_pct, 1),
                 "Volatilidad %": round(_ures.volatility_pct, 1),
@@ -925,24 +1066,21 @@ with tab_compare:
 
         if _comp_rows:
             _comp_df = pd.DataFrame(_comp_rows)
-            # Highlight current universe row
             st.dataframe(
                 _comp_df,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "Retorno %":     st.column_config.NumberColumn("Retorno %", format="%.1f%%"),
-                    "Volatilidad %": st.column_config.NumberColumn("Vol %", format="%.1f%%"),
-                    "Sharpe":        st.column_config.NumberColumn("Sharpe", format="%.2f"),
-                    "Div Yield %":   st.column_config.NumberColumn("Div %", format="%.2f%%"),
-                    "Score Avg":     st.column_config.NumberColumn("Score", format="%.0f"),
+                    "Retorno %":     st.column_config.NumberColumn("Retorno %",  format="%.1f%%"),
+                    "Volatilidad %": st.column_config.NumberColumn("Vol %",      format="%.1f%%"),
+                    "Sharpe":        st.column_config.NumberColumn("Sharpe",     format="%.2f"),
+                    "Div Yield %":   st.column_config.NumberColumn("Div %",      format="%.2f%%"),
+                    "Score Avg":     st.column_config.NumberColumn("Score",      format="%.0f"),
                 },
             )
 
-            # Grouped bar chart comparing key metrics
-            _bar_metrics = ["Retorno %", "Volatilidad %", "Div Yield %"]
-            _fig_comp    = go.Figure()
-            for _metric in _bar_metrics:
+            _fig_comp = go.Figure()
+            for _metric in ["Retorno %", "Volatilidad %", "Div Yield %"]:
                 _fig_comp.add_trace(go.Bar(
                     name=_metric,
                     x=_comp_df["Universo"],
@@ -952,14 +1090,13 @@ with tab_compare:
                 ))
             _fig_comp.update_layout(
                 barmode="group",
-                title=f"Retorno · Volatilidad · Div Yield — perfil {prof.name} (top {_COMPARE_CAP} tickers por universo)",
+                title=f"Retorno · Volatilidad · Div Yield — perfil {prof.name} (top {_COMPARE_CAP} tickers)",
                 height=420,
                 yaxis_title="%",
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             )
             st.plotly_chart(_fig_comp, use_container_width=True)
 
-            # Sharpe comparison as horizontal bar
             _fig_sharpe = px.bar(
                 _comp_df.sort_values("Sharpe"),
                 x="Sharpe", y="Universo", orientation="h",
@@ -979,6 +1116,6 @@ with tab_compare:
             st.warning("No se pudo obtener resultados para ningún universo.")
     elif "optimizer_comparison_results" not in st.session_state:
         st.info(
-            "Presioná **Comparar todos los universos** para ver qué universo "
+            f"Presioná **Comparar todos los universos** para ver qué universo "
             f"rinde mejor con el perfil **{prof.name}**."
         )
