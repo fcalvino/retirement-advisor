@@ -89,6 +89,10 @@ class CryptoMoatDetail:
     # Grok-recommended allocation limit (% of portfolio, conservative profile)
     recommended_max_allocation_pct: float = 5.0
 
+    # Additional fields from Grok final prompt (v2, May 2026)
+    moat_durability_years: int = 10
+    retirement_risk_summary: str = ""
+
     @property
     def color(self) -> str:
         return {
@@ -424,6 +428,8 @@ class CryptoAnalyzer:
                 moat.recommended_max_allocation_pct = float(
                     parsed.get("recommended_max_allocation_conservative", 5)
                 )
+                moat.moat_durability_years   = parsed.get("moat_durability_years", 10)
+                moat.retirement_risk_summary = parsed.get("retirement_risk_summary", "")
                 moat.ai_total = round(
                     moat.network_adoption + moat.monetary_scarcity +
                     moat.security_decentralization + moat.institutional_regulatory +
@@ -433,14 +439,16 @@ class CryptoAnalyzer:
 
                 # Cache for next 7 days
                 self._get_cache().set(cache_key, {
-                    "network_adoption":                      moat.network_adoption,
-                    "monetary_scarcity":                     moat.monetary_scarcity,
-                    "security_decentralization":             moat.security_decentralization,
-                    "institutional_regulatory":              moat.institutional_regulatory,
-                    "tech_resilience":                       moat.tech_resilience,
-                    "ai_total":                              moat.ai_total,
-                    "ai_reasoning":                          moat.ai_reasoning,
-                    "recommended_max_allocation_pct":        moat.recommended_max_allocation_pct,
+                    "network_adoption":               moat.network_adoption,
+                    "monetary_scarcity":              moat.monetary_scarcity,
+                    "security_decentralization":      moat.security_decentralization,
+                    "institutional_regulatory":       moat.institutional_regulatory,
+                    "tech_resilience":                moat.tech_resilience,
+                    "ai_total":                       moat.ai_total,
+                    "ai_reasoning":                   moat.ai_reasoning,
+                    "recommended_max_allocation_pct": moat.recommended_max_allocation_pct,
+                    "moat_durability_years":          moat.moat_durability_years,
+                    "retirement_risk_summary":        moat.retirement_risk_summary,
                 })
                 logger.info(
                     f"{symbol}: crypto moat AI={moat.ai_total:.1f}/8 "
@@ -469,6 +477,8 @@ class CryptoAnalyzer:
         moat.ai_total                        = float(cached.get("ai_total", 0))
         moat.ai_reasoning                    = cached.get("ai_reasoning", "")
         moat.recommended_max_allocation_pct  = float(cached.get("recommended_max_allocation_pct", 5.0))
+        moat.moat_durability_years           = int(cached.get("moat_durability_years", 10))
+        moat.retirement_risk_summary         = cached.get("retirement_risk_summary", "")
         moat.ai_available                    = True
 
     @staticmethod
@@ -487,106 +497,9 @@ class CryptoAnalyzer:
     # ------------------------------------------------------------------ #
 
     def _build_crypto_moat_prompt(self, symbol: str, info: dict, metrics: dict) -> str:
-        """
-        Build the full Spanish LLM prompt for Bitcoin/crypto moat scoring.
-
-        Grok (and Claude) receive live price/supply/halving context plus an
-        explicit rubric for each of the 5 crypto-native moat dimensions.
-        The prompt explicitly frames the evaluation for a conservative
-        retirement-portfolio investor with a 10–30 year horizon.
-        """
-        price    = info.get("currentPrice", 0)
-        mcap_b   = (info.get("marketCap") or 0) / 1e9
-        circ     = info.get("circulatingSupply", 0) or 0
-        max_s    = info.get("maxSupply", 0) or 0
-        sc       = f"{circ/max_s*100:.1f}" if max_s > 0 else "N/D"
-        vol      = metrics.get("annualized_volatility_pct")
-        dd       = metrics.get("max_drawdown_pct")
-        cagr4y   = metrics.get("cagr_4y_pct")
-        phase    = metrics.get("halving_cycle_position", "desconocido")
-        d_since  = metrics.get("days_since_last_halving")
-        d_next   = metrics.get("days_to_next_halving")
-
-        halving_ctx = phase
-        if d_since is not None and d_next is not None:
-            halving_ctx = f"{phase} ({d_since} días desde último halving / {d_next} días al próximo ≈ abr 2028)"
-
-        vol_str  = f"{vol:.1f}%" if vol  is not None else "N/D"
-        dd_str   = f"{dd:.1f}%"  if dd   is not None else "N/D"
-        cagr_str = f"{cagr4y:.1f}%" if cagr4y is not None else "N/D"
-
-        return f"""Eres Grok, construido por xAI. Eres un analista de inversión senior extremadamente riguroso, conservador y con foco en inversión de largo plazo para retiro (horizonte 10–30 años).
-
-Estás analizando **Bitcoin (BTC)** como activo financiero dentro de una cartera de retiro conservadora.
-
-**Datos actuales del mercado:**
-- Precio: ${price:,.0f} USD
-- Market Cap: ${mcap_b:.1f}B USD
-- Volatilidad anualizada (52 semanas): {vol_str}
-- Máximo Drawdown Histórico: {dd_str}
-- CAGR últimos 4 años: {cagr_str}
-- Posición en ciclo de halving: {halving_ctx}
-- Suministro: {circ:,.0f} BTC circulantes de 21.000.000 máximo ({sc}% emitido)
-- ETFs spot aprobados en EE.UU. (BlackRock IBIT, Fidelity FBTC, etc.)
-- Red: 15.000+ nodos validadores · hash rate >600 EH/s (máximos históricos, mayo 2026)
-
-**Contexto importante para retiro:**
-El inversor es una persona cercana a la jubilación o ya jubilada. Prioriza preservación de capital, baja volatilidad y estabilidad. Los drawdowns del 70–85% son inaceptables en grandes asignaciones.
-
----
-
-**Tarea: Evalúa el Economic Moat de Bitcoin** (Ventaja Competitiva Duradera) con visión **muy conservadora**.
-
-**1. network_adoption (0–2 pts) — Adopción & Efecto de Red:**
-- 2.0 → Adopción masiva global, reservas soberanas, uso como reserva de valor institucional consolidada. ETFs con $100B+ en AUM.
-- 1.5 → Fuerte adopción institucional y ETFs aprobados, pero aún no dominante a nivel soberano.
-- 1.0 → Adopción en crecimiento pero todavía vista principalmente como especulativa.
-- 0.5 → Uso limitado, narrativa disputada, sin tracción institucional real.
-- 0.0 → Sin efecto de red significativo.
-
-**2. monetary_scarcity (0–2 pts) — Escasez Monetaria & Ciclo Halving:**
-- 2.0 → Escasez absoluta verificable (21M cap), halving reciente o próximo (<18 meses), demanda estructural creciente. Ninguna entidad puede modificar el suministro.
-- 1.5 → Escasez clara pero halving ya descontado parcialmente. Elasticidad de demanda futura incierta.
-- 1.0 → Narrativa de escasez bajo presión (tasas altas, competencia de otros activos, recesión).
-- 0.5 → Escasez no se refleja en comportamiento de precio a largo plazo; momentum especulativo.
-- 0.0 → Escasez irrelevante para el mercado o no verificable.
-
-**3. security_decentralization (0–1.5 pts) — Seguridad & Descentralización:**
-- 1.5 → Hash rate en máximos históricos (>500 EH/s), distribución global excelente, ningún pool con >25%. Sin vulnerabilidades críticas en 15+ años. Ataque 51% económicamente inviable.
-- 1.0 → Seguridad alta pero concentración preocupante en 2–3 pools con >50% combinado. Riesgo teórico de coordinación.
-- 0.5 → Concentración grave o historial de incidentes de red.
-- 0.0 → Red comprometible o con ataques exitosos documentados.
-
-**4. institutional_regulatory (0–1.5 pts) — Claridad Regulatoria & Adopción Soberana:**
-- 1.5 → Entorno regulatorio favorable y claro en mercados clave (EE.UU., UE, Japón). Adopción soberana real (reservas nacionales). Riesgo regulatorio bajo y decreciente.
-- 1.0 → ETFs aprobados en EE.UU. pero entorno global fragmentado. China baneó, Europa avanzó con MiCA. Sin base legal soberana consolidada.
-- 0.5 → Alto riesgo regulatorio (posibles prohibiciones, incertidumbre legal en mercados clave).
-- 0.0 → Sin ETFs, prohibición activa en principales mercados por volumen.
-
-**5. tech_resilience (0–1 pt) — Resiliencia Tecnológica & Competencia:**
-- 1.0 → Lightning Network operativa con >5.000 BTC en canales activos. BTC domina "reserva de valor digital" sin competidor directo serio. Protocolo base conservador, battle-tested 15+ años.
-- 0.5 → Lightning funcional pero adopción limitada. ETH, Solana u otros activos amenazan la narrativa de reserva de valor.
-- 0.0 → Protocolo estagnado, competidores ganando terreno, o vulnerabilidades técnicas no resueltas.
-
----
-
-**INSTRUCCIÓN CRÍTICA PARA RETIRO:**
-Sé exigente. Una ventaja de moat real debe ser estructuralmente duradera (10–20 años), no cíclica.
-Bitcoin incluso con Wide Moat debe limitarse al 2–5% del portafolio en perfiles conservadores,
-dada la volatilidad extrema ({vol_str} anualizada) y los drawdowns históricos de hasta {dd_str}.
-Indica el límite de asignación máximo recomendado como número entero (% del portafolio) en el campo `recommended_max_allocation_conservative`.
-
-Respondé SOLO con JSON válido. Sin markdown, sin texto antes ni después del JSON:
-{{
-  "network_adoption": 0.0,
-  "monetary_scarcity": 0.0,
-  "security_decentralization": 0.0,
-  "institutional_regulatory": 0.0,
-  "tech_resilience": 0.0,
-  "total_moat_score": 0.0,
-  "recommended_max_allocation_conservative": 3,
-  "reasoning": "3–4 oraciones en español: fortalezas del moat de Bitcoin, limitaciones para carteras de retiro, y el porcentaje máximo recomendado para perfil conservador."
-}}"""
+        """Delegate to the centralized prompt library."""
+        from analysis.prompts import crypto_moat_prompt
+        return crypto_moat_prompt(symbol, info, metrics)
 
     def _parse_crypto_moat_response(self, raw: str, symbol: str) -> dict:
         """
@@ -634,7 +547,14 @@ Respondé SOLO con JSON válido. Sin markdown, sin texto antes ni después del J
         except (TypeError, ValueError):
             data["recommended_max_allocation_conservative"] = 5
 
-        # total_moat_score is informational only — we compute it ourselves; ignore LLM value
-        # (kept in dict so it doesn't surface as an unknown field in logs)
+        try:
+            dur = int(data.get("moat_durability_years", 10))
+            data["moat_durability_years"] = max(1, min(30, dur))
+        except (TypeError, ValueError):
+            data["moat_durability_years"] = 10
 
+        # retirement_risk_summary — plain string, no clamping needed
+        data["retirement_risk_summary"] = str(data.get("retirement_risk_summary", ""))
+
+        # total_moat_score from LLM is cross-check only; we recompute ourselves
         return data

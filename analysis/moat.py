@@ -121,6 +121,10 @@ class MoatDetail:
     classification: str = "None"
     bonus: float = 0.0
 
+    # AI-recommended allocation context (from Grok prompt)
+    moat_durability_years: int = 0              # AI estimate: 5 | 10 | 15 | 20
+    recommended_max_allocation_conservative: int = 8  # % of portfolio (default: profile max)
+
     @property
     def color(self) -> str:
         """Hex color for dashboard display based on classification."""
@@ -268,24 +272,30 @@ class MoatAnalyzer:
                 raw = self._call_api(prompt, ai_config)
                 parsed = self._parse_ai_response(raw, symbol)
 
-                quant_result.brand_strength = parsed["brand_strength"]
-                quant_result.network_effects = parsed["network_effects"]
-                quant_result.switching_costs = parsed["switching_costs"]
-                quant_result.regulatory_ip = parsed["regulatory_ip"]
+                quant_result.brand_strength   = parsed["brand_strength"]
+                quant_result.network_effects  = parsed["network_effects"]
+                quant_result.switching_costs  = parsed["switching_costs"]
+                quant_result.regulatory_ip    = parsed["regulatory_ip"]
                 quant_result.ai_total = round(
                     quant_result.brand_strength + quant_result.network_effects +
                     quant_result.switching_costs + quant_result.regulatory_ip, 1
                 )
-                quant_result.ai_reasoning = parsed.get("reasoning", "")
-                quant_result.ai_available = True
+                quant_result.ai_reasoning    = parsed.get("reasoning", "")
+                quant_result.ai_available    = True
+                quant_result.moat_durability_years = parsed.get("moat_durability_years", 0)
+                quant_result.recommended_max_allocation_conservative = parsed.get(
+                    "recommended_max_allocation_conservative", 8
+                )
 
                 self._get_cache().set(cache_key, {
-                    "brand_strength": quant_result.brand_strength,
-                    "network_effects": quant_result.network_effects,
-                    "switching_costs": quant_result.switching_costs,
-                    "regulatory_ip": quant_result.regulatory_ip,
-                    "ai_total": quant_result.ai_total,
-                    "ai_reasoning": quant_result.ai_reasoning,
+                    "brand_strength":   quant_result.brand_strength,
+                    "network_effects":  quant_result.network_effects,
+                    "switching_costs":  quant_result.switching_costs,
+                    "regulatory_ip":    quant_result.regulatory_ip,
+                    "ai_total":         quant_result.ai_total,
+                    "ai_reasoning":     quant_result.ai_reasoning,
+                    "moat_durability_years":                    quant_result.moat_durability_years,
+                    "recommended_max_allocation_conservative":  quant_result.recommended_max_allocation_conservative,
                 })
                 logger.info(
                     f"{symbol}: moat AI={quant_result.ai_total:.1f}/8 "
@@ -407,72 +417,9 @@ class MoatAnalyzer:
     # ------------------------------------------------------------------ #
 
     def _build_prompt(self, quant: MoatDetail, symbol: str, info: dict) -> str:
-        """
-        Build the LLM prompt for qualitative moat evaluation.
-
-        The prompt includes:
-          - Company context (name, sector, country, business summary)
-          - Quantitative scores already computed (to avoid redundancy)
-          - A scoring rubric with concrete anchor examples per dimension
-          - Explicit instruction to discount for emerging market macro risk
-          - Strict JSON output schema (no markdown, no extra text)
-        """
-        name = info.get("longName", symbol)
-        sector = info.get("sector", "Unknown")
-        industry = info.get("industry", "Unknown")
-        country = info.get("country", "Unknown")
-        summary = (info.get("longBusinessSummary") or "")[:600]
-
-        return f"""Sos un analista senior de inversiones especializado en ventajas competitivas duraderas (economic moat).
-Tu tarea es evaluar los 4 factores CUALITATIVOS de moat con criterio riguroso y conservador.
-
-EMPRESA: {name} ({symbol})
-SECTOR: {sector} | INDUSTRIA: {industry} | PAÍS: {country}
-DESCRIPCIÓN: {summary}
-
-MOAT CUANTITATIVO (ya calculado con datos financieros reales):
-  Gross Margin nivel:       {quant.gross_margin_level}/2
-  Gross Margin estabilidad: {quant.gross_margin_stability}/2
-  ROIC sostenido:           {quant.roic_sustained}/2
-  Revenue defensividad:     {quant.revenue_defensiveness}/2
-  FCF Conversion:           {quant.fcf_conversion}/2
-  FCF Margin:               {quant.fcf_margin}/2
-  TOTAL CUANTITATIVO:       {quant.quant_total}/12
-
-RÚBRICA DE SCORING (usá solo estos valores: 0.0, 0.5, 1.0, 1.5, 2.0):
-  2.0 = Ventaja claramente dominante, duradera y reconocible a nivel global
-  1.5 = Ventaja real y sólida, con alguna limitación o riesgo específico
-  1.0 = Ventaja moderada, presente pero no dominante ni única
-  0.5 = Ventaja incipiente o débil, podría erosionarse en 5 años
-  0.0 = Sin ventaja identificable en esta dimensión
-
-FACTORES A EVALUAR:
-
-1. brand_strength — reconocimiento, confianza y poder de pricing de la marca
-   Anclas: Apple/Coca-Cola = 2.0 | Marca regional sólida = 1.0 | Producto genérico = 0.0
-
-2. network_effects — el valor del servicio aumenta con más usuarios (Ley de Metcalfe)
-   Anclas: Visa/Meta/LinkedIn = 2.0 | Marketplace con masa crítica regional = 1.0 | Sin red = 0.0
-
-3. switching_costs — fricción real para cambiar de proveedor (tiempo, dinero, riesgo operativo)
-   Anclas: SAP/Bloomberg Terminal = 2.0 | CRM con integraciones complejas = 1.0 | Commodity = 0.0
-
-4. regulatory_ip — patentes, licencias exclusivas o regulaciones que protegen la posición
-   Anclas: Farmacéutica con patentes clave = 2.0 | Licencia bancaria única = 1.5 | Sin barreras = 0.0
-
-REGLA DE DESCUENTO PARA MERCADOS EMERGENTES:
-Si la empresa opera principalmente en países con riesgo político o macro significativo
-(Argentina, Venezuela, Turquía, etc.), aplicá un descuento de -0.5 en las dimensiones
-afectadas por ese riesgo y mencionalo explícitamente en el reasoning.
-
-Respondé SOLO con JSON válido. Sin markdown, sin texto antes ni después:
-{{
-  "brand_strength": 0.0,
-  "network_effects": 0.0,
-  "switching_costs": 0.0,
-  "regulatory_ip": 0.0,
-  "reasoning": "2-3 oraciones concisas: fortalezas clave del moat, limitaciones relevantes y contexto macro si aplica."
-}}"""
+        """Delegate to the centralized prompt library."""
+        from analysis.prompts import equity_moat_prompt
+        return equity_moat_prompt(quant, symbol, info)
 
     def _call_api(self, prompt: str, ai_config: AIConfig) -> str:
         """Delegate to the module-level call_ai_api() shared with CryptoAnalyzer."""
@@ -522,6 +469,19 @@ Respondé SOLO con JSON válido. Sin markdown, sin texto antes ni después:
                 logger.warning(f"{symbol}: moat field {key!r} has invalid value {raw_val!r}, defaulting to 0")
                 data[key] = 0.0
 
+        # Optional new fields — graceful defaults if LLM omits them
+        try:
+            dur = int(data.get("moat_durability_years", 0))
+            data["moat_durability_years"] = max(0, min(30, dur))
+        except (TypeError, ValueError):
+            data["moat_durability_years"] = 0
+
+        try:
+            alloc = int(data.get("recommended_max_allocation_conservative", 8))
+            data["recommended_max_allocation_conservative"] = max(1, min(25, alloc))
+        except (TypeError, ValueError):
+            data["recommended_max_allocation_conservative"] = 8
+
         return data
 
     # ------------------------------------------------------------------ #
@@ -531,12 +491,16 @@ Respondé SOLO con JSON válido. Sin markdown, sin texto antes ni después:
     @staticmethod
     def _apply_cached(detail: MoatDetail, cached: dict) -> None:
         """Apply a cached AI result to a MoatDetail object."""
-        detail.brand_strength = float(cached.get("brand_strength", 0))
+        detail.brand_strength  = float(cached.get("brand_strength", 0))
         detail.network_effects = float(cached.get("network_effects", 0))
         detail.switching_costs = float(cached.get("switching_costs", 0))
-        detail.regulatory_ip = float(cached.get("regulatory_ip", 0))
-        detail.ai_total = float(cached.get("ai_total", 0))
-        detail.ai_reasoning = cached.get("ai_reasoning", "")
+        detail.regulatory_ip   = float(cached.get("regulatory_ip", 0))
+        detail.ai_total        = float(cached.get("ai_total", 0))
+        detail.ai_reasoning    = cached.get("ai_reasoning", "")
+        detail.moat_durability_years = int(cached.get("moat_durability_years", 0))
+        detail.recommended_max_allocation_conservative = int(
+            cached.get("recommended_max_allocation_conservative", 8)
+        )
         detail.ai_available = True
 
     # ------------------------------------------------------------------ #

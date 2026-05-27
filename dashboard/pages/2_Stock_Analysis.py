@@ -203,26 +203,31 @@ if symbol:
 
         # Crypto moat detail expander
         if _moat_detail_crypto and _moat_detail_crypto.ai_available:
-            _alloc_rec = getattr(_moat_detail_crypto, "recommended_max_allocation_pct", None)
-            _alloc_label = f" · Asignación recomendada: ≤{_alloc_rec:.0f}%" if _alloc_rec else ""
+            _alloc_rec  = getattr(_moat_detail_crypto, "recommended_max_allocation_pct", None)
+            _dur_years  = getattr(_moat_detail_crypto, "moat_durability_years", 0)
+            _ret_risk   = getattr(_moat_detail_crypto, "retirement_risk_summary", "")
+            _alloc_label = f" · Asignación Conservadora: ≤{_alloc_rec:.0f}%" if _alloc_rec else ""
+            _dur_label   = f" · Durabilidad: ~{_dur_years}a" if _dur_years else ""
             with st.expander(
-                f"🏰 Crypto Moat — {_moat_class} ({_moat_score:.1f}/8){_alloc_label}",
+                f"🏰 Crypto Moat — {_moat_class} ({_moat_score:.1f}/8){_alloc_label}{_dur_label}",
                 expanded=False,
             ):
                 _cm = _moat_detail_crypto
                 mc1, mc2, mc3, mc4, mc5 = st.columns(5)
-                mc1.metric("Red & Adopción",  f"{_cm.network_adoption}/2")
+                mc1.metric("Red & Adopción",    f"{_cm.network_adoption}/2")
                 mc2.metric("Escasez (Halving)", f"{_cm.monetary_scarcity}/2")
-                mc3.metric("Seguridad",        f"{_cm.security_decentralization}/1.5")
-                mc4.metric("Regulatorio",      f"{_cm.institutional_regulatory}/1.5")
-                mc5.metric("Tecnología",       f"{_cm.tech_resilience}/1")
+                mc3.metric("Seguridad",         f"{_cm.security_decentralization}/1.5")
+                mc4.metric("Regulatorio",       f"{_cm.institutional_regulatory}/1.5")
+                mc5.metric("Tecnología",        f"{_cm.tech_resilience}/1")
                 if _cm.ai_reasoning:
                     st.info(f"💬 {_cm.ai_reasoning}")
+                if _ret_risk:
+                    st.error(f"🏥 **Riesgo para jubilados:** {_ret_risk}", icon="⚠️")
                 if _alloc_rec:
                     st.warning(
-                        f"⚠️ **Límite de asignación (perfil Conservador):** ≤{_alloc_rec:.0f}% "
-                        f"del portafolio — dada la volatilidad extrema y drawdowns históricos de hasta {_dd_str}.",
-                        icon="🛡️",
+                        f"🛡️ **Límite de asignación (perfil Conservador):** ≤{_alloc_rec:.0f}% "
+                        f"del portafolio · Durabilidad estimada del moat: ~{_dur_years} años"
+                        f" · Drawdown máx histórico: {_dd_str}.",
                     )
         elif _moat_detail_crypto and not _moat_detail_crypto.ai_available:
             st.caption(
@@ -362,6 +367,13 @@ if symbol:
                 )
                 if _moat_detail.ai_reasoning:
                     st.info(f"💬 {_moat_detail.ai_reasoning}")
+                # Show durability + allocation recommendation if provided by Grok
+                _dur_eq  = getattr(_moat_detail, "moat_durability_years", 0)
+                _alloc_eq = getattr(_moat_detail, "recommended_max_allocation_conservative", None)
+                if _dur_eq or _alloc_eq:
+                    _dur_txt   = f"Durabilidad estimada: ~{_dur_eq} años" if _dur_eq else ""
+                    _alloc_txt = f"Asignación máx. conservadora: ≤{_alloc_eq}%" if _alloc_eq else ""
+                    st.caption(f"🛡️ {' · '.join(x for x in [_dur_txt, _alloc_txt] if x)}")
             else:
                 st.caption(
                     "🔒 Análisis cualitativo AI no disponible — "
