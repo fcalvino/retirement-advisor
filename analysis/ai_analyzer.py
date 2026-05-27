@@ -38,6 +38,10 @@ class AIAnalyzer:
             return RetirementStrategy().decide(fund, tech)
 
     def _build_prompt(self, fund: FundamentalResult, tech: TechnicalResult) -> str:
+        # Route to crypto-specific prompt when the result comes from CryptoAnalyzer
+        if getattr(fund, "is_crypto", False):
+            return self._build_crypto_prompt(fund, tech)
+
         def fmt(val, suffix="", decimals=1):
             if val is None:
                 return "N/A"
@@ -202,6 +206,90 @@ Respondé ÚNICAMENTE con un JSON válido con esta estructura exacta:
         )
         return response.choices[0].message.content
 
+    def _build_crypto_prompt(self, fund: FundamentalResult, tech: TechnicalResult) -> str:
+        """
+        Investment decision prompt for Bitcoin / crypto assets.
+
+        Replaces the equity prompt entirely.  No financial ratios are shown —
+        they don't apply.  Instead the context focuses on:
+          - Technical signal (price momentum, trend)
+          - Crypto moat (if AI-computed)
+          - Volatility / drawdown risk for retirement portfolios
+          - Halving cycle & macro context
+
+        Output JSON schema is identical to the equity prompt so _parse_response()
+        needs no changes.
+        """
+        def fmt(val, suffix="", decimals=1):
+            if val is None:
+                return "N/D"
+            return f"{val:.{decimals}f}{suffix}"
+
+        moat = fund.crypto_moat_detail
+        moat_section = ""
+        if moat and getattr(moat, "ai_available", False):
+            moat_section = f"""
+--- MOAT CRYPTO (AI) — {moat.classification} ({moat.total:.1f}/8) ---
+  Efecto de red y adopción:         {moat.network_adoption}/2
+  Escasez monetaria (halving):      {moat.monetary_scarcity}/2
+  Seguridad y descentralización:    {moat.security_decentralization}/1.5
+  Institucional y regulatorio:      {moat.institutional_regulatory}/1.5
+  Resiliencia tecnológica:          {moat.tech_resilience}/1
+  Razonamiento: {moat.ai_reasoning}"""
+
+        # Extract crypto notes from fund.notes
+        vol_note   = fund.notes.get("crypto_vol", "N/D")
+        dd_note    = fund.notes.get("crypto_dd", "N/D")
+        cagr_note  = fund.notes.get("crypto_cagr", "N/D")
+        supply_note = fund.notes.get("crypto_supply", "N/D")
+        halving_note = fund.notes.get("crypto_halving", "N/D")
+
+        warnings_str = ", ".join(fund.warnings) if fund.warnings else "ninguna"
+
+        return f"""Sos un analista senior de inversiones especializado en activos digitales y su rol en carteras de retiro a largo plazo (horizonte 10–30 años). Tu enfoque es conservador: preservación de capital primero, exposición a crecimiento de calidad en segundo lugar.
+
+Analizá Bitcoin y emití una recomendación de inversión para un inversor en etapa de retiro o pre-retiro.
+
+ACTIVO: {fund.company_name} ({fund.symbol})
+CLASE: Criptomoneda / Reserva de Valor Digital
+PRECIO: ${fmt(fund.current_price, decimals=0)} | MARKET CAP: ${(fund.market_cap or 0)/1e9:.1f}B USD
+
+--- MÉTRICAS DE RIESGO (críticas para retiro) ---
+  {vol_note}
+  {dd_note}
+  {cagr_note}
+  {supply_note}
+  {halving_note}
+
+Alertas: {warnings_str}
+
+--- ANÁLISIS TÉCNICO (barras semanales, largo plazo) ---
+Señal: {tech.signal} (fuerza: {tech.signal_strength:+d}/100)
+Tendencia: precio {"ENCIMA" if tech.above_sma200 else "DEBAJO"} de SMA200 | SMA200 slope 26w: {tech.sma200_slope_pct:+.1f}%
+Momentum: RSI={fmt(tech.rsi_weekly)} | MACD={"alcista" if tech.macd_bullish else "bajista"} | ADX={fmt(tech.adx)}
+Contexto: {tech.price_vs_52w_high_pct:+.1f}% desde 52w high | {tech.price_vs_52w_low_pct:+.1f}% desde 52w low
+{moat_section}
+
+--- SCORE AJUSTADO (modelo crypto) ---
+Score ajustado: {fund.adjusted_score:.1f}/100  (fórmula: base + técnico − volatilidad − drawdown + moat)
+Clasificación moat: {fund.moat_classification}
+
+--- CONTEXTO PARA RETIRO CONSERVADOR ---
+Bitcoin es un activo de alta volatilidad con drawdowns históricos del 70–85%. Para carteras de retiro conservadoras, el peso recomendado es del 2–5% máximo. No genera ingresos (dividendos, cupones). Su rol es de cobertura inflacionaria y diversificación, NO de ingreso recurrente. Una posición >5% en retiro representa un riesgo de secuencia desproporcionado.
+
+--- INSTRUCCIÓN ---
+Teniendo en cuenta el análisis técnico, el moat crypto, las métricas de riesgo y el perfil de un inversor conservador de retiro, emití tu recomendación.
+Un score ≥ 55 puede justificar HOLD con posición pequeña (2–5%). Un score ≥ 65 justificaría BUY sólo en perfiles moderados-agresivos.
+
+Respondé ÚNICAMENTE con un JSON válido con esta estructura exacta:
+{{
+  "action": "STRONG BUY|BUY|HOLD|REDUCE|SELL",
+  "confidence": "HIGH|MEDIUM|LOW",
+  "rationale": ["factor positivo 1", "factor positivo 2"],
+  "risks": ["riesgo 1", "riesgo 2", "riesgo de secuencia para retiro"],
+  "reasoning": "Párrafo completo en español: evaluá el momentum técnico, el moat crypto, el riesgo de volatilidad para el perfil de retiro, y el peso máximo recomendado en portafolio."
+}}"""
+
     def _parse_response(self, raw: str, fund: FundamentalResult, tech: TechnicalResult) -> Decision:
         # Extract JSON from response (may have surrounding text)
         match = re.search(r"\{.*\}", raw, re.DOTALL)
@@ -215,11 +303,14 @@ Respondé ÚNICAMENTE con un JSON válido con esta estructura exacta:
         if action not in valid_actions:
             action = "HOLD"
 
+        # For crypto, use adjusted_score (total_score is always 0)
+        score = fund.adjusted_score if getattr(fund, "is_crypto", False) else fund.total_score
+
         return Decision(
             symbol=fund.symbol,
             action=action,
             confidence=data.get("confidence", "MEDIUM").upper(),
-            fundamental_score=fund.total_score,
+            fundamental_score=score,
             technical_signal=tech.signal,
             has_margin_of_safety=fund.is_value_stock(),
             rationale=data.get("rationale", []),

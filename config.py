@@ -3,7 +3,7 @@
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Set
 
 from dotenv import load_dotenv
 
@@ -135,6 +135,39 @@ class ReportConfig:
 
 CACHE_TTL_HOURS: int = int(os.getenv("CACHE_TTL_HOURS", "24"))
 
+# ---------------------------------------------------------------------------
+# Crypto asset detection & normalization
+# ---------------------------------------------------------------------------
+
+# All accepted ticker forms for known crypto assets (case-insensitive at runtime)
+CRYPTO_TICKERS: Set[str] = {"BTC", "BTC-USD", "BITCOIN", "ETH", "ETH-USD", "ETHEREUM"}
+
+# Canonical form accepted by yfinance for each crypto
+_CRYPTO_NORM: Dict[str, str] = {
+    "BTC":      "BTC-USD",
+    "BITCOIN":  "BTC-USD",
+    "ETH":      "ETH-USD",
+    "ETHEREUM": "ETH-USD",
+}
+
+
+def is_crypto(symbol: str) -> bool:
+    """Return True if *symbol* is a known crypto asset."""
+    return symbol.upper() in CRYPTO_TICKERS
+
+
+def normalize_crypto_ticker(symbol: str) -> str:
+    """Map user-facing crypto symbol to the yfinance canonical form.
+
+    Examples:
+        "BTC"     → "BTC-USD"
+        "BTC-USD" → "BTC-USD"   (already canonical)
+        "ETH"     → "ETH-USD"
+    """
+    s = symbol.upper()
+    return _CRYPTO_NORM.get(s, s)
+
+
 # Default universe — edit freely
 DEFAULT_TICKERS: List[str] = [
     # US Mega-Cap Quality
@@ -155,6 +188,8 @@ DEFAULT_TICKERS: List[str] = [
     "BTC-USD",
     # Argentina ADRs
     "YPF", "PAM", "CEPU", "LOMA", "MELI", "GLOB", "TEO", "EDN",
+    # Crypto — Growth con Moat (digital assets sleeve)
+    "BTC-USD",
 ]
 
 # Ticker aliases: maps short-form searches to canonical yfinance symbols
@@ -190,7 +225,13 @@ def recommended_bond_pct(age: int) -> float:
 class AIConfig:
     provider: str = field(default_factory=lambda: os.getenv("AI_PROVIDER", "claude"))
     model: str = field(default_factory=lambda: os.getenv("AI_MODEL", "claude-sonnet-4-6"))
-    api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", "") or os.getenv("OPENAI_API_KEY", ""))
+    # Unified key: reads from whichever env-var matches the active provider.
+    # Order: Anthropic → xAI → OpenAI (set only the one you need in .env)
+    api_key: str = field(default_factory=lambda: (
+        os.getenv("ANTHROPIC_API_KEY", "")
+        or os.getenv("XAI_API_KEY", "")
+        or os.getenv("OPENAI_API_KEY", "")
+    ))
     enabled: bool = field(default_factory=lambda: os.getenv("AI_ENABLED", "").lower() in ("true", "1", "yes"))
     use_in_screener: bool = field(default_factory=lambda: os.getenv("AI_USE_IN_SCREENER", "false").lower() in ("true", "1", "yes"))
 
@@ -218,6 +259,34 @@ class BacktestConfig:
     min_history_weeks: int = 52         # minimum weeks of price data required
     results_max_saved: int = 10         # cap saved backtest files shown in UI
     default_rebalance_freq: str = "annual"  # "annual" | "quarterly" | "monthly" | "buy_and_hold"
+
+
+@dataclass
+class CryptoMoatConfig:
+    """
+    Thresholds for the crypto-specific AI moat scoring system.
+
+    Crypto moat is evaluated entirely via AI qualitative analysis (no
+    quantitative financial-statement layer).  Five crypto-native dimensions
+    sum to a total of 0–8 pts, matching the equity AI-moat scale exactly.
+
+    Classification thresholds (applied to ai_total alone, 0–8):
+      wide_threshold    ≥ 6.0  — only BTC is a realistic Wide-Moat crypto
+      narrow_threshold  ≥ 4.0  — strong second-tier assets (ETH, etc.)
+      minimal_threshold ≥ 2.0  — limited structural advantage
+
+    Bonus formula: min(total × bonus_factor, max_bonus)
+      max_bonus = 5.0 → conservative cap; moat alone can't make BTC a BUY
+      bonus_factor = 0.625 → calibrated so Wide Moat (8pts) yields full +5 bonus
+
+    ai_cache_ttl_hours: 7 days — halvings don't change weekly.
+    """
+    wide_threshold: float = 6.0
+    narrow_threshold: float = 4.0
+    minimal_threshold: float = 2.0
+    max_bonus: float = 5.0
+    bonus_factor: float = 0.625
+    ai_cache_ttl_hours: int = 168
 
 
 @dataclass
@@ -376,6 +445,7 @@ CONSISTENCY = ConsistencyThresholds()
 PIOTROSKI = PiotroskiConfig()
 BACKTEST = BacktestConfig()
 MOAT = MoatConfig()
+CRYPTO_MOAT = CryptoMoatConfig()
 OPTIMIZER = OptimizerConfig()
 REPORT = ReportConfig()
 MONTE_CARLO = MonteCarloConfig()

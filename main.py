@@ -36,12 +36,31 @@ def cmd_analyze(symbols: list[str]) -> None:
         print(f"  Price: ${fund.current_price:.2f}  |  Market Cap: ${fund.market_cap/1e9:.1f}B")
         print(f"\n  ► DECISION: {decision.action_emoji} {decision.action}  ({decision.confidence} confidence)")
 
-        print(f"\n  Fundamental Score: {fund.total_score:.1f}/100")
-        print(f"    Profitability : {fund.profitability_score:.0f}/25")
-        print(f"    Fin. Health   : {fund.health_score:.0f}/20")
-        print(f"    Valuation     : {fund.valuation_score:.0f}/25")
-        print(f"    Growth        : {fund.growth_score:.0f}/20")
-        print(f"    Dividends     : {fund.dividend_score:.0f}/10")
+        if getattr(fund, "is_crypto", False):
+            # Crypto display: no equity sub-scores, show crypto metrics
+            moat_detail = getattr(fund, "crypto_moat_detail", None)
+            moat_str = f"{fund.moat_classification} ({fund.moat_score:.1f}/8)" if fund.moat_score > 0 else "N/A (AI disabled)"
+            print(f"\n  🪙 Crypto Score: {fund.adjusted_score:.1f}/100  |  Moat: {moat_str}")
+            print(f"    (base 35 + técnico + moat − volatilidad − drawdown)")
+            for key in ("crypto_vol", "crypto_dd", "crypto_cagr", "crypto_supply", "crypto_halving"):
+                if key in fund.notes:
+                    print(f"    {fund.notes[key]}")
+            if moat_detail and getattr(moat_detail, "ai_available", False):
+                print(f"\n  Crypto Moat Framework ({fund.moat_classification}):")
+                print(f"    Efecto de red y adopción:      {moat_detail.network_adoption}/2")
+                print(f"    Escasez monetaria (halving):   {moat_detail.monetary_scarcity}/2")
+                print(f"    Seguridad/descentralización:   {moat_detail.security_decentralization}/1.5")
+                print(f"    Institucional/regulatorio:     {moat_detail.institutional_regulatory}/1.5")
+                print(f"    Resiliencia tecnológica:       {moat_detail.tech_resilience}/1")
+                if moat_detail.ai_reasoning:
+                    print(f"\n  AI: {moat_detail.ai_reasoning}")
+        else:
+            print(f"\n  Fundamental Score: {fund.total_score:.1f}/100")
+            print(f"    Profitability : {fund.profitability_score:.0f}/25")
+            print(f"    Fin. Health   : {fund.health_score:.0f}/20")
+            print(f"    Valuation     : {fund.valuation_score:.0f}/25")
+            print(f"    Growth        : {fund.growth_score:.0f}/20")
+            print(f"    Dividends     : {fund.dividend_score:.0f}/10")
 
         print(f"\n  Technical: {tech.signal} (strength {tech.signal_strength:+d})")
         if tech.above_sma200:
@@ -69,7 +88,8 @@ def cmd_screen(n: int = 20) -> None:
     for sym in tickers:
         try:
             fund, tech, decision = full_analysis(sym)
-            results.append((fund.total_score, sym, decision.action, tech.signal, fund.pe_ratio, fund.roe))
+            display_score = fund.adjusted_score if getattr(fund, "is_crypto", False) else fund.total_score
+            results.append((display_score, sym, decision.action, tech.signal, fund.pe_ratio, fund.roe))
         except Exception as exc:
             logger.warning(f"{sym}: {exc}")
 

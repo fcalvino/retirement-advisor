@@ -87,25 +87,41 @@ class RetirementStrategy:
         technical: TechnicalResult,
     ) -> Decision:
         symbol = fundamental.symbol
+
+        # Crypto assets use adjusted_score (total_score is always 0)
+        _is_crypto = getattr(fundamental, "is_crypto", False)
+        effective_score = fundamental.adjusted_score if _is_crypto else fundamental.total_score
+
         decision = Decision(
             symbol=symbol,
-            fundamental_score=fundamental.total_score,
+            fundamental_score=effective_score,
             technical_signal=technical.signal,
             has_margin_of_safety=fundamental.is_value_stock(),
         )
 
-        # --- Step 1: Hard safety blocks ---
-        blocked, reason = self._check_safety_blocks(fundamental, technical)
-        if blocked:
-            decision.action = "AVOID"
-            decision.blocked = True
-            decision.block_reason = reason
-            decision.confidence = "HIGH"
-            decision.rationale.append(f"BLOCKED: {reason}")
-            return decision
+        # --- Step 1: Hard safety blocks (most equity blocks don't apply to crypto) ---
+        if not _is_crypto:
+            blocked, reason = self._check_safety_blocks(fundamental, technical)
+            if blocked:
+                decision.action = "AVOID"
+                decision.blocked = True
+                decision.block_reason = reason
+                decision.confidence = "HIGH"
+                decision.rationale.append(f"BLOCKED: {reason}")
+                return decision
+        else:
+            # Crypto-specific safety: parabolic detection still applies
+            if (technical.price_vs_52w_low_pct > 120 and
+                    technical.rsi_weekly and technical.rsi_weekly > 80):
+                decision.action = "AVOID"
+                decision.blocked = True
+                decision.block_reason = f"Movimiento parabólico crypto (RSI={technical.rsi_weekly:.0f}, +{technical.price_vs_52w_low_pct:.0f}% desde 52w low)"
+                decision.confidence = "HIGH"
+                decision.rationale.append(f"BLOCKED: {decision.block_reason}")
+                return decision
 
         # --- Step 2: Decision matrix ---
-        score = fundamental.total_score
+        score = effective_score
         tech = technical.signal
 
         if score >= CFG.strong_buy_score and tech in ("BULLISH", "NEUTRAL"):
@@ -140,7 +156,7 @@ class RetirementStrategy:
         # --- Step 3: Add rationale ---
         self._build_rationale(decision, fundamental, technical)
 
-        logger.info(f"{symbol}: {decision.action} (F={score:.1f}, T={tech})")
+        logger.info(f"{symbol}: {decision.action} (F={score:.1f}, T={tech}{'  🪙crypto' if _is_crypto else ''})")
         return decision
 
     # ------------------------------------------------------------------ #
@@ -218,9 +234,13 @@ def full_analysis(
     """Convenience function: run full fundamental + technical + decision pipeline."""
     from analysis.fundamental import FundamentalAnalyzer
     from analysis.technical import TechnicalAnalyzer
+    from config import is_crypto, normalize_crypto_ticker
 
     fund = FundamentalAnalyzer().analyze(symbol, ai_config=ai_config)
-    tech = TechnicalAnalyzer().analyze(symbol)
+
+    # For crypto, use the canonical yfinance ticker ("BTC-USD") for technical analysis
+    tech_symbol = normalize_crypto_ticker(symbol) if is_crypto(symbol) else symbol
+    tech = TechnicalAnalyzer().analyze(tech_symbol)
 
     if ai_config and ai_config.enabled:
         from analysis.ai_analyzer import AIAnalyzer

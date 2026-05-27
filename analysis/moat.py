@@ -475,70 +475,8 @@ Respondé SOLO con JSON válido. Sin markdown, sin texto antes ni después:
 }}"""
 
     def _call_api(self, prompt: str, ai_config: AIConfig) -> str:
-        """
-        Dispatch the prompt to the configured AI provider.
-
-        Raises MoatAPIError on any network/auth/rate-limit failure so the
-        caller can distinguish API problems from JSON parse problems.
-        """
-        provider = ai_config.provider.lower()
-
-        try:
-            if provider == "claude":
-                import anthropic
-                client = anthropic.Anthropic(api_key=ai_config.api_key)
-                msg = client.messages.create(
-                    model=ai_config.model,
-                    max_tokens=512,
-                    temperature=0,
-                    messages=[{"role": "user", "content": prompt}],
-                )
-                return msg.content[0].text
-
-            elif provider == "openai":
-                import openai
-                client = openai.OpenAI(api_key=ai_config.api_key)
-                resp = client.chat.completions.create(
-                    model=ai_config.model,
-                    temperature=0,
-                    max_tokens=512,
-                    messages=[{"role": "user", "content": prompt}],
-                )
-                return resp.choices[0].message.content
-
-            elif provider in ("xai", "nous"):
-                import sys
-                from pathlib import Path
-                hermes_path = Path.home() / ".hermes" / "hermes-agent"
-                if str(hermes_path) not in sys.path:
-                    sys.path.insert(0, str(hermes_path))
-                try:
-                    from hermes_cli.auth import resolve_xai_oauth_runtime_credentials
-                except ImportError as e:
-                    raise MoatAPIError(
-                        "Hermes OAuth not installed. Run: pip install hermes-agent"
-                    ) from e
-                creds = resolve_xai_oauth_runtime_credentials()
-                import openai as _openai
-                client = _openai.OpenAI(
-                    api_key=creds.get("api_key") or "hermes-oauth",
-                    base_url=creds.get("base_url", "https://api.x.ai/v1"),
-                )
-                resp = client.chat.completions.create(
-                    model=ai_config.model,
-                    temperature=0,
-                    max_tokens=512,
-                    messages=[{"role": "user", "content": prompt}],
-                )
-                return resp.choices[0].message.content
-
-            else:
-                raise MoatAPIError(f"Unknown AI provider: {provider!r}")
-
-        except MoatAPIError:
-            raise
-        except Exception as exc:
-            raise MoatAPIError(f"{provider} API error: {exc}") from exc
+        """Delegate to the module-level call_ai_api() shared with CryptoAnalyzer."""
+        return call_ai_api(prompt, ai_config)
 
     def _parse_ai_response(self, raw: str, symbol: str) -> dict:
         """
@@ -725,3 +663,84 @@ Respondé SOLO con JSON válido. Sin markdown, sin texto antes ni después:
             return float((fcf[common] / rev_v * 100).dropna().mean())
         except Exception:
             return None
+
+
+# ---------------------------------------------------------------------------
+# Module-level shared AI dispatch — used by MoatAnalyzer AND CryptoAnalyzer
+# ---------------------------------------------------------------------------
+
+
+def call_ai_api(prompt: str, ai_config: AIConfig) -> str:
+    """
+    Dispatch *prompt* to the configured AI provider and return the raw text.
+
+    Shared between MoatAnalyzer (equity qualitative moat) and CryptoAnalyzer
+    (crypto moat) so provider logic lives in exactly one place.
+
+    Raises:
+        MoatAPIError — on network, auth, rate-limit, or unknown-provider errors.
+    """
+    provider = ai_config.provider.lower()
+
+    try:
+        if provider == "claude":
+            import anthropic
+            client = anthropic.Anthropic(api_key=ai_config.api_key)
+            msg = client.messages.create(
+                model=ai_config.model,
+                max_tokens=800,
+                temperature=0,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return msg.content[0].text
+
+        elif provider == "openai":
+            import openai
+            client = openai.OpenAI(api_key=ai_config.api_key)
+            resp = client.chat.completions.create(
+                model=ai_config.model,
+                temperature=0,
+                max_tokens=800,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return resp.choices[0].message.content
+
+        elif provider in ("xai", "nous"):
+            import sys
+            from pathlib import Path
+
+            hermes_path = Path.home() / ".hermes" / "hermes-agent"
+            if str(hermes_path) not in sys.path:
+                sys.path.insert(0, str(hermes_path))
+
+            # Try Hermes OAuth first; fall back to explicit api_key for xAI
+            try:
+                from hermes_cli.auth import resolve_xai_oauth_runtime_credentials
+                creds = resolve_xai_oauth_runtime_credentials()
+                _key  = creds.get("api_key") or "hermes-oauth"
+                _base = creds.get("base_url", "https://api.x.ai/v1")
+            except Exception:
+                _key  = ai_config.api_key
+                _base = "https://api.x.ai/v1"
+                if not _key:
+                    raise MoatAPIError(
+                        "No xAI credentials. Set XAI_API_KEY or run `hermes auth add xai-oauth`."
+                    )
+
+            import openai as _openai
+            client = _openai.OpenAI(api_key=_key, base_url=_base)
+            resp = client.chat.completions.create(
+                model=ai_config.model,
+                temperature=0,
+                max_tokens=800,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return resp.choices[0].message.content
+
+        else:
+            raise MoatAPIError(f"Unknown AI provider: {provider!r}")
+
+    except MoatAPIError:
+        raise
+    except Exception as exc:
+        raise MoatAPIError(f"{provider} API error: {exc}") from exc

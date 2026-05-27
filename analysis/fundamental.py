@@ -7,10 +7,14 @@ Scoring model (0–100):
   Valuation         25 pts  — P/E, PEG, EV/EBITDA, P/B
   Growth            20 pts  — revenue CAGR, EPS CAGR, FCF growth
   Dividend Quality  10 pts  — yield, payout ratio, growth streak
+
+Crypto assets (BTC, ETH …) are routed to CryptoAnalyzer early in analyze()
+and bypass the equity-specific scoring entirely.  They return the same
+FundamentalResult with equity fields set to None and is_crypto=True.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
@@ -76,10 +80,14 @@ class FundamentalResult:
     piotroski_detail: Optional[PiotroskiDetail] = None       # per-criterion F1–F9 breakdown
 
     # Moat scoring (Phase 3)
-    moat_score: float = 0.0                 # 0–20 (quant 0–12 + AI qualitative 0–8)
-    moat_bonus: float = 0.0                 # min(moat_score * 0.5, 10.0) added to adjusted_score
+    moat_score: float = 0.0                 # 0–20 equity (quant 0–12 + AI 0–8) | 0–8 crypto (AI only)
+    moat_bonus: float = 0.0                 # added to adjusted_score
     moat_classification: str = "None"       # Wide | Narrow | Minimal | None
     moat_detail: Optional[MoatDetail] = None
+
+    # Crypto asset fields (Phase 4)
+    is_crypto: bool = False                  # True when analyzed via CryptoAnalyzer
+    crypto_moat_detail: Optional[Any] = None # CryptoMoatDetail — typed as Any to avoid circular import
 
     # Human-readable breakdown
     notes: Dict[str, str] = field(default_factory=dict)
@@ -100,6 +108,16 @@ class FundamentalAnalyzer:
 
     def analyze(self, symbol: str, ai_config=None) -> FundamentalResult:
         symbol = symbol.upper()
+
+        # ── Crypto fast-path ──────────────────────────────────────────────
+        # Detected before any yfinance financial-statement calls.
+        # Returns the same FundamentalResult type with is_crypto=True.
+        from config import is_crypto, normalize_crypto_ticker
+        if is_crypto(symbol):
+            from analysis.crypto_analyzer import CryptoAnalyzer
+            return CryptoAnalyzer().analyze(normalize_crypto_ticker(symbol), ai_config)
+        # ─────────────────────────────────────────────────────────────────
+
         result = FundamentalResult(symbol=symbol)
 
         info = get_info(symbol)
