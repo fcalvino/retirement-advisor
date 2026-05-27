@@ -34,20 +34,25 @@ def _make_simulator(symbols=None, weights=None):
 # ------------------------------------------------------------------ #
 
 class TestConservativeAdjustment:
+    """_conservative_adjustment is an instance method — needs a simulator instance."""
+
+    def _sim(self):
+        return MonteCarloSimulator(symbols=["SPY"])
+
     def test_vol_increases(self):
         returns = np.array([0.01, -0.02, 0.03, -0.01, 0.02] * 20)
-        adjusted = MonteCarloSimulator._conservative_adjustment(returns)
+        adjusted = self._sim()._conservative_adjustment(returns)
         assert adjusted.std() > returns.std()
 
     def test_mean_decreases(self):
         returns = np.array([0.005] * 100)  # constant positive drift
-        adjusted = MonteCarloSimulator._conservative_adjustment(returns)
+        adjusted = self._sim()._conservative_adjustment(returns)
         assert adjusted.mean() < returns.mean()
 
     def test_zero_mean_returns_unchanged_mean(self):
         """Zero-mean returns stay zero-mean regardless of vol adjustment."""
         returns = np.array([0.01, -0.01] * 50)
-        adjusted = MonteCarloSimulator._conservative_adjustment(returns)
+        adjusted = self._sim()._conservative_adjustment(returns)
         assert abs(adjusted.mean()) < 1e-10
 
 

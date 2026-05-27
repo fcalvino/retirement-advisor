@@ -426,7 +426,9 @@ class PortfolioOptimizer:
             w0 = raw / raw.sum()
         else:
             w0 = np.ones(n) / n
-        w0 = np.clip(w0, lb, ub)
+        # Clip initial guess using per-ticker upper bounds array
+        ub_arr = np.array([b[1] for b in bounds])
+        w0 = np.clip(w0, lb, ub_arr)
         w0 /= w0.sum()
 
         def _try_minimize(start: np.ndarray) -> Optional[np.ndarray]:
@@ -488,11 +490,23 @@ class PortfolioOptimizer:
             for t in tickers
         ])
 
-        # Iteratively clip to per-ticker cap and renormalise (5 passes)
-        for _ in range(5):
-            w = np.minimum(w, ubs)
-            if w.sum() > 0:
-                w /= w.sum()
+        # Water-filling: cap over-allocated tickers and redistribute excess
+        # to under-allocated ones. Converges in ≤ n iterations (one per ticker).
+        lb = 1.0 / max(len(tickers) * 10, 1)   # soft floor matches SLSQP
+        for _ in range(len(tickers) + 5):
+            over = w > ubs + 1e-10
+            if not over.any():
+                break
+            excess = (w[over] - ubs[over]).sum()
+            w[over] = ubs[over]
+            under = ~over
+            if w[under].sum() > 1e-10:
+                # Redistribute excess proportionally among uncapped tickers
+                w[under] += excess * (w[under] / w[under].sum())
+
+        # Final normalisation guard (handles floating-point drift)
+        if w.sum() > 0:
+            w /= w.sum()
 
         return w
 

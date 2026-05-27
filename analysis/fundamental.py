@@ -89,6 +89,10 @@ class FundamentalResult:
     is_crypto: bool = False                  # True when analyzed via CryptoAnalyzer
     crypto_moat_detail: Optional[Any] = None # CryptoMoatDetail — typed as Any to avoid circular import
 
+    # Internal: TechnicalResult cached by CryptoAnalyzer to avoid duplicate yfinance call
+    # full_analysis() in strategy.py reuses this instead of calling TechnicalAnalyzer again.
+    _cached_tech: Optional[Any] = None
+
     # Human-readable breakdown
     notes: Dict[str, str] = field(default_factory=dict)
     warnings: list = field(default_factory=list)

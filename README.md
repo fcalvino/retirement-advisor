@@ -4,7 +4,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/streamlit-1.x-FF4B4B)](https://streamlit.io/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-133%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-179%20passing-brightgreen)]()
 
 > **Motor de análisis de inversiones a largo plazo orientado al retiro.**  
 > Calificá, filtrá y optimizá un universo de acciones en segundos — con score fundamental 0–100, Economic Moat, decisión AI y simulaciones de riesgo — todo en una sola app local, sin subscripciones.
@@ -13,7 +13,7 @@
 
 ## ¿Qué hace?
 
-Retirement Advisor analiza automáticamente un universo de 38+ tickers (acciones US, ETFs y ADRs argentinos) combinando:
+Retirement Advisor analiza automáticamente un universo de 38+ tickers (acciones US, ETFs, ADRs argentinos y **Bitcoin**) combinando:
 
 - **Análisis fundamental profundo** en 5 dimensiones (rentabilidad, salud financiera, valuación, crecimiento, dividendos)
 - **Consistency Score + Piotroski F-Score** para calidad contable real
@@ -176,12 +176,19 @@ REPORT_DAY=1
 
 ### Proveedores AI soportados
 
-| Proveedor | `AI_PROVIDER` | Modelos recomendados |
-|-----------|--------------|----------------------|
-| Anthropic (Claude) | `claude` | `claude-sonnet-4-6`, `claude-opus-4-7` |
-| OpenAI | `openai` | `gpt-4o`, `gpt-4o-mini` |
-| xAI (Grok) | `xai` | `grok-4` |
-| Nous Research | `nous` | `nousresearch/hermes-4` |
+| Proveedor | `AI_PROVIDER` | Variable de entorno | Modelos recomendados |
+|-----------|--------------|---------------------|----------------------|
+| Anthropic (Claude) | `claude` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6`, `claude-opus-4-7` |
+| OpenAI | `openai` | `OPENAI_API_KEY` | `gpt-4o`, `gpt-4o-mini` |
+| xAI (Grok) | `xai` | `XAI_API_KEY` | `grok-3`, `grok-3-mini` |
+| Nous Research | `nous` | `NOUS_API_KEY` o `hermes login` | `Hermes-3-70B` |
+
+```bash
+# Ejemplo con Grok (xAI)
+AI_PROVIDER=xai
+AI_MODEL=grok-3
+XAI_API_KEY=xai-...
+```
 
 Sin AI configurado, el sistema cae automáticamente al motor de decisión rule-based.
 
@@ -238,13 +245,13 @@ Bloqueos automáticos (override): D/E > 3, patrimonio negativo, RSI semanal > 80
 
 Scipy SLSQP minimizando Sharpe negativo sujeto a constraints por posición, sector, volatilidad y dividend yield:
 
-| Perfil | Max Vol | Min Div | Max Pos |
-|--------|---------|---------|---------|
-| Conservador | 12% | 3.5% | 8% |
-| Moderado | 18% | 2.5% | 12% |
-| Agresivo | 25% | 1.5% | 18% |
+| Perfil | Max Vol | Min Div | Max Pos | Max Crypto |
+|--------|---------|---------|---------|------------|
+| Conservador | 12% | 3.5% | 8% | **3%** |
+| Moderado | 18% | 2.5% | 12% | **5%** |
+| Agresivo | 25% | 1.5% | 18% | **10%** |
 
-Fallback score-weighted cuando SLSQP es infeasible (e.g., universo growth-heavy con perfil Conservador).
+Los límites de crypto se aplican **por ticker** (BTC, ETH, etc.) independientemente del score — protección estructural para carteras de retiro. Fallback score-weighted cuando SLSQP es infeasible (e.g., universo growth-heavy con perfil Conservador).
 
 ### Monte Carlo
 
@@ -266,6 +273,63 @@ Block-bootstrap sobre retornos semanales históricos de 10 años:
 | 2022 Inflación + Suba de Tasas | -19.4% |
 | Recesión Severa (hipotético) | -30.0% |
 | Stagflación Extrema (hipotético) | -25.0% |
+
+### 🪙 Bitcoin y activos crypto
+
+El motor incluye un pipeline analítico dedicado para Bitcoin (y otros activos crypto como ETH), completamente separado del pipeline de equity. El resultado es un `FundamentalResult` estándar — todos los consumidores downstream (dashboard, optimizer, AI) funcionan sin cambios.
+
+#### Cómo analizar BTC
+
+```bash
+# Sin AI — score técnico + penalidades de volatilidad/drawdown
+python main.py analyze BTC
+
+# Con AI — activa la evaluación de Crypto Moat (cache 7 días)
+AI_ENABLED=true python main.py analyze BTC
+
+# Equivalente: BTC-USD (ticker de yfinance)
+python main.py analyze BTC-USD
+```
+
+#### Scoring crypto (0–100)
+
+| Componente | Rango | Descripción |
+|---|---|---|
+| Base institucional | +35 | Floor — BTC es activo de clase reconocida globalmente |
+| Señal técnica | 0 a +45 | BULLISH+fuerte=+45, BULLISH=+35, NEUTRAL=+22, BEARISH=+10 |
+| Penalidad volatilidad | 0 a −25 | Vol anualizada: <40%→0, 40-60%→−8, 60-80%→−15, >100%→−25 |
+| Penalidad drawdown | 0 a −15 | Max drawdown: >-30%→0, -30 a -50%→−5, -70%→−10, <-70%→−15 |
+| Bonus moat AI | 0 a +5 | Evaluación Grok: Wide/Narrow/Minimal/None |
+
+**Rango típico BTC:**
+- Bull market + Wide Moat → **55–70** (HOLD — correcto para perfil conservador)
+- Bear market + vol extrema → **10–25** (SELL / REDUCE)
+
+#### Crypto Moat Framework (AI qualitative, 0–8 pts)
+
+| Dimensión | Máx | Qué evalúa |
+|---|---|---|
+| Network Adoption | 2.0 | Efectos de red + adopción institucional global |
+| Monetary Scarcity | 2.0 | Supply cap 21M + ciclo de halving |
+| Security & Decentralization | 1.5 | Hash rate, nodos, resistencia al ataque 51% |
+| Institutional & Regulatory | 1.5 | ETFs aprobados, claridad regulatoria soberana |
+| Tech Resilience | 1.0 | Lightning Network, resiliencia ante competidores |
+
+Clasificación: **Wide** ≥6 / **Narrow** ≥4 / **Minimal** ≥2 / **None** <2
+
+La evaluación usa el prompt de Grok v2 (mayo 2026) con rúbricas detalladas y perspectiva de retiro conservadora. Se cachea 7 días (los ciclos de halving no cambian semanalmente).
+
+#### Límites de asignación por perfil de riesgo
+
+| Perfil | Max por ticker crypto | Justificación |
+|---|---|---|
+| Conservador | **3%** | Volatilidad histórica BTC >65% anualizada — preservación capital prioritaria |
+| Moderado | **5%** | Exposición limitada con upside asimétrico |
+| Agresivo | **10%** | Mayor tolerancia al riesgo y horizonte largo |
+
+Los límites se aplican a través del optimizer (SLSQP bounds + fallback score-weighted) y son independientes del score del activo.
+
+---
 
 ### Smart Alerts
 
@@ -321,9 +385,9 @@ pip install pytest
 pytest tests/ -v
 ```
 
-133 tests cubriendo: `StressTester`, `EnhancedScoring`, `Piotroski`, `MonteCarloSimulator`, `AlertEngine`, `PortfolioOptimizer`, `ConfigValidator`.
+**179 tests** cubriendo: `StressTester`, `EnhancedScoring`, `Piotroski`, `MonteCarloSimulator`, `AlertEngine`, `PortfolioOptimizer`, `ConfigValidator`, `CryptoAnalyzer`, `PromptLibrary`.
 
-Los tests de Monte Carlo y Optimizer mockean `get_history` para no hacer llamadas de red.
+Los tests de Monte Carlo, Optimizer y Crypto mockean `get_history`/`get_crypto_info` para no hacer llamadas de red.
 
 ---
 
@@ -398,11 +462,14 @@ retirement_advisor/
 │   ├── fundamental.py           # Score fundamental (5 dimensiones, 0–100)
 │   ├── scoring.py               # Consistency Score + Piotroski F-Score
 │   ├── moat.py                  # Economic Moat cuantitativo + AI (0–20)
+│   ├── crypto_analyzer.py       # Pipeline crypto: score (0–100) + CryptoMoatDetail
 │   ├── technical.py             # Indicadores técnicos semanales
 │   ├── strategy.py              # full_analysis() — orquestador principal
+│   ├── prompts.py               # Librería centralizada de prompts LLM (4 funciones)
 │   └── ai_analyzer.py           # Capa AI (Claude / GPT-4o / Grok / Nous)
 ├── data/
 │   ├── fetcher.py               # Wrapper yfinance con caché
+│   ├── crypto_fetcher.py        # Datos crypto: vol, drawdown, CAGR, ciclo halving
 │   ├── cache.py                 # SQLite cache TTL
 │   └── preferences.py           # UserPreferences — watchlist, alertas, config
 ├── portfolio/
@@ -424,7 +491,10 @@ retirement_advisor/
 │   ├── test_stress_test.py
 │   ├── test_monte_carlo.py
 │   ├── test_alert_engine.py
-│   └── test_optimizer.py
+│   ├── test_optimizer.py
+│   ├── test_crypto_scoring.py   # vol/dd penalty, tech pts, score range (22 tests)
+│   ├── test_optimizer_crypto.py # max_crypto_pct por perfil (6 tests)
+│   └── test_prompts.py          # JSON fields + Grok voice en 4 prompts (18 tests)
 ├── docs/
 │   ├── architecture.md
 │   ├── moat_methodology.md

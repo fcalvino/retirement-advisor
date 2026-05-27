@@ -238,9 +238,13 @@ def full_analysis(
 
     fund = FundamentalAnalyzer().analyze(symbol, ai_config=ai_config)
 
-    # For crypto, use the canonical yfinance ticker ("BTC-USD") for technical analysis
-    tech_symbol = normalize_crypto_ticker(symbol) if is_crypto(symbol) else symbol
-    tech = TechnicalAnalyzer().analyze(tech_symbol)
+    # For crypto, CryptoAnalyzer already ran TechnicalAnalyzer internally — reuse it.
+    # This avoids a redundant yfinance call (10y weekly history) per crypto ticker.
+    if is_crypto(symbol) and getattr(fund, "_cached_tech", None) is not None:
+        tech = fund._cached_tech
+    else:
+        tech_symbol = normalize_crypto_ticker(symbol) if is_crypto(symbol) else symbol
+        tech = TechnicalAnalyzer().analyze(tech_symbol)
 
     if ai_config and ai_config.enabled:
         from analysis.ai_analyzer import AIAnalyzer

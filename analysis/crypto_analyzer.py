@@ -193,6 +193,10 @@ class CryptoAnalyzer:
         # 5. Build result
         self._populate_result(result, info, metrics, tech, moat)
 
+        # Cache tech result so full_analysis() in strategy.py can reuse it
+        # without making a second TechnicalAnalyzer call to yfinance.
+        result._cached_tech = tech
+
         logger.info(
             f"{symbol}: crypto analysis — vol={metrics.get('annualized_volatility_pct')}% "
             f"dd={metrics.get('max_drawdown_pct')}% tech={tech.signal} "
