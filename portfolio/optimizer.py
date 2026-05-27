@@ -396,11 +396,18 @@ class PortfolioOptimizer:
                     "fun": lambda w, ix=idx, ms=max_s: ms - sum(w[i] for i in ix),
                 })
 
-        # --- Bounds: [min_weight, max_position_pct] per ticker ---
+        # --- Bounds: per-ticker [min_weight, max_pct] ---
+        # Crypto tickers get a tighter cap (max_crypto_pct) to prevent over-concentration
+        # of a single high-volatility asset in retirement portfolios.
         lb = self.opt.min_weight_pct / 100
-        # Ensure ub ≥ 1/n so sum-to-1 constraint is always feasible
-        ub = max(cfg.max_position_pct / 100, 1.0 / n)
-        bounds = [(lb, ub)] * n
+        standard_ub = max(cfg.max_position_pct / 100, 1.0 / n)
+        crypto_ub   = max(cfg.max_crypto_pct / 100, lb)
+
+        from config import is_crypto as _is_crypto_ticker
+        bounds = [
+            (lb, crypto_ub if _is_crypto_ticker(t["symbol"]) else standard_ub)
+            for t in tickers
+        ]
 
         # Check if dividend constraint is satisfiable at all
         max_possible_div = float(np.sort(divs)[-min(n, cfg.min_positions):][::-1].mean()) * 100
@@ -464,16 +471,26 @@ class PortfolioOptimizer:
     # ------------------------------------------------------------------ #
 
     def _score_weighted_optimize(self, tickers: List[dict]) -> np.ndarray:
-        """Proportional allocation by adjusted_score, clipped to profile bounds."""
+        """Proportional allocation by adjusted_score, clipped to profile bounds.
+
+        Crypto tickers are capped at max_crypto_pct regardless of score.
+        """
         cfg = self.cfg
         scores = np.array([float(t.get("adjusted_score", 1) or 1) for t in tickers])
         scores = np.clip(scores, 0.01, None)
         w = scores / scores.sum()
 
-        # Iteratively clip to max_position_pct and renormalise (3 passes)
-        ub = cfg.max_position_pct / 100
+        from config import is_crypto as _is_crypto_ticker
+        standard_ub = cfg.max_position_pct / 100
+        crypto_ub   = cfg.max_crypto_pct / 100
+        ubs = np.array([
+            crypto_ub if _is_crypto_ticker(t["symbol"]) else standard_ub
+            for t in tickers
+        ])
+
+        # Iteratively clip to per-ticker cap and renormalise (5 passes)
         for _ in range(5):
-            w = np.clip(w, 0, ub)
+            w = np.minimum(w, ubs)
             if w.sum() > 0:
                 w /= w.sum()
 

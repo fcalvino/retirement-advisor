@@ -343,6 +343,7 @@ class ProfileConfig:
     score_weight: float
     dividend_weight: float
     moat_weight: float
+    max_crypto_pct: float = 3.0   # hard cap per crypto ticker (% of portfolio)
 
 
 # Module-level profile definitions (importable by name)
@@ -357,6 +358,7 @@ CONSERVATIVE_PROFILE = ProfileConfig(
     score_weight=0.35,
     dividend_weight=0.45,
     moat_weight=0.20,
+    max_crypto_pct=3.0,    # max 3% per crypto — capital preservation first
 )
 
 MODERATE_PROFILE = ProfileConfig(
@@ -370,6 +372,7 @@ MODERATE_PROFILE = ProfileConfig(
     score_weight=0.50,
     dividend_weight=0.30,
     moat_weight=0.20,
+    max_crypto_pct=5.0,    # max 5% per crypto — tolerable for moderate risk
 )
 
 AGGRESSIVE_PROFILE = ProfileConfig(
@@ -383,6 +386,7 @@ AGGRESSIVE_PROFILE = ProfileConfig(
     score_weight=0.65,
     dividend_weight=0.15,
     moat_weight=0.20,
+    max_crypto_pct=10.0,   # max 10% per crypto — growth-oriented, accepts volatility
 )
 
 OPTIMIZER_PROFILES: Dict[str, ProfileConfig] = {
