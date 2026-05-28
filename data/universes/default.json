@@ -1,6 +1,6 @@
 {
   "name": "Default",
-  "description": "Universo base: blue chips US + ETFs core + ADRs argentinos de alta liquidez.",
+  "description": "Universo base: blue chips US + ETFs core + ADRs argentinos de alta liquidez + crypto.",
   "tickers": [
     "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "BRK-B",
     "JPM", "V", "MA", "BAC",
@@ -9,6 +9,7 @@
     "HD", "CAT", "HON",
     "O", "T", "XOM", "CVX",
     "SPY", "QQQ", "VTI", "BND",
+    "BTC-USD",
     "YPF", "PAM", "CEPU", "LOMA", "MELI", "GLOB", "TEO", "EDN"
   ]
 }

@@ -238,7 +238,7 @@ def _analyse_universe_parallel(
             return {
                 "Ticker": sym,
                 "Company": fund.company_name[:25],
-                "Sector": fund.sector,
+                "Sector": ("🪙 Crypto" if fund.sector == "Crypto" else fund.sector),
                 "Signal": f"{decision.action_emoji} {decision.action}",
                 "Adj. Score": fund.adjusted_score,
                 "Base Score": fund.total_score,

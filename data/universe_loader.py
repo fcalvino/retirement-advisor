@@ -19,7 +19,7 @@ from loguru import logger
 _UNIVERSES_DIR = Path(__file__).parent / "universes"
 
 # Canonical order for UI display
-_DISPLAY_ORDER = ["default", "dividend_focus", "us_quality", "latam_adrs"]
+_DISPLAY_ORDER = ["default", "growth_moat", "dividend_focus", "us_quality", "latam_adrs"]
 
 
 def _universe_path(key: str) -> Path:

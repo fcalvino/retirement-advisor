@@ -1,0 +1,14 @@
+{
+  "name": "Growth con Moat",
+  "description": "Compañías de alto crecimiento con ventaja competitiva duradera (Wide/Narrow Moat) + Bitcoin como reserva de valor digital.",
+  "tickers": [
+    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META",
+    "CRM", "ADBE", "NOW", "INTU", "SNOW", "DDOG",
+    "V", "MA", "SPGI", "MCO",
+    "UNH", "LLY", "ISRG", "VRTX",
+    "COST", "NKE", "SBUX",
+    "BRK-B",
+    "MELI", "GLOB",
+    "BTC-USD"
+  ]
+}

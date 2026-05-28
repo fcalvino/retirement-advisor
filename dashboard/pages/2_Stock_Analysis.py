@@ -22,6 +22,7 @@ from dashboard.shared import (
 from data.fetcher import get_history
 from data.preferences import UserPreferences
 from portfolio.tracker import Portfolio
+from config import TICKER_ALIASES
 
 # ------------------------------------------------------------------ #
 #  Page                                                                #
@@ -31,7 +32,10 @@ st.title("🔍 Análisis Profundo")
 
 col1, col2 = st.columns([2, 1])
 with col1:
-    symbol = st.text_input("Ticker", value="AAPL").upper().strip()
+    _raw_input = st.text_input("Ticker", value="AAPL").upper().strip()
+    symbol = TICKER_ALIASES.get(_raw_input, _raw_input)
+    if symbol != _raw_input:
+        st.caption(f"🔄 '{_raw_input}' → `{symbol}`")
 with col2:
     st.button("Analizar", type="primary", use_container_width=True)
 

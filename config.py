@@ -151,9 +151,19 @@ DEFAULT_TICKERS: List[str] = [
     "O", "T", "XOM", "CVX",
     # ETFs (treated as non-fundamental)
     "SPY", "QQQ", "VTI", "BND",
+    # Crypto
+    "BTC-USD",
     # Argentina ADRs
     "YPF", "PAM", "CEPU", "LOMA", "MELI", "GLOB", "TEO", "EDN",
 ]
+
+# Ticker aliases: maps short-form searches to canonical yfinance symbols
+TICKER_ALIASES: Dict[str, str] = {
+    "BTC":     "BTC-USD",
+    "BITCOIN": "BTC-USD",
+    "ETH":     "ETH-USD",
+    "ETHEREUM":"ETH-USD",
+}
 
 # Sectors for diversification analysis
 SECTOR_MAP: Dict[str, List[str]] = {
@@ -167,6 +177,7 @@ SECTOR_MAP: Dict[str, List[str]] = {
     "Telecom / REIT": ["T", "O", "TEO"],
     "Utilities": ["EDN"],
     "ETF": ["SPY", "QQQ", "VTI", "BND"],
+    "Crypto": ["BTC-USD", "ETH-USD"],
 }
 
 # Asset allocation by age (bonds % = age rule + buffer for conservative)

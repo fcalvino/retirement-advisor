@@ -115,10 +115,23 @@ class FundamentalAnalyzer:
         # Basic info
         result.company_name = info.get("longName", symbol)
         from config import SECTOR_MAP
-        _etf_tickers = set(SECTOR_MAP.get("ETF", []))
+        _etf_tickers    = set(SECTOR_MAP.get("ETF", []))
+        _crypto_tickers = set(SECTOR_MAP.get("Crypto", []))
         raw_sector = info.get("sector", "")
-        result.sector = raw_sector if raw_sector else ("Index" if symbol in _etf_tickers else "Unknown")
-        result.industry = info.get("industry", "") or ("Index" if symbol in _etf_tickers else "Unknown")
+        if raw_sector:
+            result.sector = raw_sector
+        elif symbol in _crypto_tickers:
+            result.sector = "Crypto"
+        elif symbol in _etf_tickers:
+            result.sector = "Index"
+        else:
+            result.sector = "Unknown"
+        if symbol in _crypto_tickers:
+            result.industry = "Cryptocurrency"
+        elif symbol in _etf_tickers:
+            result.industry = "Index"
+        else:
+            result.industry = info.get("industry", "") or "Unknown"
         result.market_cap = _safe_float(info.get("marketCap"))
         result.current_price = _safe_float(
             info.get("currentPrice") or info.get("regularMarketPrice")
