@@ -171,7 +171,10 @@ st.sidebar.caption("Long-term investment decisions for retirement")
 
 # --- Universe selector ------------------------------------------------
 _universe_keys   = list_universes()
-_universe_labels = {k: f"{UNIVERSE_META[k]['name']} ({UNIVERSE_META[k]['count']})" for k in _universe_keys}
+_universe_labels = {
+    k: f"{UNIVERSE_META.get(k, {}).get('name', k)} ({UNIVERSE_META.get(k, {}).get('count', '?')})"
+    for k in _universe_keys
+}
 
 # Consume pending universe from preset (must happen before widget instantiation)
 if "_preset_universe_key" in st.session_state:

@@ -93,5 +93,20 @@ def get_universe_meta(key: str) -> Dict[str, str | int]:
     }
 
 
+def _build_universe_meta() -> Dict[str, Dict]:
+    """Build metadata for all universes found on disk, refreshing the lru_cache for new files."""
+    keys = list_universes()
+    meta = {}
+    for k in keys:
+        if not _universe_path(k).exists():
+            continue
+        # Clear cache entry for any key not yet seen so _load_raw picks up new files
+        try:
+            meta[k] = get_universe_meta(k)
+        except Exception:
+            meta[k] = {"name": k, "description": "", "count": 0}
+    return meta
+
+
 # Pre-built metadata dict for all known universes (populated once on import)
-UNIVERSE_META: Dict[str, Dict] = {k: get_universe_meta(k) for k in list_universes()}
+UNIVERSE_META: Dict[str, Dict] = _build_universe_meta()
