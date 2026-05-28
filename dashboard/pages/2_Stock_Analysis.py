@@ -19,7 +19,6 @@ from dashboard.shared import (
     _moat_badge_html,
     cached_full_analysis,
 )
-from config import normalize_crypto_ticker
 from data.fetcher import get_history
 from data.preferences import UserPreferences
 from data.universe_loader import load_universe
@@ -30,6 +29,15 @@ _TICKER_DISPLAY_NAMES: dict[str, str] = {
     "BTC-USD": "BTC-USD — Bitcoin",
     "ETH-USD": "ETH-USD — Ethereum",
 }
+
+_CRYPTO_ALIASES: dict[str, str] = {
+    "BTC": "BTC-USD", "BITCOIN": "BTC-USD",
+    "ETH": "ETH-USD", "ETHEREUM": "ETH-USD",
+}
+
+
+def _normalize_ticker(s: str) -> str:
+    return _CRYPTO_ALIASES.get(s.upper(), s)
 
 # ------------------------------------------------------------------ #
 #  Session guard (fresh-session direct navigation)                     #
@@ -84,7 +92,7 @@ with st.expander("¿No está en el universo? Ingresalo manualmente"):
             placeholder="Ej: NVDA, BRK-B, MELI, BTC, BITCOIN",
             label_visibility="collapsed",
         ).upper().strip()
-        _manual = normalize_crypto_ticker(_manual_raw) if _manual_raw else ""
+        _manual = _normalize_ticker(_manual_raw) if _manual_raw else ""
         if _manual and _manual != _manual_raw:
             st.caption(f"🔄 '{_manual_raw}' → `{_manual}`")
     with _mc2:
