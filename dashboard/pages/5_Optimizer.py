@@ -46,6 +46,22 @@ _PROFILE_COLORS = {
     "aggressive":   {"bg": "#fce4ec", "border": "#e91e63", "accent": "#880e4f", "icon": "🚀"},
 }
 
+_MOAT_COLORS = {
+    "Wide":    "#1b5e20",  # dark green
+    "Narrow":  "#4caf50",  # medium green
+    "Minimal": "#f9a825",  # amber
+    "None":    "#9e9e9e",  # grey
+}
+
+_MOAT_BADGES = {
+    "Wide":    "🟢 Wide",
+    "Narrow":  "🟡 Narrow",
+    "Minimal": "🟠 Minimal",
+    "None":    "⚪ None",
+}
+
+_DONUT_THRESHOLD_DEFAULT = 1.5
+
 _PRESETS = [
     {
         "label":       "💰 Alto Dividendo",
@@ -495,25 +511,30 @@ for w in result.warnings:
 
 mc1, mc2, mc3, mc4, mc5, mc6 = st.columns(6)
 mc1.metric(
-    "Retorno esperado", f"{result.expected_return_pct:.1f}%",
-    help="Retorno anual proxy (score + dividendo + moat).",
+    "Score Ajustado", f"{result.adjusted_score_avg:.0f}/100",
+    help="Promedio ponderado del Score Ajustado (fundamentals + moat + dividendo) de todos los activos.",
 )
 mc2.metric(
-    "Volatilidad", f"{result.volatility_pct:.1f}%",
-    delta=f"límite {prof.max_volatility_pct:.0f}%", delta_color="off",
+    "Retorno esperado", f"{result.expected_return_pct:.1f}%",
+    help="Retorno anual estimado (proxy: score + dividendo + moat). No es garantía de performance futura.",
 )
 mc3.metric(
-    "Sharpe Ratio", f"{result.sharpe_ratio:.2f}",
-    help="Retorno ajustado por riesgo (rf = 4.5%). Por encima de 0.5 es bueno.",
-)
-mc4.metric(
     "Div. Yield", f"{result.dividend_yield_pct:.2f}%",
     delta=f"mín {prof.min_dividend_yield_pct:.1f}%", delta_color="off",
+    help="Dividend yield total ponderado de la cartera.",
 )
-mc5.metric("Score Promedio", f"{result.adjusted_score_avg:.0f}/100")
+mc4.metric(
+    "Volatilidad", f"{result.volatility_pct:.1f}%",
+    delta=f"límite {prof.max_volatility_pct:.0f}%", delta_color="off",
+    help="Volatilidad anual estimada de la cartera (desviación estándar de retornos).",
+)
+mc5.metric(
+    "Sharpe Ratio", f"{result.sharpe_ratio:.2f}",
+    help="Retorno ajustado por riesgo (rf = 4.5%). > 0.5 es bueno, > 1.0 es excelente.",
+)
 mc6.metric(
     "Max Drawdown est.", f"{result.max_drawdown_estimate_pct:.1f}%",
-    help="Estimación peor escenario 1 año: ≈ 1.5× volatilidad (regla empírica).",
+    help="Estimación del peor escenario en 1 año: ≈ 1.5× volatilidad (regla empírica conservadora).",
     delta_color="off",
 )
 
@@ -549,12 +570,13 @@ with tab_cart:
             t             = scored_map.get(a.symbol, {})
             moat_cls      = t.get("moat_classification", "None")
             discount_note = f" (−{(1-OPTIMIZER.ars_risk_discount)*100:.0f}% ARS)" if a.score_discounted else ""
+            ticker_label  = f"🪙 {a.symbol}" if a.symbol == "BTC-USD" else a.symbol
             row = {
-                "Ticker":  a.symbol,
-                "Empresa": (t.get("company_name", a.symbol) or a.symbol)[:32],
                 "Peso %":  a.weight_pct,
+                "Ticker":  ticker_label,
+                "Empresa": (t.get("company_name", a.symbol) or a.symbol)[:28],
                 "Score":   a.adjusted_score,
-                "Moat":    f"{_MOAT_EMOJI.get(moat_cls, '⚪')} {moat_cls}",
+                "Moat":    _MOAT_BADGES.get(moat_cls, f"⚪ {moat_cls}"),
                 "Div %":   a.dividend_yield_pct,
                 "Sector":  a.sector,
                 "Notas":   ("🇦🇷" + discount_note) if a.is_ars else "",
@@ -563,24 +585,47 @@ with tab_cart:
                 row["Valor USD"] = round(a.weight_pct / 100 * _total_val)
             alloc_data.append(row)
 
-        df_alloc = pd.DataFrame(alloc_data)
+        df_alloc = (
+            pd.DataFrame(alloc_data)
+            .sort_values("Peso %", ascending=False)
+            .reset_index(drop=True)
+        )
 
         # ---- Hero: allocation donut (left) + bar chart (right) ----
         col_donut, col_bar = st.columns(2)
 
         with col_donut:
+            _donut_filter = st.checkbox(
+                "Mostrar solo posiciones > 1.5%",
+                value=True,
+                help="Agrupa las posiciones menores en una slice 'Otros' para mejorar la legibilidad.",
+                key="optimizer_donut_filter",
+            )
+            _threshold = _DONUT_THRESHOLD_DEFAULT if _donut_filter else 0.0
+            _df_visible = df_alloc[df_alloc["Peso %"] > _threshold].copy()
+            _others_pct = df_alloc[df_alloc["Peso %"] <= _threshold]["Peso %"].sum()
+            _others_n   = int((df_alloc["Peso %"] <= _threshold).sum())
+            if _others_n > 0 and _others_pct > 0:
+                _others_row = pd.DataFrame([{
+                    "Peso %":  round(_others_pct, 1),
+                    "Ticker":  f"Otros ({_others_n})",
+                    "Empresa": f"{_others_n} posiciones < {_threshold:.1f}%",
+                }])
+                _df_visible = pd.concat([_df_visible, _others_row], ignore_index=True)
+
             fig_donut = px.pie(
-                df_alloc[df_alloc["Peso %"] > 0],
+                _df_visible,
                 values="Peso %",
                 names="Ticker",
                 title=f"Asignación — {len(result.tickers)} posiciones",
                 hole=0.45,
                 color_discrete_sequence=px.colors.qualitative.Set3,
+                hover_data={"Empresa": True} if "Empresa" in _df_visible.columns else None,
             )
             fig_donut.update_traces(
-                textposition="outside",
+                textposition="inside",
                 textinfo="label+percent",
-                pull=[0.02] * len(df_alloc),
+                insidetextorientation="radial",
             )
             fig_donut.update_layout(
                 height=420,
@@ -623,15 +668,30 @@ with tab_cart:
             st.plotly_chart(fig_bar, use_container_width=True)
 
         # ---- Allocation table ----
+        _col_order = ["Peso %", "Ticker", "Empresa", "Score", "Moat", "Div %", "Sector", "Notas"]
+        if _total_val > 0:
+            _col_order.insert(3, "Valor USD")
+        _col_order_present = [c for c in _col_order if c in df_alloc.columns]
+
         _col_cfg: dict = {
-            "Peso %": st.column_config.ProgressColumn("Peso %", min_value=0, max_value=100, format="%.1f%%"),
-            "Score":  st.column_config.NumberColumn("Score",  format="%.0f"),
-            "Div %":  st.column_config.NumberColumn("Div %",  format="%.2f%%"),
+            "Peso %":  st.column_config.ProgressColumn("Peso %", min_value=0, max_value=100, format="%.1f%%"),
+            "Ticker":  st.column_config.TextColumn("Ticker",  width="small"),
+            "Empresa": st.column_config.TextColumn("Empresa", width="medium"),
+            "Score":   st.column_config.NumberColumn("Score",  format="%.0f", help="Score Ajustado /100"),
+            "Moat":    st.column_config.TextColumn("Moat",    help="Wide=ventaja duradera · Narrow=moderada · Minimal=limitada"),
+            "Div %":   st.column_config.NumberColumn("Div %",  format="%.2f%%"),
+            "Sector":  st.column_config.TextColumn("Sector"),
+            "Notas":   st.column_config.TextColumn("Notas",   width="small"),
         }
         if _total_val > 0:
             _col_cfg["Valor USD"] = st.column_config.NumberColumn("Valor USD", format="$%d")
 
-        st.dataframe(df_alloc, use_container_width=True, hide_index=True, column_config=_col_cfg)
+        st.dataframe(
+            df_alloc[_col_order_present],
+            use_container_width=True,
+            hide_index=True,
+            column_config=_col_cfg,
+        )
 
         # ---- CSV export ----
         _csv_buf = io.StringIO()
