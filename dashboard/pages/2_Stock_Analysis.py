@@ -19,11 +19,18 @@ from dashboard.shared import (
     _moat_badge_html,
     cached_full_analysis,
 )
+from config import normalize_crypto_ticker
 from data.fetcher import get_history
 from data.preferences import UserPreferences
 from data.universe_loader import load_universe
 from portfolio.tracker import Portfolio
 from config import TICKER_ALIASES
+
+# Display labels make crypto searchable by full name (Bitcoin, Ethereum…)
+_TICKER_DISPLAY_NAMES: dict[str, str] = {
+    "BTC-USD": "BTC-USD — Bitcoin",
+    "ETH-USD": "ETH-USD — Ethereum",
+}
 
 # ------------------------------------------------------------------ #
 #  Session guard (fresh-session direct navigation)                     #
