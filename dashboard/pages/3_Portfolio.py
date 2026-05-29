@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -19,7 +20,17 @@ from portfolio.tracker import Portfolio
 
 st.title("💼 Mi Portfolio")
 
+# ------------------------------------------------------------------ #
+#  Defensive guard for st.navigation() direct page access             #
+# ------------------------------------------------------------------ #
+if "portfolio" not in st.session_state:
+    st.session_state.portfolio = Portfolio()
+
 portfolio: Portfolio = st.session_state.portfolio
+
+# One-shot success message from a previous edit/delete action
+if "_portfolio_msg" in st.session_state:
+    st.success(st.session_state.pop("_portfolio_msg"))
 
 if not portfolio.positions:
     st.info(
@@ -46,7 +57,7 @@ col3.metric("Posiciones",      metrics.num_positions)
 
 st.divider()
 
-# Holdings table
+# Holdings table (read-only overview, sortable)
 st.subheader("📊 Posiciones actuales")
 rows = list(values.values())
 df = pd.DataFrame(rows)
@@ -75,7 +86,105 @@ st.dataframe(
     hide_index=True,
 )
 
+# ------------------------------------------------------------------ #
+#  Edit / Delete dialogs                                               #
+# ------------------------------------------------------------------ #
+
+
+@st.dialog("✏️ Editar posición")
+def _edit_position_dialog(sym: str) -> None:
+    pos = portfolio.positions.get(sym)
+    if pos is None:
+        st.error("La posición ya no existe.")
+        return
+
+    st.text_input("Ticker", value=sym, disabled=True)
+
+    c1, c2 = st.columns(2)
+    new_shares = c1.number_input(
+        "Cantidad de Shares", min_value=0.0, value=float(pos.shares),
+        step=1.0, format="%.4f",
+    )
+    new_cost = c2.number_input(
+        "Avg Cost (USD)", min_value=0.0, value=float(pos.avg_cost),
+        step=0.01, format="%.2f",
+    )
+
+    try:
+        _pd_val = date.fromisoformat(pos.purchase_date)
+    except (ValueError, TypeError):
+        _pd_val = date.today()
+    new_date = st.date_input("Fecha de compra (opcional)", value=_pd_val)
+    new_notes = st.text_area("Notas (opcional)", value=pos.notes or "")
+
+    st.caption(f"Nuevo Cost Basis: **${new_shares * new_cost:,.2f}**")
+
+    b1, b2 = st.columns(2)
+    if b1.button("💾 Guardar cambios", type="primary", use_container_width=True):
+        if new_shares <= 0:
+            st.error("La cantidad de shares debe ser mayor a 0.")
+        elif new_cost <= 0:
+            st.error("El precio promedio debe ser mayor a 0.")
+        else:
+            portfolio.update_position(sym, new_shares, new_cost, str(new_date), new_notes)
+            st.session_state.portfolio = portfolio
+            st.session_state["_portfolio_msg"] = f"✅ Posición {sym} actualizada."
+            st.rerun()
+    if b2.button("Cancelar", use_container_width=True):
+        st.rerun()
+
+
+@st.dialog("🗑️ Eliminar posición")
+def _delete_position_dialog(sym: str) -> None:
+    pos = portfolio.positions.get(sym)
+    if pos is None:
+        st.error("La posición ya no existe.")
+        return
+
+    st.warning(
+        f"¿Seguro que querés eliminar **{sym}** "
+        f"({pos.shares:g} acciones @ ${pos.avg_cost:,.2f})?\n\n"
+        "Esta acción no se puede deshacer."
+    )
+
+    b1, b2 = st.columns(2)
+    if b1.button("Sí, eliminar", type="primary", use_container_width=True):
+        portfolio.remove_position(sym)
+        st.session_state.portfolio = portfolio
+        st.session_state["_portfolio_msg"] = f"🗑️ Posición {sym} eliminada."
+        st.rerun()
+    if b2.button("Cancelar", use_container_width=True):
+        st.rerun()
+
+
+# ------------------------------------------------------------------ #
+#  Manage positions — per-row edit / delete                            #
+# ------------------------------------------------------------------ #
+
+st.subheader("⚙️ Gestionar posiciones")
+st.caption("Editá cantidad, precio promedio, fecha y notas, o eliminá una posición. Los cálculos se actualizan al instante.")
+
+_widths = [1.2, 1, 1, 1.3, 1, 0.7, 0.8]
+_hdr = st.columns(_widths)
+for _c, _label in zip(_hdr, ["Ticker", "Shares", "Avg Cost", "Mkt Value", "P&L %", "Editar", "Borrar"]):
+    _c.markdown(f"**{_label}**")
+
+for sym, v in values.items():
+    r = st.columns(_widths)
+    r[0].write(f"**{sym}**")
+    r[1].write(f"{v['shares']:g}")
+    r[2].write(f"${v['avg_cost']:,.2f}")
+    r[3].write(f"${v['market_value']:,.0f}")
+    _pnl_pct = v["pnl_pct"]
+    _color = "#16a34a" if _pnl_pct >= 0 else "#dc2626"
+    r[4].markdown(f"<span style='color:{_color};font-weight:600'>{_pnl_pct:+.1f}%</span>", unsafe_allow_html=True)
+    if r[5].button("✏️", key=f"edit_{sym}", help=f"Editar {sym}"):
+        _edit_position_dialog(sym)
+    if r[6].button("🗑️", key=f"del_{sym}", help=f"Eliminar {sym}"):
+        _delete_position_dialog(sym)
+
 # Charts
+st.divider()
 col1, col2 = st.columns(2)
 with col1:
     sector_weights = portfolio.get_sector_weights()
@@ -99,18 +208,3 @@ with col2:
     fig.add_hline(y=8, line_dash="dash", line_color="red", annotation_text="Máx 8%")
     fig.update_layout(yaxis_title="%", showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
-
-# Remove position
-st.divider()
-st.subheader("🗑️ Cerrar / Reducir posición")
-col1, col2 = st.columns(2)
-with col1:
-    sym_to_remove = st.selectbox("Ticker", list(portfolio.positions.keys()))
-with col2:
-    shares_to_remove = st.number_input(
-        "Acciones (vacío = cerrar todo)", min_value=0.0, value=0.0,
-    )
-if st.button("Cerrar posición", type="secondary"):
-    portfolio.remove_position(sym_to_remove, shares_to_remove if shares_to_remove > 0 else None)
-    st.session_state.portfolio = portfolio
-    st.rerun()

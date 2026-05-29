@@ -102,6 +102,40 @@ class Portfolio:
             logger.info(f"Added {symbol}: {shares:.2f} shares @ ${avg_cost:.2f}")
         self._save()
 
+    def update_position(
+        self,
+        symbol: str,
+        shares: float,
+        avg_cost: float,
+        purchase_date: Optional[str] = None,
+        notes: Optional[str] = None,
+    ) -> bool:
+        """
+        Overwrite an existing position's editable fields and persist.
+
+        Unlike add_position (which averages cost into an existing holding),
+        this sets the values directly — used by the "Editar posición" UI.
+        Cost basis, P&L and weights recompute on demand from these values.
+
+        Returns True on success, False if the symbol is not held.
+        """
+        symbol = symbol.upper()
+        if symbol not in self.positions:
+            logger.warning(f"{symbol} not in portfolio — cannot update")
+            return False
+
+        pos = self.positions[symbol]
+        pos.shares = shares
+        pos.avg_cost = avg_cost
+        if purchase_date is not None:
+            pos.purchase_date = purchase_date
+        if notes is not None:
+            pos.notes = notes
+
+        self._save()
+        logger.info(f"Updated {symbol}: {shares:.2f} shares @ ${avg_cost:.2f}")
+        return True
+
     def remove_position(self, symbol: str, shares: Optional[float] = None) -> None:
         symbol = symbol.upper()
         if symbol not in self.positions:
