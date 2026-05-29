@@ -21,12 +21,9 @@ from portfolio.tracker import Portfolio
 st.title("💼 Mi Portfolio")
 
 # ------------------------------------------------------------------ #
-#  Defensive guard for st.navigation() direct page access.            #
-#  Also self-heals a stale session_state instance left over from a    #
-#  hot-reload (e.g. an old Portfolio without update_position): we      #
-#  reload from disk, which preserves all positions via portfolio.json.#
+#  Defensive guard for st.navigation() direct page access             #
 # ------------------------------------------------------------------ #
-if "portfolio" not in st.session_state or not hasattr(st.session_state.portfolio, "update_position"):
+if "portfolio" not in st.session_state:
     st.session_state.portfolio = Portfolio()
 
 portfolio: Portfolio = st.session_state.portfolio
