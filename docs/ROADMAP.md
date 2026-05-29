@@ -2,7 +2,30 @@
 
 ## ✅ Todo implementado y en producción (GitHub main)
 
-Este plan describe trabajo **ya completado**. El plan original (AI integration) fue implementado junto con las Fases 1.5, 2 y 3. No hay trabajo pendiente.
+Este plan describe trabajo **ya completado**. El plan original (AI integration) fue implementado junto con las Fases 1.5, 2 y 3.
+
+---
+
+## Fase 0 — Quick Wins de Largo Plazo & UX (iniciada 2026)
+
+Trabajo iniciado a partir del brainstorming de mejoras (ver plan en `.grok/sessions/.../plan.md`).
+
+**Entregado en Fase 0:**
+
+- **Mejores hints y mensajes para inversionistas de largo plazo** en `dashboard/app.py` y `dashboard/pages/7_Simulaciones.py` (flujo recomendado actualizado, mensajes educativos cuando no hay optimizer, mejor onboarding ligero en home).
+- **Presets de escenarios comunes** (Acumulación pura, FIRE, Meta casa, Retiro clásico 30y) + **retiros que crecen con inflación** en Monte Carlo (`portfolio/monte_carlo.py`, `dashboard/shared.py`, `7_Simulaciones.py`). Esto es un cambio de modelado importante para planes realistas de 15-30 años.
+- **Narrativa IA "Explicame este plan"** (`analysis/prompts.py` + `analysis/ai_analyzer.py` + botón en Simulaciones). Usa los proveedores AI existentes para generar una explicación conservadora y accionable del portafolio + simulación actual.
+- Tests: 179 pasando (sin regresiones).
+- Actualización de flujo recomendado y documentación inicial.
+
+**Próximos pasos sugeridos (Fase 0 restante o Fase 1):**
+- Pulir la experiencia de presets (widget keys + valores por defecto reales).
+- Mover más prompts de narrativa al flujo de Optimizer.
+- Agregar un wizard de perfil más completo (edad, horizonte principal, otras metas).
+
+---
+
+## Fases completadas (históricas)
 
 ---
 

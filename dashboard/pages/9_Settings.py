@@ -20,6 +20,11 @@ from data.universe_loader import UNIVERSE_META, load_universe
 
 st.title("⚙️ Configuración")  # noqa: RUF001
 
+# Defensive guard for direct navigation
+if "user_prefs" not in st.session_state:
+    st.warning("Por favor empezá desde la página **Inicio** para inicializar correctamente la aplicación.")
+    st.stop()
+
 _prefs: UserPreferences = st.session_state.user_prefs
 
 # ------------------------------------------------------------------ #

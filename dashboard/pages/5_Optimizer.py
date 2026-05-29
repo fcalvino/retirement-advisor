@@ -107,7 +107,9 @@ st.caption(
     "💵 Todos los valores están denominados en **USD**."
 )
 
-# Guard: initialize shared state if navigated directly (fresh session)
+# ------------------------------------------------------------------ #
+#  Defensive guard for st.navigation() direct page access
+# ------------------------------------------------------------------ #
 if "user_prefs" not in st.session_state:
     st.session_state.user_prefs = UserPreferences.load()
 if "universe" not in st.session_state:

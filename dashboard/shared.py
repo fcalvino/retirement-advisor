@@ -184,6 +184,7 @@ def cached_monte_carlo(
     initial_value: float,
     annual_withdrawal: float,
     target_value: float,
+    withdrawal_growth_rate: float = 0.0,   # inflation adjustment on withdrawals (Phase 0)
     seed: int = 42,
     vol_scale: float = 1.0,
     return_scale: float = 1.0,
@@ -206,6 +207,7 @@ def cached_monte_carlo(
         initial_value=initial_value,
         annual_withdrawal=annual_withdrawal,
         target_value=target_value,
+        withdrawal_growth_rate=withdrawal_growth_rate,
     )
 
 

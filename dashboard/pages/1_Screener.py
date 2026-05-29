@@ -28,8 +28,18 @@ st.caption(
     "Usá **🔍 Stock Analysis** para profundizar en cualquier ticker."
 )
 
-_prefs: UserPreferences = st.session_state.user_prefs
+# ------------------------------------------------------------------ #
+#  Defensive guard for st.navigation() (prevents crash on direct nav)
+# ------------------------------------------------------------------ #
+if "user_prefs" not in st.session_state or "universe" not in st.session_state:
+    st.warning(
+        "⚠️ La aplicación aún no está inicializada. "
+        "Por favor volvé a la página **Inicio** (en el menú de la izquierda) y esperá a que cargue completamente. "
+        "Luego navegá a Screener, Optimizer o Simulaciones."
+    )
+    st.stop()
 
+_prefs: UserPreferences = st.session_state.user_prefs
 tickers = st.session_state.universe
 max_tickers = st.sidebar.slider(
     "Max tickers to screen", 5, len(tickers), len(tickers),

@@ -126,9 +126,20 @@ def _home_page() -> None:
 """)
 
     st.info(
-        "💡 **Flujo recomendado:** Screener → Stock Analysis → Optimizer → Portfolio",
+        "💡 **Flujo recomendado para inversionistas de largo plazo:** "
+        "Screener → Stock Analysis → Optimizer → Simulaciones (proyecciones a 10-30 años)",
         icon="💡",
     )
+
+    # Phase 0 lightweight onboarding hint
+    with st.expander("🧭 ¿Nuevo aquí? Empezá por definir tu horizonte de largo plazo"):
+        st.markdown("""
+        1. Elegí o creá un **Universo** en la barra lateral (o usá "default").
+        2. Andá al **Screener** y mirá el ranking de calidad.
+        3. Usá el **Optimizer** para construir una cartera que respete **tu** tolerancia al riesgo.
+        4. Volvé a **Simulaciones** y proyectá a 10-30 años (con retiros crecientes por inflación si corresponde).
+        """)
+        st.caption("Todos los valores están en USD. Esta herramienta es educativa — consultá a un asesor certificado antes de tomar decisiones.")
 
 
 _pages_dir = Path(__file__).parent / "pages"

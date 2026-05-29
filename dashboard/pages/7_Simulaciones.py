@@ -14,7 +14,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from config import MONTE_CARLO, OPTIMIZER_PROFILES, SECTOR_MAP
-from dashboard.shared import cached_monte_carlo, cached_stress_test
+from dashboard.shared import cached_monte_carlo, cached_stress_test, _get_ai_config
 
 # ------------------------------------------------------------------ #
 #  Page                                                                #
@@ -54,12 +54,72 @@ _PROFILE_NAMES_MC = {
 
 st.sidebar.subheader("⚙️ Parámetros de simulación")
 
+# --- Phase 0: Improved Presets (clear selection + direct widget control) ---
+st.sidebar.markdown("**🚀 Escenarios rápidos de largo plazo**")
+
+preset_choice = st.sidebar.selectbox(
+    "Elegir preset",
+    [
+        "— Ninguno —",
+        "Acumulación pura (20 años)",
+        "FIRE / Independencia Financiera (25 años)",
+        "Meta importante (casa / gasto grande)",
+        "Retiro clásico 30 años (4% rule + inflación)",
+    ],
+    key="preset_choice",
+    help="Seleccioná un escenario típico. Los valores de los controles de abajo se actualizarán automáticamente."
+)
+
+if st.sidebar.button("Aplicar preset", type="primary", use_container_width=True):
+    if preset_choice == "Acumulación pura (20 años)":
+        st.session_state["horizon_years"] = 20
+        st.session_state["initial_value"] = 100_000
+        st.session_state["annual_withdrawal"] = 0
+        st.session_state["target_value"] = 800_000
+        st.session_state["inflation_rate"] = 3.0
+        st.session_state["last_preset"] = "Acumulación pura"
+    elif preset_choice == "FIRE / Independencia Financiera (25 años)":
+        st.session_state["horizon_years"] = 25
+        st.session_state["initial_value"] = 1_000_000
+        st.session_state["annual_withdrawal"] = 35_000
+        st.session_state["target_value"] = 0
+        st.session_state["inflation_rate"] = 3.0
+        st.session_state["last_preset"] = "FIRE / Indep. Fin."
+    elif preset_choice == "Meta importante (casa / gasto grande)":
+        st.session_state["horizon_years"] = 8
+        st.session_state["initial_value"] = 150_000
+        st.session_state["annual_withdrawal"] = 0
+        st.session_state["target_value"] = 300_000
+        st.session_state["inflation_rate"] = 4.0
+        st.session_state["last_preset"] = "Meta casa / gasto"
+    elif preset_choice == "Retiro clásico 30 años (4% rule + inflación)":
+        st.session_state["horizon_years"] = 30
+        st.session_state["initial_value"] = 1_000_000
+        st.session_state["annual_withdrawal"] = 40_000
+        st.session_state["target_value"] = 0
+        st.session_state["inflation_rate"] = 3.0
+        st.session_state["last_preset"] = "Retiro clásico 30y"
+    else:
+        st.sidebar.warning("Elegí un escenario antes de aplicar.")
+        st.stop()
+
+    st.session_state["preset_applied"] = True
+    st.rerun()
+
+if st.session_state.get("preset_applied"):
+    last = st.session_state.get("last_preset", "")
+    st.sidebar.success(f"✅ Preset aplicado: **{last}**", icon="🚀")
+    # Clear the flag after showing once
+    st.session_state.pop("preset_applied", None)
+
+# The widgets now use explicit keys so presets can control them directly
 horizon_years = st.sidebar.selectbox(
     "Horizonte de proyección",
     [5, 10, 15, 20, 25, 30],
     index=3,
     format_func=lambda y: f"{y} años",
     help="Años desde hoy hasta la meta de retiro.",
+    key="horizon_years",
 )
 initial_value = st.sidebar.number_input(
     "Capital inicial (USD)",
@@ -68,6 +128,7 @@ initial_value = st.sidebar.number_input(
     value=100_000,
     step=5_000,
     format="%d",
+    key="initial_value",
 )
 annual_withdrawal = st.sidebar.number_input(
     "Retiro anual (USD, 0 = acumulación)",
@@ -77,6 +138,7 @@ annual_withdrawal = st.sidebar.number_input(
     step=1_000,
     format="%d",
     help="Cuánto retirás cada año (fase de desacumulación). 0 si todavía estás acumulando.",
+    key="annual_withdrawal",
 )
 target_value = st.sidebar.number_input(
     "Meta de retiro (USD)",
@@ -86,6 +148,7 @@ target_value = st.sidebar.number_input(
     step=10_000,
     format="%d",
     help="Valor objetivo del portafolio al final del horizonte.",
+    key="target_value",
 )
 inflation_rate = st.sidebar.slider(
     "Inflación esperada (%/año)",
@@ -93,13 +156,16 @@ inflation_rate = st.sidebar.slider(
     max_value=8.0,
     value=3.0,
     step=0.5,
-    help="Usada para mostrar el valor real (poder adquisitivo) en el Fan Chart.",
+    help="Ajusta tanto la línea de 'valor real' en el gráfico como el crecimiento anual del retiro "
+         "(si tenés retiro > 0). Esto es clave para simulaciones realistas de largo plazo.",
+    key="inflation_rate",
 )
 n_sims = st.sidebar.select_slider(
     "Número de simulaciones",
     options=[1_000, 2_000, 5_000, 10_000],
     value=MONTE_CARLO.default_n_sims,
     help="Más simulaciones = más precisión. 10 000 tarda < 3s.",
+    key="n_sims",
 )
 
 # ------------------------------------------------------------------ #
@@ -129,10 +195,17 @@ else:
     data_source = f"Universo equal-weight ({len(symbols)} tickers)"
 
 st.info(
-    f"📊 **Fuente:** {data_source}. "
-    "Para usar pesos específicos por perfil, ejecutá el **Optimizer** primero.",
+    f"📊 **Fuente de la simulación:** {data_source}. "
+    "Usar un portafolio optimizado (en lugar de equal-weight del universo) produce proyecciones mucho más realistas "
+    "para horizontes de 10-30 años, porque respeta tus límites de riesgo y dividendos por perfil.",
     icon="ℹ️",
 )
+
+if not (opt_result and opt_result.tickers):
+    st.caption(
+        "💡 **Recomendación para largo plazo:** Andá a **📈 Optimizer**, elegí tu perfil de riesgo (Conservador/Moderado/Agresivo) "
+        "y generá una cartera. Volvé acá y las simulaciones usarán automáticamente esos pesos y sectores optimizados."
+    )
 
 # ------------------------------------------------------------------ #
 #  Tabs                                                                #
@@ -151,8 +224,10 @@ with tab_mc:
 
     if not run_mc and "mc_result" not in st.session_state:
         st.info(
-            "Configurá los parámetros en el sidebar y hacé clic en "
-            "**▶ Ejecutar simulación Monte Carlo** para comenzar.",
+            "Configurá los parámetros en el sidebar (horizonte, capital inicial, retiro anual, meta, inflación) "
+            "y hacé clic en **▶ Ejecutar simulación Monte Carlo** para comenzar.\n\n"
+            "Las simulaciones usan block-bootstrap sobre historia real de 10 años con ajustes conservadores "
+            "— ideales para evaluar planes de inversión a 10-30 años.",
             icon="🎲",
         )
         st.stop()
@@ -167,6 +242,7 @@ with tab_mc:
                 initial_value=float(initial_value),
                 annual_withdrawal=float(annual_withdrawal),
                 target_value=float(target_value),
+                withdrawal_growth_rate=float(inflation_rate) / 100.0,   # Phase 0: growing withdrawals
             )
         st.session_state["mc_result"] = mc
         st.session_state["mc_params"] = {
@@ -184,36 +260,149 @@ with tab_mc:
     for w in mc.warnings:
         st.warning(w)
 
-    # ---- KPI row ----
+    # ---- KPI row (improved clarity for long-term investors) ----
     k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Capital inicial",             f"${initial_value:,.0f}")
+    k1.metric("Capital inicial", f"${initial_value:,.0f}")
+
     k2.metric(
-        f"Mediana a {horizon_years}a",
+        f"Valor más probable (mediana)",
         f"${mc.median_terminal:,.0f}",
-        delta=f"{mc.median_cagr_pct:.1f}% CAGR",
+        delta=f"{mc.median_cagr_pct:.1f}% CAGR promedio",
+        help="En la mitad de las simulaciones terminás por encima de este número, y en la mitad por debajo.",
     )
+
     k3.metric(
-        "Peor 10% (P10)",
+        "⚠️ Escenario pesimista (peor 10%)",
         f"${mc.p10_terminal:,.0f}",
         delta=f"{mc.p10_cagr_pct:.1f}% CAGR",
         delta_color="inverse",
+        help="En 1 de cada 10 simulaciones terminás con este valor o menos. Este es el caso 'malo' que debés estar dispuesto a aceptar.",
     )
-    k4.metric("Mejor 10% (P90)", f"${mc.p90_terminal:,.0f}")
+
+    k4.metric(
+        "Escenario optimista (mejor 10%)",
+        f"${mc.p90_terminal:,.0f}",
+        help="Solo en 1 de cada 10 simulaciones terminás por encima de este valor (caso muy favorable).",
+    )
+
     if target_value > 0:
         k5.metric(
-            f"Prob. meta ${target_value:,.0f}",
+            f"Probabilidad de alcanzar tu meta",
             f"{mc.prob_achieve_target_pct:.1f}%",
-            delta="de simulaciones",
+            delta=f"de llegar a ${target_value:,.0f}",
             delta_color="off",
+            help="Porcentaje de las 10.000 simulaciones que superaron o igualaron tu objetivo.",
         )
     else:
         k5.metric(
-            "Prob. ruina",
+            "Probabilidad de quedarte en 0",
             f"{mc.prob_ruin_pct:.1f}%",
             delta_color="inverse",
+            help="Casos en los que el portafolio llega a cero o negativo antes del final del horizonte.",
         )
 
+    # ---- Quick interpretation (Fase 0 improvement) ----
+    with st.expander("📊 ¿Qué significan estos números para tu plan?", expanded=True):
+        # Calculate real (inflation-adjusted) terminal values
+        real_p10 = real_median = real_p90 = None
+        if inflation_rate > 0:
+            real_p10 = mc.p10_terminal / ((1 + inflation_rate / 100) ** horizon_years)
+            real_median = mc.median_terminal / ((1 + inflation_rate / 100) ** horizon_years)
+            real_p90 = mc.p90_terminal / ((1 + inflation_rate / 100) ** horizon_years)
+
+            st.markdown(f"**En poder de compra de hoy (después de {inflation_rate:.1f}% inflación anual):**")
+            st.markdown(f"- Caso más probable: tus **${initial_value:,.0f}** de hoy tendrían el poder de compra de **${real_median:,.0f}**")
+            st.markdown(f"- Escenario pesimista (1 de cada 10 casos): **${real_p10:,.0f}**")
+            st.markdown(f"- Escenario muy bueno (1 de cada 10 casos): **${real_p90:,.0f}**")
+        else:
+            st.markdown("**Valores en dólares de hoy:**")
+
+        st.markdown(f"""
+**Valores nominales (sin ajustar por inflación):**
+- Caso más probable: **${mc.median_terminal:,.0f}** ({mc.median_terminal/initial_value:.1f}x)
+- Escenario pesimista: **${mc.p10_terminal:,.0f}** o menos
+- Escenario optimista: **${mc.p90_terminal:,.0f}** o más
+""")
+
+        # Much more direct reality check
+        st.markdown("**⚠️ Por qué estos números pueden engañarte (importante leer):**")
+        if real_p10 is not None:
+            st.markdown(f"""
+Aunque el escenario pesimista nominal (${mc.p10_terminal:,.0f}) parece "ganar", tené en cuenta:
+
+- En **poder de compra real** (después de inflación), en el peor 10% de los casos solo terminás con **${real_p10:,.0f}** de los dólares de hoy. Eso es un crecimiento real bastante modesto en {horizon_years} años.
+- El modelo ya está siendo conservador (le saca 20% al retorno esperado histórico). Aun así, el período que usamos como base fue bueno. El futuro puede ser peor.
+- Estos son solo valores **al final** de los {horizon_years} años. Durante el camino podés haber tenido caídas del 50% o más. Si en ese momento sacás plata o te asustás y vendés, el resultado final puede ser mucho peor que el P10 que ves acá.
+- Si en algún momento empezás a retirar plata (aunque sea poco), el riesgo de que el "caso malo" sea realmente malo sube mucho (riesgo de secuencia de retornos).
+
+En resumen: el modelo no está diciendo "siempre vas a ganar mucho". Está diciendo que, **incluso en un escenario malo pero no catastrófico**, todavía terminás con más capital del que empezaste en términos reales. Casos peores que los históricos (o errores de comportamiento) no están totalmente capturados.
+""")
+        else:
+            st.markdown(f"""
+- El modelo ya está siendo conservador (le saca 20% al retorno esperado histórico). Aun así, el futuro puede ser peor que el pasado reciente.
+- Estos son solo valores **al final** de los {horizon_years} años. Durante el camino podés haber tenido caídas del 50% o más.
+- Si en algún momento empezás a retirar plata, el riesgo de que el "caso malo" sea realmente malo sube mucho (riesgo de secuencia de retornos).
+""")
+
+        if target_value > 0:
+            if mc.prob_achieve_target_pct >= 85:
+                st.success(f"✅ Con este plan tenés **muy buena probabilidad ({mc.prob_achieve_target_pct:.0f}%)** de alcanzar tu meta de ${target_value:,.0f}.")
+            elif mc.prob_achieve_target_pct >= 60:
+                st.warning(f"⚠️ Tenés una probabilidad razonable ({mc.prob_achieve_target_pct:.0f}%), pero no es altísima. Considerá ajustar aportes, reducir la meta o asumir un poco más de riesgo.")
+            else:
+                st.error(f"❌ La probabilidad de alcanzar ${target_value:,.0f} es baja ({mc.prob_achieve_target_pct:.0f}%). Este plan probablemente necesite cambios (más ahorro, más horizonte, o menos retiro).")
+
+        if annual_withdrawal > 0 and inflation_rate > 0:
+            st.info("ℹ️ Recordá que el retiro que estás simulando **crece cada año** con la inflación que elegiste. Esto hace que el escenario pesimista sea más exigente.")
+
     st.divider()
+
+    # ---- Phase 0: Narrative AI explanation (quick win) ----
+    try:
+        ai_cfg = _get_ai_config("plan_narrative")
+    except Exception:
+        ai_cfg = None
+
+    if ai_cfg and ai_cfg.enabled and ai_cfg.api_key:
+        if st.button("🧠 Explicame este plan en lenguaje humano (IA)", type="secondary", key="narrative_btn"):
+            with st.spinner("Generando explicación conservadora con IA..."):
+                from analysis.ai_analyzer import AIAnalyzer
+
+                # Build rich context from current optimizer + MC result
+                opt_for_narrative = opt_result or st.session_state.get("optimizer_prev_result")
+                tickers = [a.symbol for a in opt_for_narrative.tickers] if opt_for_narrative and opt_for_narrative.tickers else symbols
+                weights = [a.weight_pct/100 for a in opt_for_narrative.tickers] if opt_for_narrative and opt_for_narrative.tickers else ([1.0/len(symbols)]*len(symbols) if symbols else [])
+
+                narrative_context = {
+                    "profile_name": getattr(opt_for_narrative, "profile_name", "Moderado"),
+                    "tickers": tickers,
+                    "weights": weights,
+                    "expected_return": getattr(opt_for_narrative, "expected_return_pct", 0.0) if opt_for_narrative else 0.0,
+                    "volatility": getattr(opt_for_narrative, "volatility_pct", 0.0) if opt_for_narrative else 0.0,
+                    "sharpe": getattr(opt_for_narrative, "sharpe_ratio", 0.0) if opt_for_narrative else 0.0,
+                    "dividend_yield": getattr(opt_for_narrative, "dividend_yield_pct", 0.0) if opt_for_narrative else 0.0,
+                    "horizon_years": horizon_years,
+                    "initial_value": float(initial_value),
+                    "annual_withdrawal": float(annual_withdrawal),
+                    "inflation_rate": float(inflation_rate),
+                    "median_terminal": mc.median_terminal,
+                    "p10_terminal": mc.p10_terminal,
+                    "p90_terminal": mc.p90_terminal,
+                    "prob_ruin": mc.prob_ruin_pct,
+                    "prob_target": mc.prob_achieve_target_pct,
+                    "target_value": float(target_value),
+                }
+
+                analyzer = AIAnalyzer(ai_cfg)
+                narrative = analyzer.generate_long_term_narrative(narrative_context)
+                st.session_state["last_plan_narrative"] = narrative
+
+        if "last_plan_narrative" in st.session_state:
+            with st.expander("📝 Explicación del plan (generada por IA)", expanded=True):
+                st.markdown(st.session_state["last_plan_narrative"])
+                st.caption("⚠️ Esta explicación es generada por IA y tiene fines educativos. Siempre contrastá con un asesor financiero certificado.")
+    else:
+        st.caption("💡 Habilita IA en ⚙️ Settings (con API key) para obtener una explicación en lenguaje humano de tu plan de largo plazo.")
 
     # ---- Fan chart ----
     if mc.fan_paths:
@@ -302,10 +491,10 @@ with tab_mc:
             if inflation_rate > 0 else ""
         )
         st.caption(
-            "Las bandas muestran el rango de resultados posibles. "
-            "Línea azul = mediana; roja punteada = peor 10%; verde = mejor 10%."
+            "Las bandas muestran el rango de resultados posibles según la historia real de los mercados. "
+            "Azul = caso más probable | Rojo = mal caso (1 de cada 10) | Verde = muy buen caso (1 de cada 10). "
             + _real_note
-            + " ⚠️ Ajuste conservador: +10% volatilidad, −20% retorno esperado."
+            + " Los números usan un ajuste conservador (+10% volatilidad y −20% retorno esperado respecto al pasado)."
         )
 
     # ---- Histogram of terminal values ----
@@ -397,8 +586,10 @@ No asume distribución normal — captura fat tails y autocorrelación de corto 
 **Por qué ser conservador:** Los retornos de 2010-2024 fueron excepcionales.
 La prima de riesgo histórica del S&P 500 (~7% real) probablemente no se repita a la misma tasa.
 
-**Sobre la inflación:** El ajuste de inflación ({inflation_rate:.1f}%) es puramente de visualización —
-muestra qué poder adquisitivo tendrás en dólares de hoy. No afecta la simulación de retornos.
+**Sobre la inflación:** El ajuste de inflación ({inflation_rate:.1f}%) ahora tiene dos efectos:
+1. Visual: muestra el poder adquisitivo real (línea naranja punteada).
+2. En retiros: si tenés un retiro anual > 0, el monto retirado crece cada año a esa tasa (simula retiros ajustados por inflación — fundamental para planes de 15-30 años).
+Esto es un cambio de Fase 0 para modelado más realista de largo plazo.
 
 **Limitaciones:** Esta simulación no predice el futuro. Los retornos pasados no garantizan resultados futuros.
 No considera impuestos, cambios en la asignación de activos, ni eventos imprevisibles.
@@ -634,6 +825,7 @@ with tab_compare:
                 initial_value=float(initial_value),
                 annual_withdrawal=float(annual_withdrawal),
                 target_value=float(target_value),
+                withdrawal_growth_rate=float(inflation_rate) / 100.0,
                 vol_scale=_scales["vol_scale"],
                 return_scale=_scales["return_scale"],
             )

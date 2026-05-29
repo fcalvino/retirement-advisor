@@ -45,6 +45,52 @@ class AIAnalyzer:
         from analysis.prompts import equity_decision_prompt
         return equity_decision_prompt(fund, tech)
 
+    # ------------------------------------------------------------------ #
+    #  Phase 0: Long-term plan narrative (portfolio-level explanation)    #
+    # ------------------------------------------------------------------ #
+
+    def generate_long_term_narrative(self, context: dict) -> str:
+        """
+        Generate a human-readable, conservative narrative for a long-term
+        investment plan using the current optimizer + Monte Carlo results.
+        `context` must contain the keys expected by long_term_plan_narrative_prompt.
+        """
+        from analysis.prompts import long_term_plan_narrative_prompt
+
+        prompt = long_term_plan_narrative_prompt(
+            profile_name=context.get("profile_name", "Moderado"),
+            tickers=context.get("tickers", []),
+            weights=context.get("weights", []),
+            expected_return=context.get("expected_return", 0.0),
+            volatility=context.get("volatility", 0.0),
+            sharpe=context.get("sharpe", 0.0),
+            dividend_yield=context.get("dividend_yield", 0.0),
+            horizon_years=context.get("horizon_years", 15),
+            initial_value=context.get("initial_value", 100_000),
+            annual_withdrawal=context.get("annual_withdrawal", 0),
+            inflation_rate=context.get("inflation_rate", 3.0),
+            median_terminal=context.get("median_terminal", 0),
+            p10_terminal=context.get("p10_terminal", 0),
+            p90_terminal=context.get("p90_terminal", 0),
+            prob_ruin=context.get("prob_ruin", 0),
+            prob_target=context.get("prob_target", 0),
+            target_value=context.get("target_value", 0),
+        )
+
+        try:
+            raw = self._call_api(prompt)
+            # Clean up common LLM artifacts
+            text = raw.strip()
+            if text.startswith("```"):
+                text = text.split("```")[1].strip()
+            return text
+        except Exception as exc:
+            logger.warning(f"Long-term narrative generation failed: {exc}")
+            return (
+                "No se pudo generar la explicación con IA en este momento. "
+                "Revisá que AI esté habilitado en Settings con una API key válida."
+            )
+
     def _call_api(self, prompt: str) -> str:
         if self.config.provider == "claude":
             return self._call_claude(prompt)

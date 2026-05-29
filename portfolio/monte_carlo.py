@@ -118,6 +118,7 @@ class MonteCarloSimulator:
         initial_value: float,
         annual_withdrawal: float = 0.0,
         target_value: float = 0.0,
+        withdrawal_growth_rate: float = 0.0,   # e.g. 0.03 for 3% annual increase (inflation)
     ) -> MonteCarloResult:
         """
         Run the full Monte Carlo simulation.
@@ -163,7 +164,10 @@ class MonteCarloSimulator:
 
         # 4 — Apply annual withdrawals (reduce portfolio value at year end)
         if annual_withdrawal > 0:
-            paths = self._apply_withdrawals(paths, initial_value, annual_withdrawal, n_horizon_weeks)
+            paths = self._apply_withdrawals(
+                paths, initial_value, annual_withdrawal, n_horizon_weeks,
+                withdrawal_growth_rate=withdrawal_growth_rate
+            )
 
         # Scale from relative (start=1.0) to dollar values
         paths_usd = paths * initial_value
@@ -338,9 +342,12 @@ class MonteCarloSimulator:
         initial_value: float,
         annual_withdrawal: float,
         n_horizon_weeks: int,
+        withdrawal_growth_rate: float = 0.0,
     ) -> np.ndarray:
         """
         Apply annual withdrawals (as fraction of initial_value) at every 52-week mark.
+        If withdrawal_growth_rate > 0, the withdrawal amount grows each year
+        (e.g. 0.03 = 3% inflation adjustment — common for long-term retirement planning).
         Portfolio cannot go below 0.
         """
         withdrawal_fraction = annual_withdrawal / initial_value
@@ -348,7 +355,9 @@ class MonteCarloSimulator:
 
         for yr in range(1, horizon_years + 1):
             week_idx = min(yr * 52, paths.shape[1] - 1)
-            paths[:, week_idx:] -= withdrawal_fraction
+            # Grow the withdrawal fraction over time if requested
+            grown_fraction = withdrawal_fraction * ((1 + withdrawal_growth_rate) ** (yr - 1))
+            paths[:, week_idx:] -= grown_fraction
             paths = np.maximum(paths, 0)
 
         return paths

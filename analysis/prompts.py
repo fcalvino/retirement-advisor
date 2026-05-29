@@ -459,3 +459,87 @@ Respondé ÚNICAMENTE con JSON válido:
   "recommended_max_allocation_conservative": 3,
   "reasoning": "Tesis: ... Técnico: ... Riesgo retiro: ... Asignación: ..."
 }}"""
+
+# ---------------------------------------------------------------------------
+# 5. Long-term Plan Narrative (Phase 0 quick win)
+# ---------------------------------------------------------------------------
+
+
+def long_term_plan_narrative_prompt(
+    profile_name: str,
+    tickers: list[str],
+    weights: list[float],
+    expected_return: float,
+    volatility: float,
+    sharpe: float,
+    dividend_yield: float,
+    horizon_years: int,
+    initial_value: float,
+    annual_withdrawal: float,
+    inflation_rate: float,
+    median_terminal: float,
+    p10_terminal: float,
+    p90_terminal: float,
+    prob_ruin: float,
+    prob_target: float,
+    target_value: float,
+) -> str:
+    """
+    Generate a human, conservative narrative explaining the current long-term plan
+    to a serious investor with a 10-30 year horizon.
+    Returns a ready-to-send prompt string.
+    """
+    # Build a compact portfolio summary
+    holdings = []
+    for t, w in zip(tickers[:12], weights[:12]):  # cap for prompt length
+        holdings.append(f"{t} {w*100:.1f}%")
+    holdings_str = ", ".join(holdings)
+    if len(tickers) > 12:
+        holdings_str += f" + {len(tickers)-12} más"
+
+    withdrawal_str = f"${annual_withdrawal:,.0f}/año" if annual_withdrawal > 0 else "sin retiros (acumulación pura)"
+    target_str = f"Meta ${target_value:,.0f}" if target_value > 0 else "sin meta numérica específica"
+
+    return f"""Eres un analista de inversión senior extremadamente riguroso, objetivo y conservador, especializado en carteras de largo plazo (horizonte 10-30 años). Tu prioridad #1 es que el inversor **no se arruine** por secuencia de retornos adversa o sobre-confianza.
+
+**PORTAFOLIO ACTUAL (perfil {profile_name})**
+Activos: {holdings_str}
+Retorno esperado (proxy): {expected_return:.1f}% | Volatilidad: {volatility:.1f}% | Sharpe: {sharpe:.2f}
+Dividend Yield: {dividend_yield:.1f}%
+
+**PARÁMETROS DE LA SIMULACIÓN MONTE CARLO (block bootstrap 10 años historia real + ajustes conservadores)**
+Horizonte: {horizon_years} años
+Capital inicial: ${initial_value:,.0f}
+Retiro anual: {withdrawal_str} (crece a {inflation_rate:.1f}% anual)
+Inflación considerada: {inflation_rate:.1f}%
+{target_str}
+
+**RESULTADOS DE LA SIMULACIÓN (10 000 paths)**
+- Mediana final (P50): ${median_terminal:,.0f}
+- Escenario pesimista (P10): ${p10_terminal:,.0f}
+- Escenario optimista (P90): ${p90_terminal:,.0f}
+- Probabilidad de ruina (terminal <= 0): {prob_ruin:.1f}%
+- Probabilidad de alcanzar la meta: {prob_target:.1f}%
+
+---
+
+**TAREA:**
+Escribí una explicación clara, honesta y accionable en **español natural** (como si hablaras con un cliente inteligente de 45-60 años que quiere entender su plan de verdad).
+
+Estructura la respuesta exactamente así (usá viñetas y lenguaje directo):
+
+**Resumen del plan en una frase**  
+**Fortalezas de esta cartera para tu horizonte** (máx 3 bullets)  
+**Riesgos reales que deberías entender** (máx 3 bullets, sé brutalmente honesto)  
+**Qué significa el escenario pesimista (P10)**  
+**Recomendaciones concretas** (máx 3 acciones accionables)  
+**Una frase final de prudencia**
+
+Reglas:
+- Nunca digas "esto es genial" o "vas a estar tranquilo". Sé conservador.
+- Si el P10 es mucho más bajo que el inicial, decilo sin anestesia.
+- Si el retiro crece con inflación, mencioná que eso aumenta el riesgo de secuencia.
+- Mencioná el perfil de riesgo elegido y por qué importa.
+- Longitud total: 180-280 palabras máximo. Sé denso pero legible.
+
+Respondé SOLO con el texto en el formato pedido. Nada de JSON, nada de introducciones extra."""
