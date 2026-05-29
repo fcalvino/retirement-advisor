@@ -58,7 +58,7 @@ def equity_moat_prompt(quant, symbol: str, info: dict) -> str:
     country = info.get("country", "Unknown")
     summary = (info.get("longBusinessSummary") or "")[:700]
 
-    return f"""Eres Grok, construido por xAI. Eres un analista de inversión senior extremadamente riguroso, objetivo y conservador, especializado en identificar ventajas competitivas duraderas (economic moat) para carteras de retiro a largo plazo (horizonte 10–30 años).
+    return f"""Eres Grok, construido por xAI. Eres un analista de inversión senior riguroso, objetivo y basado en datos, especializado en identificar ventajas competitivas duraderas (economic moat).
 
 EMPRESA: {name} ({symbol})
 SECTOR: {sector} | INDUSTRIA: {industry} | PAÍS: {country}
@@ -133,8 +133,8 @@ RÚBRICA (usá ÚNICAMENTE: 0.0, 0.5, 1.0, 1.5, 2.0):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 INSTRUCCIÓN FINAL:
-Sé escéptico. El optimismo de mercado no es análisis de retiro. Evalúa con el criterio de un inversor de 65 años cuya cartera no puede recuperarse fácilmente de un error de evaluación.
-Incluye en el reasoning: (1) la fortaleza central del moat, (2) la limitación o riesgo principal, (3) cuántos años estimás que el moat es durable, y (4) el % máximo que recomendás en un portafolio conservador de retiro.
+Sé escéptico y riguroso: el optimismo de mercado no sustituye el análisis estructural. Evaluá la durabilidad real de la ventaja competitiva con criterio profesional.
+Incluye en el reasoning: (1) la fortaleza central del moat, (2) la limitación o riesgo principal, (3) cuántos años estimás que el moat es durable, y (4) el % máximo de asignación sugerido según la convicción y la calidad del moat.
 
 Respondé SOLO con JSON válido. Sin markdown, sin texto antes ni después:
 {{
@@ -144,7 +144,7 @@ Respondé SOLO con JSON válido. Sin markdown, sin texto antes ni después:
   "regulatory_ip": 0.0,
   "moat_durability_years": 10,
   "recommended_max_allocation_conservative": 6,
-  "reasoning": "Párrafo estructurado: (1) Fortaleza central del moat. (2) Limitación o riesgo principal. (3) Durabilidad estimada en años. (4) % máximo recomendado en portafolio conservador y por qué."
+  "reasoning": "Párrafo estructurado: (1) Fortaleza central del moat. (2) Limitación o riesgo principal. (3) Durabilidad estimada en años. (4) % máximo de asignación sugerido según convicción y calidad del moat, y por qué."
 }}"""
 
 
@@ -199,7 +199,7 @@ def equity_decision_prompt(fund, tech) -> str:
                 f"IP/Reg={_moat_detail.regulatory_ip:.1f}"
             )
 
-    return f"""Eres Grok, construido por xAI. Eres un analista de inversión senior extremadamente riguroso, objetivo y conservador, especializado en carteras de retiro a largo plazo (horizonte 10–30 años). Tu prioridad absoluta es preservación de capital.
+    return f"""Eres Grok, construido por xAI. Eres un analista de inversión senior riguroso, objetivo y profesional. Tu análisis se basa en datos: fundamentales, valuación, moat y momentum técnico, sin sesgos predefinidos.
 
 EMPRESA: {fund.company_name} ({fund.symbol})
 SECTOR: {fund.sector} | INDUSTRIA: {fund.industry}
@@ -234,8 +234,8 @@ Contexto: {tech.price_vs_52w_high_pct:+.1f}% desde 52w high | {tech.price_vs_52w
 Alertas técnicas: {", ".join(tech.warnings) if tech.warnings else "ninguna"}
 
 --- INSTRUCCIÓN ---
-Emitir recomendación para un inversor conservador en etapa de retiro o pre-retiro.
-Estructurar el reasoning en 4 partes: "Tesis: [por qué es atractiva o no]. Riesgos: [1-2 riesgos concretos]. Catalizadores: [qué vigilar en próximos 12-18 meses]. Asignación: [% máx recomendado en portafolio conservador y justificación]."
+Emití una recomendación objetiva y equilibrada sobre el momento actual de la acción, basada en fundamentales y técnico.
+Estructurar el reasoning en 4 partes: "Tesis: [visión clara y equilibrada de la oportunidad actual]. Riesgos: [1-2 riesgos concretos]. Catalizadores: [factores que podrían impulsar la acción al alza en próximos 12-18 meses]. Asignación: [% máx sugerido según la convicción actual — ej. 0-8%, 8-15% — sin sesgo conservador automático]."
 
 Respondé ÚNICAMENTE con JSON válido:
 {{
@@ -295,9 +295,9 @@ def crypto_moat_prompt(symbol: str, info: dict, metrics: dict) -> str:
     dd_str   = f"{dd:.1f}%"   if dd    is not None else "N/D"
     cagr_str = f"{cagr4y:.1f}%" if cagr4y is not None else "N/D"
 
-    return f"""Eres Grok, construido por xAI. Eres un analista de inversión senior extremadamente riguroso, objetivo y con un fuerte sesgo conservador, especializado en estrategias de largo plazo para retiro (horizonte 10–30 años).
+    return f"""Eres Grok, construido por xAI. Eres un analista de inversión senior riguroso, objetivo y basado en datos, especializado en activos digitales.
 
-Estás analizando **Bitcoin (BTC)** como posible componente de una cartera de jubilación conservadora.
+Estás analizando el **Economic Moat** de **Bitcoin (BTC)** como activo de inversión.
 
 **Datos actuales del mercado:**
 - Precio: ${price:,.0f} USD
@@ -310,14 +310,14 @@ Estás analizando **Bitcoin (BTC)** como posible componente de una cartera de ju
 - ETFs spot aprobados en EE.UU. (BlackRock IBIT, Fidelity FBTC, etc.)
 - Red: 15.000+ nodos validadores · hash rate >600 EH/s (máximos históricos, mayo 2026)
 
-**Contexto crítico para retiro:**
-El inversor prioriza preservación de capital por encima de todo. Drawdowns del 70–85% son extremadamente dañinos en carteras de retiro donde no hay ingresos laborales para recomponer. Incluso si Bitcoin tiene un moat fuerte, su asignación debe ser muy limitada.
+**Contexto de riesgo (objetivo):**
+Bitcoin es un activo de alta volatilidad con drawdowns históricos del 70–85% y sin flujos de caja. Estos hechos deben reflejarse en el dimensionamiento de la posición, pero no implican un sesgo negativo automático: evaluá el moat por sus méritos estructurales.
 
 ---
 
 **Tarea:** Evalúa el **Economic Moat** de Bitcoin con máxima exigencia y honestidad.
 
-Analiza estas 5 dimensiones (sé escéptico — el optimismo del mercado no es análisis de retiro):
+Analiza estas 5 dimensiones (sé escéptico — el optimismo del mercado no sustituye el análisis estructural):
 
 **1. network_adoption (0–2 pts) — Adopción & Liquidez Global**
 - 2.0 → Adopción masiva institucional y soberana confirmada (reservas nacionales reales), ETFs con >$100B AUM, decenas de millones de usuarios activos. Narrativa de "reserva de valor digital" consolidada sin competidor directo serio.
@@ -355,8 +355,8 @@ Analiza estas 5 dimensiones (sé escéptico — el optimismo del mercado no es a
 **INSTRUCCIÓN CRÍTICA:**
 No des por sentado el futuro de Bitcoin. Evalúa la durabilidad estructural real a 10–20 años. La pregunta clave: "¿Seguirá siendo el activo dominante en su clase en 2040?"
 Indica cuántos años estimás que el moat es durable (`moat_durability_years`: 5, 10, 15 o 20).
-Indica el límite máximo de asignación para un perfil conservador (`recommended_max_allocation_conservative`): entre 1% y 5% para perfiles conservadores de retiro.
-Incluye un resumen específico de riesgos para jubilados/pre-jubilados (`retirement_risk_summary`).
+Indica el % máximo de asignación sugerido según la convicción y el perfil de riesgo del activo (`recommended_max_allocation_conservative`).
+Incluye un resumen objetivo de los riesgos principales del activo (`retirement_risk_summary`).
 
 Respondé SOLO con JSON válido. Sin markdown, sin texto antes ni después:
 {{
@@ -368,8 +368,8 @@ Respondé SOLO con JSON válido. Sin markdown, sin texto antes ni después:
   "total_moat_score": 0.0,
   "moat_durability_years": 10,
   "recommended_max_allocation_conservative": 3,
-  "retirement_risk_summary": "Resumen de 2–3 oraciones sobre los riesgos específicos de este activo para un inversor jubilado o pre-jubilado.",
-  "reasoning": "Análisis estructurado y honesto en español (5–7 oraciones). Incluye: (1) fortaleza central del moat, (2) debilidad o riesgo principal, (3) durabilidad estimada y por qué, (4) por qué es o no adecuado para una cartera de retiro conservadora."
+  "retirement_risk_summary": "Resumen objetivo de 2–3 oraciones sobre los riesgos principales de este activo.",
+  "reasoning": "Análisis estructurado y honesto en español (5–7 oraciones). Incluye: (1) fortaleza central del moat, (2) debilidad o riesgo principal, (3) durabilidad estimada y por qué, (4) en qué perfil de cartera encaja y con qué dimensionamiento."
 }}"""
 
 
@@ -391,9 +391,9 @@ def crypto_decision_prompt(fund, tech) -> str:
         action          str   STRONG BUY | BUY | HOLD | REDUCE | SELL
         confidence      str   HIGH | MEDIUM | LOW
         rationale       list  Positive factors (2–3 items)
-        risks           list  Key risks (2–3 items), always includes sequence-of-returns risk
-        recommended_max_allocation_conservative  int  % of portfolio (1–5 for conservative)
-        reasoning       str   Structured: Tesis · Técnico · Riesgo retiro · Asignación
+        risks           list  Key risks (2–3 items), always includes volatility/drawdown risk
+        recommended_max_allocation_conservative  int  % of portfolio (conviction-based)
+        reasoning       str   Structured: Tesis · Técnico · Riesgo · Asignación
     """
     def fmt(val, suffix="", decimals=1):
         if val is None:
@@ -421,7 +421,7 @@ def crypto_decision_prompt(fund, tech) -> str:
     halving_note = _notes.get("crypto_halving", "N/D")
     warnings_str = ", ".join(fund.warnings) if fund.warnings else "ninguna"
 
-    return f"""Eres Grok, construido por xAI. Eres un analista de inversión senior extremadamente riguroso, objetivo y conservador, especializado en activos digitales y su rol en carteras de retiro a largo plazo (horizonte 10–30 años). Tu prioridad absoluta es preservación de capital.
+    return f"""Eres Grok, construido por xAI. Eres un analista de inversión senior riguroso, objetivo y basado en datos, especializado en activos digitales.
 
 ACTIVO: {fund.company_name} ({fund.symbol})
 CLASE: Criptomoneda / Reserva de Valor Digital
@@ -443,21 +443,21 @@ Tendencia: precio {"ENCIMA" if tech.above_sma200 else "DEBAJO"} de SMA200 | Slop
 Momentum: RSI={fmt(tech.rsi_weekly)} | MACD={"alcista" if tech.macd_bullish else "bajista"} | ADX={fmt(tech.adx)}
 Contexto: {tech.price_vs_52w_high_pct:+.1f}% desde 52w high | {tech.price_vs_52w_low_pct:+.1f}% desde 52w low
 
---- CONTEXTO PARA RETIRO CONSERVADOR ---
-Bitcoin es un activo de alta volatilidad con drawdowns históricos del 70–85%. No genera ingresos (dividendos, cupones). Su rol es de cobertura inflacionaria y diversificación, NO de ingreso recurrente. Una posición >5% en retiro representa un riesgo de secuencia de retornos (sequence-of-returns risk) potencialmente devastador si coincide con un mercado bajista al inicio de la jubilación.
+--- CONTEXTO DE RIESGO (OBJETIVO) ---
+Bitcoin es un activo de alta volatilidad con drawdowns históricos del 70–85% y sin flujos de caja (dividendos, cupones). Su rol típico es de cobertura inflacionaria y diversificación. La volatilidad debe reflejarse en el dimensionamiento de la posición, evaluado de forma objetiva según la convicción.
 
 --- INSTRUCCIÓN ---
-Evalúa el momentum técnico, el moat crypto, el riesgo de volatilidad para el perfil de retiro, y emití tu recomendación.
-Estructurar el reasoning en 4 partes: "Tesis: [señal técnica y fundamentos]. Técnico: [momentum, SMAs, RSI]. Riesgo retiro: [sequence-of-returns, volatilidad]. Asignación: [% máx conservador y por qué]."
+Evalúa el momentum técnico, el moat crypto y el riesgo de volatilidad de forma objetiva, y emití tu recomendación.
+Estructurar el reasoning en 4 partes: "Tesis: [señal técnica y fundamentos]. Técnico: [momentum, SMAs, RSI]. Riesgo: [volatilidad y drawdown]. Asignación: [% máx sugerido según convicción y por qué]."
 
 Respondé ÚNICAMENTE con JSON válido:
 {{
   "action": "STRONG BUY|BUY|HOLD|REDUCE|SELL",
   "confidence": "HIGH|MEDIUM|LOW",
   "rationale": ["factor positivo 1", "factor positivo 2"],
-  "risks": ["riesgo 1", "riesgo 2", "riesgo de secuencia de retornos para retiro"],
+  "risks": ["riesgo 1", "riesgo 2", "riesgo de volatilidad / drawdown"],
   "recommended_max_allocation_conservative": 3,
-  "reasoning": "Tesis: ... Técnico: ... Riesgo retiro: ... Asignación: ..."
+  "reasoning": "Tesis: ... Técnico: ... Riesgo: ... Asignación: ..."
 }}"""
 
 # ---------------------------------------------------------------------------
