@@ -311,26 +311,26 @@ with tab_mc:
             real_p90 = mc.p90_terminal / ((1 + inflation_rate / 100) ** horizon_years)
 
             st.markdown(f"**En poder de compra de hoy (después de {inflation_rate:.1f}% inflación anual):**")
-            st.markdown(f"- Caso más probable: tus **${initial_value:,.0f}** de hoy tendrían el poder de compra de **${real_median:,.0f}**")
-            st.markdown(f"- Escenario pesimista (1 de cada 10 casos): **${real_p10:,.0f}**")
-            st.markdown(f"- Escenario muy bueno (1 de cada 10 casos): **${real_p90:,.0f}**")
+            st.markdown(f"- Caso más probable: tus \\${initial_value:,.0f} de hoy tendrían el poder de compra de **\\${real_median:,.0f}**")
+            st.markdown(f"- Escenario pesimista (1 de cada 10 casos): **\\${real_p10:,.0f}**")
+            st.markdown(f"- Escenario muy bueno (1 de cada 10 casos): **\\${real_p90:,.0f}**")
         else:
             st.markdown("**Valores en dólares de hoy:**")
 
         st.markdown(f"""
 **Valores nominales (sin ajustar por inflación):**
-- Caso más probable: **${mc.median_terminal:,.0f}** ({mc.median_terminal/initial_value:.1f}x)
-- Escenario pesimista: **${mc.p10_terminal:,.0f}** o menos
-- Escenario optimista: **${mc.p90_terminal:,.0f}** o más
+- Caso más probable: **\\${mc.median_terminal:,.0f}** ({mc.median_terminal/initial_value:.1f}x)
+- Escenario pesimista: **\\${mc.p10_terminal:,.0f}** o menos
+- Escenario optimista: **\\${mc.p90_terminal:,.0f}** o más
 """)
 
         # Much more direct reality check
         st.markdown("**⚠️ Por qué estos números pueden engañarte (importante leer):**")
         if real_p10 is not None:
             st.markdown(f"""
-Aunque el escenario pesimista nominal (${mc.p10_terminal:,.0f}) parece "ganar", tené en cuenta:
+Aunque el escenario pesimista nominal (\\${mc.p10_terminal:,.0f}) parece "ganar", tené en cuenta:
 
-- En **poder de compra real** (después de inflación), en el peor 10% de los casos solo terminás con **${real_p10:,.0f}** de los dólares de hoy. Eso es un crecimiento real bastante modesto en {horizon_years} años.
+- En **poder de compra real** (después de inflación), en el peor 10% de los casos solo terminás con **\\${real_p10:,.0f}** de los dólares de hoy. Eso es un crecimiento real bastante modesto en {horizon_years} años.
 - El modelo ya está siendo conservador (le saca 20% al retorno esperado histórico). Aun así, el período que usamos como base fue bueno. El futuro puede ser peor.
 - Estos son solo valores **al final** de los {horizon_years} años. Durante el camino podés haber tenido caídas del 50% o más. Si en ese momento sacás plata o te asustás y vendés, el resultado final puede ser mucho peor que el P10 que ves acá.
 - Si en algún momento empezás a retirar plata (aunque sea poco), el riesgo de que el "caso malo" sea realmente malo sube mucho (riesgo de secuencia de retornos).
@@ -346,11 +346,11 @@ En resumen: el modelo no está diciendo "siempre vas a ganar mucho". Está dicie
 
         if target_value > 0:
             if mc.prob_achieve_target_pct >= 85:
-                st.success(f"✅ Con este plan tenés **muy buena probabilidad ({mc.prob_achieve_target_pct:.0f}%)** de alcanzar tu meta de ${target_value:,.0f}.")
+                st.success(f"✅ Con este plan tenés **muy buena probabilidad ({mc.prob_achieve_target_pct:.0f}%)** de alcanzar tu meta de \\${target_value:,.0f}.")
             elif mc.prob_achieve_target_pct >= 60:
                 st.warning(f"⚠️ Tenés una probabilidad razonable ({mc.prob_achieve_target_pct:.0f}%), pero no es altísima. Considerá ajustar aportes, reducir la meta o asumir un poco más de riesgo.")
             else:
-                st.error(f"❌ La probabilidad de alcanzar ${target_value:,.0f} es baja ({mc.prob_achieve_target_pct:.0f}%). Este plan probablemente necesite cambios (más ahorro, más horizonte, o menos retiro).")
+                st.error(f"❌ La probabilidad de alcanzar \\${target_value:,.0f} es baja ({mc.prob_achieve_target_pct:.0f}%). Este plan probablemente necesite cambios (más ahorro, más horizonte, o menos retiro).")
 
         if annual_withdrawal > 0 and inflation_rate > 0:
             st.info("ℹ️ Recordá que el retiro que estás simulando **crece cada año** con la inflación que elegiste. Esto hace que el escenario pesimista sea más exigente.")
