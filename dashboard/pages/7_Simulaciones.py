@@ -15,7 +15,11 @@ import streamlit as st
 
 from config import MONTE_CARLO, OPTIMIZER_PROFILES, SECTOR_MAP
 from dashboard.shared import cached_monte_carlo, cached_stress_test, cached_goal_simulation, _get_ai_config
-from portfolio.goals import Goal, PRIORITY_LABELS, PRIORITY_COLORS, PRIORITY_EMOJIS, required_monthly_savings
+from portfolio.goals import (
+    Goal, PRIORITY_LABELS, PRIORITY_COLORS, PRIORITY_EMOJIS,
+    GOAL_TYPE_ICONS, GOAL_TYPE_LABELS, GOAL_TYPE_PLACEHOLDERS,
+    required_monthly_savings,
+)
 
 # ------------------------------------------------------------------ #
 #  Page                                                                #
@@ -991,21 +995,34 @@ with tab_goals:
     # ---------------------------------------------------------------- #
 
     with st.expander("➕ Agregar nueva meta", expanded=len(st.session_state["goals_list"]) == 0):
-        gc1, gc2 = st.columns(2)
-        new_name = gc1.text_input("Nombre de la meta", placeholder="ej: Casa en 2029", key="new_goal_name")
-        new_priority = gc2.selectbox(
+        # Row 1: Tipo de meta (first) + Nombre + Prioridad
+        gr1, gr2, gr3 = st.columns([2, 3, 2])
+        new_goal_type = gr1.selectbox(
+            "Tipo de meta",
+            options=list(GOAL_TYPE_ICONS.keys()),
+            format_func=lambda k: f"{GOAL_TYPE_ICONS[k]} {GOAL_TYPE_LABELS[k]}",
+            key="new_goal_type",
+        )
+        _placeholder = GOAL_TYPE_PLACEHOLDERS.get(new_goal_type, "ej: Meta personalizada")
+        new_name = gr2.text_input(
+            "Nombre de la meta",
+            placeholder=_placeholder,
+            key="new_goal_name",
+        )
+        new_priority = gr3.selectbox(
             "Prioridad",
             options=[1, 2, 3],
             format_func=lambda p: f"{PRIORITY_EMOJIS[p]} {PRIORITY_LABELS[p]}",
             key="new_goal_priority",
         )
 
+        # Row 2: Monto + Horizonte + Inflación
         gc3, gc4, gc5 = st.columns(3)
         new_target = gc3.number_input(
             "Meta (USD de hoy)",
             min_value=1_000, max_value=10_000_000, value=300_000, step=10_000,
             format="%d",
-            help="Cuánto necesitás en dólares de HOY. Se ajusta por inflación automáticamente.",
+            help="Cuánto necesitás en dólares de HOY. Se ajusta automáticamente por inflación.",
             key="new_goal_target",
         )
         new_horizon = gc4.number_input(
@@ -1019,54 +1036,60 @@ with tab_goals:
             key="new_goal_inflation",
         )
 
-        gc6, gc7, gc8 = st.columns(3)
-        new_contribution = gc6.number_input(
-            "Aporte anual hacia esta meta (USD)",
-            min_value=0, max_value=500_000, value=0, step=1_000,
-            format="%d",
-            help="Cuánto ahorrás por año específicamente para esta meta. 0 = solo crece el capital inicial.",
-            key="new_goal_contribution",
-        )
-        new_allocated = gc7.number_input(
-            "Capital asignado (USD, 0 = auto)",
-            min_value=0, max_value=10_000_000, value=0, step=5_000,
-            format="%d",
-            help="Capital inicial para esta meta. 0 = se asigna automáticamente proporcional a prioridad.",
-            key="new_goal_allocated",
-        )
-        new_notes = gc8.text_input(
-            "Notas (opcional)",
-            placeholder="ej: Para dar el down payment de una casa",
-            key="new_goal_notes",
-        )
+        # Row 3: Avanzado (expandible para no abrumar al usuario)
+        with st.expander("⚙️ Configuración avanzada (aportes, capital asignado, notas)"):
+            gc6, gc7, gc8 = st.columns(3)
+            new_contribution = gc6.number_input(
+                "Aporte anual hacia esta meta (USD)",
+                min_value=0, max_value=500_000, value=0, step=1_000,
+                format="%d",
+                help="Cuánto ahorrás por año específicamente para esta meta. 0 = solo crece el capital inicial.",
+                key="new_goal_contribution",
+            )
+            new_allocated = gc7.number_input(
+                "Capital asignado (USD, 0 = auto)",
+                min_value=0, max_value=10_000_000, value=0, step=5_000,
+                format="%d",
+                help="Capital inicial para esta meta. 0 = se asigna automáticamente proporcional a prioridad.",
+                key="new_goal_allocated",
+            )
+            new_notes = gc8.text_input(
+                "Notas (opcional)",
+                placeholder="ej: Para dar el down payment",
+                key="new_goal_notes",
+            )
 
-        # Preview: show inflation-adjusted target
+        # Live preview with icon
+        _icon = GOAL_TYPE_ICONS.get(new_goal_type, "💼")
         if new_target > 0 and new_horizon > 0:
             nominal_preview = new_target * (1 + new_inflation / 100) ** new_horizon
-            st.caption(
-                f"📊 Meta nominal (ajustada por {new_inflation:.1f}% inflación × {new_horizon} años): "
-                f"**${nominal_preview:,.0f}**"
+            _display_name = new_name.strip() or _placeholder
+            st.info(
+                f"{_icon} **{_display_name}** — "
+                f"${new_target:,.0f} hoy → **${nominal_preview:,.0f} nominal** "
+                f"en {new_horizon} año{'s' if new_horizon != 1 else ''} "
+                f"({new_inflation:.1f}% inf./año)",
+                icon="📊",
             )
 
         if st.button("✅ Agregar meta al plan", type="primary", key="add_goal_btn"):
-            if not new_name.strip():
-                st.error("Ingresá un nombre para la meta.")
-            else:
-                new_goal = {
-                    "name": new_name.strip(),
-                    "target_amount_today": float(new_target),
-                    "horizon_years": int(new_horizon),
-                    "priority": int(new_priority),
-                    "expected_inflation": float(new_inflation),
-                    "annual_contribution": float(new_contribution),
-                    "allocated_capital": float(new_allocated),
-                    "notes": new_notes.strip(),
-                }
-                st.session_state["goals_list"].append(new_goal)
-                st.success(f"✅ Meta **{new_name}** agregada al plan.")
-                st.rerun()
+            _final_name = new_name.strip() or _placeholder
+            new_goal = {
+                "name": _final_name,
+                "goal_type": new_goal_type,
+                "target_amount_today": float(new_target),
+                "horizon_years": int(new_horizon),
+                "priority": int(new_priority),
+                "expected_inflation": float(new_inflation),
+                "annual_contribution": float(new_contribution),
+                "allocated_capital": float(new_allocated),
+                "notes": new_notes.strip(),
+            }
+            st.session_state["goals_list"].append(new_goal)
+            st.success(f"✅ Meta **{_icon} {_final_name}** agregada al plan.")
+            st.rerun()
 
-    # ---- Display current goals ----
+    # ---- Display current goals with reorder buttons ----
     goals_list = st.session_state["goals_list"]
 
     if not goals_list:
@@ -1082,26 +1105,40 @@ with tab_goals:
         st.markdown(f"**{len(goals_list)} meta(s) definida(s):**")
 
         for i, g in enumerate(goals_list):
-            emoji = PRIORITY_EMOJIS.get(g["priority"], "🟡")
-            label = PRIORITY_LABELS.get(g["priority"], "Media")
+            g_icon  = GOAL_TYPE_ICONS.get(g.get("goal_type", "otro"), "💼")
+            p_emoji = PRIORITY_EMOJIS.get(g["priority"], "🟡")
+            p_label = PRIORITY_LABELS.get(g["priority"], "Media")
             nominal = g["target_amount_today"] * (1 + g["expected_inflation"] / 100) ** g["horizon_years"]
-            col_info, col_del = st.columns([10, 1])
+            col_info, col_up, col_dn, col_del = st.columns([10, 1, 1, 1])
             with col_info:
                 st.markdown(
-                    f"**{i+1}. {g['name']}** &nbsp; {emoji} {label} &nbsp;|&nbsp; "
-                    f"${g['target_amount_today']:,.0f} hoy → **${nominal:,.0f} nominal** &nbsp;|&nbsp; "
-                    f"Horizonte: {g['horizon_years']} años &nbsp;|&nbsp; "
-                    f"Aporte anual: ${g['annual_contribution']:,.0f}"
-                    + (f" &nbsp;|&nbsp; _{g['notes']}_" if g['notes'] else "")
+                    f"**{i+1}. {g_icon} {g['name']}** &nbsp; {p_emoji} {p_label} &nbsp;|&nbsp; "
+                    f"${g['target_amount_today']:,.0f} → **${nominal:,.0f}** &nbsp;|&nbsp; "
+                    f"{g['horizon_years']}a &nbsp;|&nbsp; aporte ${g['annual_contribution']:,.0f}/año"
+                    + (f" &nbsp;·&nbsp; _{g['notes']}_" if g.get("notes") else "")
                 )
-            with col_del:
-                if st.button("🗑️", key=f"del_goal_{i}", help=f"Eliminar '{g['name']}'"):
-                    st.session_state["goals_list"].pop(i)
+            if i > 0:
+                if col_up.button("⬆️", key=f"up_{i}", help="Subir prioridad"):
+                    goals_list[i - 1], goals_list[i] = goals_list[i], goals_list[i - 1]
                     st.rerun()
+            if i < len(goals_list) - 1:
+                if col_dn.button("⬇️", key=f"dn_{i}", help="Bajar prioridad"):
+                    goals_list[i], goals_list[i + 1] = goals_list[i + 1], goals_list[i]
+                    st.rerun()
+            if col_del.button("🗑️", key=f"del_goal_{i}", help=f"Eliminar '{g['name']}'"):
+                st.session_state["goals_list"].pop(i)
+                st.rerun()
 
-        if st.button("🗑️ Limpiar todas las metas", key="clear_all_goals"):
+        _col_clear, _col_opt = st.columns([1, 2])
+        if _col_clear.button("🗑️ Limpiar todas las metas", key="clear_all_goals"):
             st.session_state["goals_list"] = []
             st.rerun()
+        _col_opt.button(
+            "🔬 Optimizar para mis metas",
+            key="optimize_for_goals_placeholder",
+            disabled=True,
+            help="Próximamente en Fase 2 — Optimización multi-metas: ajusta los pesos del portafolio considerando el horizonte y capital de cada meta simultáneamente.",
+        )
 
     # ---------------------------------------------------------------- #
     #  Simulation controls                                               #
@@ -1210,35 +1247,59 @@ with tab_goals:
             # ---------------------------------------------------------------- #
             st.subheader("🎯 Resultados por meta")
 
+            def _sorr_risk_score(sorr_pct: float, dd_pct: float) -> tuple:
+                """Return (badge_label, hex_color) for SORR risk level."""
+                if sorr_pct < 25 and dd_pct < 30:
+                    return "🟢 Bajo", "#28A745"
+                elif sorr_pct < 50 or dd_pct < 45:
+                    return "🟡 Medio", "#FFC107"
+                return "🔴 Alto", "#DC3545"
+
             for gr in plan_result.goal_results:
                 goal = gr.goal
                 mc = gr.mc_result
                 p_color = goal.priority_color
                 p_emoji = goal.priority_emoji
                 p_label = goal.priority_label
+                g_icon  = goal.icon
+
+                # SORR Risk Score
+                sorr_badge, sorr_color = _sorr_risk_score(
+                    mc.sorr_early_drawdown_pct, mc.median_max_drawdown_pct
+                )
 
                 with st.container(border=True):
-                    h1, h2 = st.columns([3, 1])
+                    # Header: icon + name + priority badge + horizon
+                    h1, h2 = st.columns([4, 1])
                     h1.markdown(
-                        f"### {p_emoji} {goal.name} "
-                        f"<span style='color:{p_color};font-size:0.8em;'>({p_label} prioridad)</span>",
+                        f"### {g_icon} {goal.name} &nbsp;"
+                        f"<span style='background:{p_color}22;border:1px solid {p_color};color:{p_color};"
+                        f"padding:2px 10px;border-radius:12px;font-size:0.75em;font-weight:700;'>"
+                        f"{p_emoji} {p_label}</span>",
                         unsafe_allow_html=True,
                     )
-                    h2.markdown(f"**Horizonte:** {goal.horizon_years} años")
+                    h2.markdown(f"**{goal.horizon_years} años** · {goal.type_label}")
 
+                    # KPI row
                     m1, m2, m3, m4, m5 = st.columns(5)
                     m1.metric("Capital asignado", f"${gr.allocated_capital:,.0f}")
-                    m2.metric("Meta nominal", f"${gr.target_nominal:,.0f}",
-                              delta=f"${goal.target_amount_today:,.0f} hoy + {goal.expected_inflation:.1f}% inf.",
-                              delta_color="off")
+                    m2.metric(
+                        "Meta nominal",
+                        f"${gr.target_nominal:,.0f}",
+                        delta=f"${goal.target_amount_today:,.0f} hoy + {goal.expected_inflation:.1f}% inf.",
+                        delta_color="off",
+                    )
                     m3.metric(
                         "Prob. éxito",
                         f"{gr.prob_success_pct:.1f}%",
                         delta=gr.feasibility_label,
                         delta_color="off",
                     )
-                    m4.metric("Mediana proyectada", f"${gr.median_terminal:,.0f}",
-                              delta=f"CAGR {mc.median_cagr_pct:.1f}%")
+                    m4.metric(
+                        "Mediana proyectada",
+                        f"${gr.median_terminal:,.0f}",
+                        delta=f"CAGR {mc.median_cagr_pct:.1f}%",
+                    )
                     m5.metric(
                         "Pesimista (P10)",
                         f"${mc.p10_terminal:,.0f}",
@@ -1246,37 +1307,76 @@ with tab_goals:
                         delta_color="inverse",
                     )
 
-                    # SORR + drawdown row
-                    ds1, ds2, ds3, ds4 = st.columns(4)
-                    ds1.metric(
-                        "Drawdown máx. mediano",
-                        f"{mc.median_max_drawdown_pct:.1f}%",
-                        help="Caída pico-a-valle mediana durante el horizonte. Cuánto puede bajar antes de recuperar.",
-                        delta_color="inverse",
-                    )
-                    ds2.metric(
-                        "Riesgo SORR (primeros 5a)",
-                        f"{mc.sorr_early_drawdown_pct:.1f}%",
-                        help="% de simulaciones con caída >30% en los primeros 5 años. Alto riesgo de secuencia.",
-                        delta_color="inverse",
-                    )
-                    ds3.metric(
-                        "Paths con caída ≥50%",
-                        f"{mc.pct_paths_severe_drawdown:.1f}%",
-                        help="% de simulaciones que en algún momento caen 50% o más.",
-                        delta_color="inverse",
-                    )
-                    ds4.metric(
-                        "Mínimo P10 intra-horizonte",
-                        f"${mc.p10_intra_min:,.0f}",
-                        help="En el peor 10% de simulaciones, el portafolio llega a este mínimo durante el camino.",
-                    )
+                    # Progreso estimado (si hay valor del portfolio actual en sesión)
+                    _port_val = st.session_state.get("portfolio_current_value", 0.0)
+                    if _port_val > 0 and gr.target_nominal > 0:
+                        _pct_prog = min(_port_val / gr.target_nominal * 100, 100)
+                        st.progress(
+                            _pct_prog / 100,
+                            text=f"📈 Progreso actual del portfolio: **{_pct_prog:.1f}%** hacia la meta nominal (${_port_val:,.0f} / ${gr.target_nominal:,.0f})",
+                        )
 
-                    # Mini fan chart for this goal
+                    st.divider()
+
+                    # SORR section header with badge
+                    _sorr_col_badge, _sorr_col_title = st.columns([1, 5])
+                    _sorr_col_badge.markdown(
+                        f"<div style='background:{sorr_color}22;border:2px solid {sorr_color};"
+                        f"border-radius:10px;padding:8px;text-align:center;"
+                        f"font-weight:700;font-size:1.1em;color:{sorr_color};'>"
+                        f"SORR<br>{sorr_badge}</div>",
+                        unsafe_allow_html=True,
+                        help="Sequence of Returns Risk: riesgo de que una mala secuencia de retornos al inicio del horizonte destruya el plan, incluso si el CAGR promedio es positivo. "
+                             "🟢 Bajo (<25% SORR, <30% drawdown máx.) · 🟡 Medio · 🔴 Alto (>50% SORR o >45% drawdown).",
+                    )
+                    with _sorr_col_title:
+                        ds1, ds2, ds3, ds4 = st.columns(4)
+                        ds1.metric(
+                            "Drawdown máx. mediano",
+                            f"{mc.median_max_drawdown_pct:.1f}%",
+                            delta=f"típ. en año {mc.median_year_of_max_dd:.1f}",
+                            delta_color="off",
+                            help="Caída pico-a-valle mediana durante todo el horizonte. "
+                                 "El 'delta' indica en qué año ocurre típicamente el peor drawdown.",
+                        )
+                        ds2.metric(
+                            "Riesgo SORR (5a)",
+                            f"{mc.sorr_early_drawdown_pct:.1f}%",
+                            help="% de simulaciones con caída >30% en los **primeros 5 años**. "
+                                 "Una secuencia negativa temprana puede ser devastadora si coincide con retiros.",
+                            delta_color="inverse",
+                        )
+                        ds3.metric(
+                            "Paths caída ≥50%",
+                            f"{mc.pct_paths_severe_drawdown:.1f}%",
+                            help="% de simulaciones que en algún momento caen 50% o más desde su pico. "
+                                 "Mide la cola extrema del riesgo.",
+                            delta_color="inverse",
+                        )
+                        ds4.metric(
+                            "Mínimo P10 intra-horizonte",
+                            f"${mc.p10_intra_min:,.0f}",
+                            help="En el peor 10% de simulaciones, el portafolio llega a este valor mínimo en algún momento del horizonte.",
+                        )
+
+                    # Mini fan chart with P5-P10 highlight + vertical line of max drawdown year
                     if mc.fan_paths and len(mc.years) > 1:
                         _yrs = mc.years
                         fig_g = go.Figure()
 
+                        # Worst-10% band: P5–P10 (más opaco, rojo)
+                        if 5 in mc.fan_paths[_yrs[0]]:
+                            fig_g.add_trace(go.Scatter(
+                                x=_yrs + _yrs[::-1],
+                                y=[mc.fan_paths[y][10] for y in _yrs] + [mc.fan_paths[y][5] for y in _yrs[::-1]],
+                                fill="toself",
+                                fillcolor="rgba(220,53,69,0.25)",
+                                line=dict(color="rgba(0,0,0,0)"),
+                                hoverinfo="skip",
+                                name="Peor 10% (P5–P10)",
+                            ))
+
+                        # Main P25-P75 band
                         fig_g.add_trace(go.Scatter(
                             x=_yrs + _yrs[::-1],
                             y=[mc.fan_paths[y][75] for y in _yrs] + [mc.fan_paths[y][25] for y in _yrs[::-1]],
@@ -1291,7 +1391,7 @@ with tab_goals:
                             y=[mc.fan_paths[y][50] for y in _yrs],
                             mode="lines",
                             line=dict(color="#17A2B8", width=2),
-                            name="Mediana",
+                            name="Mediana (P50)",
                         ))
                         fig_g.add_trace(go.Scatter(
                             x=_yrs,
@@ -1306,13 +1406,22 @@ with tab_goals:
                             annotation_text=f"Meta ${gr.target_nominal:,.0f}",
                             annotation_position="right",
                         )
+                        # Vertical line at median year of max drawdown
+                        if 0 < mc.median_year_of_max_dd < goal.horizon_years:
+                            fig_g.add_vline(
+                                x=mc.median_year_of_max_dd,
+                                line_dash="dot", line_color="rgba(220,53,69,0.6)", line_width=1.5,
+                                annotation_text=f"Peor año típico: {mc.median_year_of_max_dd:.1f}",
+                                annotation_position="top left",
+                                annotation_font_size=10,
+                            )
                         fig_g.update_layout(
-                            title=f"Proyección: {goal.name}",
+                            title=f"{g_icon} {goal.name} — Proyección Monte Carlo",
                             xaxis_title="Años",
                             yaxis_title="USD",
                             yaxis_tickformat="$,.0f",
-                            height=300,
-                            margin=dict(l=0, r=60, t=40, b=30),
+                            height=320,
+                            margin=dict(l=0, r=80, t=45, b=30),
                             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
                             hovermode="x unified",
                         )
@@ -1328,7 +1437,7 @@ with tab_goals:
                         )
                         if monthly_needed > 0:
                             st.info(
-                                f"💡 Para mejorar la probabilidad de éxito de **{goal.name}**, "
+                                f"💡 Para mejorar la probabilidad de éxito de **{g_icon} {goal.name}**, "
                                 f"necesitarías ahorrar aprox. **${monthly_needed:,.0f}/mes** adicionales "
                                 f"(estimación con CAGR mediana {mc.median_cagr_pct:.1f}%)."
                             )
@@ -1347,10 +1456,11 @@ with tab_goals:
                     else "#FFC107" if prob >= 55
                     else "#DC3545"
                 )
+                _tl_name = f"{gr.goal.icon} {gr.goal.name}"
                 fig_timeline.add_trace(go.Bar(
-                    x=[gr.goal.name],
+                    x=[_tl_name],
                     y=[gr.target_nominal],
-                    name=gr.goal.name,
+                    name=_tl_name,
                     marker_color=bar_color,
                     text=f"{prob:.0f}%<br>${gr.target_nominal/1e6:.2f}M",
                     textposition="outside",

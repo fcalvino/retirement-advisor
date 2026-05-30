@@ -239,6 +239,7 @@ def cached_goal_simulation(
             annual_contribution=g["annual_contribution"],
             allocated_capital=g["allocated_capital"],
             notes=g.get("notes", ""),
+            goal_type=g.get("goal_type", "otro"),
         )
         for g in goals_serialized
     ]

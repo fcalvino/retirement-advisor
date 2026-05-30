@@ -36,6 +36,40 @@ PRIORITY_LABELS = {1: "Alta", 2: "Media", 3: "Baja"}
 PRIORITY_COLORS = {1: "#DC3545", 2: "#FFC107", 3: "#28A745"}
 PRIORITY_EMOJIS = {1: "🔴", 2: "🟡", 3: "🟢"}
 
+GOAL_TYPE_ICONS: Dict[str, str] = {
+    "casa":       "🏠",
+    "retiro":     "🌴",
+    "fire":       "💸",
+    "educacion":  "🎓",
+    "vehiculo":   "🚗",
+    "viaje":      "✈️",
+    "emergencia": "🛡️",
+    "otro":       "💼",
+}
+
+GOAL_TYPE_LABELS: Dict[str, str] = {
+    "casa":       "Casa / Propiedad",
+    "retiro":     "Retiro",
+    "fire":       "FIRE / Independencia Financiera",
+    "educacion":  "Educación",
+    "vehiculo":   "Vehículo",
+    "viaje":      "Viaje / Experiencia",
+    "emergencia": "Fondo de emergencia",
+    "otro":       "Otro",
+}
+
+# Placeholder name suggestion per goal type (shown in form)
+GOAL_TYPE_PLACEHOLDERS: Dict[str, str] = {
+    "casa":       "ej: Casa en 2028",
+    "retiro":     "ej: Retiro a los 65",
+    "fire":       "ej: FIRE 2035",
+    "educacion":  "ej: Universidad de Luli",
+    "vehiculo":   "ej: Auto nuevo 2027",
+    "viaje":      "ej: Viaje a Europa 2026",
+    "emergencia": "ej: Fondo de emergencia",
+    "otro":       "ej: Meta personalizada",
+}
+
 
 # ------------------------------------------------------------------ #
 #  Goal dataclass                                                      #
@@ -67,6 +101,7 @@ class Goal:
     annual_contribution: float = 0.0
     allocated_capital: float = 0.0
     notes: str = ""
+    goal_type: str = "otro"
 
     @property
     def target_nominal(self) -> float:
@@ -84,6 +119,14 @@ class Goal:
     @property
     def priority_emoji(self) -> str:
         return PRIORITY_EMOJIS.get(self.priority, "🟡")
+
+    @property
+    def icon(self) -> str:
+        return GOAL_TYPE_ICONS.get(self.goal_type, "💼")
+
+    @property
+    def type_label(self) -> str:
+        return GOAL_TYPE_LABELS.get(self.goal_type, "Otro")
 
 
 # ------------------------------------------------------------------ #

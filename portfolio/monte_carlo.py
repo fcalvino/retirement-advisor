@@ -74,6 +74,8 @@ class MonteCarloResult:
     pct_paths_severe_drawdown: float = 0.0
     # P10 intra-horizon minimum value (worst path 10th pct)
     p10_intra_min: float = 0.0
+    # Median year in which the maximum drawdown typically occurs
+    median_year_of_max_dd: float = 0.0
 
     # Data quality note
     n_weeks_history: int = 0
@@ -199,8 +201,9 @@ class MonteCarloSimulator:
         result.prob_ruin_pct = float((terminal <= 0).mean() * 100)
 
         # SORR and intra-horizon drawdown metrics
-        result.sorr_early_drawdown_pct, result.median_max_drawdown_pct, \
-            result.pct_paths_severe_drawdown, result.p10_intra_min = \
+        (result.sorr_early_drawdown_pct, result.median_max_drawdown_pct,
+         result.pct_paths_severe_drawdown, result.p10_intra_min,
+         result.median_year_of_max_dd) = \
             self._compute_drawdown_metrics(paths_usd, horizon_years)
 
         # CAGR per simulation
@@ -387,7 +390,8 @@ class MonteCarloSimulator:
 
         Returns
         -------
-        (sorr_early_pct, median_max_dd_pct, pct_severe_pct, p10_intra_min)
+        (sorr_early_pct, median_max_dd_pct, pct_severe_pct, p10_intra_min,
+         median_year_of_max_dd)
         """
         n_sims, n_weeks_plus1 = paths_usd.shape
 
@@ -401,6 +405,10 @@ class MonteCarloSimulator:
         median_max_dd = float(np.median(max_dd_per_path) * 100)
         pct_severe = float((max_dd_per_path >= 0.50).mean() * 100)
 
+        # Year of max drawdown (median across paths)
+        max_dd_week = np.argmax(drawdown, axis=1)   # week index of worst drawdown per path
+        median_year_max_dd = float(np.median(max_dd_week) / 52)
+
         # SORR: % of paths with >30% drawdown in first 5 years
         early_weeks = min(5 * 52, n_weeks_plus1)
         early_dd = drawdown[:, :early_weeks].max(axis=1)
@@ -409,7 +417,7 @@ class MonteCarloSimulator:
         # P10 intra-horizon minimum value
         p10_min = float(np.percentile(paths_usd.min(axis=1), 10))
 
-        return sorr_early, median_max_dd, pct_severe, p10_min
+        return sorr_early, median_max_dd, pct_severe, p10_min, median_year_max_dd
 
     def _fan_paths(
         self,
