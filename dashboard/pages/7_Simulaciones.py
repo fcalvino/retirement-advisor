@@ -1066,7 +1066,7 @@ with tab_goals:
             _display_name = new_name.strip() or _placeholder
             st.info(
                 f"{_icon} **{_display_name}** — "
-                f"${new_target:,.0f} hoy → **${nominal_preview:,.0f} nominal** "
+                f"\\${new_target:,.0f} hoy → **\\${nominal_preview:,.0f} nominal** "
                 f"en {new_horizon} año{'s' if new_horizon != 1 else ''} "
                 f"({new_inflation:.1f}% inf./año)",
                 icon="📊",
@@ -1113,8 +1113,8 @@ with tab_goals:
             with col_info:
                 st.markdown(
                     f"**{i+1}. {g_icon} {g['name']}** &nbsp; {p_emoji} {p_label} &nbsp;|&nbsp; "
-                    f"${g['target_amount_today']:,.0f} → **${nominal:,.0f}** &nbsp;|&nbsp; "
-                    f"{g['horizon_years']}a &nbsp;|&nbsp; aporte ${g['annual_contribution']:,.0f}/año"
+                    f"\\${g['target_amount_today']:,.0f} → **\\${nominal:,.0f}** &nbsp;|&nbsp; "
+                    f"{g['horizon_years']}a &nbsp;|&nbsp; aporte \\${g['annual_contribution']:,.0f}/año"
                     + (f" &nbsp;·&nbsp; _{g['notes']}_" if g.get("notes") else "")
                 )
             if i > 0:
