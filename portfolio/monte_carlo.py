@@ -65,6 +65,16 @@ class MonteCarloResult:
     median_cagr_pct: float = 0.0
     p10_cagr_pct: float = 0.0
 
+    # Sequence of Returns Risk (SORR) and intra-horizon drawdown metrics
+    # % of paths with >30% peak-to-trough drawdown in first 5 years
+    sorr_early_drawdown_pct: float = 0.0
+    # Median peak-to-trough drawdown across all paths (full horizon)
+    median_max_drawdown_pct: float = 0.0
+    # % of paths that hit a drawdown ≥50% at any point
+    pct_paths_severe_drawdown: float = 0.0
+    # P10 intra-horizon minimum value (worst path 10th pct)
+    p10_intra_min: float = 0.0
+
     # Data quality note
     n_weeks_history: int = 0
     symbols_used: List[str] = field(default_factory=list)
@@ -187,6 +197,11 @@ class MonteCarloSimulator:
             result.prob_achieve_target_pct = float((terminal >= target_value).mean() * 100)
 
         result.prob_ruin_pct = float((terminal <= 0).mean() * 100)
+
+        # SORR and intra-horizon drawdown metrics
+        result.sorr_early_drawdown_pct, result.median_max_drawdown_pct, \
+            result.pct_paths_severe_drawdown, result.p10_intra_min = \
+            self._compute_drawdown_metrics(paths_usd, horizon_years)
 
         # CAGR per simulation
         terminal_positive = np.where(terminal > 0, terminal, np.nan)
@@ -361,6 +376,40 @@ class MonteCarloSimulator:
             paths = np.maximum(paths, 0)
 
         return paths
+
+    @staticmethod
+    def _compute_drawdown_metrics(
+        paths_usd: np.ndarray,
+        horizon_years: int,
+    ) -> tuple:
+        """
+        Compute SORR and drawdown statistics from USD paths.
+
+        Returns
+        -------
+        (sorr_early_pct, median_max_dd_pct, pct_severe_pct, p10_intra_min)
+        """
+        n_sims, n_weeks_plus1 = paths_usd.shape
+
+        # Running peak (cummax across time axis)
+        running_peak = np.maximum.accumulate(paths_usd, axis=1)
+        # Drawdown at each step: (peak - value) / peak
+        drawdown = np.where(running_peak > 0, (running_peak - paths_usd) / running_peak, 0.0)
+
+        # Max drawdown per path (full horizon)
+        max_dd_per_path = drawdown.max(axis=1)  # shape (n_sims,)
+        median_max_dd = float(np.median(max_dd_per_path) * 100)
+        pct_severe = float((max_dd_per_path >= 0.50).mean() * 100)
+
+        # SORR: % of paths with >30% drawdown in first 5 years
+        early_weeks = min(5 * 52, n_weeks_plus1)
+        early_dd = drawdown[:, :early_weeks].max(axis=1)
+        sorr_early = float((early_dd >= 0.30).mean() * 100)
+
+        # P10 intra-horizon minimum value
+        p10_min = float(np.percentile(paths_usd.min(axis=1), 10))
+
+        return sorr_early, median_max_dd, pct_severe, p10_min
 
     def _fan_paths(
         self,

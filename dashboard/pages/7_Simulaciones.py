@@ -14,7 +14,8 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from config import MONTE_CARLO, OPTIMIZER_PROFILES, SECTOR_MAP
-from dashboard.shared import cached_monte_carlo, cached_stress_test, _get_ai_config
+from dashboard.shared import cached_monte_carlo, cached_stress_test, cached_goal_simulation, _get_ai_config
+from portfolio.goals import Goal, PRIORITY_LABELS, PRIORITY_COLORS, PRIORITY_EMOJIS, required_monthly_savings
 
 # ------------------------------------------------------------------ #
 #  Page                                                                #
@@ -211,15 +212,16 @@ if not (opt_result and opt_result.tickers):
 #  Tabs                                                                #
 # ------------------------------------------------------------------ #
 
-tab_mc, tab_stress, tab_custom, tab_compare = st.tabs(
-    ["📈 Monte Carlo", "🌪️ Stress Test", "🎯 Escenario personalizado", "🔀 Comparar Perfiles"]
+tab_mc, tab_stress, tab_custom, tab_compare, tab_goals = st.tabs(
+    ["📈 Monte Carlo", "🌪️ Stress Test", "🎯 Escenario personalizado", "🔀 Comparar Perfiles", "🏆 Mis Metas"]
 )
 
 # ================================================================== #
 #  Tab 1: Monte Carlo                                                 #
 # ================================================================== #
 
-with tab_mc:
+
+def _tab_mc_content():
     run_mc = st.button("▶ Ejecutar simulación Monte Carlo", type="primary")
 
     if not run_mc and "mc_result" not in st.session_state:
@@ -230,7 +232,7 @@ with tab_mc:
             "— ideales para evaluar planes de inversión a 10-30 años.",
             icon="🎲",
         )
-        st.stop()
+        return
 
     if run_mc:
         with st.spinner(f"Ejecutando {n_sims:,} simulaciones × {horizon_years} años…"):
@@ -255,7 +257,7 @@ with tab_mc:
     mc = st.session_state.get("mc_result")
     if mc is None:
         st.warning("No hay resultado de simulación disponible.")
-        st.stop()
+        return
 
     for w in mc.warnings:
         st.warning(w)
@@ -598,6 +600,11 @@ Consultá con un asesor financiero certificado antes de tomar decisiones de inve
 
 # ================================================================== #
 #  Tab 2: Stress Test                                                 #
+
+
+with tab_mc:
+    _tab_mc_content()
+
 # ================================================================== #
 
 with tab_stress:
@@ -793,7 +800,8 @@ with tab_custom:
 #  Tab 4: Comparar Perfiles                                           #
 # ================================================================== #
 
-with tab_compare:
+
+def _tab_compare_content():
     st.subheader("🔀 Cómo afecta el perfil de riesgo a las proyecciones")
     st.caption(
         "Compara Conservador / Moderado / Agresivo usando los **mismos activos** "
@@ -810,7 +818,7 @@ with tab_compare:
             "proyecciones según el perfil de riesgo.",
             icon="🔀",
         )
-        st.stop()
+        return
 
     if run_compare:
         _compare_mc: dict = {}
@@ -835,7 +843,7 @@ with tab_compare:
 
     compare_mc = st.session_state.get("mc_compare_results", {})
     if not compare_mc:
-        st.stop()
+        return
 
     _stored_horizon = st.session_state.get("mc_compare_horizon", horizon_years)
     if _stored_horizon != horizon_years:
@@ -956,6 +964,496 @@ with tab_compare:
         file_name=f"perfil_comparison_{horizon_years}y.csv",
         mime="text/csv",
     )
+
+# ================================================================== #
+#  Tab 5: Mis Metas (Multi-Goal Planner)                              #
+
+
+with tab_compare:
+    _tab_compare_content()
+
+# ================================================================== #
+
+with tab_goals:
+    st.subheader("🏆 Planificador de Metas Financieras")
+    st.caption(
+        "Definí múltiples metas de inversión (casa, independencia financiera, retiro) "
+        "y simulá el plan completo con Monte Carlo independiente por meta. "
+        "El capital se asigna automáticamente según prioridad, o podés definirlo manualmente."
+    )
+
+    # ---- Session state init for goals list ----
+    if "goals_list" not in st.session_state:
+        st.session_state["goals_list"] = []
+
+    # ---------------------------------------------------------------- #
+    #  Goal editor                                                       #
+    # ---------------------------------------------------------------- #
+
+    with st.expander("➕ Agregar nueva meta", expanded=len(st.session_state["goals_list"]) == 0):
+        gc1, gc2 = st.columns(2)
+        new_name = gc1.text_input("Nombre de la meta", placeholder="ej: Casa en 2029", key="new_goal_name")
+        new_priority = gc2.selectbox(
+            "Prioridad",
+            options=[1, 2, 3],
+            format_func=lambda p: f"{PRIORITY_EMOJIS[p]} {PRIORITY_LABELS[p]}",
+            key="new_goal_priority",
+        )
+
+        gc3, gc4, gc5 = st.columns(3)
+        new_target = gc3.number_input(
+            "Meta (USD de hoy)",
+            min_value=1_000, max_value=10_000_000, value=300_000, step=10_000,
+            format="%d",
+            help="Cuánto necesitás en dólares de HOY. Se ajusta por inflación automáticamente.",
+            key="new_goal_target",
+        )
+        new_horizon = gc4.number_input(
+            "Horizonte (años)",
+            min_value=1, max_value=40, value=5, step=1,
+            key="new_goal_horizon",
+        )
+        new_inflation = gc5.slider(
+            "Inflación esperada (%/año)",
+            min_value=0.0, max_value=8.0, value=3.0, step=0.5,
+            key="new_goal_inflation",
+        )
+
+        gc6, gc7, gc8 = st.columns(3)
+        new_contribution = gc6.number_input(
+            "Aporte anual hacia esta meta (USD)",
+            min_value=0, max_value=500_000, value=0, step=1_000,
+            format="%d",
+            help="Cuánto ahorrás por año específicamente para esta meta. 0 = solo crece el capital inicial.",
+            key="new_goal_contribution",
+        )
+        new_allocated = gc7.number_input(
+            "Capital asignado (USD, 0 = auto)",
+            min_value=0, max_value=10_000_000, value=0, step=5_000,
+            format="%d",
+            help="Capital inicial para esta meta. 0 = se asigna automáticamente proporcional a prioridad.",
+            key="new_goal_allocated",
+        )
+        new_notes = gc8.text_input(
+            "Notas (opcional)",
+            placeholder="ej: Para dar el down payment de una casa",
+            key="new_goal_notes",
+        )
+
+        # Preview: show inflation-adjusted target
+        if new_target > 0 and new_horizon > 0:
+            nominal_preview = new_target * (1 + new_inflation / 100) ** new_horizon
+            st.caption(
+                f"📊 Meta nominal (ajustada por {new_inflation:.1f}% inflación × {new_horizon} años): "
+                f"**${nominal_preview:,.0f}**"
+            )
+
+        if st.button("✅ Agregar meta al plan", type="primary", key="add_goal_btn"):
+            if not new_name.strip():
+                st.error("Ingresá un nombre para la meta.")
+            else:
+                new_goal = {
+                    "name": new_name.strip(),
+                    "target_amount_today": float(new_target),
+                    "horizon_years": int(new_horizon),
+                    "priority": int(new_priority),
+                    "expected_inflation": float(new_inflation),
+                    "annual_contribution": float(new_contribution),
+                    "allocated_capital": float(new_allocated),
+                    "notes": new_notes.strip(),
+                }
+                st.session_state["goals_list"].append(new_goal)
+                st.success(f"✅ Meta **{new_name}** agregada al plan.")
+                st.rerun()
+
+    # ---- Display current goals ----
+    goals_list = st.session_state["goals_list"]
+
+    if not goals_list:
+        st.info(
+            "Todavía no tenés metas definidas. Usá el formulario de arriba para agregar tu primera meta.\n\n"
+            "**Ejemplos de metas típicas:**\n"
+            "- 🏠 Casa en 2028 — $300.000 (hoy), horizonte 3 años, prioridad alta\n"
+            "- 💸 FIRE 2035 — $1.500.000 (hoy), horizonte 9 años, prioridad alta\n"
+            "- 🌴 Retiro a los 65 — $2.000.000 (hoy), horizonte 20 años, prioridad media",
+            icon="🎯",
+        )
+    else:
+        st.markdown(f"**{len(goals_list)} meta(s) definida(s):**")
+
+        for i, g in enumerate(goals_list):
+            emoji = PRIORITY_EMOJIS.get(g["priority"], "🟡")
+            label = PRIORITY_LABELS.get(g["priority"], "Media")
+            nominal = g["target_amount_today"] * (1 + g["expected_inflation"] / 100) ** g["horizon_years"]
+            col_info, col_del = st.columns([10, 1])
+            with col_info:
+                st.markdown(
+                    f"**{i+1}. {g['name']}** &nbsp; {emoji} {label} &nbsp;|&nbsp; "
+                    f"${g['target_amount_today']:,.0f} hoy → **${nominal:,.0f} nominal** &nbsp;|&nbsp; "
+                    f"Horizonte: {g['horizon_years']} años &nbsp;|&nbsp; "
+                    f"Aporte anual: ${g['annual_contribution']:,.0f}"
+                    + (f" &nbsp;|&nbsp; _{g['notes']}_" if g['notes'] else "")
+                )
+            with col_del:
+                if st.button("🗑️", key=f"del_goal_{i}", help=f"Eliminar '{g['name']}'"):
+                    st.session_state["goals_list"].pop(i)
+                    st.rerun()
+
+        if st.button("🗑️ Limpiar todas las metas", key="clear_all_goals"):
+            st.session_state["goals_list"] = []
+            st.rerun()
+
+    # ---------------------------------------------------------------- #
+    #  Simulation controls                                               #
+    # ---------------------------------------------------------------- #
+    if goals_list:
+        st.divider()
+        st.subheader("⚙️ Parámetros del plan")
+
+        gp1, gp2, gp3 = st.columns(3)
+        plan_total_capital = gp1.number_input(
+            "Capital total disponible para el plan (USD)",
+            min_value=1_000, max_value=20_000_000, value=500_000, step=10_000,
+            format="%d",
+            help="Capital total que se distribuirá entre todas las metas según prioridad.",
+            key="plan_total_capital",
+        )
+        plan_n_sims = gp2.select_slider(
+            "Simulaciones por meta",
+            options=[1_000, 2_000, 5_000, 10_000],
+            value=5_000,
+            key="plan_n_sims",
+        )
+        plan_profile = gp3.selectbox(
+            "Perfil de riesgo",
+            options=["conservative", "moderate", "aggressive"],
+            format_func=lambda p: {"conservative": "🛡️ Conservador", "moderate": "⚖️ Moderado", "aggressive": "🚀 Agresivo"}[p],
+            key="plan_profile",
+        )
+
+        _PLAN_MC_SCALES = {
+            "conservative": {"vol_scale": 1.15, "return_scale": 0.70},
+            "moderate":     {"vol_scale": 1.10, "return_scale": 0.80},
+            "aggressive":   {"vol_scale": 1.00, "return_scale": 0.95},
+        }
+        plan_scales = _PLAN_MC_SCALES[plan_profile]
+
+        # ---- Run simulation ----
+        run_plan = st.button("▶ Simular plan completo", type="primary", key="run_goal_plan")
+
+        if run_plan or "goal_plan_result" in st.session_state:
+            if run_plan:
+                if not (opt_result and opt_result.tickers):
+                    st.warning(
+                        "⚠️ No hay portafolio optimizado en sesión. El plan usará el universo equal-weight. "
+                        "Para resultados más precisos, generá un portafolio en 📈 Optimizer primero.",
+                        icon="⚠️",
+                    )
+                with st.spinner(f"Simulando {len(goals_list)} meta(s) con {plan_n_sims:,} simulaciones c/u…"):
+                    goals_serialized = tuple(
+                        {k: v for k, v in g.items()} for g in goals_list
+                    )
+                    plan_result = cached_goal_simulation(
+                        symbols=tuple(symbols),
+                        weights_tuple=tuple(weights) if weights else None,
+                        goals_serialized=goals_serialized,
+                        total_capital=float(plan_total_capital),
+                        n_sims=plan_n_sims,
+                        vol_scale=plan_scales["vol_scale"],
+                        return_scale=plan_scales["return_scale"],
+                    )
+                st.session_state["goal_plan_result"] = plan_result
+
+            plan_result = st.session_state.get("goal_plan_result")
+            if plan_result is None:
+                pass  # unreachable guard
+
+            # ---------------------------------------------------------------- #
+            #  Plan summary KPIs                                                #
+            # ---------------------------------------------------------------- #
+            st.divider()
+            st.subheader("📊 Resumen del plan")
+
+            pk1, pk2, pk3, pk4 = st.columns(4)
+            pk1.metric(
+                "Capital total asignado",
+                f"${plan_result.total_capital_allocated:,.0f}",
+                help="Suma del capital asignado a todas las metas.",
+            )
+            pk2.metric(
+                "Viabilidad del plan",
+                f"{plan_result.plan_feasibility_score:.0f}/100",
+                delta=plan_result.feasibility_label,
+                delta_color="off",
+                help="Score ponderado por prioridad: P(éxito) × peso de prioridad.",
+            )
+            pk3.metric(
+                "Metas con >80% prob. éxito",
+                f"{sum(1 for gr in plan_result.goal_results if gr.prob_success_pct >= 80)}"
+                f"/{len(plan_result.goal_results)}",
+            )
+            capital_gap = plan_result.capital_gap
+            pk4.metric(
+                "Gap de capital (vs. medianas)",
+                f"${capital_gap:,.0f}" if capital_gap > 0 else "✅ Sin gap",
+                delta="déficit proyectado" if capital_gap > 0 else None,
+                delta_color="inverse" if capital_gap > 0 else "off",
+                help="Diferencia entre las medianas proyectadas y los valores objetivo nominales.",
+            )
+
+            # Plan-level warnings
+            for w in plan_result.warnings:
+                st.warning(w)
+
+            # ---------------------------------------------------------------- #
+            #  Per-goal results cards                                           #
+            # ---------------------------------------------------------------- #
+            st.subheader("🎯 Resultados por meta")
+
+            for gr in plan_result.goal_results:
+                goal = gr.goal
+                mc = gr.mc_result
+                p_color = goal.priority_color
+                p_emoji = goal.priority_emoji
+                p_label = goal.priority_label
+
+                with st.container(border=True):
+                    h1, h2 = st.columns([3, 1])
+                    h1.markdown(
+                        f"### {p_emoji} {goal.name} "
+                        f"<span style='color:{p_color};font-size:0.8em;'>({p_label} prioridad)</span>",
+                        unsafe_allow_html=True,
+                    )
+                    h2.markdown(f"**Horizonte:** {goal.horizon_years} años")
+
+                    m1, m2, m3, m4, m5 = st.columns(5)
+                    m1.metric("Capital asignado", f"${gr.allocated_capital:,.0f}")
+                    m2.metric("Meta nominal", f"${gr.target_nominal:,.0f}",
+                              delta=f"${goal.target_amount_today:,.0f} hoy + {goal.expected_inflation:.1f}% inf.",
+                              delta_color="off")
+                    m3.metric(
+                        "Prob. éxito",
+                        f"{gr.prob_success_pct:.1f}%",
+                        delta=gr.feasibility_label,
+                        delta_color="off",
+                    )
+                    m4.metric("Mediana proyectada", f"${gr.median_terminal:,.0f}",
+                              delta=f"CAGR {mc.median_cagr_pct:.1f}%")
+                    m5.metric(
+                        "Pesimista (P10)",
+                        f"${mc.p10_terminal:,.0f}",
+                        delta=f"CAGR {mc.p10_cagr_pct:.1f}%",
+                        delta_color="inverse",
+                    )
+
+                    # SORR + drawdown row
+                    ds1, ds2, ds3, ds4 = st.columns(4)
+                    ds1.metric(
+                        "Drawdown máx. mediano",
+                        f"{mc.median_max_drawdown_pct:.1f}%",
+                        help="Caída pico-a-valle mediana durante el horizonte. Cuánto puede bajar antes de recuperar.",
+                        delta_color="inverse",
+                    )
+                    ds2.metric(
+                        "Riesgo SORR (primeros 5a)",
+                        f"{mc.sorr_early_drawdown_pct:.1f}%",
+                        help="% de simulaciones con caída >30% en los primeros 5 años. Alto riesgo de secuencia.",
+                        delta_color="inverse",
+                    )
+                    ds3.metric(
+                        "Paths con caída ≥50%",
+                        f"{mc.pct_paths_severe_drawdown:.1f}%",
+                        help="% de simulaciones que en algún momento caen 50% o más.",
+                        delta_color="inverse",
+                    )
+                    ds4.metric(
+                        "Mínimo P10 intra-horizonte",
+                        f"${mc.p10_intra_min:,.0f}",
+                        help="En el peor 10% de simulaciones, el portafolio llega a este mínimo durante el camino.",
+                    )
+
+                    # Mini fan chart for this goal
+                    if mc.fan_paths and len(mc.years) > 1:
+                        _yrs = mc.years
+                        fig_g = go.Figure()
+
+                        fig_g.add_trace(go.Scatter(
+                            x=_yrs + _yrs[::-1],
+                            y=[mc.fan_paths[y][75] for y in _yrs] + [mc.fan_paths[y][25] for y in _yrs[::-1]],
+                            fill="toself",
+                            fillcolor="rgba(23,162,184,0.10)",
+                            line=dict(color="rgba(0,0,0,0)"),
+                            hoverinfo="skip",
+                            name="P25–P75",
+                        ))
+                        fig_g.add_trace(go.Scatter(
+                            x=_yrs,
+                            y=[mc.fan_paths[y][50] for y in _yrs],
+                            mode="lines",
+                            line=dict(color="#17A2B8", width=2),
+                            name="Mediana",
+                        ))
+                        fig_g.add_trace(go.Scatter(
+                            x=_yrs,
+                            y=[mc.fan_paths[y][10] for y in _yrs],
+                            mode="lines",
+                            line=dict(color="#DC3545", width=1.5, dash="dot"),
+                            name="P10",
+                        ))
+                        fig_g.add_hline(
+                            y=gr.target_nominal,
+                            line_dash="dash", line_color="gold", line_width=2,
+                            annotation_text=f"Meta ${gr.target_nominal:,.0f}",
+                            annotation_position="right",
+                        )
+                        fig_g.update_layout(
+                            title=f"Proyección: {goal.name}",
+                            xaxis_title="Años",
+                            yaxis_title="USD",
+                            yaxis_tickformat="$,.0f",
+                            height=300,
+                            margin=dict(l=0, r=60, t=40, b=30),
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+                            hovermode="x unified",
+                        )
+                        st.plotly_chart(fig_g, use_container_width=True)
+
+                    # Monthly savings estimate
+                    if gr.prob_success_pct < 80:
+                        monthly_needed = required_monthly_savings(
+                            target_nominal=gr.target_nominal,
+                            initial_capital=gr.allocated_capital,
+                            horizon_years=goal.horizon_years,
+                            expected_annual_return=max(mc.median_cagr_pct / 100, 0.03),
+                        )
+                        if monthly_needed > 0:
+                            st.info(
+                                f"💡 Para mejorar la probabilidad de éxito de **{goal.name}**, "
+                                f"necesitarías ahorrar aprox. **${monthly_needed:,.0f}/mes** adicionales "
+                                f"(estimación con CAGR mediana {mc.median_cagr_pct:.1f}%)."
+                            )
+
+            # ---------------------------------------------------------------- #
+            #  Timeline overview chart                                          #
+            # ---------------------------------------------------------------- #
+            st.subheader("📅 Timeline del plan")
+            fig_timeline = go.Figure()
+
+            sorted_results = sorted(plan_result.goal_results, key=lambda gr: gr.goal.horizon_years)
+            for gr in sorted_results:
+                prob = gr.prob_success_pct
+                bar_color = (
+                    "#28A745" if prob >= 80
+                    else "#FFC107" if prob >= 55
+                    else "#DC3545"
+                )
+                fig_timeline.add_trace(go.Bar(
+                    x=[gr.goal.name],
+                    y=[gr.target_nominal],
+                    name=gr.goal.name,
+                    marker_color=bar_color,
+                    text=f"{prob:.0f}%<br>${gr.target_nominal/1e6:.2f}M",
+                    textposition="outside",
+                    customdata=[[gr.goal.horizon_years, gr.median_terminal, gr.allocated_capital]],
+                    hovertemplate=(
+                        "<b>%{x}</b><br>"
+                        "Meta nominal: $%{y:,.0f}<br>"
+                        "Horizonte: %{customdata[0]} años<br>"
+                        "Mediana proyectada: $%{customdata[1]:,.0f}<br>"
+                        "Capital asignado: $%{customdata[2]:,.0f}<br>"
+                        "<extra></extra>"
+                    ),
+                ))
+
+            fig_timeline.update_layout(
+                title="Metas por valor nominal — color = probabilidad de éxito",
+                yaxis_title="USD (valor nominal futuro)",
+                yaxis_tickformat="$,.0f",
+                height=400,
+                showlegend=False,
+                xaxis_tickangle=-15,
+            )
+            fig_timeline.add_annotation(
+                text="🟢 ≥80%  🟡 55-79%  🔴 <55%",
+                xref="paper", yref="paper",
+                x=1, y=1.05,
+                showarrow=False,
+                font=dict(size=11),
+            )
+            st.plotly_chart(fig_timeline, use_container_width=True)
+
+            # ---------------------------------------------------------------- #
+            #  Summary table + export                                           #
+            # ---------------------------------------------------------------- #
+            summary_rows = []
+            for gr in plan_result.goal_results:
+                mc = gr.mc_result
+                summary_rows.append({
+                    "Meta": gr.goal.name,
+                    "Prioridad": gr.goal.priority_label,
+                    "Horizonte (años)": gr.goal.horizon_years,
+                    "Meta hoy (USD)": gr.goal.target_amount_today,
+                    "Meta nominal (USD)": gr.target_nominal,
+                    "Capital asignado (USD)": gr.allocated_capital,
+                    "Mediana proyectada (USD)": gr.median_terminal,
+                    "Prob. éxito (%)": round(gr.prob_success_pct, 1),
+                    "P10 (USD)": mc.p10_terminal,
+                    "P90 (USD)": mc.p90_terminal,
+                    "CAGR mediana (%)": round(mc.median_cagr_pct, 1),
+                    "Drawdown máx. med. (%)": round(mc.median_max_drawdown_pct, 1),
+                    "Riesgo SORR (%)": round(mc.sorr_early_drawdown_pct, 1),
+                })
+
+            df_summary = pd.DataFrame(summary_rows)
+            st.dataframe(
+                df_summary,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Meta hoy (USD)":          st.column_config.NumberColumn(format="$%,.0f"),
+                    "Meta nominal (USD)":       st.column_config.NumberColumn(format="$%,.0f"),
+                    "Capital asignado (USD)":   st.column_config.NumberColumn(format="$%,.0f"),
+                    "Mediana proyectada (USD)": st.column_config.NumberColumn(format="$%,.0f"),
+                    "Prob. éxito (%)":          st.column_config.NumberColumn(format="%.1f%%"),
+                    "P10 (USD)":                st.column_config.NumberColumn(format="$%,.0f"),
+                    "P90 (USD)":                st.column_config.NumberColumn(format="$%,.0f"),
+                    "CAGR mediana (%)":         st.column_config.NumberColumn(format="%.1f%%"),
+                    "Drawdown máx. med. (%)":   st.column_config.NumberColumn(format="%.1f%%"),
+                    "Riesgo SORR (%)":          st.column_config.NumberColumn(format="%.1f%%"),
+                },
+            )
+
+            _goals_csv = io.StringIO()
+            df_summary.to_csv(_goals_csv, index=False)
+            st.download_button(
+                label="⬇️ Exportar plan completo a CSV",
+                data=_goals_csv.getvalue(),
+                file_name=f"plan_metas_{len(goals_list)}_metas.csv",
+                mime="text/csv",
+            )
+
+            with st.expander("ℹ️ Metodología del planificador de metas"):
+                st.markdown("""
+**Modelo de simulación:**
+- Cada meta se simula de forma independiente con Block Bootstrap Monte Carlo.
+- El capital se distribuye proporcionalmente a la prioridad (Alta=3x, Media=2x, Baja=1x)
+  salvo que lo especifiques manualmente.
+- Los aportes anuales se modelan como retiros negativos (ingresos al portafolio).
+
+**Métricas de SORR (Sequence of Returns Risk):**
+- **Riesgo SORR:** % de simulaciones que sufren una caída >30% en los **primeros 5 años**.
+  Crítico para metas de largo plazo — una caída temprana puede destruir el plan aunque el CAGR sea positivo.
+- **Drawdown máximo mediano:** Caída pico-a-valle típica durante todo el horizonte.
+- **Paths con caída ≥50%:** % de simulaciones que tocan una pérdida del 50% o más en algún momento.
+- **Mínimo P10 intra-horizonte:** En el peor 10% de simulaciones, el portafolio baja hasta este valor.
+
+**Asignación de capital automática:**
+Si `capital_asignado = 0` en una meta, el planificador distribuye el capital total entre las metas
+con peso proporcional a su prioridad. Podés sobreescribir esto ingresando un valor explícito.
+
+**Limitaciones:** Los aportes anuales no crecen con inflación por defecto. Para retiros de largo
+plazo ajustados por inflación, usá el tab Monte Carlo con retiro creciente.
+                """)
 
 # ------------------------------------------------------------------ #
 #  Footer                                                              #

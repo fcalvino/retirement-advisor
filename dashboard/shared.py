@@ -211,6 +211,47 @@ def cached_monte_carlo(
     )
 
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def cached_goal_simulation(
+    symbols: tuple,
+    weights_tuple: tuple | None,
+    goals_serialized: tuple,   # tuple of dicts for hashability
+    total_capital: float,
+    n_sims: int,
+    vol_scale: float = 1.0,
+    return_scale: float = 1.0,
+    seed: int = 42,
+):
+    """Cache multi-goal simulation results for 30 min."""
+    import numpy as np
+    from portfolio.goals import Goal, GoalPlanner
+
+    w_np = np.array(weights_tuple) if weights_tuple else None
+    planner = GoalPlanner(list(symbols), w_np, seed=seed)
+
+    goals = [
+        Goal(
+            name=g["name"],
+            target_amount_today=g["target_amount_today"],
+            horizon_years=g["horizon_years"],
+            priority=g["priority"],
+            expected_inflation=g["expected_inflation"],
+            annual_contribution=g["annual_contribution"],
+            allocated_capital=g["allocated_capital"],
+            notes=g.get("notes", ""),
+        )
+        for g in goals_serialized
+    ]
+
+    return planner.run(
+        goals=goals,
+        total_capital=total_capital,
+        n_sims=n_sims,
+        vol_scale=vol_scale,
+        return_scale=return_scale,
+    )
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def cached_stress_test(
     sector_weights: dict[str, float],
