@@ -1108,26 +1108,48 @@ with tab_goals:
             g_icon  = GOAL_TYPE_ICONS.get(g.get("goal_type", "otro"), "💼")
             p_emoji = PRIORITY_EMOJIS.get(g["priority"], "🟡")
             p_label = PRIORITY_LABELS.get(g["priority"], "Media")
+            p_color = PRIORITY_COLORS.get(g["priority"], "#FFC107")
             nominal = g["target_amount_today"] * (1 + g["expected_inflation"] / 100) ** g["horizon_years"]
-            col_info, col_up, col_dn, col_del = st.columns([10, 1, 1, 1])
-            with col_info:
+
+            with st.container(border=True):
+                # Barra lateral de color según prioridad + contenido
                 st.markdown(
-                    f"**{i+1}. {g_icon} {g['name']}** &nbsp; {p_emoji} {p_label} &nbsp;|&nbsp; "
-                    f"\\${g['target_amount_today']:,.0f} → **\\${nominal:,.0f}** &nbsp;|&nbsp; "
-                    f"{g['horizon_years']}a &nbsp;|&nbsp; aporte \\${g['annual_contribution']:,.0f}/año"
-                    + (f" &nbsp;·&nbsp; _{g['notes']}_" if g.get("notes") else "")
+                    f"<div style='border-left:5px solid {p_color};padding-left:10px;'>",
+                    unsafe_allow_html=True,
                 )
-            if i > 0:
-                if col_up.button("⬆️", key=f"up_{i}", help="Subir prioridad"):
-                    goals_list[i - 1], goals_list[i] = goals_list[i], goals_list[i - 1]
-                    st.rerun()
-            if i < len(goals_list) - 1:
-                if col_dn.button("⬇️", key=f"dn_{i}", help="Bajar prioridad"):
-                    goals_list[i], goals_list[i + 1] = goals_list[i + 1], goals_list[i]
-                    st.rerun()
-            if col_del.button("🗑️", key=f"del_goal_{i}", help=f"Eliminar '{g['name']}'"):
-                st.session_state["goals_list"].pop(i)
-                st.rerun()
+                c_icon, c_info, c_btns = st.columns([1, 9, 2])
+                with c_icon:
+                    st.markdown(
+                        f"<div style='font-size:2.2em;text-align:center;line-height:1.2'>{g_icon}</div>",
+                        unsafe_allow_html=True,
+                    )
+                with c_info:
+                    st.markdown(
+                        f"**{g['name']}** &nbsp;"
+                        f"<span style='background:{p_color}22;border:1px solid {p_color};color:{p_color};"
+                        f"padding:2px 8px;border-radius:10px;font-size:0.75em;font-weight:700'>"
+                        f"{p_emoji} {p_label}</span>",
+                        unsafe_allow_html=True,
+                    )
+                    st.caption(
+                        f"\\${g['target_amount_today']:,.0f} hoy → \\${nominal:,.0f} nominal "
+                        f"· {g['horizon_years']} años · aporte \\${g['annual_contribution']:,.0f}/año"
+                        + (f" · _{g['notes']}_" if g.get("notes") else "")
+                    )
+                with c_btns:
+                    _b1, _b2, _b3 = st.columns(3)
+                    if i > 0:
+                        if _b1.button("⬆️", key=f"up_{i}", help="Subir prioridad"):
+                            goals_list[i - 1], goals_list[i] = goals_list[i], goals_list[i - 1]
+                            st.rerun()
+                    if i < len(goals_list) - 1:
+                        if _b2.button("⬇️", key=f"dn_{i}", help="Bajar prioridad"):
+                            goals_list[i], goals_list[i + 1] = goals_list[i + 1], goals_list[i]
+                            st.rerun()
+                    if _b3.button("🗑️", key=f"del_goal_{i}", help=f"Eliminar '{g['name']}'"):
+                        st.session_state["goals_list"].pop(i)
+                        st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
 
         _col_clear, _col_opt = st.columns([1, 2])
         if _col_clear.button("🗑️ Limpiar todas las metas", key="clear_all_goals"):
@@ -1311,20 +1333,31 @@ with tab_goals:
                     _port_val = st.session_state.get("portfolio_current_value", 0.0)
                     if _port_val > 0 and gr.target_nominal > 0:
                         _pct_prog = min(_port_val / gr.target_nominal * 100, 100)
-                        st.progress(
-                            _pct_prog / 100,
-                            text=f"📈 Progreso actual del portfolio: **{_pct_prog:.1f}%** hacia la meta nominal (${_port_val:,.0f} / ${gr.target_nominal:,.0f})",
+                        _prog_col1, _prog_col2 = st.columns([1, 5])
+                        _prog_col1.metric(
+                            "Progreso actual",
+                            f"{_pct_prog:.0f}%",
+                            help="Portfolio actual vs. meta nominal ajustada por inflación.",
                         )
+                        with _prog_col2:
+                            st.caption("📈 Avance hacia la meta nominal")
+                            st.progress(
+                                _pct_prog / 100,
+                                text=f"\\${_port_val:,.0f} de \\${gr.target_nominal:,.0f}",
+                            )
 
                     st.divider()
 
                     # SORR section header with badge
-                    _sorr_col_badge, _sorr_col_title = st.columns([1, 5])
+                    _sorr_col_badge, _sorr_col_title = st.columns([1.5, 4.5])
                     _sorr_col_badge.markdown(
                         f"<div style='background:{sorr_color}22;border:2px solid {sorr_color};"
-                        f"border-radius:10px;padding:8px;text-align:center;"
-                        f"font-weight:700;font-size:1.1em;color:{sorr_color};'>"
-                        f"SORR<br>{sorr_badge}</div>",
+                        f"border-radius:12px;padding:14px 8px;text-align:center;"
+                        f"font-weight:700;font-size:1.8em;color:{sorr_color};line-height:1.3'>"
+                        f"SORR<br>{sorr_badge}"
+                        f"<div style='font-size:0.42em;margin-top:6px;color:{sorr_color}cc;font-weight:600'>"
+                        f"año típico: {mc.median_year_of_max_dd:.0f}</div>"
+                        f"</div>",
                         unsafe_allow_html=True,
                         help="Sequence of Returns Risk: riesgo de que una mala secuencia de retornos al inicio del horizonte destruya el plan, incluso si el CAGR promedio es positivo. "
                              "🟢 Bajo (<25% SORR, <30% drawdown máx.) · 🟡 Medio · 🔴 Alto (>50% SORR o >45% drawdown).",
@@ -1370,7 +1403,7 @@ with tab_goals:
                                 x=_yrs + _yrs[::-1],
                                 y=[mc.fan_paths[y][10] for y in _yrs] + [mc.fan_paths[y][5] for y in _yrs[::-1]],
                                 fill="toself",
-                                fillcolor="rgba(220,53,69,0.25)",
+                                fillcolor="rgba(220,53,69,0.40)",
                                 line=dict(color="rgba(0,0,0,0)"),
                                 hoverinfo="skip",
                                 name="Peor 10% (P5–P10)",
@@ -1410,10 +1443,11 @@ with tab_goals:
                         if 0 < mc.median_year_of_max_dd < goal.horizon_years:
                             fig_g.add_vline(
                                 x=mc.median_year_of_max_dd,
-                                line_dash="dot", line_color="rgba(220,53,69,0.6)", line_width=1.5,
+                                line_dash="dot", line_color="rgba(220,53,69,0.85)", line_width=2,
                                 annotation_text=f"Peor año típico: {mc.median_year_of_max_dd:.1f}",
                                 annotation_position="top left",
-                                annotation_font_size=10,
+                                annotation_font_size=11,
+                                annotation_bgcolor="rgba(220,53,69,0.12)",
                             )
                         fig_g.update_layout(
                             title=f"{g_icon} {goal.name} — Proyección Monte Carlo",
