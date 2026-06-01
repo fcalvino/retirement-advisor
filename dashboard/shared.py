@@ -273,10 +273,10 @@ def _analyse_universe_parallel(
 ) -> list[dict]:
     """
     Run cached_full_analysis for each symbol in a thread pool.
-    Workers capped at min(16, cpu_count*2) to avoid hammering yfinance.
+    Workers capped at min(6, cpu_count) to stay within macOS FD limits.
     A per-ticker exception never aborts the whole run.
     """
-    max_workers = min(16, (os.cpu_count() or 4) * 2)
+    max_workers = min(6, os.cpu_count() or 4)
     total = len(symbols)
     completed = 0
     rows: list[dict] = []
@@ -337,10 +337,10 @@ def _fetch_universe_parallel(
     """
     Generic parallel fetcher — returns (symbol, fund, tech, decision) tuples.
     Callers build their own output dicts from the raw analysis results.
-    Workers capped at min(16, cpu_count*2). Per-ticker exceptions are logged
-    and that ticker is silently dropped so the rest of the run continues.
+    Workers capped at min(6, cpu_count) to stay within macOS FD limits.
+    Per-ticker exceptions are logged and that ticker is silently dropped.
     """
-    max_workers = min(16, (os.cpu_count() or 4) * 2)
+    max_workers = min(6, os.cpu_count() or 4)
     total     = len(symbols)
     completed = 0
     results: list[tuple] = []

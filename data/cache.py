@@ -7,6 +7,7 @@ from typing import Any, Optional
 from loguru import logger
 from sqlalchemy import Column, DateTime, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from config import CACHE_TTL_HOURS, DB_PATH
 
@@ -28,7 +29,7 @@ class DataCache:
 
     def __init__(self, ttl_hours: int = CACHE_TTL_HOURS):
         self.ttl = timedelta(hours=ttl_hours)
-        engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
+        engine = create_engine(f"sqlite:///{DB_PATH}", echo=False, poolclass=NullPool)
         Base.metadata.create_all(engine)
         self._Session = sessionmaker(bind=engine)
 
