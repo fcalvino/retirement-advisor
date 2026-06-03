@@ -67,6 +67,85 @@ class RebalanceSuggestion:
 
 
 @dataclass
+class GoalConstraints:
+    """Derived constraints from user goals for goal-aware optimization."""
+    nearest_horizon_years: int
+    binding_goal_name: str          # name of the goal driving the constraint
+    max_volatility_pct: float
+    max_crypto_pct: float
+    min_dividend_yield_pct: float
+    explanation: str                # human-readable reason for each override
+
+
+def _derive_constraints_from_goals(goals: list, base_cfg: "ProfileConfig") -> GoalConstraints:
+    """
+    Derives portfolio constraints from the goal with the shortest horizon.
+    Grok rule: shortest horizon is always the binding constraint regardless of priority.
+    Returns GoalConstraints describing each override with a plain-language explanation.
+    """
+    if not goals:
+        return None
+
+    # Sort by horizon to find the binding (shortest) goal
+    sorted_goals = sorted(goals, key=lambda g: g["horizon_years"])
+    binding = sorted_goals[0]
+    horizon = binding["horizon_years"]
+    name = binding.get("name", "tu meta")
+
+    overrides = []
+
+    # Vol cap — tighten based on shortest horizon
+    if horizon <= 2:
+        max_vol = min(base_cfg.max_volatility_pct, 8.0)
+        if max_vol < base_cfg.max_volatility_pct:
+            overrides.append(f"Volatilidad máx reducida a {max_vol:.0f}% por '{name}' (horizonte {horizon}a)")
+    elif horizon <= 5:
+        max_vol = min(base_cfg.max_volatility_pct, 11.0)
+        if max_vol < base_cfg.max_volatility_pct:
+            overrides.append(f"Volatilidad máx reducida a {max_vol:.0f}% por '{name}' (horizonte {horizon}a)")
+    elif horizon <= 10:
+        max_vol = min(base_cfg.max_volatility_pct, 15.0)
+        if max_vol < base_cfg.max_volatility_pct:
+            overrides.append(f"Volatilidad máx reducida a {max_vol:.0f}% por '{name}' (horizonte {horizon}a)")
+    else:
+        max_vol = base_cfg.max_volatility_pct
+
+    # Crypto cap — restrict for short horizons
+    if horizon <= 4:
+        max_crypto = min(base_cfg.max_crypto_pct, 2.0)
+        if max_crypto < base_cfg.max_crypto_pct:
+            overrides.append(f"Cripto cap reducido a {max_crypto:.0f}% (meta cercana en {horizon}a)")
+    elif horizon <= 7:
+        max_crypto = min(base_cfg.max_crypto_pct, 3.0)
+        if max_crypto < base_cfg.max_crypto_pct:
+            overrides.append(f"Cripto cap reducido a {max_crypto:.0f}% (meta en {horizon}a)")
+    else:
+        max_crypto = base_cfg.max_crypto_pct
+
+    # Dividend floor — raise for near-term goals (cash flow matters)
+    if horizon <= 3:
+        min_div = max(base_cfg.min_dividend_yield_pct, 3.5)
+        if min_div > base_cfg.min_dividend_yield_pct:
+            overrides.append(f"Dividendo mínimo subido a {min_div:.1f}% (meta '{name}' necesita flujo en {horizon}a)")
+    else:
+        min_div = base_cfg.min_dividend_yield_pct
+
+    if overrides:
+        explanation = "🛡️ **Glide Path activo:** " + " · ".join(overrides) + "."
+    else:
+        explanation = f"✅ Sin cambios: tu meta más cercana ('{name}') tiene horizonte {horizon}a — el perfil base aplica sin restricciones adicionales."
+
+    return GoalConstraints(
+        nearest_horizon_years=horizon,
+        binding_goal_name=name,
+        max_volatility_pct=max_vol,
+        max_crypto_pct=max_crypto,
+        min_dividend_yield_pct=min_div,
+        explanation=explanation,
+    )
+
+
+@dataclass
 class OptimizationResult:
     profile_name: str
     method: str                # "mean-variance" | "score-weighted"
@@ -707,3 +786,51 @@ class PortfolioOptimizer:
             ))
         suggestions.sort(key=lambda s: -abs(s.delta_pct))
         return suggestions
+
+    # ------------------------------------------------------------------ #
+    #  Goal-Aware Optimization (Fase 2)                                    #
+    # ------------------------------------------------------------------ #
+
+    def optimize_for_goals(
+        self,
+        scored_tickers: List[dict],
+        goals: list,
+        current_weights: Optional[Dict[str, float]] = None,
+    ) -> tuple:
+        """
+        Run optimization with constraints derived from user goals.
+
+        goals: list of dicts with keys: name, horizon_years, priority, target_amount_today, etc.
+               (raw session_state format, no Goal dataclass import needed)
+
+        Returns: (OptimizationResult, explanation_str)
+        """
+        import dataclasses
+
+        constraints = _derive_constraints_from_goals(goals, self.cfg)
+
+        # No override needed — all goals have long horizons
+        if constraints is None or (
+            constraints.max_volatility_pct == self.cfg.max_volatility_pct
+            and constraints.max_crypto_pct == self.cfg.max_crypto_pct
+            and constraints.min_dividend_yield_pct == self.cfg.min_dividend_yield_pct
+        ):
+            result = self.optimize(scored_tickers, current_weights)
+            explanation = constraints.explanation if constraints else "Sin metas definidas."
+            return result, explanation
+
+        # Temporarily override profile config with goal-derived constraints
+        original_cfg = self.cfg
+        try:
+            self.cfg = dataclasses.replace(
+                original_cfg,
+                max_volatility_pct=constraints.max_volatility_pct,
+                max_crypto_pct=constraints.max_crypto_pct,
+                min_dividend_yield_pct=constraints.min_dividend_yield_pct,
+            )
+            result = self.optimize(scored_tickers, current_weights)
+        finally:
+            self.cfg = original_cfg
+
+        result.profile_name = f"{original_cfg.name} · Metas"
+        return result, constraints.explanation

@@ -14,7 +14,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from config import MONTE_CARLO, OPTIMIZER_PROFILES, SECTOR_MAP
-from dashboard.shared import cached_monte_carlo, cached_stress_test, cached_goal_simulation, _get_ai_config
+from dashboard.shared import cached_monte_carlo, cached_stress_test, cached_goal_simulation, cached_goal_optimization, _get_ai_config
 from portfolio.goals import (
     Goal, PRIORITY_LABELS, PRIORITY_COLORS, PRIORITY_EMOJIS,
     GOAL_TYPE_ICONS, GOAL_TYPE_LABELS, GOAL_TYPE_PLACEHOLDERS,
@@ -1154,13 +1154,122 @@ with tab_goals:
         _col_clear, _col_opt = st.columns([1, 2])
         if _col_clear.button("🗑️ Limpiar todas las metas", key="clear_all_goals"):
             st.session_state["goals_list"] = []
+            st.session_state.pop("goal_optimizer_result", None)
+            st.session_state.pop("goal_optimizer_explanation", None)
             st.rerun()
-        _col_opt.button(
+
+        _has_scored = bool(st.session_state.get("optimizer_scored"))
+        _opt_btn = _col_opt.button(
             "🔬 Optimizar para mis metas",
-            key="optimize_for_goals_placeholder",
-            disabled=True,
-            help="Próximamente en Fase 2 — Optimización multi-metas: ajusta los pesos del portafolio considerando el horizonte y capital de cada meta simultáneamente.",
+            key="optimize_for_goals_btn",
+            disabled=not _has_scored,
+            help=(
+                "Optimiza el portafolio considerando el horizonte de cada meta (Glide Path automático)."
+                if _has_scored
+                else "Para optimizar con metas, primero ejecutá el Optimizer en la pestaña 📈 Optimizer."
+            ),
         )
+
+        if _opt_btn and _has_scored:
+            _scored = st.session_state["optimizer_scored"]
+            _profile = st.session_state.get("plan_profile", "conservative")
+            _opt_current = st.session_state.get("optimizer_result") or st.session_state.get("optimizer_prev_result")
+            _cur_w = (
+                tuple((t.symbol, t.weight_pct) for t in _opt_current.tickers)
+                if _opt_current and _opt_current.tickers else None
+            )
+            with st.spinner("Optimizando portafolio para tus metas…"):
+                _goal_result, _goal_explanation = cached_goal_optimization(
+                    scored_tickers_tuple=tuple(
+                        {k: v for k, v in s.items()} for s in _scored
+                    ),
+                    goals_serialized=tuple({k: v for k, v in g.items()} for g in goals_list),
+                    profile_key=_profile,
+                    current_weights_tuple=_cur_w,
+                )
+            st.session_state["goal_optimizer_result"] = _goal_result
+            st.session_state["goal_optimizer_explanation"] = _goal_explanation
+            st.rerun()
+
+        # ---- Goal optimizer comparison UI ----
+        if "goal_optimizer_result" in st.session_state:
+            _goal_res = st.session_state["goal_optimizer_result"]
+            _goal_exp = st.session_state.get("goal_optimizer_explanation", "")
+            _base_res = st.session_state.get("optimizer_result") or st.session_state.get("optimizer_prev_result")
+
+            st.divider()
+            st.subheader("🎯 Portafolio optimizado para tus metas")
+            st.info(_goal_exp, icon="🛡️")
+
+            # Key metrics comparison
+            _mc1, _mc2, _mc3, _mc4 = st.columns(4)
+            _mc1.metric(
+                "Volatilidad esperada",
+                f"{_goal_res.volatility_pct:.1f}%",
+                delta=f"{_goal_res.volatility_pct - _base_res.volatility_pct:+.1f}% vs base" if _base_res else None,
+                delta_color="inverse",
+            )
+            _mc2.metric(
+                "Retorno esperado",
+                f"{_goal_res.expected_return_pct:.1f}%",
+                delta=f"{_goal_res.expected_return_pct - _base_res.expected_return_pct:+.1f}% vs base" if _base_res else None,
+            )
+            _mc3.metric(
+                "Sharpe",
+                f"{_goal_res.sharpe_ratio:.2f}",
+                delta=f"{_goal_res.sharpe_ratio - _base_res.sharpe_ratio:+.2f} vs base" if _base_res else None,
+            )
+            _mc4.metric(
+                "Div Yield",
+                f"{_goal_res.dividend_yield_pct:.1f}%",
+                delta=f"{_goal_res.dividend_yield_pct - _base_res.dividend_yield_pct:+.1f}% vs base" if _base_res else None,
+            )
+
+            # Allocation comparison table
+            st.markdown("**Comparación de asignación**")
+            _base_weights = (
+                {t.symbol: t.weight_pct for t in _base_res.tickers} if _base_res else {}
+            )
+            _goal_weights = {t.symbol: t.weight_pct for t in _goal_res.tickers}
+            _all_symbols = sorted(
+                set(_base_weights) | set(_goal_weights),
+                key=lambda s: -_goal_weights.get(s, 0),
+            )
+
+            _rows = []
+            for sym in _all_symbols:
+                base_w = _base_weights.get(sym, 0.0)
+                goal_w = _goal_weights.get(sym, 0.0)
+                delta = goal_w - base_w
+                if abs(delta) >= 0.05 or goal_w > 0:
+                    arrow = "↑" if delta > 0.5 else ("↓" if delta < -0.5 else "→")
+                    _rows.append({
+                        "Ticker": sym,
+                        "Base %": f"{base_w:.1f}%" if base_w else "—",
+                        "Metas %": f"{goal_w:.1f}%" if goal_w else "—",
+                        "Cambio": f"{arrow} {delta:+.1f}%",
+                    })
+
+            if _rows:
+                import pandas as pd
+                _df_cmp = pd.DataFrame(_rows)
+                st.dataframe(_df_cmp, use_container_width=True, hide_index=True)
+
+            # Apply button
+            st.divider()
+            _a1, _a2 = st.columns([2, 1])
+            with _a1:
+                st.caption(
+                    f"Al aplicar, este portafolio reemplaza el resultado del Optimizer "
+                    f"y se usa en todas las simulaciones de esta sesión."
+                )
+            with _a2:
+                if st.button("✅ Aplicar portafolio para mis metas", type="primary", key="apply_goal_optimizer"):
+                    if _base_res:
+                        st.session_state["optimizer_prev_result"] = _base_res
+                    st.session_state["optimizer_result"] = _goal_res
+                    st.toast("✅ Portafolio optimizado para tus metas aplicado", icon="🎯")
+                    st.rerun()
 
     # ---------------------------------------------------------------- #
     #  Simulation controls                                               #

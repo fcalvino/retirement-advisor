@@ -253,6 +253,24 @@ def cached_goal_simulation(
     )
 
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def cached_goal_optimization(
+    scored_tickers_tuple: tuple,        # tuple of dicts (hashable)
+    goals_serialized: tuple,            # tuple of dicts (same format as cached_goal_simulation)
+    profile_key: str,
+    current_weights_tuple: tuple | None,
+) -> tuple:
+    """Cache goal-aware optimization results for 30 min. Returns (OptimizationResult, explanation_str)."""
+    from portfolio.optimizer import PortfolioOptimizer
+
+    scored_tickers = list(scored_tickers_tuple)
+    current_weights = dict(current_weights_tuple) if current_weights_tuple else None
+    goals = list(goals_serialized)
+
+    optimizer = PortfolioOptimizer(profile=profile_key)
+    return optimizer.optimize_for_goals(scored_tickers, goals, current_weights)
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def cached_stress_test(
     sector_weights: dict[str, float],
