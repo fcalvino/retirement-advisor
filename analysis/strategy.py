@@ -47,6 +47,9 @@ class Decision:
     # AI analysis (empty when using rule-based engine)
     ai_reasoning: str = ""
 
+    # Grok allocation recommendation (None when rule-based or when Grok didn't provide it)
+    recommended_max_allocation_pct: Optional[float] = None
+
     @property
     def action_emoji(self) -> str:
         return {

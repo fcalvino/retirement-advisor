@@ -208,6 +208,14 @@ class AIAnalyzer:
         # For crypto, use adjusted_score (total_score is always 0)
         score = fund.adjusted_score if getattr(fund, "is_crypto", False) else fund.total_score
 
+        _alloc = None
+        try:
+            _alloc_raw = data.get("recommended_max_allocation_conservative")
+            if _alloc_raw is not None:
+                _alloc = float(_alloc_raw)
+        except (TypeError, ValueError):
+            pass
+
         return Decision(
             symbol=fund.symbol,
             action=action,
@@ -218,4 +226,5 @@ class AIAnalyzer:
             rationale=data.get("rationale", []),
             risks=data.get("risks", []),
             ai_reasoning=data.get("reasoning", ""),
+            recommended_max_allocation_pct=_alloc,
         )

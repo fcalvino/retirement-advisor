@@ -540,6 +540,17 @@ if symbol:
             st.markdown(decision.ai_reasoning)
             st.divider()
 
+        # Grok allocation recommendation banner
+        _grok_alloc = decision.recommended_max_allocation_pct
+        if _grok_alloc is not None:
+            st.success(
+                f"🎯 **Grok sugiere máximo {_grok_alloc:.0f}% de asignación** para **{symbol}** "
+                f"en tu portfolio según su análisis de convicción y riesgo.",
+                icon="🤖",
+            )
+        elif decision.ai_reasoning:
+            st.caption("ℹ️ Grok no sugirió un porcentaje específico de asignación en este análisis.")
+
         st.subheader("💡 Fundamentos de inversión")
         if decision.rationale:
             for r in decision.rationale:
@@ -558,15 +569,34 @@ if symbol:
         # Add to portfolio
         st.divider()
         st.subheader("➕ Agregar al Portfolio")
+
+        _portfolio: Portfolio = st.session_state.portfolio
+        # Use cost basis as portfolio value proxy (no API calls needed)
+        _portfolio_cost = sum(
+            p.shares * p.avg_cost for p in _portfolio.positions.values()
+        ) if _portfolio.positions else 0.0
+        _grok_alloc_pct = decision.recommended_max_allocation_pct
+        _price = fund.current_price or 100.0
+
+        _suggested_shares = 10.0
+        _shares_caption = None
+        if _grok_alloc_pct and _portfolio_cost > 0 and _price > 0:
+            _suggested_shares = max(0.01, (_portfolio_cost * _grok_alloc_pct / 100) / _price)
+            _shares_caption = (
+                f"💡 Sugerido por Grok: máximo {_grok_alloc_pct:.0f}% del portafolio "
+                f"(costo base ${_portfolio_cost:,.0f}) → {_suggested_shares:.2f} acciones @ ${_price:,.2f}"
+            )
+
         col1, col2, col3 = st.columns(3)
         with col1:
-            shares = st.number_input("Acciones", min_value=0.01, value=10.0, step=1.0)
+            shares = st.number_input("Acciones", min_value=0.01, value=float(_suggested_shares), step=1.0)
+            if _shares_caption:
+                st.caption(_shares_caption)
         with col2:
-            cost = st.number_input("Costo promedio (USD)", min_value=0.01, value=fund.current_price or 100.0)
+            cost = st.number_input("Costo promedio (USD)", min_value=0.01, value=_price)
         with col3:
             buy_date = st.date_input("Fecha de compra")
         if st.button("Agregar posición", type="secondary"):
-            portfolio: Portfolio = st.session_state.portfolio
-            portfolio.add_position(symbol, shares, cost, str(buy_date))
+            _portfolio.add_position(symbol, shares, cost, str(buy_date))
             st.success(f"✅ {shares:.0f} × {symbol} agregado @ ${cost:.2f}")
-            st.session_state.portfolio = portfolio
+            st.session_state.portfolio = _portfolio
