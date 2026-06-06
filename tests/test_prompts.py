@@ -25,6 +25,7 @@ from analysis.prompts import (
     crypto_moat_prompt,
     equity_decision_prompt,
     equity_moat_prompt,
+    portfolio_optimizer_advice_prompt,
 )
 from analysis.technical import TechnicalResult
 
@@ -248,6 +249,13 @@ class TestEquityDecisionPrompt:
         prompt = equity_decision_prompt(fund, _tech("YPF"))
         assert "Argentina" in prompt or "emergente" in prompt.lower()
 
+    def test_includes_confidence_justification_instruction(self):
+        """Prompt must instruct the model to justify the confidence level within reasoning."""
+        prompt = self._prompt()
+        low = prompt.lower()
+        assert "justif" in low or "elegiste" in low or "elegí" in low
+        assert "high" in low and "medium" in low and "low" in low
+
 
 # ------------------------------------------------------------------ #
 #  3. crypto_moat_prompt                                               #
@@ -333,3 +341,135 @@ class TestCryptoDecisionPrompt:
             assert "action" in data
         except json.JSONDecodeError as e:
             pytest.fail(f"JSON block in crypto_decision_prompt is not valid: {e}")
+
+    def test_includes_confidence_justification_instruction(self):
+        """Prompt must instruct the model to justify the confidence level within reasoning."""
+        prompt = self._prompt()
+        low = prompt.lower()
+        assert "justif" in low or "elegiste" in low or "elegí" in low
+        assert "high" in low and "medium" in low and "low" in low
+
+
+# ------------------------------------------------------------------ #
+#  5. portfolio_optimizer_advice_prompt (Grok voice + human core)      #
+# ------------------------------------------------------------------ #
+
+def _sample_holdings(n: int = 18) -> list[dict]:
+    """Minimal realistic holdings list for optimizer advice prompt tests."""
+    syms = ["AAPL", "MSFT", "GOOGL", "AMZN", "JPM", "V", "JNJ", "PG", "XOM", "HD",
+            "MELI", "GGAL", "BTC-USD"] + [f"T{i}" for i in range(n - 13)]
+    out = []
+    for i, s in enumerate(syms[:n]):
+        w = round(100.0 / n, 1)
+        out.append({
+            "symbol": s,
+            "weight_pct": w,
+            "adjusted_score": 65.0 + (i % 5),
+            "moat_score": 8.0 + (i % 3) * 0.5,
+            "dividend_yield_pct": 2.5 + (i % 4) * 0.3,
+            "expected_return_pct": 9.0 + (i % 3),
+            "volatility_pct": 14.0 + (i % 4),
+            "sector": ["Technology", "Financials", "Healthcare", "Consumer Staples", "Energy", "Industrials"][i % 6],
+            "is_ars": s in ("MELI", "GGAL"),
+        })
+    return out
+
+
+class TestPortfolioOptimizerAdvicePrompt:
+    def _prompt(self) -> str:
+        return portfolio_optimizer_advice_prompt(
+            profile_name="Conservador",
+            holdings=_sample_holdings(18),
+            expected_return_pct=9.2,
+            volatility_pct=13.8,
+            sharpe=0.72,
+            dividend_yield_pct=3.8,
+            moat_avg=9.1,
+            num_positions=18,
+            sector_weights={"Technology": 28.0, "Financials": 18.0, "Healthcare": 15.0, "Energy": 12.0},
+            max_position_pct=8.0,
+            min_positions=10,
+            max_volatility_pct=12.0,
+            min_dividend_yield_pct=3.5,
+            max_crypto_pct=3.0,
+            goal_explanation="Glide Path activo por meta de corto plazo.",
+            rebalance_rationale="Anual — perfil conservador.",
+            warnings=["Alta concentración tech."],
+            holdings_note="",
+        )
+
+    def test_returns_nonempty_string(self):
+        p = self._prompt()
+        assert isinstance(p, str)
+        assert len(p) > 300
+
+    def test_uses_grok_voice(self):
+        assert "Eres Grok, construido por xAI" in self._prompt()
+
+    def test_contains_required_json_fields(self):
+        p = self._prompt()
+        required = [
+            "narrative",
+            "recommended_max_human_positions",
+            "core_holdings",
+            "dropped_tickers",
+            "human_review_tips",
+            "overall_assessment",
+        ]
+        for field in required:
+            assert field in p, f"Missing JSON field in portfolio_optimizer_advice_prompt: {field}"
+
+    def test_json_template_is_parseable(self):
+        p = self._prompt()
+        match = re.search(r"\{[\s\S]*\}", p)
+        assert match, "No JSON block found in portfolio_optimizer_advice_prompt"
+        raw = match.group().strip()
+        try:
+            data = json.loads(raw)
+            assert "narrative" in data
+            assert "recommended_max_human_positions" in data
+        except json.JSONDecodeError as e:
+            pytest.fail(f"JSON block in portfolio_optimizer_advice_prompt is not valid: {e}")
+
+    def test_mentions_human_manageable_concentration(self):
+        p = self._prompt()
+        low = p.lower()
+        assert "humano" in low or "revisar" in low or "ajustar" in low or "núcleo" in low or "concentrad" in low
+        # Grok must be asked to pick a smaller number than the input 18
+        assert "recommended_max_human_positions" in p
+
+    def test_27_positions_does_not_block_and_supports_core(self):
+        """For the user's real minimum (~27), we must still produce voice + core recommendation
+        (via truncation + updated prompt language), not the old 'too large, use smaller universe' block."""
+        p27 = portfolio_optimizer_advice_prompt(
+            profile_name="Agresivo",
+            holdings=_sample_holdings(27),
+            expected_return_pct=10.5,
+            volatility_pct=15.0,
+            sharpe=0.65,
+            dividend_yield_pct=2.8,
+            moat_avg=8.5,
+            num_positions=27,
+            sector_weights={"Technology": 35.0, "Financials": 20.0},
+            max_position_pct=12.0,
+            min_positions=8,
+            max_volatility_pct=18.0,
+            min_dividend_yield_pct=2.0,
+            max_crypto_pct=5.0,
+            goal_explanation="",
+            rebalance_rationale="Trimestral",
+            warnings=[],
+            holdings_note=" (top 15 de 27 total)",
+        )
+        low = p27.lower()
+        # Must not contain the old blocking message
+        assert "grok no genera explicación detallada ni recomendación de núcleo para carteras tan grandes" not in low
+        assert "usá un universo más chico" not in low
+        # Must still mention human/review/core and the total 27
+        assert "humano" in low or "revisar" in low or "núcleo" in low
+        assert "27" in p27
+        # The JSON contract fields must still be present in the template
+        assert "recommended_max_human_positions" in p27
+        assert "core_holdings" in p27
+        # Note must be injected
+        assert "top 15 de 27" in p27 or "se muestran solo las 15" in p27
