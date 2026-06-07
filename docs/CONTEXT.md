@@ -1,7 +1,7 @@
 # Project Context — Retirement Advisor
 
 > **Obligatorio:** Este archivo debe leerse completo antes de planear o codificar cualquier cambio.
-> Última actualización: 2026-06-04
+> Última actualización: 2026-06-07
 
 ---
 
@@ -86,7 +86,7 @@ dashboard/shared.py (cached_*)            alerts/store.py (SQLite)
 | `portfolio/optimizer.py` | Mean-Variance SLSQP + 3 perfiles + fallback | Cambiar optimizador o perfiles |
 | `portfolio/monte_carlo.py` | Simulación block-bootstrap + SORR metrics | Cambiar modelo estocástico |
 | `portfolio/goals.py` | Multi-Goal Planner: `Goal`, `GoalPlan`, `GoalPlanner` | Funcionalidad de metas |
-| `dashboard/shared.py` | Funciones cacheadas (`cached_monte_carlo`, `cached_goal_simulation`, etc.) | Agregar cache de nueva feature |
+| `dashboard/shared.py` + `dashboard/app.py` + `pages/*.py` | Entry multipage (`st.navigation`/`st.Page` en app.py); helpers cacheados + visuales + AI config en shared (cached_*, _get_ai_config, _analyse_universe_parallel, etc.). Monolith legacy removido (era dupe completo de ~2540 LOC). | Agregar página, helper cacheado o patrón de shared (ver app.py para init y navegación) |
 | `dashboard/pages/7_Simulaciones.py` | Página principal de simulaciones (MC, Stress, Custom, Comparar, Metas) | UI de simulaciones |
 | `dashboard/pages/5_Optimizer.py` | Página del Optimizer con Goal-Aware + Glide Path | UI del optimizer |
 | `alerts/engine.py` | 5 checks de alerta, cooldowns, dispatch | Agregar nuevo tipo de alerta |
@@ -184,7 +184,7 @@ OPTIMIZER_PROFILES  # Dict[str, ProfileConfig]
 
 ## 8. Limitaciones Conocidas
 
-- **EMFILE**: El screener puede agotar file descriptors con muchos workers simultáneos — `max_workers` controlado, usar `NullPool` en SQLAlchemy
+- **EMFILE (mitigado)**: El screener puede agotar file descriptors — `max_workers` controlado, `NullPool` en SQLAlchemy. El logger de Streamlit también acumulaba sinks en cada rerun; ya corregido con `_ensure_logger()` (guard en `session_state`) en `dashboard/app.py`
 - **yfinance rate limits**: No hay retry automático; si falla un ticker, se loggea y se continúa
 - **Moat AI cache**: 7 días de TTL; si el modelo AI cambia, el cache puede estar desactualizado (borrar `data/db/retirement_advisor.db` para reset)
 - **ADRs argentinos**: Se aplica `ARS risk discount` (0.85×) automáticamente en perfiles Conservador/Moderado
@@ -198,6 +198,8 @@ OPTIMIZER_PROFILES  # Dict[str, ProfileConfig]
 
 | Commit | Cambio |
 |--------|--------|
+| `(pending)` | **Optimizer robustez N grande (plan Grok 019e9dff):** profile down-select (`_select_candidates_for_profile`), core determinístico (`_select_core_holdings`), fetch paralelo de precios, instrumentación (n_input/n_eligible/n_candidates/slsqp_success/build_matrix_ms), AI auto-desactivado en screener para N>40, Grok advice siempre retorna core fallback, +32 tests nuevos |
+| `(pending)` | Fix EMFILE: logger idempotente en `dashboard/app.py` (`_ensure_logger` con guard en session_state); migración masiva `use_container_width` → `width` (66 ocurrencias, 12 archivos) |
 | `33785c5` | Prompts de decisión AI: justificación explícita de `confidence` (HIGH/MEDIUM/LOW) integrada en el campo `reasoning` — equity y crypto |
 | `c7717be` | Goal-Aware Optimizer Fase 2 — Glide Path automático en `portfolio/optimizer.py` |
 | `9d2d508` | Capturar y exponer recomendación de asignación de Grok (Fase 1 de integración AI) |
@@ -205,6 +207,13 @@ OPTIMIZER_PROFILES  # Dict[str, ProfileConfig]
 | `8741d96` | Fix screener: reducir `max_workers` + NullPool para evitar EMFILE |
 | `13d84e7` | Multi-Goal Planner + SORR metrics completo (`portfolio/goals.py`) |
 | `fb14aac` | Fase 0: presets, narrativa IA, retiros con inflación en Monte Carlo |
+
+### Razonamiento LLM por instancia (documentado en el plan Grok 019e9dff)
+
+- **Screener bulk (N>40):** LLM **NO necesario**. Scoring cuantitativo es suficiente para ranking. Auto-desactivado en dashboard Optimizer cuando `len(selected_universe) > OPTIMIZER.max_ai_screener_tickers`.
+- **Price matrix + cov + SLSQP:** LLM completamente innecesario. Math puro.
+- **Post-optimización `generate_optimizer_advice`:** LLM SÍ agrega valor para narrativa + síntesis humana. Pero `profile_core_holdings` es siempre calculado determinísticamente (sin LLM) como fallback.
+- **Principio guía:** LLM = enriquecimiento y usabilidad humana, no motor de cálculo. Path "sin AI" siempre produce portfolio válido + core accionable.
 
 ---
 

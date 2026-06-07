@@ -113,13 +113,33 @@ class AlertConfig:
     smtp_port: int = int(os.getenv("SMTP_PORT", "587"))
     smtp_password: str = os.getenv("SMTP_PASSWORD", "")
 
-    telegram_enabled: bool = bool(os.getenv("TELEGRAM_TOKEN"))
-    telegram_token: str = os.getenv("TELEGRAM_TOKEN", "")
+    telegram_enabled: bool = bool(os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN"))
+    telegram_token: str = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN", "")
     telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "")
 
     # Alert engine thresholds (adjustable without touching code)
     score_change_threshold: float = 8.0   # pts — minimum change to trigger score alert
     alerts_enabled: bool = True            # master switch
+
+    # Phase 6: frequency & portfolio alert settings
+    check_frequency_hours: int = int(os.getenv("ALERT_INTERVAL_HOURS", "24"))
+    frequency_mode: str = os.getenv("ALERT_FREQUENCY_MODE", "daily")  # daily | weekly | critical_only
+    portfolio_loss_threshold_pct: float = 8.0    # % loss vs avg_cost to trigger PORTFOLIO_LOSS
+    portfolio_drift_threshold_pct: float = 5.0   # % drift from optimizer weight to trigger PORTFOLIO_DRIFT
+    portfolio_rebalance_threshold_pct: float = 8.0  # total drift to trigger PORTFOLIO_REBALANCE
+    sorr_high_threshold_pct: float = 30.0          # SORR early drawdown % to trigger SORR_HIGH
+    goal_risk_prob_drop_pct: float = 15.0          # probability drop to trigger GOAL_RISK
+    ai_explanations_enabled: bool = field(
+        default_factory=lambda: os.getenv("ALERT_AI_EXPLANATIONS", "true").lower() in ("true", "1", "yes")
+    )
+    # Only call AI for alerts at or above this severity (saves tokens on INFO alerts)
+    ai_explanations_min_severity: str = field(
+        default_factory=lambda: os.getenv("ALERT_AI_MIN_SEVERITY", "warning")
+    )
+    # Minimum severity to dispatch by profile (conservador=warning, others=info)
+    min_severity_conservador: str = "warning"
+    min_severity_moderado: str = "info"
+    min_severity_agresivo: str = "info"
 
 
 @dataclass
@@ -188,8 +208,6 @@ DEFAULT_TICKERS: List[str] = [
     "BTC-USD",
     # Argentina ADRs
     "YPF", "PAM", "CEPU", "LOMA", "MELI", "GLOB", "TEO", "EDN",
-    # Crypto — Growth con Moat (digital assets sleeve)
-    "BTC-USD",
 ]
 
 # Ticker aliases: maps short-form searches to canonical yfinance symbols
@@ -332,6 +350,12 @@ class ProfileConfig:
       score_weight    — weight of adjusted_score in composite expected-return proxy
       dividend_weight — weight of dividend yield in composite expected-return proxy
       moat_weight     — weight of moat score in composite expected-return proxy
+
+    Large-universe controls:
+      pre_filter_top_k           — max candidates entering SLSQP after profile-tilt ranking.
+                                   Limits cov matrix size and ensures manageable output.
+      target_max_human_positions — ideal core portfolio size for the deterministic core selector.
+                                   Used by _select_core_holdings() without LLM.
     """
     name: str
     description: str
@@ -344,6 +368,8 @@ class ProfileConfig:
     dividend_weight: float
     moat_weight: float
     max_crypto_pct: float = 3.0   # hard cap per crypto ticker (% of portfolio)
+    pre_filter_top_k: int = 30    # max candidates into SLSQP (profile-tilt down-select)
+    target_max_human_positions: int = 12  # ideal core size for deterministic core selector
 
 
 # Module-level profile definitions (importable by name)
@@ -358,7 +384,9 @@ CONSERVATIVE_PROFILE = ProfileConfig(
     score_weight=0.35,
     dividend_weight=0.45,
     moat_weight=0.20,
-    max_crypto_pct=3.0,    # max 3% per crypto — capital preservation first
+    max_crypto_pct=3.0,
+    pre_filter_top_k=20,       # conservative: smaller, income-tilted pool
+    target_max_human_positions=10,
 )
 
 MODERATE_PROFILE = ProfileConfig(
@@ -372,7 +400,9 @@ MODERATE_PROFILE = ProfileConfig(
     score_weight=0.50,
     dividend_weight=0.30,
     moat_weight=0.20,
-    max_crypto_pct=5.0,    # max 5% per crypto — tolerable for moderate risk
+    max_crypto_pct=5.0,
+    pre_filter_top_k=30,       # moderate: balanced pool
+    target_max_human_positions=12,
 )
 
 AGGRESSIVE_PROFILE = ProfileConfig(
@@ -386,7 +416,9 @@ AGGRESSIVE_PROFILE = ProfileConfig(
     score_weight=0.65,
     dividend_weight=0.15,
     moat_weight=0.20,
-    max_crypto_pct=10.0,   # max 10% per crypto — growth-oriented, accepts volatility
+    max_crypto_pct=10.0,
+    pre_filter_top_k=45,       # aggressive: larger pool for growth coverage
+    target_max_human_positions=15,
 )
 
 OPTIMIZER_PROFILES: Dict[str, ProfileConfig] = {
@@ -409,6 +441,11 @@ class OptimizerConfig:
     min_score_threshold   — tickers below this adjusted_score are excluded
     ars_risk_discount     — composite-score multiplier for Argentine ADR tickers
                             in conservative/moderate profiles (reflects currency risk)
+    max_ai_screener_tickers — when the selected universe has more than this many tickers,
+                              the dashboard auto-disables AI in the screener and shows a
+                              banner. AI bulk scoring N>this adds latency/cost without
+                              meaningfully changing optimizer output (quant scores suffice).
+    price_fetch_max_workers — parallel workers for price matrix fetch
     """
     default_profile: str = "conservative"
     risk_free_rate: float = 0.045
@@ -416,7 +453,9 @@ class OptimizerConfig:
     frontier_points: int = 300
     min_weight_pct: float = 1.0
     min_score_threshold: float = 30.0
-    ars_risk_discount: float = 0.85  # 15% discount on composite score
+    ars_risk_discount: float = 0.85
+    max_ai_screener_tickers: int = 40
+    price_fetch_max_workers: int = 6
 
 
 @dataclass
