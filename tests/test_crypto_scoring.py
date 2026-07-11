@@ -107,24 +107,29 @@ class TestCryptoDrawdownPenalty:
 
 class TestCryptoTechPts:
     def test_bullish_strong_signal(self):
-        """BULLISH + strength > 50 → 45 pts (maximum)."""
-        assert CryptoAnalyzer._tech_pts(_tech("BULLISH", 75)) == 45.0
+        """BULLISH + strength > 50 → config tech_pts_bullish_strong (D9)."""
+        from config import CRYPTO_MOAT as CM
+        assert CryptoAnalyzer._tech_pts(_tech("BULLISH", 75)) == CM.tech_pts_bullish_strong
 
     def test_bullish_moderate_signal(self):
-        """BULLISH + strength ≤ 50 → 35 pts."""
-        assert CryptoAnalyzer._tech_pts(_tech("BULLISH", 30)) == 35.0
+        """BULLISH + strength ≤ 50 → config tech_pts_bullish."""
+        from config import CRYPTO_MOAT as CM
+        assert CryptoAnalyzer._tech_pts(_tech("BULLISH", 30)) == CM.tech_pts_bullish
 
     def test_neutral_signal(self):
-        """NEUTRAL → 22 pts."""
-        assert CryptoAnalyzer._tech_pts(_tech("NEUTRAL")) == 22.0
+        """NEUTRAL → config tech_pts_neutral."""
+        from config import CRYPTO_MOAT as CM
+        assert CryptoAnalyzer._tech_pts(_tech("NEUTRAL")) == CM.tech_pts_neutral
 
     def test_bearish_moderate_signal(self):
-        """BEARISH + strength ≥ -50 → 10 pts."""
-        assert CryptoAnalyzer._tech_pts(_tech("BEARISH", -20)) == 10.0
+        """BEARISH + strength ≥ -50 → config tech_pts_bearish."""
+        from config import CRYPTO_MOAT as CM
+        assert CryptoAnalyzer._tech_pts(_tech("BEARISH", -20)) == CM.tech_pts_bearish
 
     def test_bearish_strong_signal(self):
-        """BEARISH + strength < -50 → 5 pts (minimum)."""
-        assert CryptoAnalyzer._tech_pts(_tech("BEARISH", -80)) == 5.0
+        """BEARISH + strength < -50 → config tech_pts_bearish_strong."""
+        from config import CRYPTO_MOAT as CM
+        assert CryptoAnalyzer._tech_pts(_tech("BEARISH", -80)) == CM.tech_pts_bearish_strong
 
 
 # ------------------------------------------------------------------ #
@@ -132,10 +137,10 @@ class TestCryptoTechPts:
 # ------------------------------------------------------------------ #
 
 class TestCryptoScoreRange:
-    def test_bullish_low_vol_score_in_grok_approved_range(self):
+    def test_bullish_low_vol_score_in_hold_band(self):
         """
-        Bull market, Wide Moat, moderate vol → Grok-approved 55–70 range.
-        base(35) + tech(35) - vol(8) - dd(10) + moat(5) = 57
+        P1 D9: bull + moderate vol should stay near HOLD for retirement (not STRONG BUY).
+        base(28)+tech(24)-vol(8)-dd(10)+moat(5) ≈ 39; with max moat higher.
         """
         score = _analyzer._compute_score(
             tech=_tech("BULLISH", 30),
@@ -143,7 +148,18 @@ class TestCryptoScoreRange:
             max_drawdown=-55.0,
             moat_bonus=5.0,
         )
-        assert 50 <= score <= 70, f"Expected 50–70 for bull market, got {score}"
+        assert 30 <= score <= 65, f"Expected 30–65 for bull market post-D9, got {score}"
+
+    def test_high_vol_bullish_below_buy_threshold(self):
+        """vol=90, BULLISH strong, modest moat → score < 60 (buy_score)."""
+        from config import STRATEGY
+        score = _analyzer._compute_score(
+            tech=_tech("BULLISH", 60),
+            vol=90.0,
+            max_drawdown=-77.0,
+            moat_bonus=5.0,
+        )
+        assert score < STRATEGY.buy_score, f"Expected < {STRATEGY.buy_score}, got {score}"
 
     def test_bearish_high_vol_score_lower(self):
         """Bear market + extreme vol → lower score than bullish scenario."""
@@ -167,7 +183,7 @@ class TestCryptoScoreRange:
             tech=_tech("BULLISH", 100),
             vol=0.0,
             max_drawdown=0.0,
-            moat_bonus=5.0,
+            moat_bonus=8.0,
         )
         assert score <= 100.0
 
@@ -183,10 +199,10 @@ class TestCryptoScoreRange:
 
     def test_btc_typical_bull_market(self):
         """
-        Approximate BTC bull market profile:
+        Approximate BTC bull market profile (post D9):
           BULLISH (strong), vol=65%, max_dd=-77%, no moat
-          = base(35) + tech(45) - vol(15) - dd(15) + moat(0) = 50
-        Conservative but not SELL — correct for retirement profile.
+          = base(28) + tech(30) - vol(15) - dd(15) + moat(0) = 28
+        Conservative HOLD/REDUCE band for retirement — not BUY.
         """
         score = _analyzer._compute_score(
             tech=_tech("BULLISH", 70),
@@ -194,7 +210,7 @@ class TestCryptoScoreRange:
             max_drawdown=-77.0,
             moat_bonus=0.0,
         )
-        assert 40 <= score <= 65, f"Expected 40–65 for typical BTC bull, got {score}"
+        assert 20 <= score <= 55, f"Expected 20–55 for typical BTC bull post-D9, got {score}"
 
     def test_wide_moat_bonus_adds_to_score(self):
         """Wide Moat (total=7.0) adds moat_bonus > 0 vs no moat."""

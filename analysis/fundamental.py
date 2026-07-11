@@ -277,11 +277,15 @@ class FundamentalAnalyzer:
         )
 
         # Graham intrinsic value: V = EPS × (8.5 + 2g) × 4.4 / Y
-        # where g = expected growth %, Y = current AAA bond yield (proxy 4.5%)
+        # where g = expected growth %, Y = AAA bond yield proxy (config D14)
+        from config import THRESHOLDS as _TH
         eps = _safe_float(info.get("trailingEps"))
         growth_estimate = _safe_float(info.get("earningsGrowth", 0)) * 100
+        y_aaa = float(getattr(_TH, "graham_aaa_yield_pct", 4.5) or 4.5)
+        if y_aaa <= 0:
+            y_aaa = 4.5
         if eps > 0 and growth_estimate > 0:
-            graham = eps * (8.5 + 2 * growth_estimate) * 4.4 / 4.5
+            graham = eps * (8.5 + 2 * growth_estimate) * 4.4 / y_aaa
             result.graham_value = round(graham, 2)
             if result.current_price > 0:
                 mos = (graham - result.current_price) / graham * 100

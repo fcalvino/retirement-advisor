@@ -23,10 +23,10 @@ def _fake_history(symbol: str, period: str = "10y", interval: str = "1wk") -> pd
     return pd.DataFrame({"close": prices}, index=dates)
 
 
-def _make_simulator(symbols=None, weights=None):
+def _make_simulator(symbols=None, weights=None, **kwargs):
     if symbols is None:
         symbols = ["AAPL", "MSFT"]
-    return MonteCarloSimulator(symbols=symbols, weights=weights, seed=42)
+    return MonteCarloSimulator(symbols=symbols, weights=weights, seed=42, **kwargs)
 
 
 # ------------------------------------------------------------------ #
@@ -224,6 +224,26 @@ class TestFullRun:
             sim = _make_simulator(["AAPL"])
             result = sim.run(horizon_years=5, n_sims=100, initial_value=100_000)
             assert any("insuficiente" in w.lower() or "insuficient" in w.lower() for w in result.warnings)
+
+    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
+    def test_static_weights_warning_always(self, _mock):
+        """P2 D11: static-weights assumption is surfaced."""
+        sim = _make_simulator(["AAPL", "MSFT"])
+        result = sim.run(horizon_years=5, n_sims=100, initial_value=100_000)
+        assert any("pesos fijos" in w.lower() for w in result.warnings)
+
+    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
+    def test_crypto_without_extra_vol_warning(self, _mock):
+        """P2 D11: crypto + vol_scale=1.0 warns about missing extra haircut."""
+        sim = _make_simulator(["BTC-USD", "AAPL"], vol_scale=1.0)
+        result = sim.run(horizon_years=5, n_sims=100, initial_value=100_000)
+        assert any("crypto" in w.lower() and "vol_scale" in w.lower() for w in result.warnings)
+
+    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
+    def test_crypto_with_extra_vol_no_extra_warning(self, _mock):
+        sim = _make_simulator(["BTC-USD"], vol_scale=1.2)
+        result = sim.run(horizon_years=5, n_sims=100, initial_value=100_000)
+        assert not any("sin haircut extra" in w.lower() for w in result.warnings)
 
 
 # ------------------------------------------------------------------ #

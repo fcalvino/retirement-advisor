@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from alerts.engine import SCORE_CHANGE_THRESHOLD, AlertEngine
+from alerts.engine import SCORE_CHANGE_THRESHOLD, AlertEngine, _normalize_signal
 from alerts.store import AlertSeverity, AlertType
 
 # ------------------------------------------------------------------ #
@@ -184,6 +184,42 @@ class TestOpportunity:
         fired = engine.run([{"symbol": "XOM", "adjusted_score": 72.0, "signal": "BUY",
                              "moat_classification": "Narrow", "company_name": "ExxonMobil"}])
         assert not any(a.alert_type == AlertType.OPPORTUNITY for a in fired)
+
+    def test_opportunity_strong_buy_with_space(self, engine, store):
+        """P0 D8: Decision.action format 'STRONG BUY' must fire opportunity."""
+        store.seed("XOM", score=55.0, signal="HOLD")
+        fired = engine.run([{
+            "symbol": "XOM",
+            "adjusted_score": 72.0,
+            "signal": "STRONG BUY",
+            "moat_classification": "Narrow",
+            "company_name": "ExxonMobil",
+        }])
+        assert any(a.alert_type == AlertType.OPPORTUNITY for a in fired)
+        snap = store.get_snapshot("XOM")
+        assert snap.signal == "STRONG_BUY"
+
+    def test_normalize_does_not_fire_on_space_vs_underscore(self, engine, store):
+        """Historical snapshot with space equals current underscore — no false change."""
+        store.seed("AAPL", score=72.0, signal="STRONG BUY")
+        fired = engine.run([{
+            "symbol": "AAPL",
+            "adjusted_score": 72.0,
+            "signal": "STRONG_BUY",
+            "moat_classification": "Narrow",
+            "company_name": "Apple",
+        }])
+        assert not any(a.alert_type == AlertType.SIGNAL_CHANGE for a in fired)
+        assert not any(a.alert_type == AlertType.OPPORTUNITY for a in fired)
+
+
+class TestNormalizeSignal:
+    def test_space_and_underscore_equivalent(self):
+        assert _normalize_signal("STRONG BUY") == "STRONG_BUY"
+        assert _normalize_signal("strong buy") == "STRONG_BUY"
+        assert _normalize_signal("STRONG_BUY") == "STRONG_BUY"
+        assert _normalize_signal("BUY") == "BUY"
+        assert _normalize_signal("") == ""
 
 
 # ------------------------------------------------------------------ #

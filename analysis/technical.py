@@ -256,7 +256,10 @@ class TechnicalAnalyzer:
             if 40 <= rsi <= 65:
                 score += 15       # healthy momentum
             elif rsi < 30:
-                score += 10       # oversold — entry opportunity
+                # D15: oversold is only a positive for L/T retirement entries
+                # when the secular trend is still intact (not a value trap).
+                if result.above_sma200 or result.sma200_slope_pct >= 0:
+                    score += 10
             elif rsi > 75:
                 score -= 15       # overbought
         if result.macd_bullish is True:

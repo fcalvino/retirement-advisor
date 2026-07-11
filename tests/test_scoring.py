@@ -155,14 +155,26 @@ class TestConsistencyScore:
         )
         assert 0.0 <= result.consistency_score <= 15.0
 
-    def test_missing_balance_sheet_returns_neutral(self, scorer, stable_income_stmt):
-        """When balance sheet is absent, ROE component returns neutral 2.5."""
+    def test_missing_balance_sheet_uses_missing_data_score(self, scorer, stable_income_stmt):
+        """P1 D6: absent balance sheet → ROE component uses missing_data_score (0), not gift 2.5."""
+        from config import CONSISTENCY
+
         result = scorer.get_enhanced_score(
             60.0, {}, stable_income_stmt, pd.DataFrame()
         )
-        # Still returns valid ConsistencyDetail
         assert isinstance(result.consistency_detail, ConsistencyDetail)
+        assert result.consistency_detail.roe_score == CONSISTENCY.missing_data_score
         assert 0.0 <= result.consistency_score <= 15.0
+
+    def test_empty_statements_do_not_gift_consistency(self, scorer):
+        """P1 D6: fully empty financials → consistency near zero (not ~7.5 free points)."""
+        result = scorer.get_enhanced_score(
+            50.0, {}, pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        )
+        assert result.consistency_score <= 1.0
+        assert result.consistency_detail.roe_score == 0.0
+        assert result.consistency_detail.eps_score == 0.0
+        assert result.consistency_detail.margin_score == 0.0
 
     def test_consistency_detail_components_sum_to_total(
         self, scorer, stable_income_stmt, stable_balance_sheet

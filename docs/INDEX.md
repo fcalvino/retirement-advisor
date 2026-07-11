@@ -23,6 +23,7 @@ Documentos técnicos que explican el *porqué* detrás de las decisiones de dise
 | [`moat_methodology.md`](moat_methodology.md) | `analysis/moat.py` | Cálculo del Economic Moat (cuantitativo + AI), umbrales Wide/Narrow/Minimal/None, ejemplos reales |
 | [`portfolio_optimizer.md`](portfolio_optimizer.md) | `portfolio/optimizer.py` | SLSQP, función objetivo, constraints por perfil, ARS discount, fallback score-weighted |
 | [`alert_system.md`](alert_system.md) | `alerts/` + `scripts/run_scheduler.py` | Tipos de alerta, cooldowns, cold start, scheduler cron/systemd/Docker |
+| [`AUDIT_REASONING_QUALITY.md`](AUDIT_REASONING_QUALITY.md) | Agentes / scoring / portfolio / alertas | Auditoría de calidad de razonamiento: 15 debilidades, mejoras verificables, roadmap P0–P3 |
 
 ---
 

@@ -74,6 +74,30 @@ class TestStressTesterMath:
         # 2008 Tech shock = -52.0%
         assert abs(gfc.portfolio_drawdown_pct - (-52.0)) < 0.1
 
+    def test_crypto_sector_keys_present_in_all_scenarios(self):
+        """P2 D10: every scenario defines Crypto + Crypto / Digital Asset shocks."""
+        for sc in SCENARIOS:
+            assert "Crypto" in sc.sector_shocks
+            assert "Crypto / Digital Asset" in sc.sector_shocks
+            assert sc.sector_shocks["Crypto"] < 0
+            assert sc.sector_shocks["Crypto"] == sc.sector_shocks["Crypto / Digital Asset"]
+
+    def test_crypto_worse_than_default_in_2022(self):
+        """P2 D10: 10% crypto allocation deepens 2022 drawdown vs all-tech."""
+        tech_only = StressTester().run({"Technology": 100.0}, initial_value=100_000)
+        with_crypto = StressTester().run(
+            {"Technology": 90.0, "Crypto": 10.0}, initial_value=100_000
+        )
+        dd_tech = next(r for r in tech_only if "2022" in r.scenario.name).portfolio_drawdown_pct
+        dd_crypto = next(r for r in with_crypto if "2022" in r.scenario.name).portfolio_drawdown_pct
+        assert dd_crypto < dd_tech  # more negative
+
+    def test_crypto_digital_asset_alias_matches_crypto(self):
+        r1 = StressTester().run({"Crypto": 100.0}, initial_value=100_000)
+        r2 = StressTester().run({"Crypto / Digital Asset": 100.0}, initial_value=100_000)
+        for a, b in zip(r1, r2):
+            assert abs(a.portfolio_drawdown_pct - b.portfolio_drawdown_pct) < 0.01
+
     def test_default_shock_applied_for_unknown_sector(self):
         """Unknown sector gets default_shock from each scenario."""
         results = StressTester().run({"AlienSector": 100.0}, initial_value=100_000)

@@ -592,6 +592,10 @@ class PortfolioOptimizer:
             )
             if TAILWINDS.enabled and tailwind != 0.0:
                 composite += TAILWINDS.optimizer_er_tilt * (tailwind / 10.0) * 0.18
+            # P2 audit D4: hard ceiling so score-proxy μ stays economically plausible
+            cap = float(getattr(self.opt, "er_absolute_cap", 0.0) or 0.0)
+            if cap > 0:
+                composite = min(composite, cap)
             mu.append(composite)
         return np.array(mu)
 

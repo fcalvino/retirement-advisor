@@ -369,15 +369,13 @@ class MoatAnalyzer:
                 d.gross_margin_stability = 0.5
 
         # 3. ROIC Sustained — returns above cost of capital signal a moat
-        #    Average ROIC over all available years (more conservative than peak).
+        #    P2 D5: default scores by ROIC − WACC spread (Buffett/Morningstar).
+        #    Legacy absolute ROIC bands remain when use_roic_wacc_spread is False.
         roic_avg = self._avg_roic(income_stmt, balance_sheet)
         if roic_avg is not None:
-            if roic_avg >= 20:
-                d.roic_sustained = 2.0
-            elif roic_avg >= 12:
-                d.roic_sustained = 1.0
-            elif roic_avg >= 8:
-                d.roic_sustained = 0.5
+            d.roic_sustained = self._score_roic_sustained(
+                roic_avg, sector=str(info.get("sector") or ""),
+            )
 
         # 4. Revenue Defensiveness — moat companies don't lose revenue in downturns
         #    Counts years with negative revenue growth out of the available history.
@@ -529,6 +527,34 @@ class MoatAnalyzer:
     def _bonus(self, total: float) -> float:
         """Moat bonus capped by MOAT.max_bonus (formula: total × 0.5)."""
         return min(round(total * 0.5, 1), self.cfg.max_bonus)
+
+    def _wacc_proxy(self, sector: str = "") -> float:
+        """Simple WACC proxy (%) = risk-free + sector equity risk premium."""
+        cfg = self.cfg
+        erp_map = getattr(cfg, "sector_erp_pct", None) or {}
+        erp = float(erp_map.get(sector, getattr(cfg, "default_sector_erp_pct", 5.0)))
+        return float(getattr(cfg, "risk_free_proxy_pct", 4.0)) + erp
+
+    def _score_roic_sustained(self, roic_avg: float, sector: str = "") -> float:
+        """Map average ROIC (%) to 0–2 pts (spread vs WACC or absolute bands)."""
+        cfg = self.cfg
+        if getattr(cfg, "use_roic_wacc_spread", True):
+            spread = float(roic_avg) - self._wacc_proxy(sector)
+            if spread >= float(getattr(cfg, "roic_spread_excellent", 10.0)):
+                return 2.0
+            if spread >= float(getattr(cfg, "roic_spread_good", 4.0)):
+                return 1.0
+            if spread >= float(getattr(cfg, "roic_spread_min", 0.0)):
+                return 0.5
+            return 0.0
+        # Legacy absolute ROIC thresholds
+        if roic_avg >= 20:
+            return 2.0
+        if roic_avg >= 12:
+            return 1.0
+        if roic_avg >= 8:
+            return 0.5
+        return 0.0
 
     # ------------------------------------------------------------------ #
     #  Data extraction helpers                                             #

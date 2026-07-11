@@ -47,6 +47,19 @@ OPPORTUNITY_SIGNALS = {"STRONG_BUY", "BUY"}
 # Moat categories in degradation order (used to detect downgrade)
 _MOAT_RANK = {"Wide": 3, "Narrow": 2, "Minimal": 1, "None": 0}
 
+
+def _normalize_signal(signal: str) -> str:
+    """Canonical signal vocabulary for alerts (P0 audit D8).
+
+    Decision.action uses spaces (\"STRONG BUY\"); OPPORTUNITY_SIGNALS and many
+    tests use underscores (\"STRONG_BUY\"). Production scheduler passes
+    getattr(dec, \"action\"), so without normalization STRONG BUY never matches.
+    """
+    s = (signal or "").upper().strip().replace(" ", "_")
+    if s == "STRONGBUY":
+        s = "STRONG_BUY"
+    return s
+
 # Severity ordering for profile filtering
 _SEVERITY_RANK = {
     AlertSeverity.INFO:     0,
@@ -144,7 +157,7 @@ class AlertEngine:
         for t in scored_tickers:
             symbol      = t.get("symbol", "")
             score       = float(t.get("adjusted_score", 0) or 0)
-            signal      = str(t.get("signal", t.get("decision", "")) or "").upper()
+            signal      = _normalize_signal(str(t.get("signal", t.get("decision", "")) or ""))
             moat_class  = str(t.get("moat_classification", "None") or "None")
             company     = str(t.get("company_name", symbol) or symbol)
             sector      = str(t.get("sector", "Unknown") or "Unknown")
@@ -160,7 +173,7 @@ class AlertEngine:
                 continue
 
             prev_score  = snap.score
-            prev_signal = snap.signal
+            prev_signal = _normalize_signal(snap.signal)
             prev_moat   = snap.moat_class
 
             # 1 — Signal change

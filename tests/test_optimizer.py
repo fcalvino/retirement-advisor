@@ -166,6 +166,33 @@ class TestExpectedReturns:
         mu_ok  = opt._expected_returns(t_ok)[0]
         assert abs(mu_bad - mu_ok) < 1e-6
 
+    def test_er_absolute_cap_enforced(self):
+        """P2 D4: even max score/moat/div cannot exceed OPTIMIZER.er_absolute_cap."""
+        from config import OPTIMIZER
+
+        opt = PortfolioOptimizer("aggressive")
+        t = [_ticker("MAX", score=100.0, div=10.0, moat=20.0)]
+        mu = opt._expected_returns(t)[0]
+        cap = float(OPTIMIZER.er_absolute_cap)
+        assert cap > 0
+        assert mu <= cap + 1e-9
+        # Ranking still works under the cap
+        t_high = [_ticker("A", score=90.0, div=2.0, moat=10.0)]
+        t_low = [_ticker("B", score=40.0, div=2.0, moat=10.0)]
+        assert opt._expected_returns(t_high)[0] > opt._expected_returns(t_low)[0]
+
+    def test_er_cap_disabled_allows_higher(self):
+        """er_absolute_cap=0 disables the ceiling."""
+        from unittest.mock import patch
+        from config import OPTIMIZER
+
+        opt = PortfolioOptimizer("aggressive")
+        t = [_ticker("MAX", score=100.0, div=10.0, moat=20.0)]
+        with patch.object(OPTIMIZER, "er_absolute_cap", 0.0):
+            mu = opt._expected_returns(t)[0]
+        # Uncapped aggressive max is well above 14%
+        assert mu > 0.14
+
 
 # ------------------------------------------------------------------ #
 #  Clean div yield                                                     #

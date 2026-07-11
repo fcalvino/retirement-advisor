@@ -136,6 +136,42 @@ def _tailwind_context_block(fund) -> str:
     )
 
 
+def _hard_decision_constraints_block(fund, tech) -> str:
+    """P1 D7: inject rule-engine hard constraints + CoT steps into decision prompts."""
+    from config import STRATEGY as S
+
+    de = getattr(fund, "debt_equity", None)
+    de_s = f"{de:.2f}" if de is not None else "N/A"
+    pb = getattr(fund, "pb_ratio", None)
+    pb_s = f"{pb:.2f}" if pb is not None else "N/A"
+    adj = float(getattr(fund, "adjusted_score", 0.0) or 0.0)
+    base = float(getattr(fund, "total_score", 0.0) or 0.0)
+    rsi = getattr(tech, "rsi_weekly", None)
+    rsi_s = f"{rsi:.0f}" if rsi is not None else "N/A"
+    vs_low = float(getattr(tech, "price_vs_52w_low_pct", 0.0) or 0.0)
+    max_de = float(getattr(S, "max_debt_equity", 3.0))
+
+    return f"""
+--- CONSTRAINTS DUROS DEL MOTOR RULE-BASED (obligatorios) ---
+- D/E actual = {de_s}. Si D/E > {max_de:.1f} → no BUY ni STRONG BUY (máx HOLD/REDUCE/SELL).
+- P/B actual = {pb_s}. Si P/B < 0 → no BUY (riesgo de insolvencia / equity negativo).
+- Parabólico: +100% vs 52w low y RSI weekly > 80 → no BUY (RSI={rsi_s}, vs_52w_low={vs_low:+.0f}%).
+- Umbrales score rule-based: STRONG≥{S.strong_buy_score:.0f}, BUY≥{S.buy_score:.0f}, HOLD≥{S.hold_score:.0f}.
+- Score a usar en el razonamiento: ADJUSTED = {adj:.1f} (base total_score = {base:.1f}). Priorizá adjusted.
+
+--- PASOS DE RAZONAMIENTO (reflejar en `reasoning`, en español; no omitas ninguno) ---
+1. DATOS: citá score ajustado, moat class, ROE, D/E, señal técnica y 1 warning si hay.
+2. SEGURIDAD: ¿viola constraints duros? Si sí, action en HOLD / REDUCE / SELL y explicá.
+3. MATRIZ: compará score ajustado con umbrales STRONG/BUY/HOLD del sistema.
+4. MACRO: 0–2 factores SOLO si los conectás a un número del paso 1; si no, macro_factors=[].
+5. ASIGNACIÓN: % conservador ≤ {S.max_position_pct:.0f} (o menor si emergentes/vol alta); justificá confidence.
+
+FEW-SHOT DE RIGOR (estilo, no copiar números):
+Empresa con ROE 22%, moat Wide, pero D/E 3.5 y valuación en percentil alto → action HOLD o REDUCE,
+confidence MEDIUM/LOW, allocation ≤ 3%. Nunca STRONG BUY por narrativa de marca si el leverage viola constraints.
+"""
+
+
 # ---------------------------------------------------------------------------
 # 1. Equity Moat Prompt
 # ---------------------------------------------------------------------------
@@ -370,11 +406,12 @@ Alertas técnicas: {", ".join(tech.warnings) if tech.warnings else "ninguna"}
 Instrucción estructural (obligatoria):
 Usá EXACTAMENTE el formato de salida para macro que se detalla abajo. 
 {_macro_factors_output_spec(for_moat=False)}
-
+{_hard_decision_constraints_block(fund, tech)}
 --- INSTRUCCIÓN ---
 Emití una recomendación objetiva y equilibrada sobre el momento actual de la acción, basada en fundamentales y técnico.
 Estructurá el campo `reasoning` manteniendo las 4 secciones (Tesis: ... Riesgos: ... Catalizadores: ... Asignación: ...) pero escribilo con fluidez y tu voz característica de Grok: prosa natural, analítica, directa, conectando los datos duros provistos con el contexto macro que corresponda, sin lugares comunes ni optimismo infundado. Usá oraciones completas.
 Incluí en el reasoning (integrado naturalmente en Tesis o Asignación) una justificación clara y breve de por qué elegiste HIGH, MEDIUM o LOW para `confidence`, anclada en la evidencia concreta: solidez del moat, calidad de los fundamentales, señal técnica, magnitud de los riesgos y contexto macro. Ejemplo: "Elegí MEDIUM porque aunque los fundamentales son sólidos (ROE alto, moat Wide), la valuación está en el percentil alto del sector y el contexto de tasas + riesgo país AR agrega incertidumbre; la convicción no llega a HIGH hasta ver un pullback o datos Q2 más claros. macro_factors: [tasas + riesgo país] → asignación bajada a 3-5%."
+Respetá los CONSTRAINTS DUROS y los PASOS DE RAZONAMIENTO de arriba.
 
 El output principal debe ser un objeto JSON válido con exactamente estos campos (incluí siempre `macro_factors`). Podés agregar un breve comentario adicional después del JSON si ayuda a expresar matices de tu análisis, pero el JSON debe ser completo y parseable primero.
 {{
@@ -610,10 +647,24 @@ Instrucción estructural (obligatoria):
 Usá EXACTAMENTE el formato de salida para macro que se detalla abajo. 
 {_macro_factors_output_spec(for_moat=False)}
 
+--- CONSTRAINTS DUROS CRYPTO (retiro) ---
+- Volatilidad y drawdowns históricos del 70–85% son estructurales: dimensioná siempre.
+- Si hay alerta de volatilidad extrema o movimiento parabólico → no STRONG BUY; preferí HOLD.
+- Score a usar: ADJUSTED = {fund.adjusted_score:.1f} (total_score crypto es 0 por diseño).
+- Asignación conservadora típica ≤ 5% salvo convicción excepcional documentada.
+
+--- PASOS DE RAZONAMIENTO (reflejar en reasoning) ---
+1. Datos: score ajustado, moat crypto, vol/dd, señal técnica.
+2. Seguridad: ¿vol extrema o parabólico? Si sí, cap action.
+3. Matriz: score vs umbrales BUY/HOLD del sistema.
+4. Macro: 0–2 factores anclados a datos; si no, [].
+5. Asignación y confidence con justificación.
+
 --- INSTRUCCIÓN ---
 Evalúa el momentum técnico, el moat crypto y el riesgo de volatilidad de forma objetiva, y emití tu recomendación.
 Estructurá el campo `reasoning` manteniendo las 4 secciones (Tesis: ... Técnico: ... Riesgo: ... Asignación: ...) pero escribilo con fluidez y tu voz característica de Grok: directo, conectando los datos y el moat previo con el contexto macro relevante, sin minimizar la volatilidad ni exagerar la tesis.
 Incluí en el reasoning (integrado naturalmente en Tesis o Asignación) una justificación clara y breve de por qué elegiste HIGH, MEDIUM o LOW para `confidence`, anclada en la evidencia concreta: score del moat crypto, volatilidad histórica, ciclo halving, señal técnica, adopción institucional y contexto macro. Ejemplo: "Elegí MEDIUM porque el moat es sólido (Wide, 7.2/8) y el técnico es alcista, pero los drawdowns históricos del 70–85% y la incertidumbre regulatoria global no permiten HIGH; la convicción podría subir si la adopción soberana se consolida."
+Respetá CONSTRAINTS DUROS CRYPTO y PASOS DE RAZONAMIENTO.
 
 El output principal debe ser un objeto JSON válido con exactamente estos campos. Podés agregar un breve comentario adicional después del JSON si ayuda a expresar matices de tu análisis, pero el JSON debe ser completo y parseable primero.
 {{
@@ -673,19 +724,25 @@ Tipo de alerta: {alert_type}
 Contexto de la alerta:
 {ctx_lines}
 
-TAREA: Explicá esta alerta en 2-3 oraciones claras y directas, como si le hablaras a un inversor inteligente pero no especialista. Luego indicá en 1 oración qué acción concreta debería considerar.
+TAREA: Explicá esta alerta con cadena causal (P3 D12). El campo `explanation` DEBE cubrir, en 3-4 oraciones, este orden:
+1) Hecho: qué umbral se cruzó y con qué magnitud (números del contexto).
+2) Causa probable: ¿ruido de mercado de corto plazo, deterioro fundamental, o downgrade de moat/tesis?
+3) Impacto retiro: para un plan de 10-30 años — ¿revisar tamaño, pausar aportes, o solo monitorear?
+4) Cerrá con sentido de urgencia realista (no day-trade).
+
+Luego `action_suggested`: 1 verbo + 1 condición de salida concreta
+(ej. "Revisar posición si el score no recupera 5 pts en 30 días").
 
 Reglas:
 - Usá lenguaje directo, sin jerga innecesaria
 - Mencioná los números clave del contexto
 - No minimices ni exageres la situación
-- La acción sugerida debe ser concreta y accionable
 - En español neutro, sin modismos regionales
 
 Respondé SOLO con JSON válido:
 {{
-  "explanation": "Explicación clara de 2-3 oraciones sobre qué significa esta alerta y por qué es relevante.",
-  "action_suggested": "Acción concreta sugerida en 1 oración."
+  "explanation": "Hecho: ... Causa probable: ... Impacto retiro: ...",
+  "action_suggested": "Acción concreta con condición de salida en 1 oración."
 }}"""
 
 

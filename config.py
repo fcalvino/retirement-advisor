@@ -64,6 +64,10 @@ class FundamentalThresholds:
     pb_good: float = 3.0
     pb_acceptable: float = 5.0
 
+    # --- Graham intrinsic value (D14) ---
+    # Y in V = EPS × (8.5 + 2g) × 4.4 / Y  (AAA corporate bond yield proxy %)
+    graham_aaa_yield_pct: float = 4.5
+
     # --- Growth (20 pts total) ---
     revenue_cagr_excellent: float = 15.0   # % 5Y CAGR
     revenue_cagr_good: float = 8.0
@@ -97,6 +101,14 @@ class StrategyConfig:
     # Margin of Safety: only buy when price < intrinsic value estimate
     require_margin_of_safety: bool = True
     min_margin_of_safety_pct: float = 10.0  # %
+
+    # P0 audit D2: use adjusted_score (moat+consistency+piotroski+tailwind) so
+    # decision layer aligns with optimizer/screener ranking. Set False for legacy
+    # total_score-only matrix (equity only; crypto always uses adjusted_score).
+    use_adjusted_score_for_decision: bool = True
+
+    # P0 audit D3: hard-block leverage threshold (was magic 3.0 in strategy.py)
+    max_debt_equity: float = 3.0
 
     # Portfolio risk limits
     max_position_pct: float = 8.0     # max % of portfolio per stock
@@ -254,6 +266,9 @@ class ConsistencyThresholds:
     roe_std_max_excellent: float = 5.0
     roe_std_max_acceptable: float = 12.0
     margin_volatility_max: float = 6.0
+    # P1 audit D6: insufficient history must NOT gift ~2.5 pts/dimension (was
+    # "neutral"). 0.0 is the conservative retirement default.
+    missing_data_score: float = 0.0
 
 
 @dataclass
@@ -289,17 +304,31 @@ class CryptoMoatConfig:
       minimal_threshold ≥ 2.0  — limited structural advantage
 
     Bonus formula: min(total × bonus_factor, max_bonus)
-      max_bonus = 5.0 → conservative cap; moat alone can't make BTC a BUY
-      bonus_factor = 0.625 → calibrated so Wide Moat (8pts) yields full +5 bonus
+      P1 D9 recalibration: more weight on structural moat vs short-term tech.
+      max_bonus = 8.0, bonus_factor = 1.0 → Wide (8pts) can add full +8
+
+    Scoring formula (adjusted_score crypto):
+      base_score + tech_pts − vol_penalty − dd_penalty + moat_bonus
+      base lowered (28) and tech max lowered (30) so momentum alone rarely reaches BUY.
+
+    max_vol_for_buy: annualized vol % above which strategy caps BUY→HOLD (retirement).
 
     ai_cache_ttl_hours: 7 days — halvings don't change weekly.
     """
     wide_threshold: float = 6.0
     narrow_threshold: float = 4.0
     minimal_threshold: float = 2.0
-    max_bonus: float = 5.0
-    bonus_factor: float = 0.625
+    max_bonus: float = 8.0
+    bonus_factor: float = 1.0
     ai_cache_ttl_hours: int = 168
+    # Crypto adjusted_score components (D9)
+    base_score: float = 28.0
+    tech_pts_bullish_strong: float = 30.0
+    tech_pts_bullish: float = 24.0
+    tech_pts_neutral: float = 16.0
+    tech_pts_bearish: float = 8.0
+    tech_pts_bearish_strong: float = 4.0
+    max_vol_for_buy: float = 70.0
 
 
 @dataclass
@@ -321,12 +350,39 @@ class MoatConfig:
 
     ai_cache_ttl_hours: how long AI qualitative results are cached per ticker.
       Default 168h (7 days) — moat is structural and doesn't change week-to-week.
+
+    P2 audit D5 — ROIC vs WACC proxy (Buffett/Morningstar alignment):
+      use_roic_wacc_spread — score roic_sustained by ROIC − WACC, not absolute ROIC
+      risk_free_proxy_pct / default_sector_erp_pct — simple WACC = rf + ERP
+      sector_erp_pct — optional per-sector ERP overrides (empty → default)
+      roic_spread_* — spread thresholds (percentage points) for 2.0 / 1.0 / 0.5 pts
     """
     wide_threshold: float = 14.0
     narrow_threshold: float = 8.0
     minimal_threshold: float = 4.0
     max_bonus: float = 10.0
     ai_cache_ttl_hours: int = 168
+    # ROIC − WACC spread scoring (D5)
+    use_roic_wacc_spread: bool = True
+    risk_free_proxy_pct: float = 4.0
+    default_sector_erp_pct: float = 5.0
+    sector_erp_pct: dict = field(default_factory=lambda: {
+        "Technology": 5.0,
+        "Healthcare": 4.5,
+        "Financials": 5.5,
+        "Energy": 6.0,
+        "Utilities": 4.0,
+        "Consumer Defensive": 4.5,
+        "Consumer Cyclical": 5.5,
+        "Communication Services": 5.0,
+        "Industrials": 5.0,
+        "Real Estate": 5.5,
+        "Basic Materials": 5.5,
+        "Materials": 5.5,
+    })
+    roic_spread_excellent: float = 10.0   # spread ≥ this → 2.0 pts
+    roic_spread_good: float = 4.0         # spread ≥ this → 1.0 pts
+    roic_spread_min: float = 0.0          # spread ≥ this → 0.5 pts
 
 
 @dataclass
@@ -441,6 +497,9 @@ class OptimizerConfig:
                               banner. AI bulk scoring N>this adds latency/cost without
                               meaningfully changing optimizer output (quant scores suffice).
     price_fetch_max_workers — parallel workers for price matrix fetch
+    er_absolute_cap         — P2 audit D4: hard annual expected-return ceiling per ticker
+                              (fraction, e.g. 0.14 = 14%). Score-proxy μ can otherwise
+                              imply ~18%+ with no economic anchor. Set 0 to disable.
     """
     default_profile: str = "conservative"
     risk_free_rate: float = 0.045
@@ -451,6 +510,7 @@ class OptimizerConfig:
     ars_risk_discount: float = 0.85
     max_ai_screener_tickers: int = 40
     price_fetch_max_workers: int = 6
+    er_absolute_cap: float = 0.14
 
 
 @dataclass
@@ -535,6 +595,11 @@ class MonteCarloConfig:
 
     min_history_weeks — minimum weeks of history required to run simulation.
     default_n_sims    — simulation count shown in the dashboard by default.
+
+    P2 D11 transparency:
+      warn_static_weights / warn_crypto_without_extra_vol — append human-readable
+      assumptions to MonteCarloResult.warnings (no change to path math).
+      default_vol_scale_* — suggested caller overrides by profile (informational).
     """
     vol_adjustment: float = 1.10         # +10% volatility (conservative)
     mean_haircut: float = 0.80           # -20% expected return (conservative)
@@ -542,6 +607,11 @@ class MonteCarloConfig:
     default_n_sims: int = 10_000
     default_horizon_years: int = 20
     block_size_weeks: int = 4            # bootstrap block size (preserves autocorrelation)
+    warn_static_weights: bool = True
+    warn_crypto_without_extra_vol: bool = True
+    default_vol_scale_conservative: float = 1.15
+    default_vol_scale_moderate: float = 1.0
+    default_vol_scale_aggressive: float = 0.95
 
 
 @dataclass

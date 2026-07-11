@@ -176,16 +176,16 @@ class EnhancedScoring:
             ["Stockholders Equity", "Total Stockholder Equity", "Common Stock Equity"],
         )
         if ni is None or equity is None:
-            return 2.5  # neutral
+            return self.ct.missing_data_score
 
         common = ni.index.intersection(equity.index)
         if len(common) < 2:
-            return 2.5
+            return self.ct.missing_data_score
 
         eq_clean = equity[common].replace(0, np.nan)
         roe = (ni[common] / eq_clean * 100).dropna()
         if len(roe) < 2:
-            return 2.5
+            return self.ct.missing_data_score
 
         std = roe.std()
         if std <= self.ct.roe_std_max_excellent:
@@ -200,17 +200,17 @@ class EnhancedScoring:
         """Stability of net income growth rates (EPS proxy). CV of YoY growth."""
         ni = self._extract(income_stmt, ["Net Income"])
         if ni is None or len(ni) < 3:
-            return 2.5  # neutral — need at least 3 years for 2 growth rates
+            return self.ct.missing_data_score  # need ≥3 years for 2 growth rates
 
         ni_sorted = ni.sort_index()  # ascending for pct_change
         growth = ni_sorted.pct_change().dropna()
         if len(growth) < 2:
-            return 2.5
+            return self.ct.missing_data_score
 
         # Remove outliers (> 500% change) that skew std
         growth = growth[growth.abs() <= 5.0]
         if len(growth) < 2:
-            return 2.5
+            return self.ct.missing_data_score
 
         cv = growth.std() / (growth.abs().mean() + 1e-9)
 
@@ -229,16 +229,16 @@ class EnhancedScoring:
         ni = self._extract(income_stmt, ["Net Income"])
         rev = self._extract(income_stmt, ["Total Revenue", "Revenue"])
         if ni is None or rev is None:
-            return 2.5
+            return self.ct.missing_data_score
 
         common = ni.index.intersection(rev.index)
         if len(common) < 2:
-            return 2.5
+            return self.ct.missing_data_score
 
         rev_clean = rev[common].replace(0, np.nan)
         margins = (ni[common] / rev_clean * 100).dropna()
         if len(margins) < 2:
-            return 2.5
+            return self.ct.missing_data_score
 
         std = margins.std()
         if std <= self.ct.margin_volatility_max:

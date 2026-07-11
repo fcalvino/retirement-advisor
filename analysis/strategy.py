@@ -11,10 +11,11 @@ Decision matrix:
   SELL        — fund score < 35 or fundamental deterioration detected
 
 Conservative rules for retirement:
-  - Never buy a stock with D/E > 2.0 (leverage risk)
-  - Never buy when RSI weekly > 80 (overbought — wait for pullback)
+  - Never buy a stock with D/E > STRATEGY.max_debt_equity (default 3.0)
+  - Never buy when RSI weekly > 80 on parabolic extension (safety block)
   - Maximum 8% portfolio weight per position
   - Trigger review when fundamental score drops > 10 pts
+  - AI path cannot bypass hard safety blocks (apply_safety_overlay)
 """
 
 from dataclasses import dataclass, field
@@ -25,6 +26,77 @@ from loguru import logger
 from analysis.fundamental import FundamentalResult
 from analysis.technical import TechnicalResult
 from config import STRATEGY as CFG
+
+
+def effective_decision_score(fundamental: FundamentalResult) -> float:
+    """Score used by the decision matrix (P0 D2: align with portfolio layer).
+
+    Crypto always uses adjusted_score (total_score is 0 by design).
+    Equity uses adjusted_score when STRATEGY.use_adjusted_score_for_decision
+    is True (default); otherwise legacy total_score.
+    """
+    if getattr(fundamental, "is_crypto", False) or CFG.use_adjusted_score_for_decision:
+        return float(getattr(fundamental, "adjusted_score", 0.0) or 0.0)
+    return float(getattr(fundamental, "total_score", 0.0) or 0.0)
+
+
+def apply_safety_overlay(
+    decision: "Decision",
+    fundamental: FundamentalResult,
+    technical: TechnicalResult,
+) -> "Decision":
+    """Re-apply hard safety blocks after any decision path (rule-based or AI).
+
+    P0 audit D1: the LLM path must never upgrade past leverage / book-value /
+    parabolic guards. Idempotent when decide() already blocked.
+    """
+    _is_crypto = getattr(fundamental, "is_crypto", False)
+
+    if _is_crypto:
+        if (
+            technical.price_vs_52w_low_pct > 120
+            and technical.rsi_weekly
+            and technical.rsi_weekly > 80
+        ):
+            if decision.action in ("STRONG BUY", "BUY", "HOLD", "REDUCE", "SELL"):
+                reason = (
+                    f"Movimiento parabólico crypto (RSI={technical.rsi_weekly:.0f}, "
+                    f"+{technical.price_vs_52w_low_pct:.0f}% desde 52w low)"
+                )
+                decision.action = "AVOID"
+                decision.blocked = True
+                decision.block_reason = reason
+                decision.confidence = "HIGH"
+                decision.rationale = [f"BLOCKED (safety overlay): {reason}"] + list(
+                    decision.rationale or []
+                )
+        return decision
+
+    blocked, reason = RetirementStrategy()._check_safety_blocks(fundamental, technical)
+    if blocked and decision.action in ("STRONG BUY", "BUY", "HOLD", "REDUCE", "SELL"):
+        decision.action = "AVOID"
+        decision.blocked = True
+        decision.block_reason = reason
+        decision.confidence = "HIGH"
+        decision.rationale = [f"BLOCKED (safety overlay): {reason}"] + list(
+            decision.rationale or []
+        )
+
+    # Soft data-quality gate also on AI path (same as decide())
+    dq = getattr(fundamental, "data_quality", None) or {}
+    if (
+        isinstance(dq, dict)
+        and dq.get("level") == "poor"
+        and decision.action in ("STRONG BUY", "BUY")
+        and not decision.blocked
+    ):
+        decision.action = "HOLD"
+        decision.confidence = "LOW"
+        decision.rationale = [
+            "BUY degradado a HOLD por data quality pobre (datos incompletos)"
+        ] + list(decision.rationale or [])
+
+    return decision
 
 
 @dataclass
@@ -96,9 +168,8 @@ class RetirementStrategy:
     ) -> Decision:
         symbol = fundamental.symbol
 
-        # Crypto assets use adjusted_score (total_score is always 0)
         _is_crypto = getattr(fundamental, "is_crypto", False)
-        effective_score = fundamental.adjusted_score if _is_crypto else fundamental.total_score
+        effective_score = effective_decision_score(fundamental)
 
         decision = Decision(
             symbol=symbol,
@@ -175,6 +246,33 @@ class RetirementStrategy:
         # --- Step 3: Add rationale ---
         self._build_rationale(decision, fundamental, technical)
 
+        # Crypto high-vol cap (P1 D9): extreme vol → never BUY for retirement
+        if _is_crypto and decision.action in ("STRONG BUY", "BUY"):
+            if any("Volatilidad extrema" in (w or "") for w in (fundamental.warnings or [])):
+                decision.action = "HOLD"
+                decision.confidence = "MEDIUM"
+                decision.rationale.append(
+                    "BUY capado a HOLD por volatilidad extrema crypto (perfil retiro)"
+                )
+
+        # Data quality soft gate (coherence gap): poor yfinance fill → no BUY
+        dq = getattr(fundamental, "data_quality", None) or {}
+        if isinstance(dq, dict) and dq.get("level") in ("partial", "poor"):
+            missing = ", ".join((dq.get("missing_fields") or [])[:5]) or "métricas clave"
+            decision.risks.append(
+                f"Calidad de datos {dq['level']}: faltan {missing}"
+            )
+        if (
+            isinstance(dq, dict)
+            and dq.get("level") == "poor"
+            and decision.action in ("STRONG BUY", "BUY")
+        ):
+            decision.action = "HOLD"
+            decision.confidence = "LOW"
+            decision.rationale.append(
+                "BUY degradado a HOLD por data quality pobre (datos incompletos)"
+            )
+
         logger.info(f"{symbol}: {decision.action} (F={score:.1f}, T={tech}{'  🪙crypto' if _is_crypto else ''})")
         return decision
 
@@ -187,8 +285,11 @@ class RetirementStrategy:
         fundamental: FundamentalResult,
         technical: TechnicalResult,
     ) -> tuple[bool, str]:
-        # Excessive leverage
-        if fundamental.debt_equity is not None and fundamental.debt_equity > 3.0:
+        # Excessive leverage (threshold from STRATEGY.max_debt_equity — P0 D3)
+        if (
+            fundamental.debt_equity is not None
+            and fundamental.debt_equity > CFG.max_debt_equity
+        ):
             return True, f"Excessive leverage (D/E = {fundamental.debt_equity:.1f})"
 
         # Negative equity (book value < 0)
@@ -286,5 +387,8 @@ def full_analysis(
         decision = AIAnalyzer(ai_config).analyze(fund, tech)
     else:
         decision = RetirementStrategy().decide(fund, tech)
+
+    # P0 D1: hard safety blocks always win (AI path included)
+    decision = apply_safety_overlay(decision, fund, tech)
 
     return fund, tech, decision

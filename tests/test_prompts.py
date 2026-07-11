@@ -20,6 +20,7 @@ import pytest
 from analysis.fundamental import FundamentalResult
 from analysis.moat import MoatDetail
 from analysis.prompts import (
+    alert_explanation_prompt,
     crypto_decision_prompt,
     crypto_moat_prompt,
     equity_decision_prompt,
@@ -265,6 +266,21 @@ class TestEquityDecisionPrompt:
         low = prompt.lower()
         assert "justif" in low or "elegiste" in low or "elegí" in low
         assert "high" in low and "medium" in low and "low" in low
+
+    def test_hard_constraints_and_cot_steps_present(self):
+        """P1 D7: CONSTRAINTS DUROS + PASOS DE RAZONAMIENTO + adjusted score."""
+        prompt = self._prompt()
+        assert "CONSTRAINTS DUROS" in prompt
+        assert "PASOS DE RAZONAMIENTO" in prompt
+        assert "ADJUSTED" in prompt or "Score a usar" in prompt
+        assert "FEW-SHOT" in prompt or "few-shot" in prompt.lower() or "FEW-SHOT DE RIGOR" in prompt
+
+    def test_high_leverage_mentioned_in_constraints(self):
+        fund = _equity_fund()
+        fund.debt_equity = 3.5
+        prompt = equity_decision_prompt(fund, _tech())
+        assert "3.50" in prompt or "3.5" in prompt
+        assert "no BUY ni STRONG BUY" in prompt or "no BUY" in prompt
 
 
 # ------------------------------------------------------------------ #
@@ -647,3 +663,20 @@ class TestGeneratePlanNarrative:
         snap.withdrawal_strategy = {"kind": "guardrails", "pct": 0.04}
         a.generate_plan_narrative(snap)
         assert "GUARDRAILS" in captured["prompt"]
+
+
+# ------------------------------------------------------------------ #
+#  P3 D12 — alert_explanation_prompt causal chain                      #
+# ------------------------------------------------------------------ #
+
+class TestAlertExplanationPrompt:
+    def test_causal_chain_instructions_present(self):
+        prompt = alert_explanation_prompt(
+            "score_drop", "AAPL",
+            {"prev_score": "72", "current_score": "60", "signal": "HOLD"},
+        )
+        assert "Hecho" in prompt
+        assert "Causa probable" in prompt
+        assert "Impacto retiro" in prompt
+        assert "action_suggested" in prompt
+        assert "Eres Grok" in prompt

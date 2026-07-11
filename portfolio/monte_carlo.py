@@ -231,7 +231,29 @@ class MonteCarloSimulator:
         port_hist, n_weeks, symbols_used, warnings = self._load_returns()
         result.n_weeks_history = n_weeks
         result.symbols_used    = symbols_used
-        result.warnings        = warnings
+        result.warnings        = list(warnings)
+
+        # P2 D11: surface model assumptions (no path math change)
+        if getattr(MONTE_CARLO, "warn_static_weights", True):
+            result.warnings.append(
+                "Simulación con pesos fijos (sin rebalanceo periódico en el path; "
+                "un solo régimen histórico de block-bootstrap)."
+            )
+        if (
+            getattr(MONTE_CARLO, "warn_crypto_without_extra_vol", True)
+            and self.vol_scale <= 1.0
+            and symbols_used
+        ):
+            try:
+                from config import is_crypto
+                if any(is_crypto(s) for s in symbols_used):
+                    result.warnings.append(
+                        "Hay crypto en el portafolio con vol_scale≤1.0 — sin haircut "
+                        "extra de volatilidad. Considerá vol_scale≥1.15 en perfiles "
+                        "conservadores (MONTE_CARLO.default_vol_scale_conservative)."
+                    )
+            except Exception:
+                pass
 
         if n_weeks < MONTE_CARLO.min_history_weeks:
             result.warnings.append(

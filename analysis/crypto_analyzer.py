@@ -314,14 +314,15 @@ class CryptoAnalyzer:
         Calibrated so BTC in a strong bull market scores 55–65 (HOLD for
         conservative retirement profiles), not STRONG BUY.
 
-        Components:
-            base_score    = 35.0
-            tech_pts      = 0–45    (signal + strength)
-            vol_penalty   = 0–25    (annualised volatility)
-            dd_penalty    = 0–15    (max historical drawdown)
-            moat_bonus    = 0–5     (from CryptoMoatDetail)
+        Components (CRYPTO_MOAT config — P1 D9):
+            base_score    default 28
+            tech_pts      0–30 (signal + strength; less weight than pre-D9)
+            vol_penalty   0–25 (annualised volatility)
+            dd_penalty    0–15 (max historical drawdown)
+            moat_bonus    0–max_bonus (structural AI moat)
         """
-        base  = 35.0
+        from config import CRYPTO_MOAT as _CM
+        base  = float(getattr(_CM, "base_score", 28.0))
         tech_pts  = self._tech_pts(tech)
         vol_pen   = self._vol_penalty(vol)
         dd_pen    = self._drawdown_penalty(max_drawdown)
@@ -331,22 +332,23 @@ class CryptoAnalyzer:
 
     @staticmethod
     def _tech_pts(tech) -> float:
-        """
-        Convert TechnicalResult → 0–45 pts.
-
-            BULLISH + strength >  50  → 45
-            BULLISH                   → 35
-            NEUTRAL                   → 22
-            BEARISH                   → 10
-            BEARISH + strength < -50  →  5
-        """
+        """Convert TechnicalResult → tech points (caps from CRYPTO_MOAT, D9)."""
+        from config import CRYPTO_MOAT as _CM
         signal   = getattr(tech, "signal", "NEUTRAL")
         strength = getattr(tech, "signal_strength", 0)
         if signal == "BULLISH":
-            return 45.0 if strength > 50 else 35.0
+            return (
+                float(_CM.tech_pts_bullish_strong)
+                if strength > 50
+                else float(_CM.tech_pts_bullish)
+            )
         elif signal == "BEARISH":
-            return 5.0 if strength < -50 else 10.0
-        return 22.0   # NEUTRAL
+            return (
+                float(_CM.tech_pts_bearish_strong)
+                if strength < -50
+                else float(_CM.tech_pts_bearish)
+            )
+        return float(_CM.tech_pts_neutral)
 
     @staticmethod
     def _vol_penalty(vol: Optional[float]) -> float:

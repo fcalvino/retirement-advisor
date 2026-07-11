@@ -14,12 +14,44 @@ import json
 from loguru import logger
 
 from analysis.fundamental import FundamentalResult
-from analysis.strategy import Decision, RetirementStrategy
+from analysis.strategy import (
+    Decision,
+    RetirementStrategy,
+    apply_safety_overlay,
+    effective_decision_score,
+)
 from analysis.technical import TechnicalResult
 from analysis.utils import extract_json_object
 
 # Argentine ADR tickers — flag for emerging market context in the prompt
 ARGENTINA_ADRS = {"YPF", "PAM", "CEPU", "LOMA", "MELI", "GLOB", "DESP", "TEO", "EDN", "GGAL", "BMA", "BBAR", "SUPV"}
+
+
+def resolve_optimizer_profile(profile_name: str | None = None):
+    """Map OptimizationResult.profile_name (or key) → ProfileConfig (P1 D13).
+
+    Pure helper so optimizer-advice prompts use real profile constraints
+    instead of hard-coded moderate/conservative defaults.
+    """
+    from config import CONSERVATIVE_PROFILE, OPTIMIZER_PROFILES
+
+    raw = (profile_name or "").strip().lower()
+    if not raw:
+        return CONSERVATIVE_PROFILE
+
+    for key, cfg in OPTIMIZER_PROFILES.items():
+        if key == raw or cfg.name.lower() == raw:
+            return cfg
+
+    # Fuzzy Spanish/English fragments
+    if "agres" in raw or "aggress" in raw:
+        return OPTIMIZER_PROFILES.get("aggressive", CONSERVATIVE_PROFILE)
+    if "moder" in raw:
+        return OPTIMIZER_PROFILES.get("moderate", CONSERVATIVE_PROFILE)
+    if "conserv" in raw:
+        return OPTIMIZER_PROFILES.get("conservative", CONSERVATIVE_PROFILE)
+
+    return CONSERVATIVE_PROFILE
 
 
 class AIAnalyzer:
@@ -31,11 +63,14 @@ class AIAnalyzer:
             prompt = self._build_prompt(fund, tech)
             raw = self._call_api(prompt)
             decision = self._parse_response(raw, fund, tech)
+            # P0 D1: never let LLM bypass hard safety blocks
+            decision = apply_safety_overlay(decision, fund, tech)
             logger.info(f"{fund.symbol}: AI decision = {decision.action} ({self.config.provider}/{self.config.model})")
             return decision
         except Exception as exc:
             logger.warning(f"{fund.symbol}: AI analysis failed ({type(exc).__name__}: {exc}), falling back to rule-based engine")
-            return RetirementStrategy().decide(fund, tech)
+            decision = RetirementStrategy().decide(fund, tech)
+            return apply_safety_overlay(decision, fund, tech)
 
     def _build_prompt(self, fund: FundamentalResult, tech: TechnicalResult) -> str:
         """Delegate to the centralized prompt library."""
@@ -241,16 +276,18 @@ class AIAnalyzer:
             holdings_note = ""
 
         profile_name = getattr(opt_result, "profile_name", "Moderado")
-        max_pos = 8.0
-        min_pos = 8
-        max_vol = 18.0
-        min_div = 2.5
-        max_crypto = 5.0
+        # P1 audit D13: real profile constraints (not hard-coded 8/8/18/2.5/5)
+        pcfg = resolve_optimizer_profile(profile_name)
+        max_pos = float(pcfg.max_position_pct)
+        min_pos = int(pcfg.min_positions)
+        max_vol = float(pcfg.max_volatility_pct)
+        min_div = float(pcfg.min_dividend_yield_pct)
+        max_crypto = float(pcfg.max_crypto_pct)
         reb_rat = getattr(opt_result, "rebalance_rationale", "") or ""
         warns = getattr(opt_result, "warnings", []) or []
 
         prompt = portfolio_optimizer_advice_prompt(
-            profile_name=profile_name,
+            profile_name=profile_name or pcfg.name,
             holdings=holdings_for_prompt,
             expected_return_pct=float(getattr(opt_result, "expected_return_pct", 0.0) or 0.0),
             volatility_pct=float(getattr(opt_result, "volatility_pct", 0.0) or 0.0),
@@ -451,27 +488,31 @@ class AIAnalyzer:
         if action not in valid_actions:
             action = "HOLD"
 
-        # For crypto, use adjusted_score (total_score is always 0)
-        score = fund.adjusted_score if getattr(fund, "is_crypto", False) else fund.total_score
+        # P0 D2: same effective score as rule-based engine / optimizer
+        score = effective_decision_score(fund)
 
         _alloc = None
         try:
             _alloc_raw = data.get("recommended_max_allocation_conservative")
             if _alloc_raw is not None:
-                _alloc = float(_alloc_raw)
+                _alloc = max(0.0, min(15.0, float(_alloc_raw)))
         except (TypeError, ValueError):
             pass
+
+        conf = str(data.get("confidence", "MEDIUM") or "MEDIUM").upper()
+        if conf not in {"HIGH", "MEDIUM", "LOW"}:
+            conf = "MEDIUM"
 
         return Decision(
             symbol=fund.symbol,
             action=action,
-            confidence=data.get("confidence", "MEDIUM").upper(),
+            confidence=conf,
             fundamental_score=score,
             technical_signal=tech.signal,
             has_margin_of_safety=fund.is_value_stock(),
-            rationale=data.get("rationale", []),
-            risks=data.get("risks", []),
-            ai_reasoning=data.get("reasoning", ""),
+            rationale=data.get("rationale", []) or [],
+            risks=data.get("risks", []) or [],
+            ai_reasoning=data.get("reasoning", "") or "",
             recommended_max_allocation_pct=_alloc,
             macro_factors=data.get("macro_factors", []) or [],
         )
