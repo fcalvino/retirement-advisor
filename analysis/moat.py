@@ -39,15 +39,15 @@ This module evaluates moat in two independent layers:
 from __future__ import annotations
 
 import json
-import re
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 from loguru import logger
 
-from config import AIConfig
+from analysis.utils import extract_json_object
+from config import MOAT, AIConfig
 
 # ------------------------------------------------------------------ #
 #  Custom exceptions                                                   #
@@ -125,6 +125,12 @@ class MoatDetail:
     moat_durability_years: int = 0              # AI estimate: 5 | 10 | 15 | 20
     recommended_max_allocation_conservative: int = 8  # % of portfolio (default: profile max)
 
+    # Structured macro factors (structural improvement for better reasoning).
+    # [] when no material macro or AI not used. Mirrors the LLM "macro_factors" output.
+    macro_factors: List[Dict[str, Any]] = field(default_factory=list)
+    # Optional: specific impact on long-term moat durability (structural, not price).
+    macro_impact_on_moat_durability: str = ""
+
     @property
     def color(self) -> str:
         """Hex color for dashboard display based on classification."""
@@ -182,16 +188,15 @@ class MoatAnalyzer:
     quantitative score is always returned as a valid fallback.
     """
 
-    _AI_CACHE_TTL_HOURS = 168  # 7 days — moat is structural, doesn't change daily
-
     def __init__(self) -> None:
         self._cache = None  # lazy-init: avoids import cycle at module load time
+        self.cfg = MOAT
 
     def _get_cache(self):
-        """Return the 7-day DataCache instance, creating it on first access."""
+        """Return the DataCache instance (TTL from MOAT.ai_cache_ttl_hours)."""
         if self._cache is None:
             from data.cache import DataCache
-            self._cache = DataCache(ttl_hours=self._AI_CACHE_TTL_HOURS)
+            self._cache = DataCache(ttl_hours=self.cfg.ai_cache_ttl_hours)
         return self._cache
 
     # ------------------------------------------------------------------ #
@@ -228,7 +233,7 @@ class MoatAnalyzer:
         self._score_quant(detail, info, income_stmt, balance_sheet, cashflow)
         detail.total = round(detail.quant_total, 1)
         detail.classification = self._classify(detail.total)
-        detail.bonus = min(round(detail.total * 0.5, 1), 10.0)
+        detail.bonus = self._bonus(detail.total)
         logger.debug(f"{symbol}: moat quant={detail.quant_total:.1f}/12 ({detail.classification})")
         return detail
 
@@ -286,6 +291,8 @@ class MoatAnalyzer:
                 quant_result.recommended_max_allocation_conservative = parsed.get(
                     "recommended_max_allocation_conservative", 8
                 )
+                quant_result.macro_factors = parsed.get("macro_factors", []) or []
+                quant_result.macro_impact_on_moat_durability = parsed.get("macro_impact_on_moat_durability", "")
 
                 self._get_cache().set(cache_key, {
                     "brand_strength":   quant_result.brand_strength,
@@ -296,6 +303,8 @@ class MoatAnalyzer:
                     "ai_reasoning":     quant_result.ai_reasoning,
                     "moat_durability_years":                    quant_result.moat_durability_years,
                     "recommended_max_allocation_conservative":  quant_result.recommended_max_allocation_conservative,
+                    "macro_factors":                            quant_result.macro_factors,
+                    "macro_impact_on_moat_durability":          quant_result.macro_impact_on_moat_durability,
                 })
                 logger.info(
                     f"{symbol}: moat AI={quant_result.ai_total:.1f}/8 "
@@ -320,7 +329,7 @@ class MoatAnalyzer:
         # Recompute combined totals regardless of whether AI succeeded
         quant_result.total = round(quant_result.quant_total + quant_result.ai_total, 1)
         quant_result.classification = self._classify(quant_result.total)
-        quant_result.bonus = min(round(quant_result.total * 0.5, 1), 10.0)
+        quant_result.bonus = self._bonus(quant_result.total)
         return quant_result
 
     # ------------------------------------------------------------------ #
@@ -445,20 +454,11 @@ class MoatAnalyzer:
             text = "\n".join(line for line in lines if not line.startswith("```")).strip()
 
         try:
-            data = json.loads(text)
-        except json.JSONDecodeError:
-            # Fallback: extract first {...} block from the response
-            match = re.search(r'\{.*?\}', text, re.DOTALL)
-            if not match:
-                raise MoatParseError(
-                    f"No JSON object found in response for {symbol}: {text[:200]!r}"
-                )
-            try:
-                data = json.loads(match.group())
-            except json.JSONDecodeError as exc:
-                raise MoatParseError(
-                    f"JSON decode failed for {symbol}: {exc} — raw: {text[:200]!r}"
-                ) from exc
+            data = extract_json_object(text)
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise MoatParseError(
+                f"JSON extraction failed for {symbol}: {exc} — raw: {text[:200]!r}"
+            ) from exc
 
         # Clamp all score fields to valid range
         for key in ("brand_strength", "network_effects", "switching_costs", "regulatory_ip"):
@@ -482,6 +482,12 @@ class MoatAnalyzer:
         except (TypeError, ValueError):
             data["recommended_max_allocation_conservative"] = 8
 
+        # Structured macro (new)
+        data.setdefault("macro_factors", [])
+        if not isinstance(data.get("macro_factors"), list):
+            data["macro_factors"] = []
+        data.setdefault("macro_impact_on_moat_durability", "")
+
         return data
 
     # ------------------------------------------------------------------ #
@@ -501,22 +507,28 @@ class MoatAnalyzer:
         detail.recommended_max_allocation_conservative = int(
             cached.get("recommended_max_allocation_conservative", 8)
         )
+        detail.macro_factors = cached.get("macro_factors", []) or []
+        detail.macro_impact_on_moat_durability = cached.get("macro_impact_on_moat_durability", "")
         detail.ai_available = True
 
     # ------------------------------------------------------------------ #
     #  Classification                                                      #
     # ------------------------------------------------------------------ #
 
-    @staticmethod
-    def _classify(total: float) -> str:
-        """Map a total moat score (0–20) to a classification label."""
-        if total >= 14:
+    def _classify(self, total: float) -> str:
+        """Map a total moat score (0–20) to a classification label via MOAT thresholds."""
+        cfg = self.cfg
+        if total >= cfg.wide_threshold:
             return "Wide"
-        elif total >= 8:
+        if total >= cfg.narrow_threshold:
             return "Narrow"
-        elif total >= 4:
+        if total >= cfg.minimal_threshold:
             return "Minimal"
         return "None"
+
+    def _bonus(self, total: float) -> float:
+        """Moat bonus capped by MOAT.max_bonus (formula: total × 0.5)."""
+        return min(round(total * 0.5, 1), self.cfg.max_bonus)
 
     # ------------------------------------------------------------------ #
     #  Data extraction helpers                                             #

@@ -1,4 +1,5 @@
 venv/
+.venv/
 __pycache__/
 *.pyc
 *.pyo
@@ -8,4 +9,18 @@ data/db/
 .env
 *.egg-info/
 .claude/
+.rtk/
+.ruff_cache/
+.pytest_cache/
 logs/
+
+# Local / generated QA artifacts (keep scripts + package.json)
+qa/node_modules/
+qa/shots/
+qa/out_*.json
+
+# User-local runtime data (samples live under data/sample_plans/)
+data/retirement_plans.json
+data/plan_health_history.json
+data/personal_book_convictions.json
+

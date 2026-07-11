@@ -18,7 +18,7 @@ Conservative rules for retirement:
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
@@ -49,6 +49,11 @@ class Decision:
 
     # Grok allocation recommendation (None when rule-based or when Grok didn't provide it)
     recommended_max_allocation_pct: Optional[float] = None
+
+    # Structured macro factors (new in structural macro improvement).
+    # Populated from LLM when AI is used; [] when rule-based, on error, or when LLM judged no material macro.
+    # Each item: {"factor": str, "why_relevant": str, "impact": str, "effect_on_allocation_or_conviction": str}
+    macro_factors: List[Dict[str, Any]] = field(default_factory=list)
 
     @property
     def action_emoji(self) -> str:
@@ -156,6 +161,17 @@ class RetirementStrategy:
             decision.confidence = "HIGH"
             decision.rationale.append("Fundamental deterioration — exit position")
 
+        # Technical confirmation for BUY / STRONG BUY (config-first)
+        if CFG.require_technical_uptrend and decision.action in ("BUY", "STRONG BUY"):
+            uptrend = tech == "BULLISH" or bool(getattr(technical, "above_sma200", False))
+            if not uptrend:
+                decision.action = "HOLD"
+                decision.confidence = "MEDIUM"
+                decision.rationale.append(
+                    "Fundamentals support buying but technical uptrend not confirmed "
+                    "(require_technical_uptrend) — hold, do not add"
+                )
+
         # --- Step 3: Add rationale ---
         self._build_rationale(decision, fundamental, technical)
 
@@ -207,6 +223,22 @@ class RetirementStrategy:
             decision.rationale.append(f"Attractive FCF yield: {f.fcf_yield:.1f}%")
         if f.is_value_stock() and f.margin_of_safety_pct is not None:
             decision.rationale.append(f"Margin of Safety: {f.margin_of_safety_pct:.0f}% vs Graham value ${f.graham_value:.2f}")
+
+        # Sector-country structural tailwind (Idea 2) — surface only when material
+        tw_class = getattr(f, "tailwind_classification", "Neutral")
+        tw_detail = getattr(f, "tailwind_detail", None)
+        if tw_detail is not None:
+            _tw_expl = (getattr(tw_detail, "explanation", "") or "")[:160]
+            _tw_dur = getattr(tw_detail, "durability_years", 0)
+            _dur_txt = f" (~{_tw_dur} años)" if _tw_dur else ""
+            if tw_class == "Strong":
+                decision.rationale.append(
+                    f"Cola de viento estructural sector-país fuerte{_dur_txt}: {_tw_expl}"
+                )
+            elif tw_class == "Headwind":
+                decision.risks.append(
+                    f"Viento de frente estructural sector-país{_dur_txt}: {_tw_expl}"
+                )
 
         # Technical context
         if t.above_sma200:

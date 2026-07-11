@@ -26,6 +26,16 @@ Documentos técnicos que explican el *porqué* detrás de las decisiones de dise
 
 ---
 
+## Contexto y guías para AI
+
+| Documento | Descripción |
+|-----------|-------------|
+| [`CONTEXT.md`](CONTEXT.md) | **Contexto canónico del proyecto** — leer antes de cualquier cambio. Arquitectura, features, estándares, limitaciones, estado actual. |
+| [`PROMPT_INSTRUCTIONS.md`](PROMPT_INSTRUCTIONS.md) | Instrucciones obligatorias para AI coding assistants (Claude Code, Grok Build, etc.) |
+| [`MAINTENANCE.md`](MAINTENANCE.md) | Cómo mantener la documentación y el contexto actualizados |
+
+---
+
 ## Historial del proyecto
 
 | Documento | Contenido |

@@ -80,6 +80,33 @@ def load_universe(key: str) -> List[str]:
     return valid
 
 
+def get_effective_universe(
+    key: str,
+    custom_symbols: List[str] | None = None,
+) -> tuple[List[str], List[str]]:
+    """Return ``(tickers, custom_used)`` = base universe + valid custom tickers.
+
+    Item 3: merges the curated universe for ``key`` with the user's custom
+    tickers (deduped, format-validated via ``_is_valid_ticker``). Customs are
+    appended AFTER the curated names so existing ordering is preserved, and the
+    second return value lists exactly which customs ended up included (so the UI
+    can badge them "Custom" and warn about data quality). Passing no customs is
+    byte-identical to ``load_universe(key)``.
+    """
+    base = load_universe(key)
+    base_set = {t.upper() for t in base}
+    custom_used: List[str] = []
+    for sym in (custom_symbols or []):
+        s = str(sym).upper().strip()
+        if not _is_valid_ticker(s):
+            logger.debug(f"Custom ticker '{sym}' skipped (invalid format).")
+            continue
+        if s in base_set or s in custom_used:
+            continue
+        custom_used.append(s)
+    return base + custom_used, custom_used
+
+
 def get_universe_meta(key: str) -> Dict[str, str | int]:
     """Return display metadata for a universe key."""
     try:

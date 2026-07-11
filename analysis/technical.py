@@ -12,18 +12,11 @@ Signal output: BULLISH | NEUTRAL | BEARISH
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
 from loguru import logger
-
-try:
-    import pandas_ta as ta
-    HAS_TA = True
-except ImportError:
-    HAS_TA = False
-    logger.warning("pandas_ta not available — technical indicators will be limited")
 
 from data.fetcher import get_history
 

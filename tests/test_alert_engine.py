@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from alerts.engine import SCORE_CHANGE_THRESHOLD, AlertEngine, FiredAlert
+from alerts.engine import SCORE_CHANGE_THRESHOLD, AlertEngine
 from alerts.store import AlertSeverity, AlertType
 
 # ------------------------------------------------------------------ #
@@ -28,6 +28,7 @@ class FakeAlertStore:
     def __init__(self):
         self._snapshots: dict[str, _Snapshot] = {}
         self._cooldowns: set[str] = set()
+        self._muted: set[tuple] = set()
         self.recorded: list[tuple] = []
 
     def get_snapshot(self, symbol: str) -> Optional[_Snapshot]:
@@ -42,8 +43,15 @@ class FakeAlertStore:
     def set_cooldown(self, alert_type: AlertType, symbol: str):
         self._cooldowns.add(f"{alert_type}:{symbol}")
 
-    def record(self, alert_type: AlertType, symbol: str, message: str, severity: AlertSeverity):
+    def record(self, alert_type: AlertType, symbol: str, message: str,
+               severity: AlertSeverity, explanation: str = ""):
         self.recorded.append((alert_type, symbol, message, severity))
+
+    def is_muted(self, symbol: str, alert_type: str) -> bool:
+        return (symbol, alert_type) in self._muted or ("*", alert_type) in self._muted
+
+    def purge_expired_mutes(self) -> None:
+        pass
 
     def seed(self, symbol: str, score: float, signal: str, moat_class: str = "Narrow"):
         """Pre-populate a snapshot as if a previous run already happened."""
@@ -61,9 +69,11 @@ def store():
 
 @pytest.fixture
 def engine(store):
+    from alerts.store import AlertSeverity
     eng = AlertEngine.__new__(AlertEngine)
     eng._store = store
     eng._notifier = MagicMock()
+    eng._min_severity = AlertSeverity.INFO  # no profile filtering in tests
     return eng
 
 
@@ -238,3 +248,115 @@ class TestSnapshotUpdate:
         fired = engine.run([{"symbol": "", "adjusted_score": 70.0, "signal": "BUY",
                               "moat_classification": "Wide", "company_name": "???"}])
         assert fired == []
+
+
+# ------------------------------------------------------------------ #
+#  Fase C — drift vs active retirement plan (PortfolioAlertDetector)   #
+# ------------------------------------------------------------------ #
+
+class TestPlanDrift:
+    def _positions_and_prices(self):
+        # 100% concentrated in AAPL, plan wants 40/60 AAPL/KO → big drift.
+        positions = {
+            "AAPL": {"shares": 10, "avg_cost": 100.0, "sector": "Tech"},
+        }
+        prices = {"AAPL": 100.0, "KO": 50.0}
+        return positions, prices
+
+    def test_target_weights_drives_drift_alert(self):
+        from alerts.portfolio_alerts import PortfolioAlertDetector
+        from alerts.store import AlertType
+
+        positions, prices = self._positions_and_prices()
+        detector = PortfolioAlertDetector()
+        candidates = detector.run(
+            positions, prices,
+            target_weights={"AAPL": 40.0, "KO": 60.0},
+            target_label="tu Plan de Retiro «Retiro 2045»",
+        )
+        types = {c.alert_type for c in candidates}
+        assert AlertType.PORTFOLIO_DRIFT in types
+        drift = next(c for c in candidates if c.alert_type == AlertType.PORTFOLIO_DRIFT)
+        assert "Retiro 2045" in drift.message  # uses the plan label, not "optimizer"
+
+    def test_optimizer_weights_still_works_as_alias(self):
+        from alerts.portfolio_alerts import PortfolioAlertDetector
+        from alerts.store import AlertType
+
+        positions, prices = self._positions_and_prices()
+        detector = PortfolioAlertDetector()
+        # Legacy call path: optimizer_weights only.
+        candidates = detector.run(positions, prices, optimizer_weights={"AAPL": 40.0, "KO": 60.0})
+        assert AlertType.PORTFOLIO_DRIFT in {c.alert_type for c in candidates}
+
+    def test_target_weights_takes_precedence_over_optimizer_weights(self):
+        from alerts.portfolio_alerts import PortfolioAlertDetector
+        from alerts.store import AlertType
+
+        positions, prices = self._positions_and_prices()
+        detector = PortfolioAlertDetector()
+        # Plan says AAPL 100% (aligned with reality → no drift); optimizer alias
+        # would have fired, but target_weights must win.
+        candidates = detector.run(
+            positions, prices,
+            target_weights={"AAPL": 100.0},
+            optimizer_weights={"AAPL": 40.0, "KO": 60.0},
+        )
+        assert AlertType.PORTFOLIO_DRIFT not in {c.alert_type for c in candidates}
+
+    def test_no_weights_skips_drift(self):
+        from alerts.portfolio_alerts import PortfolioAlertDetector
+        from alerts.store import AlertType
+
+        positions, prices = self._positions_and_prices()
+        detector = PortfolioAlertDetector()
+        candidates = detector.run(positions, prices)
+        assert AlertType.PORTFOLIO_DRIFT not in {c.alert_type for c in candidates}
+        assert AlertType.PORTFOLIO_REBALANCE not in {c.alert_type for c in candidates}
+
+
+# ------------------------------------------------------------------ #
+#  SORR_HIGH / GOAL_RISK (wired from plan MC summary via scheduler)    #
+# ------------------------------------------------------------------ #
+
+class TestSorrAndGoalRisk:
+    def test_check_sorr_fires_above_threshold(self, engine, store):
+        out = engine.check_sorr(
+            sorr_early_drawdown_pct=45.0,
+            horizon_years=20,
+            initial_value=100_000,
+        )
+        assert out is not None
+        assert out.alert_type == AlertType.SORR_HIGH
+        assert out.severity == AlertSeverity.CRITICAL
+        assert any(r[0] == AlertType.SORR_HIGH for r in store.recorded)
+
+    def test_check_sorr_silent_below_threshold(self, engine, store):
+        out = engine.check_sorr(
+            sorr_early_drawdown_pct=10.0,
+            horizon_years=20,
+            initial_value=100_000,
+        )
+        assert out is None
+        assert store.recorded == []
+
+    def test_check_goal_risk_fires_on_drop(self, engine, store):
+        out = engine.check_goal_risk(
+            goal_name="Retiro 2045",
+            prev_prob_pct=80.0,
+            current_prob_pct=50.0,
+            horizon_years=20,
+        )
+        assert out is not None
+        assert out.alert_type == AlertType.GOAL_RISK
+        assert "Retiro 2045" in out.message
+
+    def test_check_goal_risk_silent_on_small_drop(self, engine, store):
+        out = engine.check_goal_risk(
+            goal_name="Casa",
+            prev_prob_pct=70.0,
+            current_prob_pct=65.0,
+            horizon_years=5,
+        )
+        assert out is None
+

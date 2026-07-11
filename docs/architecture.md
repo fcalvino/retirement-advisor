@@ -110,7 +110,7 @@ Descarga barras semanales de 10 años y calcula con `pandas_ta`: SMA200, RSI, MA
 4. Retorna un dict con todos los campos para el screener y dashboard
 
 #### `ai_analyzer.py`
-`AIAnalyzer` maneja los 4 proveedores (Claude/OpenAI/Grok/Nous). Construye el prompt con todos los datos financieros + técnicos y parsea la respuesta estructurada (decision, confidence, rationale, key_risks, key_strengths).
+`AIAnalyzer` maneja los 4 proveedores (Claude/OpenAI/Grok/Nous). Construye el prompt con todos los datos financieros + técnicos y parsea la respuesta estructurada (decision, confidence, rationale, key_risks, key_strengths). Desde la mejora de contexto macro, también parsea `macro_factors` (lista estructurada de 0-2 factores con impacto explícito en asignación/convicción). El texto libre de razonamiento (`ai_reasoning`) se mantiene para la voz de Grok.
 
 ---
 

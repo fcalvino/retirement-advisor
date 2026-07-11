@@ -1,0 +1,68 @@
+{
+  "id": "ejemplo-conservador-30y",
+  "name": "Ejemplo · Conservador 30 años",
+  "created_at": "2026-01-02T10:00:00",
+  "updated_at": "2026-01-02T10:00:00",
+  "profile_name": "Conservador",
+  "profile_key": "conservative",
+  "universe_key": "us_quality",
+  "universe_name": "US Quality",
+  "n_positions": 5,
+  "allocation": [
+    {"symbol": "JNJ", "weight_pct": 22.0, "sector": "Healthcare", "dividend_yield_pct": 3.1, "adjusted_score": 78.0, "price_at_save": 158.0},
+    {"symbol": "PG", "weight_pct": 22.0, "sector": "Consumer Staples", "dividend_yield_pct": 2.5, "adjusted_score": 76.0, "price_at_save": 162.0},
+    {"symbol": "KO", "weight_pct": 20.0, "sector": "Consumer Staples", "dividend_yield_pct": 3.0, "adjusted_score": 72.0, "price_at_save": 62.0},
+    {"symbol": "MSFT", "weight_pct": 18.0, "sector": "Technology", "dividend_yield_pct": 0.8, "adjusted_score": 85.0, "price_at_save": 430.0},
+    {"symbol": "BRK-B", "weight_pct": 18.0, "sector": "Financials", "dividend_yield_pct": 0.0, "adjusted_score": 80.0, "price_at_save": 410.0}
+  ],
+  "sector_weights": {"Consumer Staples": 42.0, "Healthcare": 22.0, "Technology": 18.0, "Financials": 18.0},
+  "core_holdings": [
+    {"symbol": "JNJ", "suggested_weight_pct": 22.0, "why": "Defensiva de salud, dividendo creciente, baja beta."},
+    {"symbol": "PG", "suggested_weight_pct": 22.0, "why": "Consumo básico global, flujo de caja estable."},
+    {"symbol": "KO", "suggested_weight_pct": 20.0, "why": "Marca duradera, dividendo confiable."}
+  ],
+  "core_from_ai": false,
+  "metrics": {
+    "expected_return_pct": 6.5,
+    "volatility_pct": 9.5,
+    "sharpe_ratio": 0.52,
+    "dividend_yield_pct": 1.9,
+    "adjusted_score_avg": 78.0,
+    "moat_score_avg": 16.0,
+    "max_drawdown_estimate_pct": 22.0
+  },
+  "goals": [
+    {"name": "Retiro a los 65", "target_amount_today": 600000, "horizon_years": 30, "priority": "esencial"}
+  ],
+  "mc_summary": {
+    "horizon_years": 30,
+    "initial_value": 250000,
+    "inflation_rate": 3.0,
+    "target_value": 600000,
+    "median_terminal": 780000,
+    "p10_terminal": 410000,
+    "p90_terminal": 1450000,
+    "prob_target_pct": 72.0,
+    "prob_ruin_pct": 4.0,
+    "median_cagr_pct": 3.9,
+    "prob_sustain_real_pct": 84.0,
+    "prob_legacy_pct": 71.0,
+    "median_legacy": 320000,
+    "expected_depletion_year": 0.0,
+    "longevity_years": 30
+  },
+  "narrative": "Cartera conservadora orientada a preservar capital y generar ingreso estable para un retiro a 30 años. El énfasis está en empresas defensivas de consumo y salud con dividendos confiables, complementadas con un par de nombres de calidad para crecimiento moderado.",
+  "personal": {
+    "age": 45,
+    "retirement_age": 65,
+    "primary_horizon_years": 30,
+    "current_capital": 250000,
+    "monthly_savings": 1200,
+    "primary_goal_type": "retiro"
+  },
+  "macro_risks": [],
+  "drags_at_save": {"enabled": true, "annual_fee_pct": 0.2, "dividend_tax_drag_pct": 0.3, "rebalance_cost_annual_pct": 0.05, "ar_buffer_pct": 0.0, "total_annual_drag_pct": 0.55},
+  "withdrawal_strategy": {"kind": "fixed_real", "annual_amount": 24000, "label": "Retiro fijo real $24,000/año"},
+  "export_version": "1.0",
+  "export_notes": "Plan de ejemplo conservador a 30 años con retiro fijo real (regla del 4%). Ideal para entender un plan de preservación de capital."
+}

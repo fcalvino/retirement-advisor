@@ -30,6 +30,11 @@ from loguru import logger
 
 from config import MONTE_CARLO
 from data.fetcher import get_history
+from portfolio.decumulation import (
+    WithdrawalStrategy,
+    apply_withdrawal_strategy,
+    decumulation_metrics,
+)
 
 # ------------------------------------------------------------------ #
 #  Result dataclass                                                    #
@@ -82,6 +87,48 @@ class MonteCarloResult:
     symbols_used: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
 
+    # ------------------------------------------------------------------ #
+    #  Economic drags (Item 1 — transparency layer). All optional /       #
+    #  backward-compatible: populated ONLY when run(drags=...) is given.   #
+    #  When None, every metric above is the pre-feature "base" number.     #
+    # ------------------------------------------------------------------ #
+    drags_applied: Optional[dict] = None        # the drags dict used (or None)
+    total_annual_drag_pct: float = 0.0          # sum of components, annual %
+    # "Base" (no-drag) reference terminal stats, so the UI can show
+    # base vs with-drags side by side. Zero when no drags applied.
+    base_median_terminal: float = 0.0
+    base_p10_terminal: float = 0.0
+    base_p90_terminal: float = 0.0
+    base_prob_achieve_target_pct: float = 0.0
+
+    # ------------------------------------------------------------------ #
+    #  Realistic (no-haircut) reference — transparency of the conservative #
+    #  bias. Populated ONLY when run(include_realistic_reference=True).     #
+    #  These remove the conservative haircut (vol_adjustment / mean_haircut)#
+    #  so the UI can show the "realistic" median (future ≈ historical) next  #
+    #  to the conservative "planning floor". Drags and withdrawals are kept  #
+    #  identical, so the two scenarios differ by EXACTLY the haircut. When   #
+    #  the flag is off, every metric above is byte-identical to before.      #
+    # ------------------------------------------------------------------ #
+    realistic_reference_applied: bool = False
+    realistic_median_terminal: float = 0.0
+    realistic_p10_terminal: float = 0.0
+    realistic_p90_terminal: float = 0.0
+    realistic_prob_achieve_target_pct: float = 0.0
+
+    # ------------------------------------------------------------------ #
+    #  Decumulation (Fase H.1). All optional / backward-compatible:        #
+    #  populated ONLY when run(withdrawal_strategy=...) is given. When      #
+    #  None, every metric above is the pre-feature "base" number and these  #
+    #  stay at their defaults.                                              #
+    # ------------------------------------------------------------------ #
+    withdrawal_strategy_applied: Optional[dict] = None
+    prob_sustain_real_pct: float = 0.0        # % paths income lasted the whole horizon
+    prob_legacy_pct: float = 0.0              # % paths with money left at the end
+    median_legacy: float = 0.0               # median terminal value (USD)
+    expected_depletion_year: float = 0.0     # median year of depletion among paths that ran dry
+    longevity_years: int = 0                 # horizon the sustain metric refers to
+
 
 # ------------------------------------------------------------------ #
 #  Simulator                                                           #
@@ -112,6 +159,7 @@ class MonteCarloSimulator:
     ) -> None:
         self.symbols = symbols
         self._weights_input = weights
+        self._seed = seed
         self._rng = np.random.default_rng(seed)
         self._port_returns: Optional[np.ndarray] = None
         # Profile-specific adjustment multipliers applied ON TOP of the global
@@ -131,6 +179,10 @@ class MonteCarloSimulator:
         annual_withdrawal: float = 0.0,
         target_value: float = 0.0,
         withdrawal_growth_rate: float = 0.0,   # e.g. 0.03 for 3% annual increase (inflation)
+        drags: Optional[dict] = None,          # Item 1: economic drags (None = base behavior)
+        withdrawal_strategy=None,              # Fase H.1: WithdrawalStrategy | dict | None
+        longevity_years: Optional[int] = None, # Fase H.1: horizon for "outliving money" metric
+        include_realistic_reference: bool = False,  # show realistic (no-haircut) next to conservative
     ) -> MonteCarloResult:
         """
         Run the full Monte Carlo simulation.
@@ -142,6 +194,30 @@ class MonteCarloSimulator:
         initial_value : starting portfolio value in USD
         annual_withdrawal : amount withdrawn at end of each year (0 = accumulation phase)
         target_value  : retirement goal for probability calculation (0 = skip)
+        drags         : optional economic-drag dict (Item 1). When None the
+                        simulation is byte-identical to the pre-feature engine.
+                        When provided, an annual effective drag (fees, dividend
+                        tax, rebalance cost, AR buffer) compounds weekly on top
+                        of the conservative adjustment, and ``base_*`` reference
+                        metrics are populated for side-by-side comparison.
+                        Accepts either ``{"total_annual_drag_pct": x}`` or the
+                        individual component keys (summed).
+        withdrawal_strategy : optional decumulation strategy (Fase H.1) as a
+                        ``WithdrawalStrategy`` or plain dict. When provided it
+                        REPLACES the legacy ``annual_withdrawal`` path and
+                        populates the decumulation metrics (prob_sustain_real,
+                        prob_legacy, expected_depletion_year). When None the
+                        engine is byte-identical to the pre-feature behavior.
+        longevity_years : optional planning horizon (years) the "income lasts"
+                        metric refers to. Defaults to ``horizon_years``.
+        include_realistic_reference : when True, runs a second compact pass on
+                        the RAW historical returns (no conservative haircut) and
+                        populates the ``realistic_*`` fields so the UI can show
+                        the realistic median next to the conservative one. Drags
+                        and withdrawals are applied identically, so the two
+                        differ by exactly the haircut. Uses the same bootstrap
+                        draws (re-seeded), so the comparison is apples-to-apples.
+                        When False the engine is byte-identical to before.
         """
         result = MonteCarloResult(
             n_sims=n_sims,
@@ -174,12 +250,37 @@ class MonteCarloSimulator:
         n_horizon_weeks = horizon_years * 52
         paths = self._simulate_paths(port_hist_adj, n_sims, n_horizon_weeks)
 
-        # 4 — Apply annual withdrawals (reduce portfolio value at year end)
-        if annual_withdrawal > 0:
-            paths = self._apply_withdrawals(
-                paths, initial_value, annual_withdrawal, n_horizon_weeks,
-                withdrawal_growth_rate=withdrawal_growth_rate
-            )
+        # 3b — Economic drags (Item 1). total_drag_frac == 0 → base behavior,
+        # paths untouched, base_* reference metrics left at 0 (byte-identical
+        # to the pre-feature engine). When drags apply, we keep a "base" copy
+        # to expose no-drag reference metrics alongside the real numbers.
+        total_drag_frac = self._total_drag_fraction(drags)
+        base_paths = None
+        if total_drag_frac > 0:
+            base_paths = paths.copy()
+            paths = self._apply_drags(paths, total_drag_frac)
+            result.drags_applied = dict(drags) if drags else None
+            result.total_annual_drag_pct = round(total_drag_frac * 100, 4)
+
+        # 4 — Apply withdrawals (reduce portfolio value at year end).
+        # Fase H.1: when an explicit withdrawal_strategy is given it REPLACES
+        # the legacy fixed-amount path. With no strategy, behavior is unchanged.
+        strategy = WithdrawalStrategy.coerce(withdrawal_strategy)
+
+        def _withdraw(p: np.ndarray) -> np.ndarray:
+            if strategy is not None:
+                return apply_withdrawal_strategy(
+                    p, initial_value, strategy, n_horizon_weeks,
+                    inflation_rate=withdrawal_growth_rate,
+                )
+            if annual_withdrawal > 0:
+                return self._apply_withdrawals(
+                    p, initial_value, annual_withdrawal, n_horizon_weeks,
+                    withdrawal_growth_rate=withdrawal_growth_rate
+                )
+            return p
+
+        paths = _withdraw(paths)
 
         # Scale from relative (start=1.0) to dollar values
         paths_usd = paths * initial_value
@@ -198,6 +299,37 @@ class MonteCarloSimulator:
         if target_value > 0:
             result.prob_achieve_target_pct = float((terminal >= target_value).mean() * 100)
 
+        # 5b — Base (no-drag) reference metrics for the comparison badge.
+        if base_paths is not None:
+            base_terminal = _withdraw(base_paths)[:, -1] * initial_value
+            result.base_median_terminal = float(np.median(base_terminal))
+            result.base_p10_terminal    = float(np.percentile(base_terminal, 10))
+            result.base_p90_terminal    = float(np.percentile(base_terminal, 90))
+            if target_value > 0:
+                result.base_prob_achieve_target_pct = float((base_terminal >= target_value).mean() * 100)
+
+        # 5b' — Realistic (no-haircut) reference. Re-runs the bootstrap on the
+        # RAW returns (port_hist, before _conservative_adjustment) using a fresh
+        # RNG seeded identically, so the block draws match the main pass and the
+        # only difference is the conservative haircut. Drags + withdrawals are
+        # applied the same way. Cheap (one extra pass) and fully opt-in.
+        if include_realistic_reference:
+            realistic_rng = np.random.default_rng(self._seed)
+            realistic_paths = self._simulate_paths(
+                port_hist, n_sims, n_horizon_weeks, rng=realistic_rng
+            )
+            if total_drag_frac > 0:
+                realistic_paths = self._apply_drags(realistic_paths, total_drag_frac)
+            realistic_terminal = _withdraw(realistic_paths)[:, -1] * initial_value
+            result.realistic_reference_applied = True
+            result.realistic_median_terminal = float(np.median(realistic_terminal))
+            result.realistic_p10_terminal    = float(np.percentile(realistic_terminal, 10))
+            result.realistic_p90_terminal    = float(np.percentile(realistic_terminal, 90))
+            if target_value > 0:
+                result.realistic_prob_achieve_target_pct = float(
+                    (realistic_terminal >= target_value).mean() * 100
+                )
+
         result.prob_ruin_pct = float((terminal <= 0).mean() * 100)
 
         # SORR and intra-horizon drawdown metrics
@@ -211,6 +343,19 @@ class MonteCarloSimulator:
         cagrs = (terminal_positive / initial_value) ** (1 / horizon_years) - 1
         result.median_cagr_pct = float(np.nanmedian(cagrs) * 100)
         result.p10_cagr_pct    = float(np.nanpercentile(cagrs, 10) * 100)
+
+        # 5c — Decumulation metrics (Fase H.1). Only when a strategy was applied.
+        if strategy is not None:
+            dec = decumulation_metrics(
+                paths_usd, horizon_years, initial_value,
+                longevity_years=longevity_years,
+            )
+            result.withdrawal_strategy_applied = strategy.to_dict()
+            result.prob_sustain_real_pct = dec["prob_sustain_real_pct"]
+            result.prob_legacy_pct       = dec["prob_legacy_pct"]
+            result.median_legacy         = dec["median_legacy"]
+            result.expected_depletion_year = dec["expected_depletion_year"]
+            result.longevity_years       = int(dec["longevity_years"])
 
         logger.info(
             f"Monte Carlo complete: median={result.median_terminal:,.0f} "
@@ -313,6 +458,49 @@ class MonteCarloSimulator:
         return (returns - mean) * vol_adj + mean * return_adj
 
     # ------------------------------------------------------------------ #
+    #  Economic drags (Item 1)                                             #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _total_drag_fraction(drags: Optional[dict]) -> float:
+        """Resolve a drags dict into a single annual drag *fraction* (0.0–1.0).
+
+        Accepts either a precomputed ``total_annual_drag_pct`` or the individual
+        component percentages, which are summed. Returns 0.0 for ``None``, a
+        disabled master switch, or non-positive totals — in which case the
+        engine stays byte-identical to the pre-feature behavior.
+        """
+        if not drags:
+            return 0.0
+        if not drags.get("enabled", True):
+            return 0.0
+        if "total_annual_drag_pct" in drags:
+            total_pct = float(drags.get("total_annual_drag_pct") or 0.0)
+        else:
+            total_pct = float(
+                (drags.get("annual_fee_pct") or 0.0)
+                + (drags.get("dividend_tax_drag_pct") or 0.0)
+                + (drags.get("rebalance_cost_annual_pct") or 0.0)
+                + (drags.get("ar_buffer_pct") or 0.0)
+            )
+        return max(0.0, total_pct / 100.0)
+
+    @staticmethod
+    def _apply_drags(paths: np.ndarray, total_drag_frac: float) -> np.ndarray:
+        """Compound an annual drag fraction weekly across each path.
+
+        The drag is independent of returns, so it is exact and auditable: a
+        path value at week ``t`` is multiplied by ``weekly_factor ** t`` where
+        ``weekly_factor = (1 - total_drag_frac) ** (1/52)``. Applied to the
+        relative paths (start = 1.0) BEFORE withdrawals, matching how fees are
+        charged on the standing balance. O(weeks) — negligible cost.
+        """
+        n_cols = paths.shape[1]
+        weekly_factor = (1.0 - total_drag_frac) ** (1.0 / 52.0)
+        drag_mult = weekly_factor ** np.arange(n_cols)
+        return paths * drag_mult[np.newaxis, :]
+
+    # ------------------------------------------------------------------ #
     #  Simulation (vectorised)                                             #
     # ------------------------------------------------------------------ #
 
@@ -321,20 +509,26 @@ class MonteCarloSimulator:
         port_hist: np.ndarray,
         n_sims: int,
         n_weeks: int,
+        rng: Optional[np.random.Generator] = None,
     ) -> np.ndarray:
         """
         Vectorised block bootstrap simulation.
 
         Returns array of shape (n_sims, n_weeks + 1) with relative portfolio
         values (start = 1.0).
+
+        ``rng`` lets a caller supply an independent generator (used by the
+        realistic-reference pass so it can replay the same draws on raw returns).
+        Defaults to the instance RNG, preserving the original behavior exactly.
         """
+        rng = rng if rng is not None else self._rng
         T = len(port_hist)
         block_size = self.BLOCK_SIZE
         max_start  = max(T - block_size, 1)
         n_blocks   = n_weeks // block_size + 2  # slightly more than needed
 
         # Sample block start indices: shape (n_sims, n_blocks)
-        starts = self._rng.integers(0, max_start, size=(n_sims, n_blocks))
+        starts = rng.integers(0, max_start, size=(n_sims, n_blocks))
 
         # Build block offset indices: shape (n_sims, n_blocks * block_size)
         offsets = np.arange(block_size)

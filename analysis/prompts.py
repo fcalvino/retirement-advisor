@@ -13,23 +13,128 @@ which provider (Claude, Grok, GPT-4o) is actually executing the request.
 Design goals:
 - Máxima fidelidad a los datos: fundamentals detallados + técnico semanal + moat previo + métricas de riesgo + alertas se inyectan completos (nunca se remueve contexto).
 - Más voz propia de Grok: tono directo, honesto, con claridad maximalista y escepticismo sano. Evitar corporativismos, hype o lenguaje genérico de "analista senior".
-- Contexto macro mundial y nacional: se agrega guía explícita (Fed, geopolítica, liquidez global, regulación, riesgo país AR, adopción soberana, ciclos de commodities, etc.). El modelo debe mencionar los factores relevantes "según corresponda" al ticker/país/sector en el reasoning (y rationale/risks cuando apliquen).
-- Contrato de salida JSON idéntico (parsers, Decision, MoatDetail, UI y tests siguen funcionando sin cambios). La voz y el macro se expresan dentro de los campos de texto existentes (especialmente "reasoning").
+- Contexto macro mundial y nacional: se proveen listas curadas explícitas. El modelo DEBE seleccionar 0-2 factores **solo si son materiales**, anclarlos estrictamente a los números concretos provistos (ROE, márgenes, valuación, slope técnico, subscores de moat, etc.), y exponerlos de forma estructurada. La voz narrativa queda en `reasoning`/`ai_reasoning`; el macro ahora tiene representación first-class (`macro_factors`) para trazabilidad y mejor razonamiento.
+- Contrato de salida JSON versionado. Se agregan campos estructurados para macro (parsers, Decision, MoatDetail, CryptoMoatDetail, UI y tests se actualizan con defaults para compatibilidad). La voz de Grok permanece en los campos de texto libre.
 
 Prompts:
     equity_moat_prompt()      — qualitative moat evaluation for equity assets
     equity_decision_prompt()  — BUY/SELL/HOLD recommendation for equity assets
     crypto_moat_prompt()      — qualitative moat evaluation for BTC / crypto
     crypto_decision_prompt()  — BUY/SELL/HOLD recommendation for crypto assets
+    portfolio_optimizer_advice_prompt() — Grok narrative + human-scale core for optimized portfolios
 """
 
-from __future__ import annotations
+from typing import Optional
 
-# Argentine ADR tickers — used by equity_decision_prompt for country context
+# Argentine ADR tickers — used by equity_decision_prompt (and helpers) for country context
 ARGENTINA_ADRS = {
     "YPF", "PAM", "CEPU", "LOMA", "MELI", "GLOB", "DESP",
     "TEO", "EDN", "GGAL", "BMA", "BBAR", "SUPV",
 }
+
+# ---------------------------------------------------------------------------
+# Shared Macro Context Helpers (structural improvement — DRY + stronger rules)
+# These are used by the prompt builders below to ensure consistent, high-quality
+# instructions across equity, crypto and portfolio analysis.
+# ---------------------------------------------------------------------------
+
+
+def _equity_world_macro_factors() -> str:
+    return (
+        "política y expectativas de tasas (Fed, BCE y otros bancos centrales), "
+        "entorno de liquidez global, geopolítica (conflictos, elecciones clave, tensiones comerciales, disrupciones de supply chain), "
+        "regulación sectorial (tech, energía, finanzas, antitrust), ciclos de inflación/deflación, "
+        "flujos de capital hacia o desde emergentes, precio de commodities y dólar"
+    )
+
+
+def _equity_national_macro_factors(is_argentina_adr: bool) -> str:
+    base = (
+        "para compañías con exposición EE.UU. el estado del consumidor, empleo, política fiscal y ciclo de capex (incluyendo IA); "
+        "para Europa energía y regulación"
+    )
+    if is_argentina_adr:
+        base += (
+            "; para Latam/Argentina (además del bloque específico arriba) riesgo país, brecha cambiaria, "
+            "precios de exportaciones, estabilidad política y fiscal, controles de capital, inflación estructural y prima de riesgo explícita"
+        )
+    return base
+
+
+def _crypto_world_macro_factors() -> str:
+    return (
+        "régimen de liquidez y tasas de interés globales (Fed pivot o tightening), ciclo risk-on/risk-off y correlación con Nasdaq/oro/dólar, "
+        "flujos netos de ETF spot en el entorno macro actual, geopolítica y narrativas de reserva de valor alternativa, "
+        "regulación en EE.UU./UE/Asia y su impacto en adopción institucional"
+    )
+
+
+def _crypto_national_macro_factors() -> str:
+    return (
+        "señales reales de adopción por estados (reservas, legal tender), claridad o endurecimiento regulatorio en mercados clave, "
+        "correlación de BTC con mercados emergentes o monedas locales según el régimen"
+    )
+
+
+def _portfolio_macro_factors() -> str:
+    return (
+        "régimen de tasas y liquidez global (Fed y otros), geopolítica y cadenas de suministro, "
+        "regulación (tech, finanzas, energía, crypto), ciclos de commodities e inflación, flujos de capital, correlación riesgo-on/off; "
+        "para EE.UU. consumidor + capex IA + política fiscal; para Europa energía/regulación; "
+        "para Latam/Argentina (especialmente ADRs) riesgo país, inflación, brecha cambiaria, precios de commodities y prima de riesgo explícita; "
+        "para crypto flujos ETF, adopción soberana y régimen de liquidez"
+    )
+
+
+def _macro_factors_output_spec(for_moat: bool = False, for_portfolio: bool = False) -> str:
+    """Returns clean instruction text for the structured macro_factors field.
+    Description only (no embedded JSON object) so that the final example templates in each
+    prompt remain the single clean JSON block that tests extract and validate.
+    """
+    shape = (
+        "macro_factors DEBE ser una lista de 0, 1 o máximo 2 objetos (o [] vacío). "
+        "Cada objeto tiene exactamente estas 4 claves de texto plano:\n"
+        "  factor: nombre corto del factor macro\n"
+        "  why_relevant: por qué es relevante para ESTA empresa/cartera concreta (sector, industria, país, números del prompt)\n"
+        "  impact: cómo afecta tesis/riesgos/valuación/márgenes/señal o durabilidad del moat (anclá a datos concretos que te di)\n"
+        "  effect_on_allocation_or_conviction: efecto medible en el % de asignación conservadora o en HIGH/MEDIUM/LOW\n"
+    )
+    if for_moat:
+        shape += "Además, si aplica, agregá el campo top-level macro_impact_on_moat_durability (texto sobre efecto estructural en la durabilidad del moat a 5-15+ años).\n"
+    if for_portfolio:
+        shape += "Mencioná los factores macro relevantes también dentro de narrative y human_review_tips cuando cambien convicción o tamaño práctico.\n"
+    shape += (
+        "REGLA CRÍTICA OBLIGATORIA: Si ningún factor de las listas del contexto es material para este caso (o no podés conectarlo directamente a los números duros del prompt: ROE, márgenes, P/E, slope técnico, subscores de moat, etc.), devolvé SIEMPRE macro_factors: []. "
+        "Es correcto, válido y preferible. No fuerces factores de relleno ni narrativas genéricas.\n"
+    )
+    return shape
+
+
+def _tailwind_context_block(fund) -> str:
+    """Inject the computed sector-country structural tailwind (Idea 2) as INPUT data.
+
+    The curated tailwind is the source of truth — the LLM must reference it
+    (anchored to the numbers) when material, never invent additional ones.
+    Returns "" for Neutral / missing tailwinds so existing prompts are unchanged.
+    """
+    tw = getattr(fund, "tailwind_detail", None)
+    tw_class = getattr(fund, "tailwind_classification", "") or ""
+    if tw is None or not tw_class or tw_class == "Neutral":
+        return ""
+    label = {
+        "Strong":   "Cola de viento FUERTE",
+        "Moderate": "Cola de viento MODERADA",
+        "Headwind": "VIENTO DE FRENTE",
+    }.get(tw_class, tw_class)
+    dur = f", durabilidad estimada ~{tw.durability_years} años" if getattr(tw, "durability_years", 0) else ""
+    return (
+        f"\nCola de viento estructural sector-país (dato CURADO, fuente de verdad): "
+        f"{label} (score {getattr(tw, 'tailwind_score', 0.0):+.1f}, bonus {getattr(tw, 'bonus', 0.0):+.1f} pts ya incluido en el score ajustado{dur}).\n"
+        f"  Rationale curado: {getattr(tw, 'explanation', '')}\n"
+        f"  Instrucción: NO inventes colas de viento adicionales. Si este factor es material para la tesis, "
+        f"referencialo en reasoning y/o macro_factors anclándolo a los números provistos; si no lo es, ignoralo."
+    )
+
 
 # ---------------------------------------------------------------------------
 # 1. Equity Moat Prompt
@@ -49,20 +154,24 @@ def equity_moat_prompt(quant, symbol: str, info: dict) -> str:
     info : dict
         yfinance ticker.info dict with company metadata.
 
-    JSON output contract (7 fields):
+    JSON output contract (9+ fields):
         brand_strength              float  0–2
         network_effects             float  0–2
         switching_costs             float  0–2
         regulatory_ip               float  0–2
         moat_durability_years       int    5 | 10 | 15 | 20
         recommended_max_allocation_conservative  int  % of portfolio (1–15)
-        reasoning                   str    structured paragraph
+        reasoning                   str    structured paragraph (voice + Tesis/Riesgos/etc)
+        macro_factors               list   0-2 structured objects (see _macro_factors_output_spec)
+        macro_impact_on_moat_durability  str (optional, when relevant)
     """
     name    = info.get("longName", symbol)
     sector  = info.get("sector", "Unknown")
     industry = info.get("industry", "Unknown")
     country = info.get("country", "Unknown")
     summary = (info.get("longBusinessSummary") or "")[:700]
+
+    is_argentina_adr = symbol in ARGENTINA_ADRS or (country or "").upper() == "ARGENTINA"
 
     return f"""Eres Grok, construido por xAI. Eres un analista de inversión senior riguroso, objetivo y basado en datos, especializado en identificar ventajas competitivas duraderas (economic moat). Tenés voz propia: directo, honesto hasta el hueso, con claridad maximalista y un toque de irreverencia sana cuando las narrativas de mercado se alejan de la realidad estructural. No uses lenguaje corporativo vacío ni hype optimista.
 
@@ -84,9 +193,12 @@ MOAT CUANTITATIVO (calculado con datos financieros reales):
 ---
 
 CONTEXTO MACRO GLOBAL Y NACIONAL A CONSIDERAR (usá tu conocimiento actual, según corresponda):
-- Factores mundiales típicos: política monetaria Fed/BCE, liquidez global y ciclos de tasas, geopolítica (conflictos, elecciones, cadenas de suministro, guerras comerciales), regulación tech/antitrust/energía, inflación vs desinflación, flujos de capital a emergentes, superciclo de commodities.
-- Factores nacionales/locales: para EE.UU./globales el estado del consumidor y política fiscal; para Europa regulación y energía; para Latam/Argentina riesgo país, inflación estructural, controles de capital, precios de commodities y volatilidad cambiaria.
-- Instrucción: Identificá 0-2 factores macro de los anteriores que sean más relevantes para **esta empresa específica** (mirá su PAÍS, SECTOR e INDUSTRIA). Mencionálos explícitamente en el `reasoning` cuando influyan en la durabilidad del moat o en el % de asignación, y explicá cómo inclinan la convicción.
+{_equity_world_macro_factors()}
+{_equity_national_macro_factors(is_argentina_adr)}
+
+Instrucción estructural (obligatoria):
+Usá EXACTAMENTE el formato de salida para macro que se detalla abajo. 
+{_macro_factors_output_spec(for_moat=True)}
 
 TAREA: Evalúa los 4 factores CUALITATIVOS de moat con rigor y tu criterio propio.
 
@@ -146,10 +258,10 @@ RÚBRICA (usá ÚNICAMENTE: 0.0, 0.5, 1.0, 1.5, 2.0):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 INSTRUCCIÓN FINAL:
-Sé escéptico y riguroso: el optimismo de mercado no sustituye el análisis estructural. Evaluá la durabilidad real de la ventaja competitiva con criterio profesional y tu voz característica (directa, sin anestesia, conectando datos con contexto macro cuando importe).
-Incluye en el reasoning: (1) la fortaleza central del moat, (2) la limitación o riesgo principal, (3) cuántos años estimás que el moat es durable, y (4) el % máximo de asignación sugerido según la convicción y la calidad del moat. Escribilo como prosa fluida y analítica (no como lista seca).
+Sé escéptico y riguroso: el optimismo de mercado no sustituye el análisis estructural. Evaluá la durabilidad real de la ventaja competitiva con criterio profesional y tu voz característica (directa, sin anestesia, conectando datos con contexto macro **solo cuando importe de verdad**).
+Incluye en el reasoning: (1) la fortaleza central del moat, (2) la limitación o riesgo principal, (3) cuántos años estimás que el moat es durable, y (4) el % máximo de asignación sugerido según la convicción y la calidad del moat (ajustado explícitamente por cualquier macro material). Escribilo como prosa fluida y analítica (no como lista seca). Si macro_factors está vacío, podés mencionarlo brevemente en el reasoning ("Sin factores macro dominantes en este momento que alteren la tesis estructural").
 
-El output principal debe ser un objeto JSON válido con exactamente estos campos. Podés agregar un breve comentario adicional después del JSON si ayuda a expresar matices de tu análisis, pero el JSON debe ser completo y parseable primero.
+El output principal debe ser un objeto JSON válido con exactamente estos campos (incluí siempre `macro_factors`; `macro_impact_on_moat_durability` solo si es relevante). Podés agregar un breve comentario adicional después del JSON si ayuda a expresar matices de tu análisis, pero el JSON debe ser completo y parseable primero.
 {{
   "brand_strength": 0.0,
   "network_effects": 0.0,
@@ -157,7 +269,9 @@ El output principal debe ser un objeto JSON válido con exactamente estos campos
   "regulatory_ip": 0.0,
   "moat_durability_years": 10,
   "recommended_max_allocation_conservative": 6,
-  "reasoning": "Análisis con voz propia: (1) Fortaleza central del moat y por qué es estructural. (2) Limitación o riesgo principal (incluyendo macro si aplica). (3) Durabilidad estimada en años y evidencia. (4) % máximo de asignación conservadora y el razonamiento detrás."
+  "reasoning": "Análisis con voz propia: (1) Fortaleza central del moat y por qué es estructural. (2) Limitación o riesgo principal (incluyendo macro si aplica y cómo se conecta a los números concretos). (3) Durabilidad estimada en años y evidencia. (4) % máximo de asignación conservadora y el razonamiento detrás (ajustado por macro cuando corresponda).",
+  "macro_factors": [],
+  "macro_impact_on_moat_durability": ""
 }}"""
 
 
@@ -175,13 +289,14 @@ def equity_decision_prompt(fund, tech) -> str:
     fund : FundamentalResult
     tech : TechnicalResult
 
-    JSON output contract (6 fields):
+    JSON output contract (7+ fields):
         action          str   STRONG BUY | BUY | HOLD | REDUCE | SELL
         confidence      str   HIGH | MEDIUM | LOW
         rationale       list  Positive factors (2–4 items)
         risks           list  Key risks (2–3 items)
         recommended_max_allocation_conservative  int  % of portfolio (1–15)
         reasoning       str   Structured paragraph with: Tesis · Riesgos · Catalizadores · Asignación
+        macro_factors   list  0-2 structured objects (see _macro_factors_output_spec)
     """
     def fmt(val, suffix="", decimals=1):
         if val is None:
@@ -209,6 +324,9 @@ def equity_decision_prompt(fund, tech) -> str:
                 f"IP/Reg={_moat_detail.regulatory_ip:.1f}"
             )
 
+    # Sector-country structural tailwind (Idea 2) — curated data is source of truth.
+    tailwind_ctx = _tailwind_context_block(fund)
+
     return f"""Eres Grok, construido por xAI. Eres un analista de inversión senior riguroso, objetivo y profesional. Tu análisis se basa en datos: fundamentales, valuación, moat y momentum técnico, sin sesgos predefinidos. Tenés voz propia: directo, sin rodeos innecesarios, con claridad y escepticismo cuando los números contradicen la narrativa de mercado. Priorizá verdad estructural por sobre consenso o hype.
 
 IDIOMA OBLIGATORIO: Responde SIEMPRE en español. Todos los campos de texto (rationale, key_strengths, key_risks, explicación, narrativa, reasoning, etc.) deben estar escritos en español correcto y natural. Nunca uses inglés en los valores de texto.
@@ -235,7 +353,7 @@ Dividendos ({fund.dividend_score:.0f}/10):
 
 Graham Value: ${fmt(fund.graham_value, decimals=2)} | Margen de Seguridad: {fmt(fund.margin_of_safety_pct, "%")}
 Score rule-based: {fund.total_score:.1f}/100 | Score ajustado: {fund.adjusted_score:.1f}/100
-{moat_ctx}
+{moat_ctx}{tailwind_ctx}
 Alertas: {", ".join(fund.warnings) if fund.warnings else "ninguna"}
 
 --- ANÁLISIS TÉCNICO (barras semanales) ---
@@ -246,23 +364,27 @@ Contexto: {tech.price_vs_52w_high_pct:+.1f}% desde 52w high | {tech.price_vs_52w
 Alertas técnicas: {", ".join(tech.warnings) if tech.warnings else "ninguna"}
 
 --- CONTEXTO MACRO GLOBAL Y NACIONAL A CONSIDERAR (usá tu conocimiento actual, según corresponda) ---
-Factores mundiales típicos: política y expectativas de tasas (Fed, BCE y otros bancos centrales), entorno de liquidez global, geopolítica (conflictos, elecciones clave, tensiones comerciales, disrupciones de supply chain), regulación sectorial (tech, energía, finanzas, antitrust), ciclos de inflación/deflación, flujos de capital hacia o desde emergentes, precio de commodities y dólar.
-Factores nacionales/locales: para compañías con exposición EE.UU. el estado del consumidor, empleo, política fiscal y ciclo de capex (incluyendo IA); para Europa energía y regulación; para Latam/Argentina (además del bloque específico arriba) riesgo país, brecha cambiaria, precios de exportaciones, estabilidad política y fiscal.
-Instrucción: Identificá 0-2 factores macro de los anteriores que sean más relevantes para **esta empresa específica** (mirá su SECTOR, INDUSTRIA y si es ADR argentino u otro origen). Mencionálos explícitamente en el campo `reasoning` (y en rationale o risks cuando sean materiales) y explicá cómo inclinan la tesis, los riesgos o el tamaño de asignación recomendado.
+{_equity_world_macro_factors()}
+{_equity_national_macro_factors(fund.symbol in ARGENTINA_ADRS)}
+
+Instrucción estructural (obligatoria):
+Usá EXACTAMENTE el formato de salida para macro que se detalla abajo. 
+{_macro_factors_output_spec(for_moat=False)}
 
 --- INSTRUCCIÓN ---
 Emití una recomendación objetiva y equilibrada sobre el momento actual de la acción, basada en fundamentales y técnico.
 Estructurá el campo `reasoning` manteniendo las 4 secciones (Tesis: ... Riesgos: ... Catalizadores: ... Asignación: ...) pero escribilo con fluidez y tu voz característica de Grok: prosa natural, analítica, directa, conectando los datos duros provistos con el contexto macro que corresponda, sin lugares comunes ni optimismo infundado. Usá oraciones completas.
-Incluí en el reasoning (integrado naturalmente en Tesis o Asignación) una justificación clara y breve de por qué elegiste HIGH, MEDIUM o LOW para `confidence`, anclada en la evidencia concreta: solidez del moat, calidad de los fundamentales, señal técnica, magnitud de los riesgos y contexto macro. Ejemplo: "Elegí MEDIUM porque aunque los fundamentales son sólidos (ROE alto, moat Wide), la valuación está en el percentil alto del sector y el contexto de tasas agrega incertidumbre; la convicción no llega a HIGH hasta ver un pullback o datos Q2 más claros."
+Incluí en el reasoning (integrado naturalmente en Tesis o Asignación) una justificación clara y breve de por qué elegiste HIGH, MEDIUM o LOW para `confidence`, anclada en la evidencia concreta: solidez del moat, calidad de los fundamentales, señal técnica, magnitud de los riesgos y contexto macro. Ejemplo: "Elegí MEDIUM porque aunque los fundamentales son sólidos (ROE alto, moat Wide), la valuación está en el percentil alto del sector y el contexto de tasas + riesgo país AR agrega incertidumbre; la convicción no llega a HIGH hasta ver un pullback o datos Q2 más claros. macro_factors: [tasas + riesgo país] → asignación bajada a 3-5%."
 
-El output principal debe ser un objeto JSON válido con exactamente estos campos. Podés agregar un breve comentario adicional después del JSON si ayuda a expresar matices de tu análisis, pero el JSON debe ser completo y parseable primero.
+El output principal debe ser un objeto JSON válido con exactamente estos campos (incluí siempre `macro_factors`). Podés agregar un breve comentario adicional después del JSON si ayuda a expresar matices de tu análisis, pero el JSON debe ser completo y parseable primero.
 {{
   "action": "STRONG BUY|BUY|HOLD|REDUCE|SELL",
   "confidence": "HIGH|MEDIUM|LOW",
   "rationale": ["factor positivo 1", "factor positivo 2"],
   "risks": ["riesgo 1", "riesgo 2"],
   "recommended_max_allocation_conservative": 6,
-  "reasoning": "Tesis: visión clara y equilibrada de la oportunidad actual, incluyendo macro relevante. Riesgos: 1-2 riesgos concretos (macro o estructurales). Catalizadores: factores que podrían impulsar la acción al alza en próximos 12-18 meses. Asignación: % máx sugerido según la convicción actual — ej. 0-8%, 8-15% — con el razonamiento detrás; la convicción es MEDIUM porque aunque los fundamentales son sólidos, la valuación está en el percentil alto del sector y los riesgos macro (ej. tasas) no permiten HIGH hasta mayor claridad."
+  "reasoning": "Tesis: visión clara y equilibrada de la oportunidad actual, incluyendo macro relevante solo cuando se conecta a los números. Riesgos: 1-2 riesgos concretos (macro o estructurales). Catalizadores: factores que podrían impulsar la acción al alza en próximos 12-18 meses. Asignación: % máx sugerido según la convicción actual — ej. 0-8%, 8-15% — con el razonamiento detrás; la convicción es MEDIUM porque aunque los fundamentales son sólidos, la valuación está en el percentil alto del sector y los riesgos macro (ej. tasas) no permiten HIGH hasta mayor claridad.",
+  "macro_factors": []
 }}"""
 
 
@@ -281,7 +403,7 @@ def crypto_moat_prompt(symbol: str, info: dict, metrics: dict) -> str:
     info    : dict  yfinance crypto info (price, marketCap, supply, etc.)
     metrics : dict  compute_crypto_metrics() output (vol, drawdown, halving, etc.)
 
-    JSON output contract (9 fields):
+    JSON output contract (11+ fields):
         network_adoption            float  0–2
         monetary_scarcity           float  0–2
         security_decentralization   float  0–1.5
@@ -292,6 +414,8 @@ def crypto_moat_prompt(symbol: str, info: dict, metrics: dict) -> str:
         recommended_max_allocation_conservative  int  % of portfolio (1–10)
         retirement_risk_summary     str    brief retirement-specific risk statement
         reasoning                   str    structured 5–7 sentence analysis
+        macro_factors               list   0-2 structured objects
+        macro_impact_on_moat_durability  str (optional)
     """
     price    = info.get("currentPrice", 0)
     mcap_b   = (info.get("marketCap") or 0) / 1e9
@@ -334,9 +458,12 @@ Estás analizando el **Economic Moat** de **Bitcoin (BTC)** como activo de inver
 Bitcoin es un activo de alta volatilidad con drawdowns históricos del 70–85% y sin flujos de caja. Estos hechos deben reflejarse en el dimensionamiento de la posición, pero no implican un sesgo negativo automático: evaluá el moat por sus méritos estructurales.
 
 --- CONTEXTO MACRO GLOBAL Y NACIONAL A CONSIDERAR (usá tu conocimiento actual) ---
-Factores mundiales relevantes para BTC: régimen de liquidez global y expectativas de tasas (Fed y principales bancos centrales), ciclo de risk-on / risk-off, flujos de ETF spot en contexto de apetito por riesgo, geopolítica y "de-dollarization" o adopción como reserva alternativa, regulación global (EE.UU., UE, Asia, Latam), competencia de otros activos de reserva (oro, stablecoins, ETH, etc.).
-Factores nacionales/soberanos: adopción real por estados-nación (reservas, moneda legal), legislación y claridad regulatoria en jurisdicciones clave, correlación con Nasdaq / mercados emergentes según el régimen macro.
-Instrucción: Mencioná explícitamente en el `reasoning` (y en retirement_risk_summary cuando aplique) los 0-2 factores macro actuales que más impactan la durabilidad del moat o el dimensionamiento conservador para un inversor de jubilación.
+{_crypto_world_macro_factors()}
+{_crypto_national_macro_factors()}
+
+Instrucción estructural (obligatoria):
+Usá EXACTAMENTE el formato de salida para macro que se detalla abajo. 
+{_macro_factors_output_spec(for_moat=True)}
 
 **Tarea:** Evalúa el **Economic Moat** de Bitcoin con rigor y honestidad.
 
@@ -393,7 +520,9 @@ El output principal debe ser un objeto JSON válido con exactamente estos campos
   "moat_durability_years": 10,
   "recommended_max_allocation_conservative": 3,
   "retirement_risk_summary": "Resumen objetivo de 2–3 oraciones sobre los riesgos principales de este activo (incluyendo macro cuando aplique).",
-  "reasoning": "Análisis con voz propia en español (5–7 oraciones). Incluye: (1) fortaleza central del moat, (2) debilidad o riesgo principal (macro o estructural), (3) durabilidad estimada y por qué, (4) en qué perfil de cartera de jubilación encaja y con qué dimensionamiento conservador."
+  "reasoning": "Análisis con voz propia en español (5–7 oraciones). Incluye: (1) fortaleza central del moat, (2) debilidad o riesgo principal (macro o estructural), (3) durabilidad estimada y por qué, (4) en qué perfil de cartera de jubilación encaja y con qué dimensionamiento conservador.",
+  "macro_factors": [],
+  "macro_impact_on_moat_durability": ""
 }}"""
 
 
@@ -411,13 +540,14 @@ def crypto_decision_prompt(fund, tech) -> str:
     fund : FundamentalResult  (is_crypto=True)
     tech : TechnicalResult
 
-    JSON output contract (6 fields):
+    JSON output contract (7+ fields):
         action          str   STRONG BUY | BUY | HOLD | REDUCE | SELL
         confidence      str   HIGH | MEDIUM | LOW
         rationale       list  Positive factors (2–3 items)
         risks           list  Key risks (2–3 items), always includes volatility/drawdown risk
         recommended_max_allocation_conservative  int  % of portfolio (conviction-based)
         reasoning       str   Structured: Tesis · Técnico · Riesgo · Asignación
+        macro_factors   list  0-2 structured objects
     """
     def fmt(val, suffix="", decimals=1):
         if val is None:
@@ -473,9 +603,12 @@ Contexto: {tech.price_vs_52w_high_pct:+.1f}% desde 52w high | {tech.price_vs_52w
 Bitcoin es un activo de alta volatilidad con drawdowns históricos del 70–85% y sin flujos de caja (dividendos, cupones). Su rol típico es de cobertura inflacionaria y diversificación. La volatilidad debe reflejarse en el dimensionamiento de la posición, evaluado de forma objetiva según la convicción.
 
 --- CONTEXTO MACRO GLOBAL Y NACIONAL A CONSIDERAR (usá tu conocimiento actual) ---
-Factores mundiales: régimen de liquidez y tasas de interés globales (Fed pivot o tightening), ciclo risk-on/risk-off y correlación con Nasdaq/oro/dólar, flujos netos de ETF spot en el entorno macro actual, geopolítica y narrativas de reserva de valor alternativa, regulación en EE.UU./UE/Asia y su impacto en adopción institucional.
-Factores nacionales/soberanos: señales reales de adopción por estados (reservas, legal tender), claridad o endurecimiento regulatorio en mercados clave, correlación de BTC con mercados emergentes o monedas locales según el régimen.
-Instrucción: Mencioná explícitamente en el `reasoning` (dentro de Tesis o Riesgo) los 0-2 factores macro que más están afectando la tesis o el riesgo de este activo ahora, y cómo eso modifica el % de asignación conservadora.
+{_crypto_world_macro_factors()}
+{_crypto_national_macro_factors()}
+
+Instrucción estructural (obligatoria):
+Usá EXACTAMENTE el formato de salida para macro que se detalla abajo. 
+{_macro_factors_output_spec(for_moat=False)}
 
 --- INSTRUCCIÓN ---
 Evalúa el momentum técnico, el moat crypto y el riesgo de volatilidad de forma objetiva, y emití tu recomendación.
@@ -489,7 +622,8 @@ El output principal debe ser un objeto JSON válido con exactamente estos campos
   "rationale": ["factor positivo 1", "factor positivo 2"],
   "risks": ["riesgo 1", "riesgo 2", "riesgo de volatilidad / drawdown"],
   "recommended_max_allocation_conservative": 3,
-  "reasoning": "Tesis: señal técnica y fundamentos incluyendo macro relevante. Técnico: momentum, SMAs, RSI. Riesgo: volatilidad y drawdown + macro. Asignación: % máx sugerido según convicción y por qué (dimensionando el riesgo real); la convicción es MEDIUM porque aunque el moat es sólido y el técnico acompaña, la volatilidad estructural y los riesgos regulatorios no permiten HIGH en un portafolio conservador de jubilación."
+  "reasoning": "Tesis: señal técnica y fundamentos incluyendo macro relevante. Técnico: momentum, SMAs, RSI. Riesgo: volatilidad y drawdown + macro. Asignación: % máx sugerido según convicción y por qué (dimensionando el riesgo real); la convicción es MEDIUM porque aunque el moat es sólido y el técnico acompaña, la volatilidad estructural y los riesgos regulatorios no permiten HIGH en un portafolio conservador de jubilación.",
+  "macro_factors": []
 }}"""
 
 # ---------------------------------------------------------------------------
@@ -696,8 +830,13 @@ def portfolio_optimizer_advice_prompt(
         vol = h.get("volatility_pct", 0.0)
         sec = h.get("sector", "")
         ars = " (ARS risk)" if h.get("is_ars") else ""
+        _twc = h.get("tailwind_classification", "") or ""
+        tw = (
+            f" tailwind={_twc}({float(h.get('tailwind_score', 0.0) or 0.0):+.1f})"
+            if _twc and _twc != "Neutral" else ""
+        )
         holdings_lines.append(
-            f"- {sym}: {w:.1f}% | score={sc:.0f} moat={mo:.1f} div={dy:.1f}% expRet={er:.1f}% vol={vol:.1f}% sector={sec}{ars}"
+            f"- {sym}: {w:.1f}% | score={sc:.0f} moat={mo:.1f} div={dy:.1f}% expRet={er:.1f}% vol={vol:.1f}% sector={sec}{ars}{tw}"
         )
     holdings_str = "\n".join(holdings_lines) if holdings_lines else "(sin holdings)"
 
@@ -741,9 +880,13 @@ Pesos por sector: {sector_str}
 ---
 
 CONTEXTO MACRO GLOBAL Y NACIONAL A CONSIDERAR (usá tu conocimiento actual, según corresponda al perfil y a los sectores presentes):
-Factores mundiales: régimen de tasas y liquidez global (Fed y otros), geopolítica y cadenas de suministro, regulación (tech, finanzas, energía, crypto), ciclos de commodities e inflación, flujos de capital, correlación riesgo-on/off.
-Factores nacionales/locales: para EE.UU. consumidor + capex IA + política fiscal; para Europa energía/regulación; para Latam/Argentina (especialmente ADRs) riesgo país, inflación, brecha cambiaria, precios de commodities y prima de riesgo explícita; para crypto flujos ETF, adopción soberana y régimen de liquidez.
-Instrucción: Identificá 1-2 factores macro más relevantes para **esta cartera específica** (mirá el perfil, los sectores dominantes y si hay ADRs o crypto). Menciónalos en la narrative y en los tips cuando cambien la convicción o el tamaño práctico de las posiciones.
+{_portfolio_macro_factors()}
+
+Nota sobre colas de viento estructurales: algunos holdings traen un campo "tailwind=..." — es un dato CURADO sector-país (fuente de verdad, su bonus ya está incluido en el score). Referencialo cuando sea material para pesos o convicción; NO inventes colas de viento adicionales.
+
+Instrucción estructural (obligatoria):
+Usá EXACTAMENTE el formato de salida para macro que se detalla abajo. 
+{_macro_factors_output_spec(for_moat=False, for_portfolio=True)}
 
 ---
 
@@ -777,5 +920,317 @@ Respondé SOLO con el objeto JSON válido. No agregues NADA de texto antes ni de
     "Si tenés tesis más fuerte que el optimizador en el moat de MELI, súbelo a 7-8% y reduce proporcionalmente un nombre de alto yield con menor convicción.",
     "El perfil Conservador se beneficia de no tener más de 12 nombres para poder revisarlos realmente cada 6-12 meses sin abrumarse."
   ],
-  "overall_assessment": "La versión núcleo preserva la gran mayoría del beneficio con mucho menos esfuerzo de seguimiento humano."
+  "overall_assessment": "La versión núcleo preserva la gran mayoría del beneficio con mucho menos esfuerzo de seguimiento humano.",
+  "macro_factors": []
+}}"""
+
+
+# ---------------------------------------------------------------------------
+# 8. Plan-level narrative + macro risks (Fase D)
+# ---------------------------------------------------------------------------
+# Explains a *saved retirement plan* (the persisted PlanSnapshot) in human,
+# conservative Spanish — and surfaces the 0-2 macro factors that could most
+# damage the plan. Unlike long_term_plan_narrative_prompt (which describes the
+# live session), this works off a stored snapshot and an optional "refresh"
+# (today's prices vs. when the plan was saved), so a plan stays explainable
+# years later. Returns a JSON object {narrative, macro_risks}.
+
+
+def plan_level_narrative_prompt(
+    *,
+    plan_name: str,
+    profile_name: str,
+    personal: Optional[dict],
+    metrics: dict,
+    core_holdings: list[dict],
+    allocation: list[dict],
+    sector_weights: dict,
+    goals: list[dict],
+    mc_summary: Optional[dict],
+    refreshed: Optional[dict] = None,
+    withdrawal_strategy: Optional[dict] = None,
+) -> str:
+    """Build the JSON-returning prompt that explains a saved plan + macro risks.
+
+    All inputs are plain dicts/lists extracted from a ``PlanSnapshot`` by the
+    caller (``ai_analyzer``), so this module stays import-light. The model must
+    return ``{"narrative": str, "macro_risks": [{factor, why, severity}]}``.
+    """
+    # --- Core holdings (human-scale subset) ---
+    core_lines = []
+    for c in (core_holdings or [])[:10]:
+        sym = c.get("symbol", "?")
+        w = c.get("suggested_weight_pct", 0.0)
+        why = (c.get("why", "") or "")[:160]
+        core_lines.append(f"  - {sym} {w:.1f}%" + (f" — {why}" if why else ""))
+    core_str = "\n".join(core_lines) or "  (sin núcleo definido)"
+
+    # --- Full allocation (top names by weight) ---
+    alloc_sorted = sorted(allocation or [], key=lambda a: -float(a.get("weight_pct", 0.0)))
+    alloc_top = ", ".join(
+        f"{a.get('symbol', '?')} {float(a.get('weight_pct', 0.0)):.1f}%"
+        for a in alloc_sorted[:12]
+    )
+    if len(alloc_sorted) > 12:
+        alloc_top += f" + {len(alloc_sorted) - 12} más"
+    alloc_str = alloc_top or "(sin cartera completa)"
+
+    # --- Sector weights ---
+    sect_sorted = sorted((sector_weights or {}).items(), key=lambda kv: -float(kv[1] or 0))
+    sect_str = ", ".join(f"{k} {float(v):.0f}%" for k, v in sect_sorted[:6]) or "n/d"
+
+    # --- Structural sector-country tailwinds captured in the snapshot (Idea 2) ---
+    _tw_lines = []
+    for a in (allocation or []):
+        _twc = a.get("tailwind_classification", "") or ""
+        if _twc and _twc != "Neutral":
+            _tw_lines.append(
+                f"  - {a.get('symbol', '?')} ({float(a.get('weight_pct', 0.0) or 0.0):.1f}%): "
+                f"{_twc} (score {float(a.get('tailwind_score', 0.0) or 0.0):+.1f})"
+            )
+    if _tw_lines:
+        tailwinds_str = (
+            "\n".join(_tw_lines[:8])
+            + "\n  (Dato CURADO sector-país, fuente de verdad — su bonus ya está en los scores. "
+            "Referencialo en narrative/macro_risks cuando sea material; NO inventes colas de viento adicionales.)"
+        )
+    else:
+        tailwinds_str = "  (sin colas de viento estructurales materiales en esta cartera)"
+
+    # --- Personal profile ---
+    if personal:
+        personal_str = (
+            f"Edad {personal.get('age', '?')}, retiro a los {personal.get('retirement_age', '?')} "
+            f"(horizonte ~{personal.get('primary_horizon_years', '?')} años). "
+            f"Capital actual ${float(personal.get('current_capital', 0) or 0):,.0f}, "
+            f"ahorro mensual ${float(personal.get('monthly_savings', 0) or 0):,.0f}. "
+            f"Meta principal: {personal.get('primary_goal_type', 'retiro')}."
+        )
+    else:
+        personal_str = "Perfil personal no definido (usá supuestos conservadores genéricos)."
+
+    # --- Goals ---
+    if goals:
+        goal_lines = [
+            f"  - {g.get('name', 'meta')}: ${float(g.get('target_amount_today', 0) or 0):,.0f} hoy "
+            f"en {g.get('horizon_years', '?')} años"
+            for g in goals[:6]
+        ]
+        goals_str = "\n".join(goal_lines)
+    else:
+        goals_str = "  (sin metas explícitas)"
+
+    # --- Monte Carlo summary ---
+    if mc_summary:
+        mc_str = (
+            f"Horizonte {mc_summary.get('horizon_years', '?')} años, "
+            f"capital inicial ${float(mc_summary.get('initial_value', 0) or 0):,.0f}. "
+            f"Mediana final ${float(mc_summary.get('median_terminal', 0) or 0):,.0f}, "
+            f"P10 ${float(mc_summary.get('p10_terminal', 0) or 0):,.0f}, "
+            f"P90 ${float(mc_summary.get('p90_terminal', 0) or 0):,.0f}. "
+            f"Prob. ruina {float(mc_summary.get('prob_ruin_pct', 0) or 0):.1f}%, "
+            f"prob. meta {float(mc_summary.get('prob_target_pct', 0) or 0):.1f}%."
+        )
+        # Item 1 — economic drags context (the LLM only DESCRIBES, never invents).
+        _drag_total = float(mc_summary.get("total_annual_drag_pct", 0.0) or 0.0)
+        if _drag_total > 0:
+            mc_str += (
+                f" DRAGS APLICADOS: {_drag_total:.2f}%/año de fricciones reales "
+                f"(fees + impuesto a dividendos + costo de rebalanceo + buffer AR). "
+                f"Caso BASE sin drags: mediana ${float(mc_summary.get('base_median_terminal', 0) or 0):,.0f}, "
+                f"P10 ${float(mc_summary.get('base_p10_terminal', 0) or 0):,.0f}. "
+                f"Estos números YA incluyen los drags; mencioná que reflejan supuestos realistas."
+            )
+        else:
+            mc_str += (
+                " SUPUESTOS: números BASE sin drags (0% fees, 0% impuestos a dividendos, "
+                "0% costo de rebalanceo). Aclará que son optimistas frente a costos reales."
+            )
+    else:
+        mc_str = "Sin simulación Monte Carlo guardada para este plan."
+
+    # --- Decumulation / withdrawal strategy (Fase H.1) ---
+    # Curated/config-driven data is the source of truth: the LLM only DESCRIBES
+    # the chosen strategy and its simulated outcomes, never invents new rules.
+    if withdrawal_strategy:
+        _wk = withdrawal_strategy.get("kind", "")
+        if _wk == "fixed_real":
+            _strat_desc = (
+                f"RETIRO FIJO REAL: ${float(withdrawal_strategy.get('annual_amount', 0) or 0):,.0f}/año "
+                "ajustado por inflación (estilo regla del 4%). Es el más predecible para el gasto, "
+                "pero el MÁS expuesto al riesgo de secuencia de retornos: una caída fuerte en los "
+                "primeros años puede agotar el capital de forma irreversible."
+            )
+        elif _wk == "constant_pct":
+            _strat_desc = (
+                f"% CONSTANTE DEL VALOR ACTUAL: {float(withdrawal_strategy.get('pct', 0) or 0) * 100:.1f}% del saldo "
+                "cada año. La cartera nunca se agota del todo, pero el ingreso anual VARÍA con el mercado "
+                "(en años malos cobrás menos)."
+            )
+        elif _wk == "guardrails":
+            _strat_desc = (
+                f"GUARDRAILS (Guyton-Klinger): tasa base {float(withdrawal_strategy.get('pct', 0) or 0) * 100:.1f}%, "
+                "recorta el gasto cuando la cartera cae y lo sube cuando crece. Reduce el riesgo de ruina "
+                "a costa de cierta variabilidad del ingreso."
+            )
+        else:
+            _strat_desc = f"Estrategia de retiro: {_wk}."
+
+        _m = mc_summary or {}
+        if "prob_sustain_real_pct" in _m:
+            _ly = _m.get("longevity_years", _m.get("horizon_years", "?"))
+            _dep = float(_m.get("expected_depletion_year", 0) or 0)
+            _dep_txt = (f"si se agota, el año típico es ~{_dep:.0f}" if _dep > 0
+                        else "no se agotó en ninguna simulación dentro del horizonte")
+            _metrics_txt = (
+                f" RESULTADOS SIMULADOS: probabilidad de que el ingreso dure {_ly} años "
+                f"= {float(_m.get('prob_sustain_real_pct', 0) or 0):.0f}%, "
+                f"probabilidad de dejar herencia = {float(_m.get('prob_legacy_pct', 0) or 0):.0f}%, "
+                f"herencia mediana ${float(_m.get('median_legacy', 0) or 0):,.0f}; {_dep_txt}."
+            )
+        else:
+            _metrics_txt = " (sin métricas de decumulación simuladas en el snapshot)."
+        withdrawal_str = _strat_desc + _metrics_txt
+    else:
+        withdrawal_str = (
+            "El plan está en fase de ACUMULACIÓN: no hay estrategia de retiro (decumulación) "
+            "definida todavía. Si el horizonte se acerca al retiro, conviene definir cómo se "
+            "va a gastar la cartera (retiro fijo, % variable o guardrails)."
+        )
+
+    # --- Market refresh (today vs. when saved) ---
+    if refreshed and refreshed.get("summary"):
+        s = refreshed["summary"]
+        wd = s.get("weighted_delta_pct")
+        wd_str = f"{wd:+.1f}%" if wd is not None else "n/d"
+        refresh_str = (
+            f"Desde que se guardó el plan, el movimiento ponderado de precios del núcleo/cartera "
+            f"es {wd_str} ({s.get('gainers', 0)} subieron, {s.get('losers', 0)} bajaron). "
+            f"Score promedio al guardar: "
+            f"{s.get('avg_score_then') if s.get('avg_score_then') is not None else 'n/d'}/100."
+        )
+    else:
+        refresh_str = "Sin refresco de mercado disponible (no se compararon precios de hoy)."
+
+    return f"""Eres un analista de inversión senior extremadamente riguroso, objetivo y conservador, especializado en planes de retiro de largo plazo (10-30 años). Tu prioridad #1 es que el inversor **no se arruine** y entienda su plan de verdad.
+
+IDIOMA OBLIGATORIO: Responde SIEMPRE en español natural y correcto. Nunca uses inglés.
+
+Estás explicando un **plan de retiro guardado** llamado «{plan_name}» (perfil {profile_name}). El usuario puede estar leyendo esto meses o años después de armarlo, así que sé claro y atemporal.
+
+**PERFIL PERSONAL**
+{personal_str}
+
+**CARTERA NÚCLEO (lo que el humano gestiona de verdad)**
+{core_str}
+
+**CARTERA COMPLETA (objetivo)**
+{alloc_str}
+Sectores: {sect_str}
+
+**MÉTRICAS DEL PLAN**
+Retorno esperado {float(metrics.get('expected_return_pct', 0)):.1f}% | Volatilidad {float(metrics.get('volatility_pct', 0)):.1f}% | Sharpe {float(metrics.get('sharpe_ratio', 0)):.2f}
+Dividend yield {float(metrics.get('dividend_yield_pct', 0)):.2f}% | Score prom. {float(metrics.get('adjusted_score_avg', 0)):.0f}/100 | Max DD est. {float(metrics.get('max_drawdown_estimate_pct', 0)):.1f}%
+
+**COLAS DE VIENTO ESTRUCTURALES SECTOR-PAÍS (curadas)**
+{tailwinds_str}
+
+**METAS**
+{goals_str}
+
+**PROYECCIÓN MONTE CARLO**
+{mc_str}
+
+**ESTRATEGIA DE RETIRO (DECUMULACIÓN)**
+{withdrawal_str}
+
+**SALUD VS. MERCADO ACTUAL**
+{refresh_str}
+
+---
+
+**TAREA:**
+Devolvé un objeto JSON válido (y NADA de texto fuera del JSON) con exactamente dos campos:
+
+1. "narrative": una explicación honesta y accionable en español (180-280 palabras máximo), estructurada exactamente así con viñetas:
+   - **Resumen del plan en una frase**
+   - **Fortalezas para tu horizonte** (máx 3 bullets)
+   - **Riesgos reales que deberías entender** (máx 3 bullets, brutalmente honesto)
+   - **Qué dice el escenario pesimista (P10)** (si hay Monte Carlo)
+   - **¿Cuánto dura tu ingreso?** (SOLO si hay estrategia de retiro definida arriba: explicá la probabilidad de sostener el retiro durante el horizonte, y advertí sobre el riesgo de secuencia de retornos y el riesgo de longevidad —vivir más de lo previsto. Si guardrails, mencioná que recortar gasto en caídas es lo que sube la probabilidad de durar.)
+   - **Recomendaciones concretas** (máx 3 acciones)
+   - **Una frase final de prudencia**
+   Reglas de voz: conservador, sin "vas a estar tranquilo" ni optimismo infundado. Si el P10 es mucho menor al capital, decilo sin anestesia. Mencioná el perfil de riesgo y por qué importa. Si hubo refresco de mercado, integrá qué cambió. Si la probabilidad de sostener el retiro es baja (<75%), decilo con claridad y sugerí retirar menos o cambiar de estrategia. NO inventes números de decumulación: usá solo los provistos arriba.
+
+2. "macro_risks": una lista de 0, 1 o máximo 2 objetos con los factores macro que MÁS pueden romper este plan en su horizonte. Cada objeto: {{"factor": "nombre corto", "why": "por qué afecta a ESTA cartera/sectores concretos, anclado a los datos de arriba", "severity": "alta" | "media" | "baja"}}. Si ningún factor macro es claramente material para esta cartera, devolvé [].
+
+Formato de salida EXACTO (JSON válido, llaves balanceadas, sin texto adicional):
+{{
+  "narrative": "**Resumen del plan en una frase** ... (resto de la estructura con viñetas)",
+  "macro_risks": [
+    {{"factor": "Tasas de interés altas y persistentes", "why": "La cartera tiene fuerte peso en nombres de larga duración / growth, sensibles a tasas; un régimen de tasas altas comprime sus múltiplos.", "severity": "media"}}
+  ]
+}}"""
+
+
+# ---------------------------------------------------------------------------
+# 9. Sector-Country Tailwind Enrichment (Idea 2)
+# ---------------------------------------------------------------------------
+# The curated tailwind data (data/tailwinds/sector_country.json) is the source
+# of truth. This prompt asks the LLM ONLY to interpret/enrich the already-
+# computed tailwind for a specific company — it must NOT invent tailwinds nor
+# change the curated score (score/bonus stay deterministic and auditable).
+
+
+def sector_country_tailwind_prompt(tailwind, symbol: str, info: dict) -> str:
+    """Build the LLM prompt to enrich a curated TailwindDetail for one ticker.
+
+    Parameters
+    ----------
+    tailwind : TailwindDetail
+        Already-computed curated tailwind (non-Neutral).
+    symbol : str
+        Ticker symbol.
+    info : dict
+        yfinance info dict (name, sector, industry, country, summary).
+
+    JSON output contract (2 fields):
+        ai_reasoning  str   2-4 sentence company-specific interpretation (Spanish)
+        factors       list  0-2 structured objects {factor, why_relevant, impact,
+                            effect_on_allocation_or_conviction}
+    """
+    name = info.get("longName", symbol)
+    sector = info.get("sector", "Unknown")
+    industry = info.get("industry", "Unknown")
+    country = info.get("country", "Unknown")
+    summary = (info.get("longBusinessSummary") or "")[:500]
+    label = {
+        "Strong":   "Cola de viento FUERTE",
+        "Moderate": "Cola de viento MODERADA",
+        "Headwind": "VIENTO DE FRENTE",
+    }.get(tailwind.classification, tailwind.classification)
+
+    return f"""Eres Grok, construido por xAI. Eres un analista de inversión senior riguroso, objetivo y basado en datos, especializado en factores estructurales sector-país de largo plazo. Tenés voz propia: directo, honesto, sin hype.
+
+IDIOMA OBLIGATORIO: Responde SIEMPRE en español. Nunca uses inglés en los valores de texto.
+
+EMPRESA: {name} ({symbol})
+SECTOR: {sector} | INDUSTRIA: {industry} | PAÍS: {country}
+DESCRIPCIÓN: {summary}
+
+COLA DE VIENTO ESTRUCTURAL CURADA (fuente de verdad — NO la modifiques):
+  Clasificación: {label}
+  Score curado: {tailwind.tailwind_score:+.1f} (escala -5 a +10)
+  Durabilidad estimada: ~{tailwind.durability_years} años
+  Rationale curado: {tailwind.explanation}
+
+TAREA:
+Interpretá esta cola de viento (o viento de frente) PARA ESTA EMPRESA CONCRETA: qué tan expuesta está al factor estructural, qué parte de la tesis captura realmente (producción, infraestructura, regulación, exportaciones, etc.) y qué podría invalidar el factor en su horizonte. NO inventes colas de viento adicionales ni cambies el score curado. Sé específico para la empresa, no genérico para el sector.
+
+{_macro_factors_output_spec(for_moat=False).replace("macro_factors", "factors")}
+
+El output principal debe ser un objeto JSON válido con exactamente estos campos:
+{{
+  "ai_reasoning": "2-4 oraciones en español, específicas para esta empresa: exposición real al factor estructural, qué captura de la tesis y el riesgo principal de invalidación.",
+  "factors": []
 }}"""

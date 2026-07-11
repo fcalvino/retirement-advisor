@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -14,6 +9,7 @@ import streamlit as st
 from dashboard.shared import (
     _analyse_universe_parallel,
     _get_ai_config,
+    custom_source_badge,
 )
 from data.preferences import UserPreferences
 
@@ -67,21 +63,42 @@ if st.sidebar.button("➕ Agregar", key="screener_wl_btn") and _wl_input:
 
 col_btn, col_hint = st.columns([1, 4])
 with col_btn:
-    refresh = st.button("🔄 Refresh Analysis", type="primary", use_container_width=True)
+    refresh = st.button("🔄 Refresh Analysis", type="primary", width="stretch")
 with col_hint:
     st.caption("⚡ El análisis corre en paralelo. Primera vez ~15s · Después usa cache.")
 
+_sel_key = tuple(selected)
+_cached_rows = st.session_state.get("screener_rows")
+_cached_key = st.session_state.get("screener_rows_key")
+
 if refresh:
     st.cache_data.clear()
+    _cached_rows = None
 
-progress = st.progress(0)
-status = st.empty()
+# Show the last run instantly instead of a blank page; only (re)analyse when
+# the user asks for a refresh or the selected universe changed.
+if _cached_rows is not None and _cached_key == _sel_key:
+    rows = _cached_rows
+    _when = st.session_state.get("screener_rows_at", "")
+    st.caption(
+        f"📋 Mostrando la última corrida{f' ({_when})' if _when else ''} · "
+        f"{len(rows)} tickers. Tocá **🔄 Refresh Analysis** para actualizar."
+    )
+else:
+    progress = st.progress(0)
+    status = st.empty()
 
-ai_cfg = _get_ai_config(context="screener")
-rows = _analyse_universe_parallel(selected, ai_cfg, progress, status)
+    ai_cfg = _get_ai_config(context="screener")
+    rows = _analyse_universe_parallel(selected, ai_cfg, progress, status)
 
-progress.empty()
-status.empty()
+    progress.empty()
+    status.empty()
+
+    if rows:
+        from datetime import datetime
+        st.session_state["screener_rows"] = rows
+        st.session_state["screener_rows_key"] = _sel_key
+        st.session_state["screener_rows_at"] = datetime.now().strftime("%d/%m %H:%M")
 
 
 if not rows:
@@ -92,6 +109,17 @@ if not rows:
     st.stop()
 
 df = pd.DataFrame(rows).sort_values("Adj. Score", ascending=False)
+
+# Item 3 — mark each ticker's source (curated vs user-added custom).
+df["Fuente"] = df["Ticker"].apply(custom_source_badge)
+_n_custom = int((df["Fuente"] == "⚠️ Custom").sum())
+if _n_custom:
+    st.warning(
+        f"🧪 {_n_custom} ticker(s) **personalizado(s)** en este universo. Su scoring y "
+        "calidad de datos pueden ser parciales — están marcados como **⚠️ Custom** en la "
+        "columna *Fuente*. Tratalos como experimentales.",
+        icon="⚠️",
+    )
 
 # Summary metrics
 col1, col2, col3, col4 = st.columns(4)
@@ -110,18 +138,39 @@ col3.metric("Sell/Reduce signals", sell_count,
 )
 col4.metric("Stocks screened", len(df))
 
+# Data-quality transparency (Fase E): surface partial/poor/stale tickers
+if "Datos" in df.columns:
+    _dq_poor    = df["Datos"].str.contains("🔴").sum()
+    _dq_partial = df["Datos"].str.contains("🟡").sum()
+    _dq_stale   = df["Datos"].str.contains("⏳").sum()
+    if _dq_poor or _dq_partial or _dq_stale:
+        _parts = []
+        if _dq_poor:
+            _parts.append(f"🔴 {_dq_poor} con datos pobres")
+        if _dq_partial:
+            _parts.append(f"🟡 {_dq_partial} con datos parciales")
+        if _dq_stale:
+            _parts.append(f"⏳ {_dq_stale} con cache viejo")
+        st.warning(
+            "**Calidad de datos (yfinance):** " + " · ".join(_parts) + ". "
+            "Los tickers con datos incompletos reciben scores neutrales en las métricas "
+            "faltantes — revisá la columna **Datos** antes de confiar en su ranking. "
+            "Usá 🔄 Refresh Analysis para refrescar el cache.",
+            icon="🧪",
+        )
+
 # Table
 st.dataframe(
     df[[
-        "Ticker", "Company", "Sector", "Signal", "Score Bar",
-        "Consistency", "Piotroski", "Moat Score", "Moat",
-        "Technical", "P/E", "ROE %", "Rev CAGR 5Y", "Div Yield %", "MoS %", "Price",
+        "Ticker", "Company", "Sector", "Fuente", "Signal", "Score Bar",
+        "Consistency", "Piotroski", "Moat Score", "Moat", "Viento",
+        "Technical", "P/E", "ROE %", "Rev CAGR 5Y", "Div Yield %", "MoS %", "Price", "Datos",
     ]].rename(columns={
         "Consistency": "Consist./15",
         "Piotroski":   "Piotroski/9",
         "Moat Score":  "Moat/20",
     }),
-    use_container_width=True,
+    width="stretch",
     hide_index=True,
 )
 
@@ -140,9 +189,11 @@ fig = px.bar(
 fig.add_vline(x=75, line_dash="dash", line_color="green",  annotation_text="Strong Buy ≥75")
 fig.add_vline(x=60, line_dash="dash", line_color="orange", annotation_text="Buy ≥60")
 fig.update_layout(height=max(400, len(df) * 22), yaxis_title="")
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig, width="stretch")
 
 st.caption(
     "💡 Hacé clic en cualquier ticker en la tabla y luego abrí **🔍 Stock Analysis** "
-    "para ver el análisis completo con Piotroski, Moat y AI."
+    "para ver el análisis completo con Piotroski, Moat y AI. "
+    "🌬️ **Viento** = cola de viento estructural sector-país (dato curado, ej. Vaca Muerta "
+    "para energía argentina) — outlook a la fecha de curaduría, no garantía."
 )

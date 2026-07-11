@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 import pandas as pd
 import streamlit as st
 
@@ -183,7 +178,7 @@ else:
     display_cols = ["Ticker", "Empresa", "Precio", "Score", "Señal", "Técnico", "Moat", "Div %", "Alertas"]
     st.dataframe(
         df[display_cols],
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "Precio": st.column_config.NumberColumn("Precio", format="$%.2f"),
@@ -259,7 +254,7 @@ with ca1:
         label_visibility="collapsed",
     ).upper().strip()
 with ca2:
-    if st.button("Agregar a watchlist", type="primary", use_container_width=True) and new_ticker:
+    if st.button("Agregar a watchlist", type="primary", width="stretch") and new_ticker:
         if _prefs.watch(new_ticker):
             st.session_state.user_prefs = _prefs
             st.session_state.pop("wl_results", None)
@@ -300,7 +295,7 @@ else:
     df_alerts = pd.DataFrame(alert_rows)
     st.dataframe(
         df_alerts[["Ticker", "Condición", "Precio actual", "Diferencia", "Estado", "Creada"]],
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "Precio actual": st.column_config.NumberColumn("Precio actual", format="$%.2f"),

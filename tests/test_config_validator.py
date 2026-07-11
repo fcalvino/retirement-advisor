@@ -2,8 +2,6 @@
 
 from unittest.mock import patch
 
-import pytest
-
 from config_validator import validate_config
 
 
@@ -169,7 +167,6 @@ class TestHermesOAuthAvailable:
 
         with patch("config_validator.os.path.expanduser", return_value=str(hermes_dir)), \
              patch("config_validator.os.path.isdir", return_value=True):
-            import importlib
             import types
             fake_auth = types.ModuleType("hermes_cli.auth")
             fake_auth.resolve_xai_oauth_runtime_credentials = mock_resolver

@@ -5,17 +5,14 @@ from __future__ import annotations
 import concurrent.futures
 import os
 import socket
-import sys
 import time
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import streamlit as st
 
 from config import DEFAULT_TICKERS
 from data.preferences import _PREFS_PATH
-from data.universe_loader import UNIVERSE_META, list_universes, load_universe
+from data.universe_loader import UNIVERSE_META, list_universes
 
 _VERSION = "1.1.0"
 _BASE_DIR = Path(__file__).parent.parent.parent
@@ -208,6 +205,14 @@ col5.metric("Páginas",             "11")
 
 st.divider()
 
+# Item 1 — radical transparency of modeling assumptions.
+st.subheader("📊 Supuestos y limitaciones del modelo")
+from dashboard.shared import render_assumptions_disclaimer
+
+render_assumptions_disclaimer(expander=False)
+
+st.divider()
+
 # Project highlights
 st.subheader("Highlights del proyecto")
 h1, h2, h3 = st.columns(3)
@@ -262,7 +267,7 @@ st.caption("Verificación on-demand de conectividad, datos y configuración.")
 
 _hc_col1, _hc_col2 = st.columns([1, 3])
 with _hc_col1:
-    _run_hc = st.button("🔍 Ejecutar Health Check", type="primary", use_container_width=True)
+    _run_hc = st.button("🔍 Ejecutar Health Check", type="primary", width="stretch")
 
 if _run_hc:
     with st.spinner("Verificando componentes…"):

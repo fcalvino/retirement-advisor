@@ -22,11 +22,48 @@ from loguru import logger
 
 _PREFS_PATH = Path(__file__).parent / "user_preferences.json"
 
+# ------------------------------------------------------------------ #
+#  Personal-profile mappings (onboarding wizard — Fase A)              #
+# ------------------------------------------------------------------ #
+
+# Risk tolerance (stored, user-facing) → optimizer profile key / display name.
+RISK_TOLERANCE_TO_PROFILE_KEY = {
+    "conservadora": "conservative",
+    "moderada":     "moderate",
+    "agresiva":     "aggressive",
+}
+RISK_TOLERANCE_TO_PROFILE_NAME = {
+    "conservadora": "Conservador",
+    "moderada":     "Moderado",
+    "agresiva":     "Agresivo",
+}
+
+# Dividend preference (stored) → human label.
+DIVIDEND_PREFERENCE_LABELS = {
+    "crecimiento": "Crecimiento (reinvertir, foco en apreciación)",
+    "balance":     "Balance (crecimiento + algo de ingreso)",
+    "ingreso":     "Ingreso (dividendos / flujo de caja)",
+}
+
 
 @dataclass
 class UserPreferences:
     # Optimizer
     default_profile: str = "Conservador"
+
+    # --------------------------------------------------------------- #
+    #  Personal profile (onboarding wizard — Fase A)                   #
+    #  All default to "unset" so existing pref files stay backward-    #
+    #  compatible and the app treats the user as not-yet-onboarded.    #
+    # --------------------------------------------------------------- #
+    onboarded: bool = False
+    age: int = 0                          # 0 = sin definir
+    retirement_age: int = 65
+    current_capital: float = 0.0          # USD disponibles hoy para invertir
+    monthly_savings: float = 0.0          # USD aportados por mes
+    risk_tolerance: str = "conservadora"  # conservadora | moderada | agresiva
+    primary_goal_type: str = "retiro"     # clave de portfolio.goals.GOAL_TYPE_ICONS
+    dividend_preference: str = "balance"  # crecimiento | balance | ingreso
 
     # Universes
     active_universe: str = "default"        # key matching data/universes/<key>.json
@@ -44,11 +81,75 @@ class UserPreferences:
     # AI
     ai_enabled_in_screener: bool = False
 
+    # Mi Plan de Retiro (Fase C) — id of the saved plan the user "activated"
+    # as their living retirement target. Drift alerts and the Portfolio
+    # alignment view use this plan's allocation as the source of truth.
+    # Empty string = no active plan (backward-compatible default).
+    active_plan_id: str = ""
+
+    # Custom tickers (Item 3) — user-added symbols beyond the curated universe.
+    # Each: {"symbol", "note", "added_at"}. Source is flagged "custom" downstream
+    # so scoring/data-quality warnings are loud and the optimizer treats them
+    # conservatively. Empty list = pre-feature behavior (backward-compatible).
+    custom_tickers: List[dict] = field(default_factory=list)
+
     # ------------------------------------------------------------------ #
 
     @classmethod
     def get_default(cls) -> "UserPreferences":
         return cls()
+
+    # ------------------------------------------------------------------ #
+    #  Personal-profile derived helpers (read-only)                       #
+    # ------------------------------------------------------------------ #
+
+    @property
+    def is_onboarded(self) -> bool:
+        """True once the user has completed the onboarding wizard."""
+        return bool(self.onboarded) and self.age > 0
+
+    @property
+    def primary_horizon_years(self) -> int:
+        """Years until target retirement (0 if profile incomplete)."""
+        if self.age > 0 and self.retirement_age > self.age:
+            return int(self.retirement_age - self.age)
+        return 0
+
+    @property
+    def annual_savings(self) -> float:
+        """Yearly savings derived from the monthly figure."""
+        return float(self.monthly_savings) * 12.0
+
+    @property
+    def profile_key(self) -> str:
+        """Optimizer profile key derived from risk tolerance."""
+        return RISK_TOLERANCE_TO_PROFILE_KEY.get(self.risk_tolerance, "conservative")
+
+    def apply_personal_profile(
+        self,
+        *,
+        age: int,
+        retirement_age: int,
+        current_capital: float,
+        monthly_savings: float,
+        risk_tolerance: str,
+        primary_goal_type: str,
+        dividend_preference: str,
+    ) -> None:
+        """Persist the onboarding answers and keep default_profile in sync."""
+        self.age                 = int(age)
+        self.retirement_age      = int(retirement_age)
+        self.current_capital     = float(current_capital)
+        self.monthly_savings     = float(monthly_savings)
+        self.risk_tolerance      = risk_tolerance
+        self.primary_goal_type   = primary_goal_type
+        self.dividend_preference = dividend_preference
+        # Risk tolerance is the single source of truth for the optimizer profile.
+        self.default_profile = RISK_TOLERANCE_TO_PROFILE_NAME.get(
+            risk_tolerance, self.default_profile
+        )
+        self.onboarded = True
+        self.save()
 
     @classmethod
     def load(cls) -> "UserPreferences":
@@ -75,9 +176,61 @@ class UserPreferences:
         except Exception as exc:
             logger.error(f"Could not save preferences: {exc}")
 
-    def update_universe(self, tickers: List[str]) -> None:
-        """Helper: update last_used_universe and persist."""
-        self.last_used_universe = list(tickers)
+    # ------------------------------------------------------------------ #
+    #  Active retirement plan (Fase C)                                     #
+    # ------------------------------------------------------------------ #
+
+    def set_active_plan(self, plan_id: str) -> None:
+        """Mark a saved plan as the active retirement target and persist."""
+        self.active_plan_id = (plan_id or "").strip()
+        self.save()
+
+    def clear_active_plan(self) -> None:
+        """Unset the active retirement target and persist."""
+        self.active_plan_id = ""
+        self.save()
+
+    # ------------------------------------------------------------------ #
+    #  Custom tickers (Item 3)                                             #
+    # ------------------------------------------------------------------ #
+
+    def custom_symbols(self) -> List[str]:
+        """Return just the symbols of the user's custom tickers (upper-cased)."""
+        out: List[str] = []
+        for c in self.custom_tickers:
+            sym = str(c.get("symbol", "")).upper().strip()
+            if sym and sym not in out:
+                out.append(sym)
+        return out
+
+    def add_custom_ticker(self, symbol: str, note: str = "") -> bool:
+        """Add a custom ticker (dedup, basic validation). Returns True if added.
+
+        Validation is intentionally light (format only) — the point is that the
+        user can extend the universe, with loud data-quality warnings elsewhere.
+        """
+        import datetime
+        import re
+        sym = (symbol or "").upper().strip()
+        if not sym or not re.fullmatch(r"[A-Z0-9.\-]{1,12}", sym):
+            return False
+        if sym in self.custom_symbols():
+            return False
+        self.custom_tickers.append({
+            "symbol": sym,
+            "note": (note or "").strip()[:200],
+            "added_at": datetime.date.today().isoformat(),
+        })
+        self.save()
+        return True
+
+    def remove_custom_ticker(self, symbol: str) -> None:
+        """Remove a custom ticker by symbol and persist."""
+        sym = (symbol or "").upper().strip()
+        self.custom_tickers = [
+            c for c in self.custom_tickers
+            if str(c.get("symbol", "")).upper().strip() != sym
+        ]
         self.save()
 
     def watch(self, symbol: str) -> bool:

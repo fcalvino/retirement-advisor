@@ -12,8 +12,6 @@ Usage:
 
 from __future__ import annotations
 
-import io
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
@@ -22,17 +20,14 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
-import pandas as pd
 from loguru import logger
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.platypus import (
     HRFlowable,
-    Image,
     PageBreak,
     Paragraph,
     SimpleDocTemplate,
@@ -42,6 +37,8 @@ from reportlab.platypus import (
 )
 
 from config import REPORT
+from reports.pdf_utils import chart_to_image as _chart_to_image
+from reports.pdf_utils import make_header_footer as _make_header_footer
 
 # ------------------------------------------------------------------ #
 #  Brand colours                                                       #
@@ -83,15 +80,6 @@ def _styles():
     return styles
 
 
-def _chart_to_image(fig, width_cm: float = 16, height_cm: float = 7) -> Image:
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight",
-                facecolor="white", edgecolor="none")
-    buf.seek(0)
-    plt.close(fig)
-    return Image(buf, width=width_cm * cm, height=height_cm * cm)
-
-
 def _score_color(score: float) -> colors.Color:
     if score >= 75:
         return _GREEN
@@ -109,34 +97,6 @@ def _signal_color(signal: str) -> colors.Color:
     if "HOLD" in s:
         return _AMBER
     return _RED
-
-
-# ------------------------------------------------------------------ #
-#  Header / Footer callbacks                                           #
-# ------------------------------------------------------------------ #
-
-def _make_header_footer(report_date: str, title: str):
-    def _on_page(canvas, doc):
-        canvas.saveState()
-        w, h = A4
-        # Header bar
-        canvas.setFillColor(_NAVY)
-        canvas.rect(0, h - 1.5 * cm, w, 1.5 * cm, fill=1, stroke=0)
-        canvas.setFont("Helvetica-Bold", 11)
-        canvas.setFillColor(_WHITE)
-        canvas.drawString(1.5 * cm, h - 1.0 * cm, title)
-        canvas.setFont("Helvetica", 8)
-        canvas.drawRightString(w - 1.5 * cm, h - 1.0 * cm, report_date)
-        # Footer line
-        canvas.setStrokeColor(_DGRAY)
-        canvas.line(1.5 * cm, 1.2 * cm, w - 1.5 * cm, 1.2 * cm)
-        canvas.setFont("Helvetica", 7)
-        canvas.setFillColor(_DGRAY)
-        canvas.drawString(1.5 * cm, 0.7 * cm,
-                          "Este reporte es orientativo y no constituye asesoramiento financiero.")
-        canvas.drawRightString(w - 1.5 * cm, 0.7 * cm, f"Pág. {doc.page}")
-        canvas.restoreState()
-    return _on_page
 
 
 # ------------------------------------------------------------------ #
@@ -461,7 +421,7 @@ class ReportGenerator:
     #  Charts                                                              #
     # ------------------------------------------------------------------ #
 
-    def _score_dist_chart(self, tickers) -> Image:
+    def _score_dist_chart(self, tickers):
         scores = [t.get("adjusted_score", 0) for t in tickers if t.get("adjusted_score")]
         fig, ax = plt.subplots(figsize=(10, 3.5))
         ax.hist(scores, bins=20, color="#1B3A6B", alpha=0.8, edgecolor="white", linewidth=0.5)

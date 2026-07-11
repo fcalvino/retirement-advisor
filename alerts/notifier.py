@@ -12,7 +12,6 @@ from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
-from typing import Optional
 
 import requests
 from loguru import logger
@@ -160,30 +159,3 @@ class Notifier:
             logger.info("Telegram alert sent")
         except Exception as exc:
             logger.error(f"Telegram alert failed: {exc}")
-
-
-class SignalMonitor:
-    """
-    Tracks previous decisions and fires alerts when signals change.
-    State stored in memory — use AlertEngine for persistent tracking.
-    Kept for backwards compatibility with existing screener code.
-    """
-
-    def __init__(self):
-        self._previous: dict = {}
-        self._notifier = Notifier()
-
-    def check_and_alert(self, symbol: str, new_action: str, score: float) -> Optional[str]:
-        prev = self._previous.get(symbol)
-        self._previous[symbol] = new_action
-        if prev is None:
-            return None
-        if prev != new_action:
-            msg = (
-                f"{symbol}: señal cambió {prev} → {new_action} "
-                f"(score: {score:.1f}/100)"
-            )
-            self._notifier.send(msg, title=f"⚡ Cambio de señal: {symbol}")
-            logger.info(f"Alert fired: {msg}")
-            return msg
-        return None

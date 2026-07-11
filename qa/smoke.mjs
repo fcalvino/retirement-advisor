@@ -1,0 +1,10 @@
+import { App } from './driver.mjs';
+const app = new App();
+await app.start();
+await app.shot('00_home');
+const navs = await app.page.$$eval('[data-testid="stSidebarNav"] a', as => as.map(a => (a.innerText||'').trim()));
+console.log('NAV LABELS:', JSON.stringify(navs));
+const btns = await app.listButtons();
+console.log('HOME BUTTONS:', JSON.stringify(btns));
+await app.capture('home-initial');
+await app.finish('./out_smoke.json');

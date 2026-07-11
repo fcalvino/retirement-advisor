@@ -21,7 +21,7 @@ Usage:
 from __future__ import annotations
 
 from datetime import date
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 import numpy as np
 import pandas as pd
@@ -60,7 +60,7 @@ def get_crypto_info(symbol: str) -> dict:
     Any missing field defaults to 0.0 or "".
     """
     # Reuse the shared get_info() which already has retry + cache logic
-    from data.fetcher import get_info, _safe_float
+    from data.fetcher import _safe_float, get_info
     raw = get_info(symbol)
     if not raw:
         logger.warning(f"{symbol}: crypto info fetch returned empty dict")

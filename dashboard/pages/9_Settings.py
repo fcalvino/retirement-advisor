@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 import streamlit as st
 
 from dashboard.shared import _save_ai_config_to_env
@@ -26,6 +21,29 @@ if "user_prefs" not in st.session_state:
     st.stop()
 
 _prefs: UserPreferences = st.session_state.user_prefs
+
+# ------------------------------------------------------------------ #
+#  Mi Perfil (onboarding — Fase A)                                    #
+# ------------------------------------------------------------------ #
+
+from dashboard.onboarding import render_onboarding_wizard, render_profile_summary
+
+st.subheader("🧭 Mi Perfil de retiro")
+st.caption(
+    "Tus datos personales alimentan los valores por defecto del Optimizer "
+    "(perfil + capital), las Simulaciones (horizonte + capital inicial) y la Asignación."
+)
+if _prefs.is_onboarded:
+    render_profile_summary(_prefs)
+    st.markdown("")
+    with st.expander("✏️ Editar mi perfil"):
+        if render_onboarding_wizard(key_prefix="settings_onb"):
+            st.rerun()
+else:
+    if render_onboarding_wizard(key_prefix="settings_onb"):
+        st.rerun()
+
+st.divider()
 
 # ------------------------------------------------------------------ #
 #  Universo personalizado                                             #
@@ -58,6 +76,82 @@ with col_restore:
         st.session_state.universe = list(_prefs.favorite_universe)
         st.toast(f"Universo favorito restaurado: {len(_prefs.favorite_universe)} tickers", icon="↩️")
         st.rerun()
+
+st.divider()
+
+# ------------------------------------------------------------------ #
+#  Custom tickers (Item 3) — extend the universe with warnings        #
+# ------------------------------------------------------------------ #
+
+st.subheader("🧪 Tickers personalizados")
+st.caption(
+    "Agregá acciones/ADRs/ETFs que te importan y no están en el universo curado "
+    "(ej. **VIST** por Vaca Muerta). Se integran al Screener, Optimizer y Plan, "
+    "pero con **advertencias fuertes**: su scoring puede ser parcial/pobre y su "
+    "calidad de datos se marca como *Custom*. El universo curado sigue siendo la "
+    "fuente confiable; estos son experimentales."
+)
+_ct1, _ct2 = st.columns([2, 3])
+with _ct1:
+    _new_sym = st.text_input("Ticker", key="custom_ticker_symbol", placeholder="VIST")
+with _ct2:
+    _new_note = st.text_input("Nota (opcional)", key="custom_ticker_note", placeholder="Tesis Vaca Muerta")
+if st.button("➕ Agregar (con advertencias)", key="add_custom_ticker_btn"):
+    if _prefs.add_custom_ticker(_new_sym, _new_note):
+        # Re-merge into the live universe so it shows up immediately.
+        from dashboard.shared import load_universe_with_customs
+        _ak = st.session_state.get("active_universe_key", getattr(_prefs, "active_universe", "default") or "default")
+        st.session_state.universe = load_universe_with_customs(_ak, _prefs)
+        st.toast(f"Ticker personalizado agregado: {_new_sym.upper().strip()}", icon="🧪")
+        st.rerun()
+    else:
+        st.warning("Ticker inválido o ya existente. Usá 1-12 caracteres (letras, números, '.', '-').")
+
+if _prefs.custom_tickers:
+    st.markdown("**Tus tickers personalizados:**")
+    for _c in _prefs.custom_tickers:
+        _csym = _c.get("symbol", "")
+        _r1, _r2 = st.columns([5, 1])
+        with _r1:
+            _note = f" — {_c.get('note')}" if _c.get("note") else ""
+            st.caption(f"⚠️ **{_csym}** (Custom · calidad de datos parcial){_note} · agregado {_c.get('added_at', '')}")
+        with _r2:
+            if st.button("🗑️", key=f"del_custom_{_csym}", help=f"Quitar {_csym}"):
+                _prefs.remove_custom_ticker(_csym)
+                from dashboard.shared import load_universe_with_customs
+                _ak = st.session_state.get("active_universe_key", getattr(_prefs, "active_universe", "default") or "default")
+                st.session_state.universe = load_universe_with_customs(_ak, _prefs)
+                st.toast(f"Ticker personalizado quitado: {_csym}", icon="🗑️")
+                st.rerun()
+else:
+    st.caption("Todavía no agregaste tickers personalizados.")
+
+# Item 3 — data snapshot export (backup / offline reproducibility).
+with st.expander("💾 Exportar snapshot de datos del universo (backup/offline)", expanded=False):
+    st.caption(
+        "Guardá un JSON con el último precio y datos clave del universo activo. "
+        "Sirve como respaldo y para reproducir el análisis offline (dentro del TTL "
+        "del cache) si yfinance falla."
+    )
+    if st.button("📸 Generar snapshot del universo activo", key="snapshot_btn"):
+        from dashboard.shared import plan_price_lookup
+        from data.fetcher import get_info
+        from data.snapshot import export_universe_data_snapshot, snapshot_to_bytes
+        with st.spinner("Capturando datos del universo…"):
+            _snap = export_universe_data_snapshot(
+                list(st.session_state.universe),
+                info_lookup=get_info, price_lookup=plan_price_lookup,
+            )
+        st.session_state["_universe_snapshot_bytes"] = snapshot_to_bytes(_snap)
+        st.session_state["_universe_snapshot_n"] = _snap["n_tickers"]
+    if st.session_state.get("_universe_snapshot_bytes"):
+        import datetime as _dt
+        st.download_button(
+            f"📥 Descargar snapshot ({st.session_state.get('_universe_snapshot_n', 0)} tickers)",
+            data=st.session_state["_universe_snapshot_bytes"],
+            file_name=f"universe_snapshot_{_dt.date.today().isoformat()}.json",
+            mime="application/json", key="snapshot_dl",
+        )
 
 st.divider()
 
@@ -225,24 +319,35 @@ st.caption(
 
 _r1, _r2 = st.columns([1, 2])
 with _r1:
-    with st.popover("🔴 Resetear a defaults", use_container_width=True):
+    with st.popover("🔴 Resetear a defaults", width="stretch"):
         st.warning(
             "**¿Confirmar reset?**\n\n"
             "Se restablecerán:\n"
             "- Universo activo → **Default** (38 tickers)\n"
             "- Perfil del Optimizer → **Conservador**\n"
-            "- AI en el Screener → **desactivado**\n\n"
+            "- AI en el Screener → **desactivado**\n"
+            "- Mi Perfil de retiro (edad, capital, metas) → **sin definir**\n\n"
             "La Watchlist y las alertas de precio **no se modifican**.",
             icon="⚠️",
         )
-        if st.button("✅ Sí, resetear preferencias", type="primary", use_container_width=True):
+        if st.button("✅ Sí, resetear preferencias", type="primary", width="stretch"):
             # Reset UserPreferences fields
             _prefs.active_universe        = "default"
             _prefs.default_profile        = "Conservador"
             _prefs.ai_enabled_in_screener = False
             _prefs.preferred_currency     = "USD"
             _prefs.last_used_universe     = []
+            # Personal profile (onboarding) reset
+            _prefs.onboarded            = False
+            _prefs.age                  = 0
+            _prefs.retirement_age       = 65
+            _prefs.current_capital      = 0.0
+            _prefs.monthly_savings      = 0.0
+            _prefs.risk_tolerance       = "conservadora"
+            _prefs.primary_goal_type    = "retiro"
+            _prefs.dividend_preference  = "balance"
             _prefs.save()
+            st.session_state.pop("_profile_defaults_seeded", None)
 
             # Sync session_state: universe
             _default_tickers = load_universe("default")
@@ -273,6 +378,26 @@ with _r2:
         f"Perfil: **{_prefs.default_profile}** · "
         f"AI Screener: {'🟢 activo' if _prefs.ai_enabled_in_screener else '⚪ inactivo'}"
     )
+
+st.divider()
+
+# ------------------------------------------------------------------ #
+#  Modo desarrollador                                                 #
+# ------------------------------------------------------------------ #
+
+st.subheader("🛠️ Modo desarrollador")
+st.caption(
+    "Muestra las herramientas técnicas en el menú: **Eval IA**, **Calidad de Datos** "
+    "y **Macro RAG**. Están pensadas para diagnóstico, no para el uso diario."
+)
+_dev_on = st.toggle(
+    "Mostrar herramientas de desarrollo en el menú",
+    value=bool(st.session_state.get("dev_mode", False)),
+    help="También se puede activar con la variable de entorno DEV_MODE.",
+)
+if _dev_on != bool(st.session_state.get("dev_mode", False)):
+    st.session_state["dev_mode"] = _dev_on
+    st.rerun()
 
 st.divider()
 st.caption(

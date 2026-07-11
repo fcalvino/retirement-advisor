@@ -21,6 +21,8 @@ Optimization flow:
 from __future__ import annotations
 
 import math
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
@@ -32,7 +34,7 @@ from scipy.optimize import minimize
 from config import (
     OPTIMIZER,
     OPTIMIZER_PROFILES,
-    SECTOR_MAP,
+    TAILWINDS,
     ProfileConfig,
 )
 from data.fetcher import get_history
@@ -55,6 +57,9 @@ class TickerAllocation:
     sector: str
     is_ars: bool = False
     score_discounted: bool = False
+    # Sector-country structural tailwind (Idea 2) — defaults keep backward compat
+    tailwind_score: float = 0.0
+    tailwind_classification: str = "Neutral"
 
 
 @dataclass
@@ -181,6 +186,33 @@ class OptimizationResult:
     # Max drawdown estimate (1-year horizon, approximated as 1.5× annualised vol)
     max_drawdown_estimate_pct: float = 0.0
 
+    # ------------------------------------------------------------------
+    # Instrumentation fields (populated by the optimizer for diagnostics)
+    # ------------------------------------------------------------------
+    n_input: int = 0              # scored_tickers received by optimize()
+    n_eligible: int = 0           # after ETF/score filter
+    n_candidates: int = 0         # after profile down-select (pre-SLSQP)
+    slsqp_success: bool = False   # True when SLSQP converged (not fallback)
+    build_matrix_ms: float = 0.0  # ms spent fetching price data
+
+    # ------------------------------------------------------------------
+    # Deterministic core portfolio (always populated by the optimizer;
+    # does NOT require LLM — based on weight × score × moat heuristic).
+    # The AI layer may replace/enrich grok_core_holdings with LLM output.
+    # ------------------------------------------------------------------
+    profile_core_holdings: List[dict] = field(default_factory=list)  # [{"symbol":, "suggested_weight_pct":, "why":""}]
+
+    # ------------------------------------------------------------------
+    # Grok AI voice + human-scale concentration advice (populated by the
+    # AI layer in ai_analyzer when AI is enabled; the pure math optimizer
+    # leaves these at their defaults).
+    # ------------------------------------------------------------------
+    ai_grok_narrative: str = ""                     # full Grok-voice explanation of the portfolio + macro
+    grok_recommended_max_human_positions: int = 0   # what Grok thinks a normal human can actually track
+    grok_core_holdings: List[dict] = field(default_factory=list)   # [{"symbol": , "suggested_weight_pct": , "why": ""}, ...]
+    grok_dropped_tickers: List[dict] = field(default_factory=list)
+    grok_human_review_tips: List[str] = field(default_factory=list)
+
 
 class PortfolioOptimizer:
     """
@@ -198,6 +230,11 @@ class PortfolioOptimizer:
     Falls back to score-weighted allocation when:
       - Price history is unavailable for ≥ 50% of tickers
       - SLSQP finds no feasible solution
+
+    The resulting OptimizationResult may contain additional Grok AI fields
+    (ai_grok_narrative, grok_core_holdings, etc.) when the caller (UI layer)
+    enriches it with generate_optimizer_advice(). The pure optimizer itself
+    never calls AI and always produces the full mathematical result.
     """
 
     def __init__(self, profile: str = "conservative"):
@@ -221,10 +258,12 @@ class PortfolioOptimizer:
             profile_name=self.cfg.name,
             method="mean-variance",
         )
+        result.n_input = len(scored_tickers)
 
         # 1 — Filter
         eligible, excluded = self._filter_eligible(scored_tickers)
         result.excluded = excluded
+        result.n_eligible = len(eligible)
 
         if len(eligible) < 2:
             result.warnings.append("Insuficientes tickers elegibles para optimizar.")
@@ -234,11 +273,32 @@ class PortfolioOptimizer:
         # 2 — ARS discount
         eligible = self._apply_ars_discount(eligible)
 
+        # 2b — Profile-aware candidate down-select (Fase C)
+        # Reduces large eligible sets to a manageable pool before cov/SLSQP,
+        # tilted by the profile's scoring priorities. Avoids dusty allocations
+        # and improves performance for N>pre_filter_top_k universes.
+        eligible = self._select_candidates_for_profile(eligible)
+        result.n_candidates = len(eligible)
+
+        if result.n_candidates < result.n_eligible:
+            logger.info(
+                f"[{self.cfg.name}] Profile down-select: {result.n_eligible} eligible → "
+                f"{result.n_candidates} candidates (top_k={self.cfg.pre_filter_top_k})"
+            )
+
         symbols = [t["symbol"] for t in eligible]
 
-        # 3 — Price matrix
+        # 3 — Price matrix (parallelized)
+        t0 = time.monotonic()
         price_matrix = self._build_price_matrix(symbols)
+        result.build_matrix_ms = round((time.monotonic() - t0) * 1000, 1)
         usable_symbols = list(price_matrix.columns)
+
+        logger.info(
+            f"[{self.cfg.name}] n_input={result.n_input} eligible={result.n_eligible} "
+            f"candidates={result.n_candidates} usable={len(usable_symbols)} "
+            f"matrix_ms={result.build_matrix_ms}"
+        )
 
         if len(usable_symbols) < 2:
             result.warnings.append("Datos de precio insuficientes. Usando score-weighted.")
@@ -263,6 +323,11 @@ class PortfolioOptimizer:
             cov = np.eye(len(eligible_filtered)) * 0.04
             cov_available = False
 
+        # 4b — Black-Litterman posterior (Fase 5): blend the score-derived views
+        # with the market equilibrium. Opt-in (config) + guarded; on any mismatch
+        # or failure it returns the original proxy so the path stays valid.
+        mu = self._apply_black_litterman(mu, cov, eligible_filtered, cov_available)
+
         # 5 — Optimize
         weights = None
         if cov_available:
@@ -270,8 +335,11 @@ class PortfolioOptimizer:
 
         if weights is None:
             result.method = "score-weighted"
+            result.slsqp_success = False
             result.warnings.append("SLSQP sin solución factible — usando score-weighted.")
             weights = self._score_weighted_optimize(eligible_filtered)
+        else:
+            result.slsqp_success = True
 
         # 6 — Build result
         self._populate_result(result, eligible_filtered, weights, mu, cov if cov_available else None)
@@ -288,6 +356,15 @@ class PortfolioOptimizer:
                     f"⚠️ Div yield {result.dividend_yield_pct:.2f}% no alcanza el mínimo del perfil ({self.cfg.min_dividend_yield_pct:.1f}%). "
                     "El universo actual no tiene suficientes tickers de alto dividendo para el perfil Conservador."
                 )
+
+        # 6b — Deterministic core (always computed, no LLM required)
+        result.profile_core_holdings = self._select_core_holdings(result.tickers)
+
+        logger.info(
+            f"[{self.cfg.name}] result: {len(result.tickers)} pos, "
+            f"method={result.method}, core={len(result.profile_core_holdings)}, "
+            f"slsqp={result.slsqp_success}"
+        )
 
         # 7 — Frontier
         if cov_available and len(eligible_filtered) >= 4:
@@ -345,31 +422,129 @@ class PortfolioOptimizer:
         return raw if 0 <= raw <= 15.0 else 0.0
 
     # ------------------------------------------------------------------ #
-    #  Price data                                                          #
+    #  Profile-aware candidate selection (Fase C)                          #
     # ------------------------------------------------------------------ #
 
+    def _select_candidates_for_profile(self, eligible: List[dict]) -> List[dict]:
+        """
+        Down-select eligible tickers to at most cfg.pre_filter_top_k candidates
+        using a profile-tilted composite rank.
+
+        Conservative: income_quality = 0.45×div + 0.35×score + 0.20×moat
+        Moderate:     balance = 0.30×div + 0.50×score + 0.20×moat
+        Aggressive:   growth = 0.15×div + 0.65×score + 0.20×moat
+
+        Uses the same weights as the profile's expected_returns objective so the
+        pre-filter is consistent with the optimizer's objective function.
+        A minimum of cfg.min_positions candidates is always preserved so the
+        optimizer can satisfy diversity constraints.
+        """
+        k = self.cfg.pre_filter_top_k
+        min_keep = max(self.cfg.min_positions + 2, k)  # never drop below min_positions+2
+        if len(eligible) <= min_keep:
+            return eligible
+
+        cfg = self.cfg
+
+        def _rank_score(t: dict) -> float:
+            score = float(t.get("adjusted_score", 0) or 0) / 100.0
+            div   = self._clean_div_yield(float(t.get("dividend_yield", 0) or 0)) / 15.0
+            moat  = float(t.get("moat_score", 0) or 0) / 20.0
+            return cfg.score_weight * score + cfg.dividend_weight * div + cfg.moat_weight * moat
+
+        ranked = sorted(eligible, key=_rank_score, reverse=True)
+        return ranked[:k]
+
+    # ------------------------------------------------------------------ #
+    #  Deterministic core portfolio selector (Fase C / Fase B fallback)   #
+    # ------------------------------------------------------------------ #
+
+    def _select_core_holdings(self, allocations: List["TickerAllocation"]) -> List[dict]:
+        """
+        Build a human-manageable core portfolio without calling any LLM.
+
+        Ranks allocated positions by weight × adjusted_score × (moat_score / 20 + 0.5)
+        and keeps the top cfg.target_max_human_positions. Rescales weights to 100 %
+        and adds a plain-data reason line (no LLM needed).
+
+        Returns [{"symbol":, "suggested_weight_pct":, "why":""}, ...]
+        """
+        if not allocations:
+            return []
+
+        target = self.cfg.target_max_human_positions
+
+        def _core_rank(a: "TickerAllocation") -> float:
+            moat_factor = (a.moat_score / 20.0) + 0.5  # range 0.5–1.5
+            return a.weight_pct * (a.adjusted_score / 100.0) * moat_factor
+
+        ranked = sorted(allocations, key=_core_rank, reverse=True)
+        core = ranked[:target]
+
+        total_w = sum(a.weight_pct for a in core)
+        if total_w <= 0:
+            return []
+
+        result = []
+        for a in core:
+            rescaled = round(a.weight_pct / total_w * 100.0, 1)
+            moat_label = ""
+            if a.moat_score >= 14:
+                moat_label = "Wide Moat · "
+            elif a.moat_score >= 8:
+                moat_label = "Narrow Moat · "
+            div_note = f"Div {a.dividend_yield_pct:.1f}% · " if a.dividend_yield_pct >= 1.0 else ""
+            _twc = getattr(a, "tailwind_classification", "Neutral")
+            tw_note = ""
+            if _twc == "Strong":
+                tw_note = "🌬️ Tailwind sector-país · "
+            elif _twc == "Headwind":
+                tw_note = "🌪️ Headwind sector-país · "
+            why = f"{moat_label}{tw_note}{div_note}Score {a.adjusted_score:.0f} · {a.sector}"
+            result.append({
+                "symbol":              a.symbol,
+                "suggested_weight_pct": rescaled,
+                "why":                 why,
+            })
+        return result
+
+    # ------------------------------------------------------------------ #
+    #  Price data (parallelized)                                           #
+    # ------------------------------------------------------------------ #
+
+    def _fetch_single_price(self, sym: str, period: str, min_obs: int):
+        """Fetch price history for one symbol. Returns (sym, series) or (sym, None)."""
+        try:
+            hist = get_history(sym, period=period, interval="1wk")
+            if hist.empty:
+                return sym, None
+            if "Date" in hist.columns:
+                hist = hist.set_index("Date")
+            elif "date" in hist.columns:
+                hist = hist.set_index("date")
+            close_col = "close" if "close" in hist.columns else "Close"
+            if close_col not in hist.columns:
+                return sym, None
+            series = hist[close_col].dropna()
+            if len(series) >= min_obs:
+                return sym, series
+        except Exception as exc:
+            logger.warning(f"Price data failed for {sym}: {exc}")
+        return sym, None
+
     def _build_price_matrix(self, symbols: List[str]) -> pd.DataFrame:
-        """Weekly close prices for price_history_years. Returns DataFrame indexed by date."""
+        """Weekly close prices for price_history_years. Parallel fetch with ThreadPoolExecutor."""
         period = f"{self.opt.price_history_years}y"
+        min_obs = self.opt.price_history_years * 40
+
         frames = {}
-        for sym in symbols:
-            try:
-                hist = get_history(sym, period=period, interval="1wk")
-                if hist.empty:
-                    continue
-                # get_history returns a DataFrame — index may be DatetimeIndex or Date column
-                if "Date" in hist.columns:
-                    hist = hist.set_index("Date")
-                elif "date" in hist.columns:
-                    hist = hist.set_index("date")
-                close_col = "close" if "close" in hist.columns else "Close"
-                if close_col not in hist.columns:
-                    continue
-                series = hist[close_col].dropna()
-                if len(series) >= self.opt.price_history_years * 40:
+        workers = min(self.opt.price_fetch_max_workers, len(symbols)) if symbols else 1
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(self._fetch_single_price, sym, period, min_obs): sym for sym in symbols}
+            for fut in as_completed(futures):
+                sym, series = fut.result()
+                if series is not None:
                     frames[sym] = series
-            except Exception as exc:
-                logger.warning(f"Price data failed for {sym}: {exc}")
 
         if not frames:
             return pd.DataFrame()
@@ -377,8 +552,6 @@ class PortfolioOptimizer:
         matrix = pd.DataFrame(frames)
         matrix.index = pd.to_datetime(matrix.index)
         matrix = matrix.sort_index().dropna(how="all")
-        # Drop tickers with too many missing prices
-        min_obs = self.opt.price_history_years * 40
         matrix = matrix.loc[:, matrix.count() >= min_obs]
         matrix = matrix.ffill().dropna()
         return matrix
@@ -392,6 +565,12 @@ class PortfolioOptimizer:
         Composite expected return proxy per ticker.
         Blends adjusted_score, dividend_yield, and moat_score
         using the profile's objective weights.
+
+        A small explicit sector-country tailwind tilt (Idea 2) is added on top:
+        the tailwind bonus already flows in via adjusted_score; this term
+        (TAILWINDS.optimizer_er_tilt, max ≈ ±0.9% annual at score ±10) gives
+        structural outlooks a light direct ER expression. Set the config to 0
+        to disable. Neutral tickers (score 0) are unaffected.
         """
         cfg = self.cfg
         mu = []
@@ -399,6 +578,7 @@ class PortfolioOptimizer:
             score = float(t.get("adjusted_score", 0) or 0)
             div = self._clean_div_yield(float(t.get("dividend_yield", 0) or 0))
             moat = float(t.get("moat_score", 0) or 0)
+            tailwind = float(t.get("tailwind_score", 0) or 0)
 
             # Normalised components → annualised return proxies
             score_ret = (score / 100) * 0.18        # max ~18% from score
@@ -410,16 +590,67 @@ class PortfolioOptimizer:
                 + cfg.dividend_weight * div_ret
                 + cfg.moat_weight * moat_ret
             )
+            if TAILWINDS.enabled and tailwind != 0.0:
+                composite += TAILWINDS.optimizer_er_tilt * (tailwind / 10.0) * 0.18
             mu.append(composite)
         return np.array(mu)
 
     def _covariance_matrix(self, price_matrix: pd.DataFrame) -> np.ndarray:
-        """Annualised covariance from weekly returns. Adds small regularisation diagonal."""
+        """Annualised covariance from weekly returns. Adds small regularisation diagonal.
+
+        Fase 5: when ``BLACK_LITTERMAN.shrinkage_enabled`` the full Ledoit-Wolf
+        shrinkage estimator is used (more stable with few observations → fewer
+        extreme weights); otherwise the legacy sample covariance path.
+        """
         weekly_ret = price_matrix.pct_change().dropna()
+        from config import BLACK_LITTERMAN as _BL
+        if _BL.shrinkage_enabled and weekly_ret.shape[0] >= 2 and weekly_ret.shape[1] >= 2:
+            try:
+                from portfolio.black_litterman import ledoit_wolf_shrinkage
+
+                cov, shrink = ledoit_wolf_shrinkage(weekly_ret.values, periods_per_year=52.0)
+                logger.debug(f"covariance: Ledoit-Wolf shrinkage intensity={shrink:.3f}")
+                return cov
+            except Exception as exc:
+                logger.warning(f"Ledoit-Wolf shrinkage failed ({exc}); using sample covariance")
         cov = weekly_ret.cov().values * 52  # annualise
         # Ledoit-Wolf-style regularisation (avoids near-singular matrices)
         cov += np.eye(cov.shape[0]) * 1e-6
         return cov
+
+    def _apply_black_litterman(self, mu: np.ndarray, cov: np.ndarray,
+                               tickers: List[dict], cov_available: bool) -> np.ndarray:
+        """Blend the score-view expected returns with the market equilibrium (BL).
+
+        Opt-in via ``BLACK_LITTERMAN.enabled`` and fully guarded: on any size
+        mismatch, single asset, or numerical failure it returns ``mu`` unchanged.
+        """
+        from config import BLACK_LITTERMAN as _BL
+
+        if not _BL.enabled or not cov_available:
+            return mu
+        if cov.shape[0] != len(mu) or len(mu) < 2:
+            return mu
+        try:
+            from portfolio.black_litterman import bl_expected_returns
+
+            caps = np.array([float(t.get("market_cap", 0) or 0) for t in tickers], dtype=float)
+            market_weights = caps if caps.sum() > 0 else None
+            conf = None
+            if _BL.use_score_confidence:
+                conf = np.array(
+                    [max(0.1, float(t.get("adjusted_score", 0) or 0) / 100.0) for t in tickers],
+                    dtype=float,
+                )
+            posterior = bl_expected_returns(
+                mu, cov, market_weights=market_weights, view_confidence=conf,
+                risk_aversion=_BL.risk_aversion, tau=_BL.tau,
+            )
+            if posterior is not None and len(posterior) == len(mu) and np.all(np.isfinite(posterior)):
+                return np.asarray(posterior, dtype=float)
+        except Exception as exc:
+            logger.warning(f"Black-Litterman posterior skipped — {exc}")
+        return mu
 
     # ------------------------------------------------------------------ #
     #  SLSQP optimizer                                                     #
@@ -522,7 +753,7 @@ class PortfolioOptimizer:
             if res.success:
                 # Clip to actual bounds (not just [0,1]) so numerical overflow
                 # from SLSQP doesn't allow any ticker to exceed max_position_pct
-                w = np.clip(res.x, lb, ub)
+                w = np.clip(res.x, lb, ub_arr)
                 if w.sum() > 0:
                     w /= w.sum()
                 if n > cfg.min_positions:
@@ -571,7 +802,6 @@ class PortfolioOptimizer:
 
         # Water-filling: cap over-allocated tickers and redistribute excess
         # to under-allocated ones. Converges in ≤ n iterations (one per ticker).
-        lb = 1.0 / max(len(tickers) * 10, 1)   # soft floor matches SLSQP
         for _ in range(len(tickers) + 5):
             over = w > ubs + 1e-10
             if not over.any():
@@ -684,6 +914,8 @@ class PortfolioOptimizer:
                 sector=sector,
                 is_ars=sym in _ARS_TICKERS,
                 score_discounted=bool(t.get("_ars_discounted", False)),
+                tailwind_score=round(float(t.get("tailwind_score", 0.0) or 0.0), 1),
+                tailwind_classification=str(t.get("tailwind_classification", "Neutral") or "Neutral"),
             )
             allocations.append(alloc)
             sector_weights[sector] = sector_weights.get(sector, 0) + w * 100

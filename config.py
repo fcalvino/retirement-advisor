@@ -129,6 +129,9 @@ class AlertConfig:
     portfolio_rebalance_threshold_pct: float = 8.0  # total drift to trigger PORTFOLIO_REBALANCE
     sorr_high_threshold_pct: float = 30.0          # SORR early drawdown % to trigger SORR_HIGH
     goal_risk_prob_drop_pct: float = 15.0          # probability drop to trigger GOAL_RISK
+    # Fase E: suggested alignment trades (plan target vs tracker positions)
+    alignment_min_trade_usd: float = 200.0   # ignore trades smaller than this (noise / fees)
+    alignment_max_trades: int = 6            # cap the suggested-trades list (prioritized)
     ai_explanations_enabled: bool = field(
         default_factory=lambda: os.getenv("ALERT_AI_EXPLANATIONS", "true").lower() in ("true", "1", "yes")
     )
@@ -209,14 +212,6 @@ DEFAULT_TICKERS: List[str] = [
     # Argentina ADRs
     "YPF", "PAM", "CEPU", "LOMA", "MELI", "GLOB", "TEO", "EDN",
 ]
-
-# Ticker aliases: maps short-form searches to canonical yfinance symbols
-TICKER_ALIASES: Dict[str, str] = {
-    "BTC":     "BTC-USD",
-    "BITCOIN": "BTC-USD",
-    "ETH":     "ETH-USD",
-    "ETHEREUM":"ETH-USD",
-}
 
 # Sectors for diversification analysis
 SECTOR_MAP: Dict[str, List[str]] = {
@@ -459,6 +454,75 @@ class OptimizerConfig:
 
 
 @dataclass
+class TailwindConfig:
+    """
+    Sector-Country structural tailwind layer (Idea 2 — "colas de viento").
+
+    Captures multi-year structural outlooks for (sector, country) or
+    (industry, country) combinations — e.g. Argentine oil & gas benefiting
+    from the Vaca Muerta ramp — so that national/industry context becomes a
+    first-class, auditable input to scoring, the optimizer and plans, instead
+    of incidental LLM knowledge.
+
+    Data source: curated JSON at ``data/tailwinds/sector_country.json``
+    (human-maintained, intentionally NOT scraped live — auditability over hype).
+    The curated data is the source of truth; the optional AI layer only
+    interprets/enriches, never invents tailwinds.
+
+    Score scale: -5 (strong headwind) … +10 (strong tailwind). Neutral = 0.
+
+    Classification thresholds (applied to tailwind_score):
+      strong_threshold    ≥ +6.0 → "Strong"    (Strong Tailwind)
+      moderate_threshold  ≥ +3.0 → "Moderate"  (Moderate Tailwind)
+      headwind_threshold  ≤ −2.0 → "Headwind"
+      otherwise                  → "Neutral"   (bonus = 0, behavior identical to pre-feature)
+
+    Bonus formula (added to adjusted_score, moat-bonus precedent):
+      bonus = clamp(score × bonus_factor, −max_bonus, +max_bonus)
+      Defaults: max +8 pts (Strong AR Energy ≈ +6.4) — intentionally smaller
+      than the moat cap (+10) so the tailwind never dominates fundamentals.
+
+    optimizer_er_tilt — small extra expected-return tilt per unit of tailwind
+      in the optimizer's composite proxy (max ≈ ±0.9% annual at score ±10).
+      Set to 0.0 to rely purely on the adjusted_score flow-through.
+
+    ai_cache_ttl_hours: 720h (30 days) — structural outlooks move slowly.
+    enabled: master switch — False restores pre-feature behavior everywhere.
+    """
+    enabled: bool = True
+    strong_threshold: float = 6.0
+    moderate_threshold: float = 3.0
+    headwind_threshold: float = -2.0
+    bonus_factor: float = 0.8
+    max_bonus: float = 8.0
+    optimizer_er_tilt: float = 0.05
+    ai_cache_ttl_hours: int = 720
+    data_file: str = "data/tailwinds/sector_country.json"
+
+
+@dataclass
+class DataQualityConfig:
+    """
+    Thresholds for the data-quality transparency layer (Fase E).
+
+    The whole pipeline (scores, moat, optimizer, MC, plan deltas) depends on
+    yfinance. Missing fields silently degrade scores to neutral values, so the
+    dashboard surfaces a per-ticker quality badge instead of hiding it.
+
+    Key-field counting (see analysis.fundamental.compute_data_quality):
+      partial_missing_fields — at or above this many missing key metrics the
+                               ticker is flagged "partial" (🟡)
+      poor_missing_fields    — at or above this many, "poor" (🔴). Missing
+                               financial statements always mean "poor".
+      stale_warning_hours    — cached info older than this is flagged stale
+                               (independent dimension from completeness).
+    """
+    stale_warning_hours: float = 48.0
+    partial_missing_fields: int = 3
+    poor_missing_fields: int = 6
+
+
+@dataclass
 class MonteCarloConfig:
     """
     Monte Carlo simulation parameters.
@@ -480,6 +544,608 @@ class MonteCarloConfig:
     block_size_weeks: int = 4            # bootstrap block size (preserves autocorrelation)
 
 
+@dataclass
+class EconomicDragConfig:
+    """
+    Real-world economic "drags" applied on top of the (already conservative)
+    Monte Carlo engine to fight the "Retirement Advisor" expectation mismatch:
+    the base numbers implicitly assume zero fees, zero dividend tax, zero
+    rebalance cost and no AR-specific frictions. This layer makes those
+    assumptions explicit, configurable and *traceable*.
+
+    Philosophy (mirrors TailwindConfig): curated/config first-class, never
+    silent, the deterministic path stays valid. Drags are OPT-IN at the engine
+    level — ``MonteCarloSimulator.run(drags=...)`` only applies them when an
+    explicit drags dict is passed, so every existing caller and test keeps
+    byte-identical results. The UI passes the active drags; the result then
+    carries BOTH "base" (no-drag, reference) and "with-drags" metrics.
+
+    All fields are annual percentages (e.g. 0.20 == 0.20% per year):
+      annual_fee_pct            — TER + advisory drag (typical low-cost ETF ≈ 0.2%)
+      dividend_tax_drag_pct     — effective annual drag from dividend tax for a
+                                  non-resident (suggest 15-30% of the gross yield;
+                                  expressed here directly as an annual % of NAV)
+      rebalance_cost_annual_pct — spreads + commissions from periodic rebalancing
+      ar_buffer_pct             — extra conservative haircut for AR residents
+                                  (cepo / FX vol / inflation differential proxy).
+                                  AVOID DOUBLE-COUNTING: the optimizer already
+                                  applies ``OptimizerConfig.ars_risk_discount``
+                                  (0.85×) to Argentine ADR scores in the
+                                  Conservative/Moderate profiles, tilting the
+                                  allocation away from AR risk. This buffer is for
+                                  plan-level country risk NOT already captured by
+                                  how the portfolio was selected; keep it at 0
+                                  when the ARS score discount is doing that job.
+      enabled                   — master switch (UI default; engine still opt-in)
+    """
+    enabled: bool = True
+    annual_fee_pct: float = 0.20
+    dividend_tax_drag_pct: float = 0.0
+    rebalance_cost_annual_pct: float = 0.05
+    ar_buffer_pct: float = 0.0
+
+    def total_annual_drag_pct(self) -> float:
+        """Sum of all enabled drag components, as an annual percentage."""
+        return float(
+            self.annual_fee_pct
+            + self.dividend_tax_drag_pct
+            + self.rebalance_cost_annual_pct
+            + self.ar_buffer_pct
+        )
+
+    def as_dict(self) -> dict:
+        return {
+            "enabled": self.enabled,
+            "annual_fee_pct": self.annual_fee_pct,
+            "dividend_tax_drag_pct": self.dividend_tax_drag_pct,
+            "rebalance_cost_annual_pct": self.rebalance_cost_annual_pct,
+            "ar_buffer_pct": self.ar_buffer_pct,
+            "total_annual_drag_pct": round(self.total_annual_drag_pct(), 4),
+        }
+
+
+@dataclass
+class WithdrawalConfig:
+    """
+    Decumulation / withdrawal-strategy parameters (Fase H.1).
+
+    The base Monte Carlo engine already supports a *fixed real* withdrawal
+    (a constant inflation-adjusted dollar amount). This config makes the
+    full set of decumulation strategies first-class and configurable —
+    never hardcoded — mirroring the philosophy of EconomicDragConfig and
+    TailwindConfig: curated/config first, deterministic path always valid,
+    AI only narrates.
+
+    Strategies (``kind``):
+      "fixed_real"   — constant inflation-adjusted dollar amount (4% rule
+                       style). Highest ruin risk but most predictable income.
+      "constant_pct" — withdraw a fixed % of the *current* portfolio value
+                       each year. Never fully depletes, but income varies.
+      "guardrails"   — modified Guyton-Klinger: start at ``base_withdrawal_pct``
+                       of the initial value, then cut spending when the current
+                       withdrawal rate breaches the upper guardrail (portfolio
+                       fell) and raise it when it falls below the lower guardrail
+                       (portfolio grew). Balances stability and longevity.
+
+    All percentages are human-scale (4.0 == 4% per year). Bands and step
+    sizes are fractions (0.20 == 20%). ``enabled`` is a UI default; the engine
+    stays opt-in — ``MonteCarloSimulator.run(withdrawal_strategy=...)`` only
+    activates a strategy when one is explicitly passed, so every existing
+    caller and test keeps byte-identical results.
+    """
+    enabled: bool = True
+    default_strategy: str = "fixed_real"
+    base_withdrawal_pct: float = 4.0          # initial annual withdrawal rate
+    constant_pct: float = 4.0                 # % of current value for "constant_pct"
+    # Guardrails (Guyton-Klinger style), as fractions of the initial rate:
+    guardrail_ceiling_band: float = 0.20      # WR this much ABOVE initial → cut spending
+    guardrail_floor_band: float = 0.20        # WR this much BELOW initial → raise spending
+    guardrail_cut_pct: float = 0.10           # spending cut when upper guardrail hit
+    guardrail_raise_pct: float = 0.10         # spending raise when lower guardrail hit
+    default_longevity_years: int = 30         # planning horizon for "outliving money"
+
+    def as_dict(self) -> dict:
+        return {
+            "enabled": self.enabled,
+            "default_strategy": self.default_strategy,
+            "base_withdrawal_pct": self.base_withdrawal_pct,
+            "constant_pct": self.constant_pct,
+            "guardrail_ceiling_band": self.guardrail_ceiling_band,
+            "guardrail_floor_band": self.guardrail_floor_band,
+            "guardrail_cut_pct": self.guardrail_cut_pct,
+            "guardrail_raise_pct": self.guardrail_raise_pct,
+            "default_longevity_years": self.default_longevity_years,
+        }
+
+
+@dataclass
+class PlanHealthConfig:
+    """
+    Longitudinal plan-health history parameters (Fase H.2).
+
+    A "health record" is a lightweight periodic snapshot of how a saved plan is
+    holding up vs the market (weighted price drift since save, score at save,
+    Monte Carlo P50, data quality). Recording these over time turns the plan
+    from a one-off snapshot into a *living* target with a visible trend, and
+    enables early detection of silent structural drift ("plan envejecido").
+
+    Philosophy (mirrors the rest of the project): config first-class, nothing
+    hardcoded, opt-in. Recording is explicit (a button) or, when ``auto_record``
+    is enabled, performed by the background scheduler.
+
+    Fields:
+      enabled                 — master switch for the feature (UI default).
+      auto_record             — let the scheduler record health on its run.
+      max_records             — cap of stored records per plan (oldest trimmed).
+      min_days_between_records — dedup window for automatic recording (days).
+      degradation_drift_pct   — |weighted drift| this high, sustained, flags
+                                "plan health degradation".
+      degradation_min_records — records required before degradation can fire.
+    """
+    enabled: bool = True
+    auto_record: bool = False
+    max_records: int = 60
+    min_days_between_records: int = 1
+    degradation_drift_pct: float = 15.0
+    degradation_min_records: int = 2
+
+    def as_dict(self) -> dict:
+        return {
+            "enabled": self.enabled,
+            "auto_record": self.auto_record,
+            "max_records": self.max_records,
+            "min_days_between_records": self.min_days_between_records,
+            "degradation_drift_pct": self.degradation_drift_pct,
+            "degradation_min_records": self.degradation_min_records,
+        }
+
+
+@dataclass
+class SensitivityConfig:
+    """
+    Sensitivity / scenario-lab parameters (Fase H.3).
+
+    Drives the "what-if" workbench: how far to move each assumption when
+    building a tornado (one factor at a time) and the predefined retirement
+    scenarios. Mirrors the project philosophy — magnitudes are config, never
+    hardcoded; the engine is pure and re-uses the existing Monte Carlo.
+
+    Fields (deltas applied symmetrically low/high unless noted):
+      inflation_delta_pct  — ± percentage points on the withdrawal growth rate.
+      fee_drag_delta_pct   — ± annual % on the economic-drag total.
+      real_return_delta    — ± relative change on the return scale (0.10 = ±10%).
+      vol_delta            — ± relative change on the volatility scale.
+      longevity_delta_years— ± years for the "live longer / shorter" scenario.
+      full_drag_pct        — realistic full-friction total for the "drags full"
+                             scenario (fees + tax + rebalance + AR buffer).
+      n_sims               — lighter simulation count for the lab (speed; the
+                             main Monte Carlo tab keeps MONTE_CARLO.default_n_sims).
+    """
+    enabled: bool = True
+    inflation_delta_pct: float = 1.0
+    fee_drag_delta_pct: float = 0.30
+    real_return_delta: float = 0.10
+    vol_delta: float = 0.10
+    longevity_delta_years: int = 5
+    full_drag_pct: float = 1.00
+    n_sims: int = 2_000
+
+    def as_dict(self) -> dict:
+        return {
+            "enabled": self.enabled,
+            "inflation_delta_pct": self.inflation_delta_pct,
+            "fee_drag_delta_pct": self.fee_drag_delta_pct,
+            "real_return_delta": self.real_return_delta,
+            "vol_delta": self.vol_delta,
+            "longevity_delta_years": self.longevity_delta_years,
+            "full_drag_pct": self.full_drag_pct,
+            "n_sims": self.n_sims,
+        }
+
+
+@dataclass
+class PersonalBookConfig:
+    """
+    Parámetros del análisis de sizing para el **Libro Personal** (Fase I).
+
+    IMPORTANTE — filosofía opuesta al optimizer de retiro:
+    El resto del proyecto (CONSERVATIVE/MODERATE/AGGRESSIVE profiles,
+    ``STRATEGY.max_position_pct`` = 8%, ``min_positions`` = 10, constraints SLSQP)
+    está diseñado **conservador y diversificado** para una cuenta de retiro.
+
+    Este config modela lo contrario: un **libro personal individual** (NO un fondo,
+    hedge fund ni mandato institucional). La ventaja estructural del individuo es la
+    **libertad de concentración**: puede mantener 20-30%+ en una idea de altísima
+    convicción porque no tiene mandatos de diversificación regulatorios, ni límites
+    por emisor (~5-10% típicos en fondos), ni riesgo de redenciones que fuerzan
+    ventas en iliquidez, ni comités de riesgo ni "career risk". El sizing concentrado
+    puede ser una **fuente de alpha** (edge de convicción profunda + paciencia).
+
+    Este config vive **en paralelo** y NO debe contaminar ni relajar los paths de
+    retiro. Todos los thresholds son ajustables (config-first, nada hardcodeado).
+
+    Campos:
+      enabled                            — master switch de la feature (UI).
+      core_high_conviction_max_pct       — techo "core" para alta convicción (%).
+      satellite_max_pct                  — techo sugerido para posiciones satélite.
+      trim_concentration_threshold_pct   — > esto + tesis intacta sin catalyst nuevo
+                                           → se sugiere TRIM parcial (disciplina de
+                                           tamaño / re-asignación de convicción).
+      max_practical_concentration_single_name — hard ceiling personal; más allá es
+                                           "demasiado incluso para un individuo".
+      min_score_for_core_concentration   — adjusted_score mínimo para ser "core".
+      aggressive_accumulate_weight_pct   — debajo de este peso, un core elegible se
+                                           sugiere ACUMULAR_AGRESIVO.
+      moderate_accumulate_weight_pct     — techo de peso para ACUMULAR_MODERADO.
+      min_score_for_moderate_accumulate  — score mínimo para acumular moderado.
+      sell_all_score                     — score por debajo del cual la tesis se
+                                           considera rota → VENDER_TODO/PARTE.
+      drawdown_shock_pct                 — shock hipotético para estimar impacto en
+                                           el libro ("-X% aquí mueve el libro -Y%").
+      high_concentration_risk_note_pct   — peso a partir del cual SIEMPRE se agrega
+                                           una nota de riesgo de concentración.
+      require_user_high_conviction_for_over_15pct — exigir convicción HIGH del
+                                           usuario para permitir >15% intencional.
+      wide_moat_bonus_for_concentration  — un moat Wide habilita más concentración.
+      default_conviction                 — convicción asumida cuando el usuario no
+                                           la declaró para un ticker ("MEDIUM").
+    """
+    enabled: bool = True
+    core_high_conviction_max_pct: float = 30.0
+    satellite_max_pct: float = 10.0
+    trim_concentration_threshold_pct: float = 25.0
+    max_practical_concentration_single_name: float = 40.0
+    min_score_for_core_concentration: float = 72.0
+    aggressive_accumulate_weight_pct: float = 12.0
+    moderate_accumulate_weight_pct: float = 15.0
+    min_score_for_moderate_accumulate: float = 60.0
+    sell_all_score: float = 40.0
+    drawdown_shock_pct: float = 35.0
+    high_concentration_risk_note_pct: float = 20.0
+    require_user_high_conviction_for_over_15pct: bool = True
+    wide_moat_bonus_for_concentration: bool = True
+    default_conviction: str = "MEDIUM"
+
+    # Ponderación documentada de los 4 ejes de decisión (suma 100). Se muestra en
+    # la UI y se referencia en las justificaciones para transparencia total.
+    weight_quality_moat_tailwind: int = 45
+    weight_valuation_technical: int = 20
+    weight_user_conviction: int = 20
+    weight_book_context_risk: int = 15
+
+    def as_dict(self) -> dict:
+        return {
+            "enabled": self.enabled,
+            "core_high_conviction_max_pct": self.core_high_conviction_max_pct,
+            "satellite_max_pct": self.satellite_max_pct,
+            "trim_concentration_threshold_pct": self.trim_concentration_threshold_pct,
+            "max_practical_concentration_single_name": self.max_practical_concentration_single_name,
+            "min_score_for_core_concentration": self.min_score_for_core_concentration,
+            "aggressive_accumulate_weight_pct": self.aggressive_accumulate_weight_pct,
+            "moderate_accumulate_weight_pct": self.moderate_accumulate_weight_pct,
+            "min_score_for_moderate_accumulate": self.min_score_for_moderate_accumulate,
+            "sell_all_score": self.sell_all_score,
+            "drawdown_shock_pct": self.drawdown_shock_pct,
+            "high_concentration_risk_note_pct": self.high_concentration_risk_note_pct,
+            "require_user_high_conviction_for_over_15pct": self.require_user_high_conviction_for_over_15pct,
+            "wide_moat_bonus_for_concentration": self.wide_moat_bonus_for_concentration,
+            "default_conviction": self.default_conviction,
+            "weight_quality_moat_tailwind": self.weight_quality_moat_tailwind,
+            "weight_valuation_technical": self.weight_valuation_technical,
+            "weight_user_conviction": self.weight_user_conviction,
+            "weight_book_context_risk": self.weight_book_context_risk,
+        }
+
+
+@dataclass
+class TrackRecordConfig:
+    """
+    Track record / calibration parameters (Gran Salto — Fase 1).
+
+    Every recommendation the engine emits is logged; outcomes are scored at
+    fixed horizons against a benchmark. This config keeps the scoring rules
+    out of the modules — mirroring the project philosophy (config centralizada,
+    nunca hardcodear números en módulos de análisis).
+
+    Fields:
+      horizons_days        — horizons (in calendar days) at which each
+                             recommendation is scored. 252 ≈ 12 trading months.
+      benchmark            — symbol used as the comparison benchmark.
+      hold_band_pct        — for HOLD recommendations, a hit means the ticker's
+                             absolute return stayed within ±this band (i.e. "hold"
+                             was the right call — no big move missed/avoided).
+      min_confidence_for_calibration — confidence levels tracked for calibration.
+      enabled              — master switch for the capture hooks.
+      dedupe_same_day      — collapse repeated (symbol, action) logs within the
+                             same UTC day so a refresh loop doesn't inflate counts.
+    """
+    horizons_days: tuple = (30, 90, 252)
+    benchmark: str = "SPY"
+    hold_band_pct: float = 5.0
+    min_confidence_for_calibration: tuple = ("HIGH", "MEDIUM", "LOW")
+    enabled: bool = True
+    dedupe_same_day: bool = True
+
+    # Which actions count as bullish / bearish for directional hit scoring.
+    bullish_actions: tuple = ("STRONG BUY", "BUY")
+    bearish_actions: tuple = ("REDUCE", "SELL", "AVOID")
+
+    def as_dict(self) -> dict:
+        return {
+            "horizons_days": list(self.horizons_days),
+            "benchmark": self.benchmark,
+            "hold_band_pct": self.hold_band_pct,
+            "enabled": self.enabled,
+            "dedupe_same_day": self.dedupe_same_day,
+            "bullish_actions": list(self.bullish_actions),
+            "bearish_actions": list(self.bearish_actions),
+        }
+
+
+@dataclass
+class EvalConfig:
+    """
+    AI evaluation harness parameters (Gran Salto — Fase 2A).
+
+    The harness scores the *quality* of AI decisions against a set of golden
+    cases — the prerequisite that lets the multi-agent committee (Fase 2B) be
+    improved without flying blind. Thresholds live here, never hardcoded in the
+    harness, mirroring the rest of the project.
+
+    Fields:
+      conservative_alloc_cap_pct — a single conservative recommendation should
+                                   never suggest more than this % in one name;
+                                   above it is a red flag for a retirement tool.
+      min_reasoning_chars        — narrative shorter than this counts as "empty".
+      max_macro_factors          — hard cap on macro_factors list length (matches
+                                   the prompt spec: 0, 1 or máximo 2).
+      case_pass_threshold        — fraction of weighted checks a case must pass
+                                   to be considered "passed".
+      suite_pass_threshold       — fraction of cases that must pass for the whole
+                                   suite to be considered green.
+      require_risk_on_buy        — a BUY/STRONG BUY must still name ≥1 risk
+                                   (anti-complacency: combats LLM sycophancy).
+    """
+    conservative_alloc_cap_pct: float = 15.0
+    min_reasoning_chars: int = 80
+    max_macro_factors: int = 2
+    case_pass_threshold: float = 1.0
+    suite_pass_threshold: float = 0.8
+    require_risk_on_buy: bool = True
+
+    def as_dict(self) -> dict:
+        return {
+            "conservative_alloc_cap_pct": self.conservative_alloc_cap_pct,
+            "min_reasoning_chars": self.min_reasoning_chars,
+            "max_macro_factors": self.max_macro_factors,
+            "case_pass_threshold": self.case_pass_threshold,
+            "suite_pass_threshold": self.suite_pass_threshold,
+            "require_risk_on_buy": self.require_risk_on_buy,
+        }
+
+
+@dataclass
+class CommitteeConfig:
+    """
+    Multi-agent investment committee parameters (Gran Salto — Fase 2B).
+
+    The committee runs specialised agents that debate and produce a verdict with
+    explicit dissent, replacing the single-shot AI call for weighty decisions.
+    Aggregation is deterministic and auditable; weights and thresholds live here.
+
+    Fields:
+      enabled            — master switch for committee mode.
+      max_workers        — thread pool size for running agents in parallel
+                          (threads, not asyncio — the project is synchronous).
+      cache_ttl_hours    — verdict cache TTL; the committee is reserved for
+                          weighty decisions, not for refreshing dozens of tickers.
+      vote_weights       — per-role weight in the (deterministic) consensus vote.
+                          The Devil's Advocate has a moderate vote but its concerns
+                          are ALWAYS surfaced as dissent regardless of the vote.
+      strong_buy_lean / buy_lean / reduce_lean / sell_lean — thresholds mapping the
+                          weighted lean score back to an action.
+      downgrade_confidence_on_strong_dissent — when the bear case is strong, drop
+                          the verdict confidence one notch (conservative bias).
+    """
+    enabled: bool = True
+    max_workers: int = 5
+    cache_ttl_hours: int = 24
+
+    vote_weights: dict = field(default_factory=lambda: {
+        "Analista Fundamental": 1.0,
+        "Estratega Macro":      0.8,
+        "Abogado del Diablo":   0.7,
+        "Portfolio Manager":    1.0,
+        "Behavioral Coach":     0.3,
+    })
+
+    strong_buy_lean: float = 1.5
+    buy_lean: float = 0.5
+    reduce_lean: float = -0.5
+    sell_lean: float = -1.5
+    downgrade_confidence_on_strong_dissent: bool = True
+
+    # --- Portfolio-level committee (evalúa el PLAN, no un ticker) --------- #
+    # Reuses the same deterministic aggregation + lean thresholds; only the
+    # per-role weights and the display labels differ. The Devil's Advocate keeps
+    # the exact role name so the always-on dissent logic works unchanged.
+    portfolio_vote_weights: dict = field(default_factory=lambda: {
+        "Estratega del Plan": 1.0,
+        "Gestor de Riesgo":   1.0,
+        "Estratega Macro":    0.7,
+        "Abogado del Diablo": 0.8,
+    })
+
+    # Map the internal stance/action vocabulary to plan-health labels for display.
+    portfolio_action_labels: dict = field(default_factory=lambda: {
+        "STRONG BUY": "Plan muy sólido",
+        "BUY":        "Plan sólido",
+        "HOLD":       "Mantener con ajustes",
+        "REDUCE":     "Necesita ajustes",
+        "SELL":       "Reestructurar",
+    })
+
+    def as_dict(self) -> dict:
+        return {
+            "enabled": self.enabled,
+            "max_workers": self.max_workers,
+            "cache_ttl_hours": self.cache_ttl_hours,
+            "vote_weights": dict(self.vote_weights),
+            "strong_buy_lean": self.strong_buy_lean,
+            "buy_lean": self.buy_lean,
+            "reduce_lean": self.reduce_lean,
+            "sell_lean": self.sell_lean,
+            "downgrade_confidence_on_strong_dissent": self.downgrade_confidence_on_strong_dissent,
+            "portfolio_vote_weights": dict(self.portfolio_vote_weights),
+            "portfolio_action_labels": dict(self.portfolio_action_labels),
+        }
+
+
+@dataclass
+class MultiSourceConfig:
+    """
+    Multi-source data + reconciliation parameters (Gran Salto — Fase 3A).
+
+    Everything enters through yfinance today (garbage in, garbage out). This layer
+    pulls the same raw facts from more than one source (SEC EDGAR filings, FRED,
+    yfinance) and a reconciliation step flags discrepancies between them, so a
+    silently wrong number gets surfaced instead of trusted blindly.
+
+    Fields:
+      enabled              — master switch for multi-source reconciliation.
+      source_priority      — order used to pick the "chosen" value per field
+                            (earlier = more trusted). SEC filings beat yfinance.
+      discrepancy_pct      — relative difference (%) above which two sources are
+                            considered in conflict for a field.
+      conflict_downgrades_quality — a material conflict drops the data-quality
+                            badge one level (good→partial→poor).
+      sec_user_agent       — SEC EDGAR requires a descriptive User-Agent string.
+      fred_api_key         — optional FRED key (macro series); read from env.
+      request_timeout_s    — network timeout for source adapters.
+    """
+    enabled: bool = True
+    source_priority: tuple = ("sec_edgar", "yfinance", "fred", "fmp", "alpha_vantage")
+    discrepancy_pct: float = 5.0
+    conflict_downgrades_quality: bool = True
+    sec_user_agent: str = field(
+        default_factory=lambda: os.getenv("SEC_USER_AGENT", "retirement-advisor contact@example.com")
+    )
+    fred_api_key: str = field(default_factory=lambda: os.getenv("FRED_API_KEY", ""))
+    fmp_api_key: str = field(default_factory=lambda: os.getenv("FMP_API_KEY", ""))
+    request_timeout_s: float = 10.0
+
+    def as_dict(self) -> dict:
+        return {
+            "enabled": self.enabled,
+            "source_priority": list(self.source_priority),
+            "discrepancy_pct": self.discrepancy_pct,
+            "conflict_downgrades_quality": self.conflict_downgrades_quality,
+            "has_fred_key": bool(self.fred_api_key),
+            "has_fmp_key": bool(self.fmp_api_key),
+            "request_timeout_s": self.request_timeout_s,
+        }
+
+
+@dataclass
+class MacroRagConfig:
+    """
+    Real-time macro RAG parameters (Gran Salto — Fase 3B).
+
+    Instead of asking the LLM to "use your current macro knowledge" (training data,
+    potentially stale or invented), we index dated macro facts (Fed releases, FRED
+    series, economic news) and inject the most relevant ones as **fresh, dated
+    context** into the prompts. macro_factors stops being an act of faith and gets
+    anchored to verifiable, time-stamped facts.
+
+    Fields:
+      enabled        — master switch for macro-context injection.
+      top_k          — how many retrieved docs to inject.
+      max_age_days   — ignore docs older than this (freshness gate); a "fresh"
+                      context must actually be fresh.
+      min_score      — minimum retrieval relevance (0-1) to include a doc.
+      max_context_chars — cap injected context size to control token cost.
+    """
+    enabled: bool = True
+    top_k: int = 4
+    max_age_days: int = 120
+    min_score: float = 0.02
+    max_context_chars: int = 1200
+
+    def as_dict(self) -> dict:
+        return {
+            "enabled": self.enabled,
+            "top_k": self.top_k,
+            "max_age_days": self.max_age_days,
+            "min_score": self.min_score,
+            "max_context_chars": self.max_context_chars,
+        }
+
+
+@dataclass
+class ChatConfig:
+    """
+    Conversational agent parameters (Gran Salto — Fase 4).
+
+    "Hablá con tu plan": a chat where an orchestrator agent routes a natural
+    language question to the right deterministic tool, runs it, and narrates over
+    the REAL numbers — never inventing figures (strict tool-calling).
+
+    Fields:
+      enabled            — master switch for the chat.
+      max_router_tokens  — token budget for the routing (tool-selection) call.
+      max_narrate_tokens — token budget for the narration call.
+      show_raw_data      — surface the raw tool data alongside the narrative
+                          (the product already shows the hard number next to the
+                          story; this keeps that anti-hallucination guarantee).
+    """
+    enabled: bool = True
+    max_router_tokens: int = 300
+    max_narrate_tokens: int = 700
+    show_raw_data: bool = True
+
+    def as_dict(self) -> dict:
+        return {
+            "enabled": self.enabled,
+            "max_router_tokens": self.max_router_tokens,
+            "max_narrate_tokens": self.max_narrate_tokens,
+            "show_raw_data": self.show_raw_data,
+        }
+
+
+@dataclass
+class BlackLittermanConfig:
+    """
+    Black-Litterman + covariance-shrinkage parameters (Gran Salto — Fase 5).
+
+    Model-depth upgrade over the score-proxy expected returns and the raw sample
+    covariance. Opt-in and graceful: when data is thin or anything fails, the
+    optimizer falls back to the existing deterministic path, so results stay valid.
+
+    Fields:
+      enabled            — use the Black-Litterman posterior as the optimizer's
+                          expected returns (score proxy becomes the *views*).
+      shrinkage_enabled  — use Ledoit-Wolf shrinkage for the covariance matrix.
+      tau                — BL prior uncertainty scalar (typical 0.025-0.05).
+      risk_aversion      — δ in the reverse-optimisation Π = δ·Σ·w_market.
+      use_score_confidence — scale per-view uncertainty by the asset's score
+                          (higher score → more confident view → pulls harder).
+    """
+    enabled: bool = True
+    shrinkage_enabled: bool = True
+    tau: float = 0.05
+    risk_aversion: float = 2.5
+    use_score_confidence: bool = True
+
+    def as_dict(self) -> dict:
+        return {
+            "enabled": self.enabled,
+            "shrinkage_enabled": self.shrinkage_enabled,
+            "tau": self.tau,
+            "risk_aversion": self.risk_aversion,
+            "use_score_confidence": self.use_score_confidence,
+        }
+
+
 THRESHOLDS = FundamentalThresholds()
 STRATEGY = StrategyConfig()
 ALERTS = AlertConfig()
@@ -492,3 +1158,17 @@ CRYPTO_MOAT = CryptoMoatConfig()
 OPTIMIZER = OptimizerConfig()
 REPORT = ReportConfig()
 MONTE_CARLO = MonteCarloConfig()
+DATA_QUALITY = DataQualityConfig()
+TAILWINDS = TailwindConfig()
+DRAGS = EconomicDragConfig()
+WITHDRAWAL = WithdrawalConfig()
+HEALTH = PlanHealthConfig()
+SENSITIVITY = SensitivityConfig()
+PERSONAL_BOOK = PersonalBookConfig()
+TRACK_RECORD = TrackRecordConfig()
+EVAL = EvalConfig()
+COMMITTEE = CommitteeConfig()
+MULTI_SOURCE = MultiSourceConfig()
+MACRO_RAG = MacroRagConfig()
+CHAT = ChatConfig()
+BLACK_LITTERMAN = BlackLittermanConfig()

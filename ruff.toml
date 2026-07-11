@@ -6,8 +6,9 @@ exclude = ["venv", ".venv", "__pycache__"]
 select = ["E", "F", "I", "W"]
 ignore = [
     "E501",   # line too long — enforced by formatter, not linter
-    "F401",   # unused imports — some are re-exported intentionally
     "E741",   # ambiguous variable names (l, O, I)
+    "E402",   # module import not at top — Streamlit pages use mid-file lazy imports
+    "W291",   # trailing whitespace — intentional in prompt markdown templates
 ]
 
 [lint.isort]

@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import re
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -25,10 +24,10 @@ from analysis.prompts import (
     crypto_moat_prompt,
     equity_decision_prompt,
     equity_moat_prompt,
+    plan_level_narrative_prompt,
     portfolio_optimizer_advice_prompt,
 )
 from analysis.technical import TechnicalResult
-
 
 # ------------------------------------------------------------------ #
 #  Helpers — build minimal but realistic stub objects                  #
@@ -186,6 +185,7 @@ class TestEquityMoatPrompt:
             "moat_durability_years",
             "recommended_max_allocation_conservative",
             "reasoning",
+            "macro_factors",
         ]
         for field in required:
             assert field in prompt, f"Missing JSON field in equity_moat_prompt: {field}"
@@ -228,9 +228,19 @@ class TestEquityDecisionPrompt:
             "risks",
             "recommended_max_allocation_conservative",
             "reasoning",
+            "macro_factors",
         ]
         for field in required:
             assert field in prompt, f"Missing JSON field in equity_decision_prompt: {field}"
+
+    def test_structural_macro_instructions_present(self):
+        """Structural improvement: prompt must instruct on explicit macro_factors list, zero-allowed, and data anchoring."""
+        prompt = self._prompt()
+        low = prompt.lower()
+        assert "macro_factors" in prompt
+        assert "0-2" in prompt or "0-2 factores" in low or "macro_factors" in low
+        assert "ningún factor" in low or "ningun factor" in low or "vacío" in low or "[]" in prompt  # permission for zero
+        assert "números concretos" in low or "datos duros" in low or "con los datos" in low  # anchoring
 
     def test_json_template_is_parseable(self):
         prompt = self._prompt()
@@ -283,6 +293,7 @@ class TestCryptoMoatPrompt:
             "recommended_max_allocation_conservative",
             "retirement_risk_summary",
             "reasoning",
+            "macro_factors",
         ]
         for field in required:
             assert field in prompt, f"Missing JSON field in crypto_moat_prompt: {field}"
@@ -327,6 +338,7 @@ class TestCryptoDecisionPrompt:
             "risks",
             "recommended_max_allocation_conservative",
             "reasoning",
+            "macro_factors",
         ]
         for field in required:
             assert field in prompt, f"Missing JSON field in crypto_decision_prompt: {field}"
@@ -415,6 +427,7 @@ class TestPortfolioOptimizerAdvicePrompt:
             "dropped_tickers",
             "human_review_tips",
             "overall_assessment",
+            "macro_factors",
         ]
         for field in required:
             assert field in p, f"Missing JSON field in portfolio_optimizer_advice_prompt: {field}"
@@ -473,3 +486,164 @@ class TestPortfolioOptimizerAdvicePrompt:
         assert "core_holdings" in p27
         # Note must be injected
         assert "top 15 de 27" in p27 or "se muestran solo las 15" in p27
+
+
+# ------------------------------------------------------------------ #
+#  Fase D — plan_level_narrative_prompt                                #
+# ------------------------------------------------------------------ #
+
+def _plan_prompt(**overrides):
+    kwargs = dict(
+        plan_name="Retiro 2045",
+        profile_name="Moderado",
+        personal={"age": 40, "retirement_age": 65, "primary_horizon_years": 25,
+                  "current_capital": 200_000, "monthly_savings": 1_500, "primary_goal_type": "retiro"},
+        metrics={"expected_return_pct": 8.5, "volatility_pct": 12.0, "sharpe_ratio": 0.55,
+                 "dividend_yield_pct": 2.4, "adjusted_score_avg": 75, "max_drawdown_estimate_pct": 18},
+        core_holdings=[{"symbol": "AAPL", "suggested_weight_pct": 40, "why": "moat wide"}],
+        allocation=[{"symbol": "AAPL", "weight_pct": 40}, {"symbol": "KO", "weight_pct": 60}],
+        sector_weights={"Tech": 40, "Staples": 60},
+        goals=[{"name": "Casa", "target_amount_today": 100_000, "horizon_years": 5}],
+        mc_summary={"horizon_years": 25, "initial_value": 200_000, "median_terminal": 900_000,
+                    "p10_terminal": 300_000, "p90_terminal": 2_000_000,
+                    "prob_ruin_pct": 2.0, "prob_target_pct": 70.0},
+    )
+    kwargs.update(overrides)
+    return plan_level_narrative_prompt(**kwargs)
+
+
+class TestPlanLevelNarrativePrompt:
+    def test_returns_nonempty_with_required_fields(self):
+        p = _plan_prompt()
+        assert isinstance(p, str) and len(p) > 200
+        # JSON contract fields present in the template
+        assert "narrative" in p
+        assert "macro_risks" in p
+        # Plan + profile context woven in
+        assert "Retiro 2045" in p
+        assert "Moderado" in p
+
+    def test_spanish_and_conservative_voice(self):
+        p = _plan_prompt().lower()
+        assert "español" in p
+        assert "no se arruine" in p or "conservador" in p
+
+    def test_personal_and_goals_surfaced(self):
+        p = _plan_prompt()
+        assert "Casa" in p          # goal name
+        assert "200,000" in p       # capital formatted
+
+    def test_handles_missing_personal_and_mc(self):
+        p = _plan_prompt(personal=None, mc_summary=None, goals=[])
+        assert "Perfil personal no definido" in p
+        assert "Sin simulación Monte Carlo" in p
+
+    def test_refresh_block_included_when_provided(self):
+        refreshed = {"summary": {"weighted_delta_pct": 2.0, "gainers": 1, "losers": 1, "avg_score_then": 75}}
+        p = _plan_prompt(refreshed=refreshed)
+        assert "+2.0%" in p
+
+    # --- Fase H.1: decumulation narrative ---
+
+    def test_accumulation_block_when_no_strategy(self):
+        p = _plan_prompt()
+        assert "ESTRATEGIA DE RETIRO" in p
+        assert "fase de ACUMULACIÓN" in p
+
+    def test_guardrails_strategy_described_with_metrics(self):
+        mc = {"horizon_years": 30, "initial_value": 1_000_000, "median_terminal": 800_000,
+              "p10_terminal": 100_000, "p90_terminal": 2_000_000, "prob_ruin_pct": 10.0,
+              "prob_target_pct": 0.0, "prob_sustain_real_pct": 82.0, "prob_legacy_pct": 55.0,
+              "median_legacy": 120_000, "expected_depletion_year": 27.0, "longevity_years": 30}
+        p = _plan_prompt(
+            mc_summary=mc,
+            withdrawal_strategy={"kind": "guardrails", "pct": 0.04, "label": "Guardrails 4.0%"},
+        )
+        assert "GUARDRAILS" in p
+        assert "82%" in p              # prob sustain surfaced
+        assert "dure 30 años" in p
+        # Narrative guidance asks for the retirement-income bullet + sequence risk.
+        assert "¿Cuánto dura tu ingreso?" in p
+        assert "secuencia de retornos" in p
+
+    def test_fixed_real_strategy_described(self):
+        p = _plan_prompt(
+            withdrawal_strategy={"kind": "fixed_real", "annual_amount": 40_000},
+        )
+        assert "RETIRO FIJO REAL" in p
+        assert "40,000" in p
+
+    def test_strategy_without_metrics_notes_absence(self):
+        p = _plan_prompt(
+            mc_summary={"horizon_years": 30, "initial_value": 100_000},
+            withdrawal_strategy={"kind": "constant_pct", "pct": 0.045},
+        )
+        assert "% CONSTANTE" in p
+        assert "sin métricas de decumulación" in p
+
+
+# ------------------------------------------------------------------ #
+#  Fase D — AIAnalyzer.generate_plan_narrative (parse + fallback)      #
+# ------------------------------------------------------------------ #
+
+class TestGeneratePlanNarrative:
+    def _analyzer(self, raw_or_exc):
+        from types import SimpleNamespace
+
+        from analysis.ai_analyzer import AIAnalyzer
+
+        a = AIAnalyzer(SimpleNamespace(provider="claude", model="x", api_key="k", enabled=True))
+        if isinstance(raw_or_exc, Exception):
+            def _boom(_p, max_tokens=None):
+                raise raw_or_exc
+            a._call_api = _boom
+        else:
+            a._call_api = lambda _p, max_tokens=None: raw_or_exc
+        return a
+
+    def _snap(self):
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            name="Retiro 2045", profile_name="Moderado", personal=None,
+            metrics={}, core_holdings=[], allocation=[], sector_weights={},
+            goals=[], mc_summary=None,
+        )
+
+    def test_parses_narrative_and_caps_macro_at_two(self):
+        raw = (
+            '{"narrative": "**Resumen** Plan sólido pero con riesgos.", '
+            '"macro_risks": ['
+            '{"factor": "Tasas", "why": "growth sensible", "severity": "MEDIA"}, '
+            '{"factor": "Inflación", "why": "erosiona retiros", "severity": "alta"}, '
+            '{"factor": "Extra", "why": "n/a", "severity": "baja"}]}'
+        )
+        out = self._analyzer(raw).generate_plan_narrative(self._snap())
+        assert out["narrative"].startswith("**Resumen**")
+        assert len(out["macro_risks"]) == 2            # capped
+        assert out["macro_risks"][0]["severity"] == "media"  # normalised to lowercase
+
+    def test_drops_malformed_macro_entries(self):
+        raw = '{"narrative": "ok", "macro_risks": [{"why": "no factor"}, "garbage"]}'
+        out = self._analyzer(raw).generate_plan_narrative(self._snap())
+        assert out["macro_risks"] == []
+
+    def test_fallback_on_api_error(self):
+        out = self._analyzer(RuntimeError("rate limit")).generate_plan_narrative(self._snap())
+        assert "No se pudo generar" in out["narrative"]
+        assert out["macro_risks"] == []
+
+    def test_non_json_response_becomes_narrative(self):
+        out = self._analyzer("Una explicación en prosa sin JSON.").generate_plan_narrative(self._snap())
+        assert "prosa" in out["narrative"]
+        assert out["macro_risks"] == []
+
+    def test_withdrawal_strategy_wired_into_prompt(self):
+        """Fase H.1: the snapshot's withdrawal_strategy reaches the prompt."""
+        captured = {}
+        a = self._analyzer('{"narrative": "ok", "macro_risks": []}')
+        orig = a._call_api
+        a._call_api = lambda p, max_tokens=None: captured.setdefault("prompt", p) or orig(p)
+        snap = self._snap()
+        snap.withdrawal_strategy = {"kind": "guardrails", "pct": 0.04}
+        a.generate_plan_narrative(snap)
+        assert "GUARDRAILS" in captured["prompt"]

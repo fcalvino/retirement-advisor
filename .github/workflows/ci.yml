@@ -11,13 +11,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
       - name: Install dependencies
@@ -37,3 +42,31 @@ jobs:
           AI_ENABLED: "false"
           CACHE_TTL_HOURS: "1"
         run: pytest tests/ -v --tb=short
+
+  # Static dead-code scan — informational only (must not block merges).
+  dead-code:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install vulture
+        run: |
+          pip install --upgrade pip
+          pip install vulture
+
+      - name: Run vulture (min-confidence 80)
+        run: |
+          vulture \
+            alerts analysis dashboard data portfolio reports \
+            main.py config.py config_validator.py scripts bootstrap.py \
+            --min-confidence 80 \
+            --exclude '*__pycache__*,venv,.venv,qa,tests'

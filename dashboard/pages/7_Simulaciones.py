@@ -3,23 +3,42 @@
 from __future__ import annotations
 
 import io
-import sys
-from pathlib import Path
+from datetime import datetime
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
-import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from config import MONTE_CARLO, OPTIMIZER_PROFILES, SECTOR_MAP
-from dashboard.shared import cached_monte_carlo, cached_stress_test, cached_goal_simulation, cached_goal_optimization, _get_ai_config
+from config import MONTE_CARLO, SECTOR_MAP
+from dashboard.shared import (
+    _get_ai_config,
+    cached_goal_optimization,
+    cached_goal_simulation,
+    cached_monte_carlo,
+    cached_stress_test,
+    drags_to_tuple,
+    format_drags_badge,
+    format_withdrawal_badge,
+    get_economic_drags,
+    get_longevity_years,
+    get_user_prefs,
+    get_withdrawal_strategy,
+    render_drags_controls,
+    render_withdrawal_controls,
+    run_plan_sensitivity,
+    seed_session_defaults_from_profile,
+    withdrawal_to_tuple,
+)
 from portfolio.goals import (
-    Goal, PRIORITY_LABELS, PRIORITY_COLORS, PRIORITY_EMOJIS,
-    GOAL_TYPE_ICONS, GOAL_TYPE_LABELS, GOAL_TYPE_PLACEHOLDERS,
+    GOAL_TYPE_ICONS,
+    GOAL_TYPE_LABELS,
+    GOAL_TYPE_PLACEHOLDERS,
+    PRIORITY_COLORS,
+    PRIORITY_EMOJIS,
+    PRIORITY_LABELS,
     required_monthly_savings,
 )
+from portfolio.sensitivity import tornado_rows
 
 # ------------------------------------------------------------------ #
 #  Page                                                                #
@@ -31,6 +50,27 @@ st.caption(
     "su resistencia ante crisis históricas. "
     "💵 Valores en USD. Esta simulación es orientativa, no una garantía de resultados."
 )
+
+# ------------------------------------------------------------------ #
+#  Personal profile → smart defaults (onboarding — Fase A)            #
+#  Seeds Monte Carlo horizon + initial capital, and pre-fills the     #
+#  "Mis Metas" goal form, before any widget is instantiated.          #
+# ------------------------------------------------------------------ #
+
+_prefs_sim = get_user_prefs()
+seed_session_defaults_from_profile(_prefs_sim)  # direct-nav safe
+if _prefs_sim.is_onboarded and not st.session_state.get("_goal_form_seeded"):
+    if _prefs_sim.primary_goal_type in GOAL_TYPE_ICONS:
+        st.session_state.setdefault("new_goal_type", _prefs_sim.primary_goal_type)
+    st.session_state.setdefault("new_goal_horizon", min(max(_prefs_sim.primary_horizon_years or 5, 1), 40))
+    st.session_state.setdefault("new_goal_contribution", int(min(max(_prefs_sim.annual_savings, 0), 500_000)))
+    st.session_state.setdefault("new_goal_allocated", int(min(max(_prefs_sim.current_capital, 0), 10_000_000)))
+    st.session_state["_goal_form_seeded"] = True
+if _prefs_sim.is_onboarded:
+    st.caption(
+        f"📋 Defaults tomados de **Mi Perfil**: horizonte ~{_prefs_sim.primary_horizon_years} años "
+        f"· capital \\${_prefs_sim.current_capital:,.0f}. Editá en ⚙️ Settings."
+    )
 
 # ------------------------------------------------------------------ #
 #  Profile comparison scales (vol_scale, return_scale over global cfg) #
@@ -75,7 +115,7 @@ preset_choice = st.sidebar.selectbox(
     help="Seleccioná un escenario típico. Los valores de los controles de abajo se actualizarán automáticamente."
 )
 
-if st.sidebar.button("Aplicar preset", type="primary", use_container_width=True):
+if st.sidebar.button("Aplicar preset", type="primary", width="stretch"):
     if preset_choice == "Acumulación pura (20 años)":
         st.session_state["horizon_years"] = 20
         st.session_state["initial_value"] = 100_000
@@ -226,6 +266,10 @@ tab_mc, tab_stress, tab_custom, tab_compare, tab_goals = st.tabs(
 
 
 def _tab_mc_content():
+    # Item 1 — economic drags / assumptions control (persistent, opt-in).
+    render_drags_controls(key_prefix="sim_")
+    # Fase H.1 — decumulation / withdrawal strategy (persistent, opt-in).
+    render_withdrawal_controls(key_prefix="sim_", initial_value=float(initial_value))
     run_mc = st.button("▶ Ejecutar simulación Monte Carlo", type="primary")
 
     if not run_mc and "mc_result" not in st.session_state:
@@ -239,6 +283,9 @@ def _tab_mc_content():
         return
 
     if run_mc:
+        drags = get_economic_drags()
+        wd_strategy = get_withdrawal_strategy(float(initial_value))   # Fase H.1
+        longevity = get_longevity_years() if wd_strategy else None
         with st.spinner(f"Ejecutando {n_sims:,} simulaciones × {horizon_years} años…"):
             mc = cached_monte_carlo(
                 symbols=tuple(symbols),
@@ -249,6 +296,9 @@ def _tab_mc_content():
                 annual_withdrawal=float(annual_withdrawal),
                 target_value=float(target_value),
                 withdrawal_growth_rate=float(inflation_rate) / 100.0,   # Phase 0: growing withdrawals
+                drags_tuple=drags_to_tuple(drags),                      # Item 1
+                withdrawal_tuple=withdrawal_to_tuple(wd_strategy),      # Fase H.1
+                longevity_years=longevity,                              # Fase H.1
             )
         st.session_state["mc_result"] = mc
         st.session_state["mc_params"] = {
@@ -256,7 +306,21 @@ def _tab_mc_content():
             "initial_value": initial_value,
             "inflation_rate": inflation_rate,
             "n_sims": n_sims,
+            "drags": drags,   # Item 1: remember the assumptions used
+            "withdrawal_strategy": wd_strategy,   # Fase H.1: remember the strategy used
         }
+        if getattr(mc, "total_annual_drag_pct", 0.0) > 0:
+            st.info(
+                f"{format_drags_badge(drags)}  \n"
+                f"Mediana **con drags**: ${mc.median_terminal:,.0f} · "
+                f"**base** (sin drags): ${mc.base_median_terminal:,.0f}.",
+                icon="📊",
+            )
+        # Next step in the recommended flow (Fase E): consolidate into Mi Plan
+        st.caption(
+            "💡 **Siguiente paso:** con tu cartera optimizada + esta proyección, andá a "
+            "🗺️ **Mi Plan** para consolidar, guardar y activar tu plan de retiro."
+        )
 
     mc = st.session_state.get("mc_result")
     if mc is None:
@@ -271,7 +335,7 @@ def _tab_mc_content():
     k1.metric("Capital inicial", f"${initial_value:,.0f}")
 
     k2.metric(
-        f"Valor más probable (mediana)",
+        "Valor más probable (mediana)",
         f"${mc.median_terminal:,.0f}",
         delta=f"{mc.median_cagr_pct:.1f}% CAGR promedio",
         help="En la mitad de las simulaciones terminás por encima de este número, y en la mitad por debajo.",
@@ -293,7 +357,7 @@ def _tab_mc_content():
 
     if target_value > 0:
         k5.metric(
-            f"Probabilidad de alcanzar tu meta",
+            "Probabilidad de alcanzar tu meta",
             f"{mc.prob_achieve_target_pct:.1f}%",
             delta=f"de llegar a ${target_value:,.0f}",
             delta_color="off",
@@ -306,6 +370,80 @@ def _tab_mc_content():
             delta_color="inverse",
             help="Casos en los que el portafolio llega a cero o negativo antes del final del horizonte.",
         )
+
+    # ---- Realista vs Conservador: no engañar con un solo número ----
+    if getattr(mc, "realistic_reference_applied", False) and mc.realistic_median_terminal > 0:
+        _gap_pct = (mc.realistic_median_terminal / mc.median_terminal - 1) * 100 if mc.median_terminal else 0
+        st.info(
+            "📊 **Dos escenarios para no engañarte con un solo número:**  \n"
+            f"• **Realista** (si el futuro se parece al historial): mediana **${mc.realistic_median_terminal:,.0f}** "
+            f"· pesimista ${mc.realistic_p10_terminal:,.0f}  \n"
+            f"• **Conservador** (piso prudente, los números de arriba): mediana **${mc.median_terminal:,.0f}** "
+            f"· pesimista ${mc.p10_terminal:,.0f}  \n"
+            f"Planificá con el conservador (mediana ~{_gap_pct:.0f}% más baja que el realista a propósito): "
+            "asume rendimientos futuros más bajos y más volatilidad, así que también baja el piso pesimista. "
+            "El realista es la referencia de cuánto podrías terminar si todo sale como el pasado reciente.",
+            icon="📊",
+        )
+
+    # From "no llegás" to "hacé esto": when the goal is unlikely, point to the
+    # concrete levers (the 🔬 Sensibilidad section below quantifies each one).
+    if target_value > 0 and mc.prob_achieve_target_pct < 70:
+        st.warning(
+            f"🎯 **Con holgura no llegás** (probabilidad {mc.prob_achieve_target_pct:.0f}%). "
+            "No es un callejón sin salida — probá mover una de estas palancas:\n\n"
+            "- 💵 **Aportar más por mes** — lo que más mueve la aguja en horizontes largos.\n"
+            "- ⏳ **Extender el horizonte** unos años — el interés compuesto hace el resto.\n"
+            "- 🎯 **Ajustar la meta** a un número más alcanzable.\n"
+            "- ⚖️ **Subir un escalón de riesgo** (más retorno esperado, más volatilidad).\n\n"
+            "Bajá a la sección **🔬 Sensibilidad** para ver cuánto sube tu probabilidad con cada cambio.",
+            icon="🧭",
+        )
+
+    # ---- Fase H.1: decumulation / retirement-income metrics ----
+    _wd = getattr(mc, "withdrawal_strategy_applied", None)
+    if _wd:
+        st.divider()
+        st.markdown("#### 🏖️ ¿Cuánto dura tu ingreso de retiro?")
+        st.caption(format_withdrawal_badge(_wd))
+        d1, d2, d3, d4 = st.columns(4)
+        _longevity = getattr(mc, "longevity_years", 0) or horizon_years
+        d1.metric(
+            f"Prob. de que dure {_longevity} años",
+            f"{mc.prob_sustain_real_pct:.0f}%",
+            help="Porcentaje de simulaciones en las que el ingreso NUNCA se agotó durante el horizonte de retiro.",
+        )
+        d2.metric(
+            "Prob. de dejar herencia",
+            f"{mc.prob_legacy_pct:.0f}%",
+            help="Casos en los que todavía queda capital al final del horizonte.",
+        )
+        d3.metric(
+            "Herencia mediana",
+            f"${mc.median_legacy:,.0f}",
+            help="Valor final mediano (lo que típicamente queda al final).",
+        )
+        if mc.expected_depletion_year > 0:
+            d4.metric(
+                "Si se agota, año típico",
+                f"Año {mc.expected_depletion_year:.0f}",
+                delta_color="off",
+                help="Entre las simulaciones que SÍ se quedaron sin fondos, el año mediano en que ocurrió.",
+            )
+        else:
+            d4.metric(
+                "Si se agota, año típico",
+                "Nunca",
+                delta_color="off",
+                help="Ninguna simulación se quedó sin fondos en este horizonte.",
+            )
+        if mc.prob_sustain_real_pct >= 90:
+            st.success(f"✅ Estrategia robusta: tu ingreso dura los {_longevity} años en {mc.prob_sustain_real_pct:.0f}% de los escenarios.")
+        elif mc.prob_sustain_real_pct >= 75:
+            st.warning(f"⚠️ Probabilidad razonable ({mc.prob_sustain_real_pct:.0f}%) pero no altísima. Considerá una estrategia con guardrails, retirar menos, o más capital.")
+        else:
+            st.error(f"❌ Riesgo de quedarte sin fondos: el ingreso solo dura los {_longevity} años en {mc.prob_sustain_real_pct:.0f}% de los casos. Reducí el retiro o ajustá la estrategia.")
+        st.divider()
 
     # ---- Quick interpretation (Fase 0 improvement) ----
     with st.expander("📊 ¿Qué significan estos números para tu plan?", expanded=True):
@@ -377,12 +515,12 @@ En resumen: el modelo no está diciendo "siempre vas a ganar mucho". Está dicie
                 # Build rich context from current optimizer + MC result
                 opt_for_narrative = opt_result or st.session_state.get("optimizer_prev_result")
                 tickers = [a.symbol for a in opt_for_narrative.tickers] if opt_for_narrative and opt_for_narrative.tickers else symbols
-                weights = [a.weight_pct/100 for a in opt_for_narrative.tickers] if opt_for_narrative and opt_for_narrative.tickers else ([1.0/len(symbols)]*len(symbols) if symbols else [])
+                narrative_weights = [a.weight_pct/100 for a in opt_for_narrative.tickers] if opt_for_narrative and opt_for_narrative.tickers else ([1.0/len(symbols)]*len(symbols) if symbols else [])
 
                 narrative_context = {
                     "profile_name": getattr(opt_for_narrative, "profile_name", "Moderado"),
                     "tickers": tickers,
-                    "weights": weights,
+                    "weights": narrative_weights,
                     "expected_return": getattr(opt_for_narrative, "expected_return_pct", 0.0) if opt_for_narrative else 0.0,
                     "volatility": getattr(opt_for_narrative, "volatility_pct", 0.0) if opt_for_narrative else 0.0,
                     "sharpe": getattr(opt_for_narrative, "sharpe_ratio", 0.0) if opt_for_narrative else 0.0,
@@ -490,7 +628,7 @@ En resumen: el modelo no está diciendo "siempre vas a ganar mucho". Está dicie
             legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
             hovermode="x unified",
         )
-        st.plotly_chart(fan_chart, use_container_width=True)
+        st.plotly_chart(fan_chart, width="stretch")
         _real_note = (
             f" La línea naranja punteada muestra el poder adquisitivo real "
             f"(descontando {inflation_rate:.1f}% de inflación anual)."
@@ -542,7 +680,7 @@ En resumen: el modelo no está diciendo "siempre vas a ganar mucho". Está dicie
             height=380,
             showlegend=False,
         )
-        st.plotly_chart(fig_hist, use_container_width=True)
+        st.plotly_chart(fig_hist, width="stretch")
 
     # ---- Terminal distribution table ----
     if mc.fan_paths:
@@ -568,7 +706,7 @@ En resumen: el modelo no está diciendo "siempre vas a ganar mucho". Está dicie
             _col_cfg["Valor real"] = st.column_config.NumberColumn(
                 f"Valor real ({inflation_rate:.1f}% inf.)", format="$%,.0f"
             )
-        st.dataframe(df_terminal, use_container_width=True, hide_index=True, column_config=_col_cfg)
+        st.dataframe(df_terminal, width="stretch", hide_index=True, column_config=_col_cfg)
 
         # Export
         _csv_buf = io.StringIO()
@@ -579,6 +717,9 @@ En resumen: el modelo no está diciendo "siempre vas a ganar mucho". Está dicie
             file_name=f"montecarlo_{horizon_years}y_{n_sims}sims.csv",
             mime="text/csv",
         )
+
+    # ---- Fase H.3: sensitivity & scenario lab ----
+    _render_sensitivity_lab()
 
     with st.expander("ℹ️ Metodología y limitaciones"):
         st.markdown(f"""
@@ -601,6 +742,102 @@ Esto es un cambio de Fase 0 para modelado más realista de largo plazo.
 No considera impuestos, cambios en la asignación de activos, ni eventos imprevisibles.
 Consultá con un asesor financiero certificado antes de tomar decisiones de inversión.
         """)
+
+
+def _render_sensitivity_lab():
+    """Fase H.3 — what-if workbench: tornado + predefined retirement scenarios."""
+    st.divider()
+    st.markdown("#### 🔬 Sensibilidad del plan (laboratorio de supuestos)")
+    st.caption(
+        "Mové un supuesto por vez para ver a qué es más sensible tu plan (tornado), "
+        "y probá escenarios de retiro completos. Usa una simulación más liviana para ir rápido; "
+        "el caso base es siempre tu corrida actual."
+    )
+
+    _metric_label = {
+        "p10_terminal": "Escenario pesimista (P10)",
+        "median_terminal": "Caso más probable (mediana)",
+        "prob_ruin_pct": "Probabilidad de ruina",
+    }
+    metric = st.selectbox(
+        "Métrica a analizar",
+        options=["p10_terminal", "median_terminal", "prob_ruin_pct"],
+        format_func=lambda k: _metric_label[k],
+        key="sens_metric",
+    )
+
+    if not st.button("🔬 Ejecutar análisis de sensibilidad", key="run_sensitivity"):
+        st.caption("Tocá el botón para correr el laboratorio (varias mini-simulaciones).")
+        return
+
+    _wd = get_withdrawal_strategy(float(initial_value))
+    base_params = {
+        "symbols": tuple(symbols),
+        "weights": tuple(weights) if weights else None,
+        "horizon_years": int(horizon_years),
+        "initial_value": float(initial_value),
+        "annual_withdrawal": float(annual_withdrawal),
+        "target_value": float(target_value),
+        "withdrawal_growth_rate": float(inflation_rate) / 100.0,
+        "vol_scale": 1.0,
+        "return_scale": 1.0,
+        "drags_total_pct": float(get_economic_drags().get("total_annual_drag_pct", 0.0)),
+        "withdrawal_tuple": withdrawal_to_tuple(_wd),
+        "longevity_years": get_longevity_years() if _wd else None,
+    }
+
+    with st.spinner("Corriendo el laboratorio de sensibilidad…"):
+        res = run_plan_sensitivity(base_params, primary_metric=metric)
+
+    _is_money = metric != "prob_ruin_pct"
+    _fmt = (lambda v: f"${v:,.0f}") if _is_money else (lambda v: f"{v:.1f}%")
+    base_val = res.base.get(metric, 0.0)
+    st.caption(f"**Caso base — {_metric_label[metric]}: {_fmt(base_val)}**")
+
+    # --- Tornado ---
+    rows = tornado_rows(res, metric=metric)
+    fig = go.Figure()
+    for r in rows:
+        lo, hi = min(r["low"], r["high"]), max(r["low"], r["high"])
+        fig.add_trace(go.Bar(
+            y=[r["label"]], x=[hi - lo], base=lo, orientation="h",
+            marker_color="#17A2B8", showlegend=False,
+            hovertemplate=(
+                f"{r['label']}<br>{r['low_label']}: {_fmt(r['low'])}"
+                f"<br>{r['high_label']}: {_fmt(r['high'])}<extra></extra>"
+            ),
+        ))
+    fig.add_vline(x=base_val, line_dash="dash", line_color="gold",
+                  annotation_text="base", annotation_position="top")
+    fig.update_layout(
+        title=f"Tornado — impacto en {_metric_label[metric]}",
+        xaxis_title=_metric_label[metric],
+        xaxis_tickformat="$,.0f" if _is_money else ".1f",
+        height=300, barmode="overlay", margin=dict(l=10, r=10, t=40, b=10),
+        yaxis=dict(autorange="reversed"),
+    )
+    st.plotly_chart(fig, width="stretch")
+    st.caption(
+        "Cada barra es el rango de la métrica cuando ese supuesto se mueve a su valor bajo/alto "
+        "(todo lo demás fijo). La barra más larga = el supuesto que más mueve tu resultado."
+    )
+
+    # --- Scenario table ---
+    st.markdown("**Escenarios de retiro predefinidos**")
+    _scn_rows = []
+    for s in res.scenarios:
+        _d = s.deltas.get(metric, 0.0)
+        _scn_rows.append({
+            "Escenario": s.label,
+            "Qué cambia": s.description,
+            _metric_label[metric]: _fmt(s.metrics.get(metric, 0.0)),
+            "Δ vs base": (f"{'+' if _d >= 0 else ''}{_fmt(_d)}"),
+        })
+    st.dataframe(pd.DataFrame(_scn_rows), width="stretch", hide_index=True)
+    st.caption(
+        "Orientativo — combina supuestos realistas usando tu propia cartera. No es asesoramiento financiero."
+    )
+
 
 # ================================================================== #
 #  Tab 2: Stress Test                                                 #
@@ -642,7 +879,7 @@ with tab_stress:
         df_stress = pd.DataFrame(stress_data)
         st.dataframe(
             df_stress,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             column_config={
                 "Caída cartera %": st.column_config.NumberColumn("Caída cartera %", format="%.1f%%"),
@@ -675,7 +912,7 @@ with tab_stress:
             height=440,
             legend=dict(yanchor="bottom", y=0.01, xanchor="right", x=0.99),
         )
-        st.plotly_chart(fig_stress, use_container_width=True)
+        st.plotly_chart(fig_stress, width="stretch")
 
         # Recovery timeline bar chart
         fig_recov = go.Figure()
@@ -697,7 +934,7 @@ with tab_stress:
             height=320,
             showlegend=False,
         )
-        st.plotly_chart(fig_recov, use_container_width=True)
+        st.plotly_chart(fig_recov, width="stretch")
 
         # Sector detail for worst scenario
         worst = stress_results[0]
@@ -713,7 +950,7 @@ with tab_stress:
                 for s, v in sorted(worst.sector_impact.items(), key=lambda x: x[1])
             ])
             st.dataframe(
-                sec_df, use_container_width=True, hide_index=True,
+                sec_df, width="stretch", hide_index=True,
                 column_config={
                     "Shock %":        st.column_config.NumberColumn("Shock %",        format="%.1f%%"),
                     "Peso cartera %": st.column_config.NumberColumn("Peso cartera %", format="%.1f%%"),
@@ -798,7 +1035,7 @@ with tab_custom:
                 yaxis_tickformat="$,.0f",
                 height=300,
             )
-            st.plotly_chart(fig_recov_path, use_container_width=True)
+            st.plotly_chart(fig_recov_path, width="stretch")
 
 # ================================================================== #
 #  Tab 4: Comparar Perfiles                                           #
@@ -881,7 +1118,7 @@ def _tab_compare_content():
         _cmp_col_cfg["Prob. meta %"] = st.column_config.NumberColumn(
             f"Prob. meta ${target_value:,.0f}", format="%.1f%%"
         )
-    st.dataframe(_cmp_df, use_container_width=True, hide_index=True, column_config=_cmp_col_cfg)
+    st.dataframe(_cmp_df, width="stretch", hide_index=True, column_config=_cmp_col_cfg)
 
     # ---- Fan chart overlay: median + P10/P90 per profile ----
     _years = list(range(0, horizon_years + 1))
@@ -929,7 +1166,7 @@ def _tab_compare_content():
         legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
         hovermode="x unified",
     )
-    st.plotly_chart(fig_cmp, use_container_width=True)
+    st.plotly_chart(fig_cmp, width="stretch")
 
     # ---- P10 comparison (downside risk) ----
     fig_p10 = go.Figure()
@@ -951,7 +1188,7 @@ def _tab_compare_content():
         height=350,
         hovermode="x unified",
     )
-    st.plotly_chart(fig_p10, use_container_width=True)
+    st.plotly_chart(fig_p10, width="stretch")
 
     st.caption(
         "⚠️ Los perfiles NO cambian los activos ni los pesos — solo ajustan los supuestos "
@@ -990,6 +1227,17 @@ with tab_goals:
     if "goals_list" not in st.session_state:
         st.session_state["goals_list"] = []
 
+    # ---- Goal form defaults (state-controlled widgets) ----
+    # These keys may already be seeded from the personal profile (top of file,
+    # onboarded users only). Ensure a sensible value exists for everyone so the
+    # keyed widgets below can be declared WITHOUT a `value=` arg — declaring both
+    # `value=` and a pre-set session_state value triggers Streamlit's widget
+    # policy warning ("created with a default value but also had its value set
+    # via the Session State API"). See plan_mode fix 2026-06-13.
+    st.session_state.setdefault("new_goal_horizon", 5)
+    st.session_state.setdefault("new_goal_contribution", 0)
+    st.session_state.setdefault("new_goal_allocated", 0)
+
     # ---------------------------------------------------------------- #
     #  Goal editor                                                       #
     # ---------------------------------------------------------------- #
@@ -1027,7 +1275,7 @@ with tab_goals:
         )
         new_horizon = gc4.number_input(
             "Horizonte (años)",
-            min_value=1, max_value=40, value=5, step=1,
+            min_value=1, max_value=40, step=1,
             key="new_goal_horizon",
         )
         new_inflation = gc5.slider(
@@ -1041,14 +1289,14 @@ with tab_goals:
             gc6, gc7, gc8 = st.columns(3)
             new_contribution = gc6.number_input(
                 "Aporte anual hacia esta meta (USD)",
-                min_value=0, max_value=500_000, value=0, step=1_000,
+                min_value=0, max_value=500_000, step=1_000,
                 format="%d",
                 help="Cuánto ahorrás por año específicamente para esta meta. 0 = solo crece el capital inicial.",
                 key="new_goal_contribution",
             )
             new_allocated = gc7.number_input(
                 "Capital asignado (USD, 0 = auto)",
-                min_value=0, max_value=10_000_000, value=0, step=5_000,
+                min_value=0, max_value=10_000_000, step=5_000,
                 format="%d",
                 help="Capital inicial para esta meta. 0 = se asigna automáticamente proporcional a prioridad.",
                 key="new_goal_allocated",
@@ -1253,15 +1501,15 @@ with tab_goals:
             if _rows:
                 import pandas as pd
                 _df_cmp = pd.DataFrame(_rows)
-                st.dataframe(_df_cmp, use_container_width=True, hide_index=True)
+                st.dataframe(_df_cmp, width="stretch", hide_index=True)
 
             # Apply button
             st.divider()
             _a1, _a2 = st.columns([2, 1])
             with _a1:
                 st.caption(
-                    f"Al aplicar, este portafolio reemplaza el resultado del Optimizer "
-                    f"y se usa en todas las simulaciones de esta sesión."
+                    "Al aplicar, este portafolio reemplaza el resultado del Optimizer "
+                    "y se usa en todas las simulaciones de esta sesión."
                 )
             with _a2:
                 if st.button("✅ Aplicar portafolio para mis metas", type="primary", key="apply_goal_optimizer"):
@@ -1568,7 +1816,7 @@ with tab_goals:
                             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
                             hovermode="x unified",
                         )
-                        st.plotly_chart(fig_g, use_container_width=True)
+                        st.plotly_chart(fig_g, width="stretch")
 
                     # Monthly savings estimate
                     if gr.prob_success_pct < 80:
@@ -1633,7 +1881,7 @@ with tab_goals:
                 showarrow=False,
                 font=dict(size=11),
             )
-            st.plotly_chart(fig_timeline, use_container_width=True)
+            st.plotly_chart(fig_timeline, width="stretch")
 
             # ---------------------------------------------------------------- #
             #  Summary table + export                                           #
@@ -1660,7 +1908,7 @@ with tab_goals:
             df_summary = pd.DataFrame(summary_rows)
             st.dataframe(
                 df_summary,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 column_config={
                     "Meta hoy (USD)":          st.column_config.NumberColumn(format="$%,.0f"),
@@ -1684,6 +1932,74 @@ with tab_goals:
                 file_name=f"plan_metas_{len(goals_list)}_metas.csv",
                 mime="text/csv",
             )
+
+            # ---------------------------------------------------------------- #
+            #  PDF Report Download                                               #
+            # ---------------------------------------------------------------- #
+            st.divider()
+            with st.expander("📄 Descargar Reporte PDF", expanded=False):
+                st.markdown("Generá un reporte PDF profesional con tu plan de inversión completo.")
+                _pdf_col1, _pdf_col2 = st.columns(2)
+                with _pdf_col1:
+                    _pdf_user_name = st.text_input(
+                        "Nombre (opcional)",
+                        placeholder="Ej: Juan Pérez",
+                        key="pdf_goals_user_name",
+                    )
+                    _pdf_version = st.radio(
+                        "Versión",
+                        ["completo", "breve"],
+                        key="pdf_goals_version",
+                        format_func=lambda v: "📋 Completo (gráficos + riesgo)" if v == "completo" else "📝 Breve (metas + recomendaciones)",
+                    )
+                with _pdf_col2:
+                    _pdf_incl_ai = st.checkbox("Incluir narrativa IA", value=True, key="pdf_goals_ai")
+                    _pdf_incl_charts = st.checkbox("Incluir gráficos", value=True, key="pdf_goals_charts")
+                    _pdf_incl_risk = st.checkbox("Incluir análisis de riesgo", value=True, key="pdf_goals_risk")
+
+                if st.button("📄 Generar y Descargar PDF", type="primary", key="pdf_goals_generate"):
+                    with st.spinner("Generando reporte PDF…"):
+                        try:
+                            from reports.investment_plan import InvestmentPlanReport, ReportOptions
+                            _pdf_options = ReportOptions(
+                                user_name=_pdf_user_name,
+                                version=_pdf_version,
+                                include_ai_narrative=_pdf_incl_ai,
+                                include_charts=_pdf_incl_charts,
+                                include_risk_section=_pdf_incl_risk,
+                            )
+                            _pdf_mc_params = {
+                                "horizon_years":     st.session_state.get("horizon_years", 20),
+                                "initial_value":     st.session_state.get("initial_value", 0),
+                                "annual_withdrawal": st.session_state.get("annual_withdrawal", 0),
+                                "target_value":      st.session_state.get("target_value", 0),
+                                "inflation_rate":    st.session_state.get("inflation_rate", 3.0),
+                                "profile_name":      {"conservative": "Conservador", "moderate": "Moderado", "aggressive": "Agresivo"}.get(plan_profile, plan_profile),
+                            }
+                            _pdf_opt_result = st.session_state.get("goal_optimizer_result")
+                            _pdf_ai_config = _get_ai_config() if _pdf_incl_ai else None
+                            _pdf_bytes = InvestmentPlanReport().generate(
+                                goal_plan=plan_result,
+                                opt_result=_pdf_opt_result,
+                                mc_result=None,
+                                mc_params=_pdf_mc_params,
+                                ai_config=_pdf_ai_config,
+                                options=_pdf_options,
+                            )
+                            st.session_state["pdf_goals_bytes"] = _pdf_bytes
+                        except Exception as _pdf_err:
+                            st.error(f"Error generando el PDF: {_pdf_err}")
+
+                if "pdf_goals_bytes" in st.session_state:
+                    _fname = f"plan_inversion_{datetime.now().strftime('%Y%m%d')}.pdf"
+                    st.download_button(
+                        label="⬇️ Descargar PDF",
+                        data=st.session_state["pdf_goals_bytes"],
+                        file_name=_fname,
+                        mime="application/pdf",
+                        key="pdf_goals_dl_btn",
+                    )
+                    st.success("✅ PDF listo para descargar.")
 
             with st.expander("ℹ️ Metodología del planificador de metas"):
                 st.markdown("""

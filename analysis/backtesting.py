@@ -287,17 +287,6 @@ class BacktestEngine:
     # ---------------------------------------------------------------- #
 
     @staticmethod
-    def _normalize_index(s: pd.Series) -> pd.Series:
-        """Strip timezone and normalize DatetimeIndex to date-only for consistent alignment."""
-        idx = pd.to_datetime(s.index)
-        if idx.tz is not None:
-            idx = idx.tz_convert(None)
-        # Normalize to midnight so dates from different tz sources still match
-        s = s.copy()
-        s.index = idx.normalize()
-        return s
-
-    @staticmethod
     def _prices_from_hist(hist: pd.DataFrame) -> pd.Series:
         """Extract a clean, DatetimeIndex price series from a get_history() DataFrame."""
         if hist.empty:

@@ -224,3 +224,178 @@ class TestFullRun:
             sim = _make_simulator(["AAPL"])
             result = sim.run(horizon_years=5, n_sims=100, initial_value=100_000)
             assert any("insuficiente" in w.lower() or "insuficient" in w.lower() for w in result.warnings)
+
+
+# ------------------------------------------------------------------ #
+#  Economic drags (Item 1)                                            #
+# ------------------------------------------------------------------ #
+
+class TestEconomicDrags:
+    """Drags are opt-in: drags=None must be byte-identical to base behavior."""
+
+    def test_total_drag_fraction_none_is_zero(self):
+        assert MonteCarloSimulator._total_drag_fraction(None) == 0.0
+
+    def test_total_drag_fraction_disabled_is_zero(self):
+        d = {"enabled": False, "annual_fee_pct": 1.0}
+        assert MonteCarloSimulator._total_drag_fraction(d) == 0.0
+
+    def test_total_drag_fraction_sums_components(self):
+        d = {"annual_fee_pct": 0.2, "dividend_tax_drag_pct": 0.3,
+             "rebalance_cost_annual_pct": 0.05, "ar_buffer_pct": 0.0}
+        # 0.55% -> 0.0055
+        assert abs(MonteCarloSimulator._total_drag_fraction(d) - 0.0055) < 1e-9
+
+    def test_total_drag_fraction_prefers_explicit_total(self):
+        d = {"total_annual_drag_pct": 1.0, "annual_fee_pct": 99.0}
+        assert abs(MonteCarloSimulator._total_drag_fraction(d) - 0.01) < 1e-9
+
+    def test_apply_drags_reduces_paths(self):
+        paths = np.ones((3, 53))  # 1 year, flat
+        out = MonteCarloSimulator._apply_drags(paths, 0.10)  # 10% annual drag
+        # After ~52 weeks the multiplier should be ~ (1-0.10)
+        assert out[:, -1].mean() < 1.0
+        assert abs(out[:, -1].mean() - 0.90) < 0.01
+        # Week 0 untouched
+        assert np.allclose(out[:, 0], 1.0)
+
+    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
+    def test_run_without_drags_unchanged(self, _mock):
+        sim = _make_simulator(["AAPL"])
+        result = sim.run(horizon_years=10, n_sims=500, initial_value=100_000)
+        assert result.drags_applied is None
+        assert result.total_annual_drag_pct == 0.0
+        assert result.base_median_terminal == 0.0  # reference unset when no drags
+
+    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
+    def test_run_with_drags_lowers_median_and_sets_base(self, _mock):
+        drags = {"enabled": True, "total_annual_drag_pct": 1.5}
+        base = _make_simulator(["AAPL"]).run(horizon_years=10, n_sims=800, initial_value=100_000)
+        dragged = _make_simulator(["AAPL"]).run(
+            horizon_years=10, n_sims=800, initial_value=100_000, drags=drags,
+        )
+        assert dragged.total_annual_drag_pct == 1.5
+        assert dragged.drags_applied == drags
+        # Dragged median is lower than base, and base_* reference matches the base run.
+        assert dragged.median_terminal < base.median_terminal
+        assert dragged.base_median_terminal > dragged.median_terminal
+        assert abs(dragged.base_median_terminal - base.median_terminal) < 1.0
+
+
+class TestRealisticReference:
+    """Realistic reference is opt-in: off → byte-identical; on → higher than conservative."""
+
+    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
+    def test_off_by_default_unchanged(self, _mock):
+        sim = _make_simulator(["AAPL"])
+        result = sim.run(horizon_years=10, n_sims=500, initial_value=100_000)
+        assert result.realistic_reference_applied is False
+        assert result.realistic_median_terminal == 0.0
+        assert result.realistic_p10_terminal == 0.0
+        assert result.realistic_p90_terminal == 0.0
+
+    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
+    def test_on_lifts_median_and_downside(self, _mock):
+        result = _make_simulator(["AAPL"]).run(
+            horizon_years=10, n_sims=4000, initial_value=100_000,
+            include_realistic_reference=True,
+        )
+        assert result.realistic_reference_applied is True
+        # Removing the haircut (higher drift, lower vol) lifts the median and,
+        # most reliably, the pessimistic floor (p10). The optimistic tail (p90)
+        # is intentionally NOT asserted: inflating volatility in the conservative
+        # case fattens its upper tail, so p90 can move either way.
+        assert result.realistic_median_terminal >= result.median_terminal
+        assert result.realistic_p10_terminal > result.p10_terminal
+
+    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
+    def test_on_does_not_change_conservative_numbers(self, _mock):
+        base = _make_simulator(["AAPL"]).run(
+            horizon_years=10, n_sims=800, initial_value=100_000,
+        )
+        withref = _make_simulator(["AAPL"]).run(
+            horizon_years=10, n_sims=800, initial_value=100_000,
+            include_realistic_reference=True,
+        )
+        # The main (conservative) metrics must be unchanged by the extra pass.
+        assert abs(withref.median_terminal - base.median_terminal) < 1.0
+        assert abs(withref.p10_terminal - base.p10_terminal) < 1.0
+
+    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
+    def test_realistic_target_prob_is_populated(self, _mock):
+        result = _make_simulator(["AAPL"]).run(
+            horizon_years=10, n_sims=1500, initial_value=100_000,
+            target_value=120_000, include_realistic_reference=True,
+        )
+        # When a target is set, the realistic reference reports its own hit-rate.
+        assert result.realistic_prob_achieve_target_pct > 0.0
+
+
+# ------------------------------------------------------------------ #
+#  Decumulation / withdrawal strategies (Fase H.1)                     #
+# ------------------------------------------------------------------ #
+
+from portfolio.decumulation import WithdrawalStrategy  # noqa: E402
+
+
+class TestWithdrawalStrategyRun:
+    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
+    def test_no_strategy_leaves_decumulation_fields_default(self, _mock):
+        result = _make_simulator(["AAPL"]).run(
+            horizon_years=10, n_sims=400, initial_value=100_000
+        )
+        assert result.withdrawal_strategy_applied is None
+        assert result.prob_sustain_real_pct == 0.0
+        assert result.longevity_years == 0
+
+    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
+    def test_fixed_real_strategy_matches_legacy_annual_withdrawal(self, _mock):
+        """A fixed_real strategy must be byte-identical to the legacy path."""
+        legacy = _make_simulator(["AAPL"]).run(
+            horizon_years=15, n_sims=600, initial_value=100_000,
+            annual_withdrawal=4_000, withdrawal_growth_rate=0.03,
+        )
+        strat = WithdrawalStrategy.fixed_real(4_000)
+        new = _make_simulator(["AAPL"]).run(
+            horizon_years=15, n_sims=600, initial_value=100_000,
+            withdrawal_growth_rate=0.03, withdrawal_strategy=strat,
+        )
+        assert new.median_terminal == pytest.approx(legacy.median_terminal, abs=1e-6)
+        assert new.p10_terminal == pytest.approx(legacy.p10_terminal, abs=1e-6)
+        # Decumulation metrics are populated only on the strategy run.
+        assert new.withdrawal_strategy_applied["kind"] == "fixed_real"
+        assert legacy.withdrawal_strategy_applied is None
+
+    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
+    def test_strategy_populates_decumulation_metrics(self, _mock):
+        strat = WithdrawalStrategy.guardrails(0.04)
+        result = _make_simulator(["AAPL"]).run(
+            horizon_years=25, n_sims=800, initial_value=100_000,
+            withdrawal_growth_rate=0.03, withdrawal_strategy=strat,
+            longevity_years=25,
+        )
+        assert 0.0 <= result.prob_sustain_real_pct <= 100.0
+        assert 0.0 <= result.prob_legacy_pct <= 100.0
+        assert result.longevity_years == 25
+        assert result.withdrawal_strategy_applied["kind"] == "guardrails"
+
+    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
+    def test_guardrails_sustains_at_least_as_well_as_fixed(self, _mock):
+        """Guardrails cut spending in downturns → never worse sustain odds."""
+        common = dict(horizon_years=30, n_sims=1000, initial_value=100_000,
+                      withdrawal_growth_rate=0.03, longevity_years=30)
+        fixed = _make_simulator(["AAPL"]).run(
+            withdrawal_strategy=WithdrawalStrategy.fixed_real(5_000), **common
+        )
+        guard = _make_simulator(["AAPL"]).run(
+            withdrawal_strategy=WithdrawalStrategy.guardrails(0.05), **common
+        )
+        assert guard.prob_sustain_real_pct >= fixed.prob_sustain_real_pct
+
+    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
+    def test_dict_strategy_is_coerced(self, _mock):
+        result = _make_simulator(["AAPL"]).run(
+            horizon_years=10, n_sims=300, initial_value=100_000,
+            withdrawal_strategy={"kind": "constant_pct", "pct": 0.04},
+        )
+        assert result.withdrawal_strategy_applied["kind"] == "constant_pct"

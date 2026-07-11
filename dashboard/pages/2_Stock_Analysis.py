@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -17,7 +12,10 @@ from dashboard.shared import (
     _dim_bar_html,
     _get_ai_config,
     _moat_badge_html,
+    _tailwind_badge_html,
     cached_full_analysis,
+    render_ai_badge,
+    render_calc_badge,
 )
 from data.fetcher import get_history
 from data.preferences import UserPreferences
@@ -38,6 +36,20 @@ _CRYPTO_ALIASES: dict[str, str] = {
 
 def _normalize_ticker(s: str) -> str:
     return _CRYPTO_ALIASES.get(s.upper(), s)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _cross_source_check(symbol: str) -> dict | None:
+    """Cross-source reconciliation for the data-quality panel (Fase 3A).
+
+    Cached an hour so it never slows reruns; isolated from the analysis hot path
+    (the screener never calls this). Returns a small dict for display or None.
+    """
+    from analysis.data_reconciliation import reconcile_sources
+    from data.data_sources import default_fundamental_sources
+
+    report = reconcile_sources(symbol, default_fundamental_sources())
+    return report.as_dict()
 
 # ------------------------------------------------------------------ #
 #  Session guard (fresh-session direct navigation)                     #
@@ -80,7 +92,7 @@ with _sc2:
         "🔍 Analizar",
         type="primary",
         disabled=_selected is None,
-        use_container_width=True,
+        width="stretch",
     )
 
 # Manual ticker outside universe (with crypto alias resolution)
@@ -97,7 +109,7 @@ with st.expander("¿No está en el universo? Ingresalo manualmente"):
             st.caption(f"🔄 '{_manual_raw}' → `{_manual}`")
     with _mc2:
         if st.button("Analizar", key="analyze_manual", disabled=not _manual,
-                     use_container_width=True):
+                     width="stretch"):
             st.session_state.analysis_target = _manual
 
 # Gate: only trigger analysis on explicit button click
@@ -135,6 +147,44 @@ if symbol:
             symbol, ai_cfg.provider, ai_cfg.model, ai_cfg.enabled, ai_cfg.api_key
         )
 
+    # Track record capture (Gran Salto, Fase 1) — dedupe protects against reruns.
+    try:
+        from analysis.track_record import track_record_store
+
+        track_record_store.log_recommendation(
+            decision,
+            source=("ai" if ai_cfg.enabled else "rule_based"),
+            price_at_rec=getattr(fund, "current_price", None) or None,
+        )
+    except Exception:
+        pass  # never let logging break the page
+
+    # Cross-source data check (Gran Salto, Fase 3A) — verifies the numbers against
+    # a second source (SEC EDGAR) when available. Isolated + cached.
+    try:
+        from config import MULTI_SOURCE
+
+        if MULTI_SOURCE.enabled and not getattr(fund, "is_crypto", False):
+            _xs = _cross_source_check(symbol)
+            if _xs and len(_xs.get("sources_used", [])) >= 2:
+                _agree = _xs.get("agreement_pct")
+                _ncf = _xs.get("n_conflicts", 0)
+                _label = (
+                    f"🔬 Verificación entre fuentes: {', '.join(_xs['sources_used'])}"
+                    f" · acuerdo {_agree:.0f}%" if _agree is not None else "🔬 Verificación entre fuentes"
+                )
+                with st.expander(_label, expanded=bool(_ncf)):
+                    if _ncf:
+                        st.warning(f"{_ncf} discrepancia(s) entre fuentes — revisá antes de confiar en el score.")
+                        for _c in _xs.get("fields", []):
+                            if _c.get("conflict"):
+                                _vals = " vs ".join(f"{s}={v:,.0f}" for s, v in _c["values"].items())
+                                st.markdown(f"- **{_c['field']}**: {_vals}  (Δ {_c['max_rel_diff_pct']:.0f}%)")
+                    else:
+                        st.success("Los datos crudos coinciden entre las fuentes consultadas.")
+    except Exception:
+        pass  # cross-source check is best-effort
+
     # Header
     _prefs: UserPreferences = st.session_state.user_prefs
     _in_watchlist = symbol in _prefs.watched_tickers
@@ -159,13 +209,13 @@ if symbol:
     with wl_col:
         st.markdown("<br>", unsafe_allow_html=True)
         if _in_watchlist:
-            if st.button("❌ Quitar watchlist", use_container_width=True, key="wl_rm"):
+            if st.button("❌ Quitar watchlist", width="stretch", key="wl_rm"):
                 _prefs.unwatch(symbol)
                 st.session_state.user_prefs = _prefs
                 st.toast(f"{symbol} eliminado de la watchlist", icon="❌")
                 st.rerun()
         else:
-            if st.button("📋 Watchlist", type="secondary", use_container_width=True, key="wl_add"):
+            if st.button("📋 Watchlist", type="secondary", width="stretch", key="wl_add"):
                 _prefs.watch(symbol)
                 st.session_state.user_prefs = _prefs
                 st.toast(f"{symbol} agregado a la watchlist", icon="📋")
@@ -182,6 +232,7 @@ if symbol:
         </div>""",
         unsafe_allow_html=True,
     )
+    render_calc_badge("score fundamental y señal calculados con fórmulas (sin IA)")
 
     if _is_crypto:
         # ── Crypto score panel ──────────────────────────────────────────
@@ -381,6 +432,14 @@ if symbol:
                 )
                 if _moat_detail.ai_reasoning:
                     st.info(f"💬 {_moat_detail.ai_reasoning}")
+
+                # Structured macro for moat (structural)
+                _mmfs = getattr(_moat_detail, "macro_factors", None) or []
+                if _mmfs:
+                    st.caption("🌍 Macro que influyó en el moat / asignación:")
+                    for mf in _mmfs[:2]:
+                        st.caption(f"- {mf.get('factor','')}: {mf.get('effect_on_allocation_or_conviction','') or mf.get('impact','')}")
+
                 # Show durability + allocation recommendation if provided by Grok
                 _dur_eq  = getattr(_moat_detail, "moat_durability_years", 0)
                 _alloc_eq = getattr(_moat_detail, "recommended_max_allocation_conservative", None)
@@ -394,6 +453,70 @@ if symbol:
                     "activá un proveedor AI en **⚙️ Settings** para evaluar brand, "
                     "network effects, switching costs y barreras regulatorias."
                 )
+
+    # Sector-country structural tailwind (Idea 2) — equity only, visible even sin AI
+    _tw_detail = getattr(fund, "tailwind_detail", None)
+    if _tw_detail is not None and not _is_crypto:
+        _tw_class = getattr(fund, "tailwind_classification", "Neutral")
+        if _tw_class != "Neutral":
+            _tw_bonus = getattr(fund, "tailwind_bonus", 0.0)
+            with st.expander(
+                f"{_tw_detail.emoji} Cola de viento sector-país — {_tw_detail.label_es} "
+                f"({_tw_detail.tailwind_score:+.1f})",
+                expanded=False,
+            ):
+                st.markdown(
+                    _tailwind_badge_html(_tw_class, _tw_detail.tailwind_score, _tw_bonus),
+                    unsafe_allow_html=True,
+                )
+                st.markdown(f"**Rationale (curado):** {_tw_detail.explanation}")
+                tc1, tc2, tc3 = st.columns(3)
+                tc1.metric(
+                    "Durabilidad estimada",
+                    f"~{_tw_detail.durability_years} años" if _tw_detail.durability_years else "n/d",
+                    help="Años que se estima dura el factor estructural (curado)",
+                )
+                tc2.metric(
+                    "Efecto en score",
+                    f"{_tw_bonus:+.1f} pts",
+                    help="Bonus/penalización ya incluido en el Score Ajustado (cap configurable)",
+                )
+                tc3.metric(
+                    "Match",
+                    _tw_detail.matched_on or "—",
+                    help="Cómo se asignó: ticker explícito, industria+país o sector+país",
+                )
+                if getattr(_tw_detail, "ai_available", False) and _tw_detail.ai_reasoning:
+                    st.info(f"💬 {_tw_detail.ai_reasoning}")
+                    for _twf in (getattr(_tw_detail, "factors", None) or []):
+                        st.caption(
+                            f"- {_twf.get('factor', '')}: "
+                            f"{_twf.get('effect_on_allocation_or_conviction', '') or _twf.get('impact', '')}"
+                        )
+                st.caption(
+                    f"⚠️ Outlook estructural basado en datos curados a "
+                    f"{_tw_detail.last_reviewed or 'n/d'} — no es garantía de retornos. "
+                    "El factor afecta convicción y tamaño de posición, no reemplaza fundamentales."
+                )
+
+    # Verdict thesis up top: the conclusion (3 pros / 3 risks) before the detail.
+    if decision.rationale or decision.risks:
+        _t1, _t2 = st.columns(2)
+        with _t1:
+            st.markdown("**💡 Tesis (a favor)**")
+            if decision.rationale:
+                for _r in decision.rationale[:3]:
+                    st.markdown(f"✅ {_r}")
+            else:
+                st.caption("Sin factores positivos destacados.")
+        with _t2:
+            st.markdown("**⚠️ Riesgos**")
+            if decision.risks:
+                for _rk in decision.risks[:3]:
+                    st.markdown(f"⚠️ {_rk}")
+            else:
+                st.caption("Sin riesgos destacados.")
+        st.caption("Resumen arriba; el detalle completo está en las pestañas de abajo.")
 
     # Tabs
     tab_fund, tab_tech, tab_chart, tab_decision = st.tabs(
@@ -530,18 +653,37 @@ if symbol:
                 height=500,
                 legend=dict(orientation="h"),
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.warning("Historial de precios no disponible.")
 
     with tab_decision:
         if decision.ai_reasoning:
             st.subheader(f"🤖 Análisis AI — {ai_cfg.model}")
+            render_ai_badge("texto del modelo; los scores y métricas de abajo son cálculos")
             st.markdown(decision.ai_reasoning)
+
+            # New: structured macro_factors display (structural improvement)
+            _mfs = getattr(decision, "macro_factors", None) or []
+            if _mfs:
+                with st.expander("🌍 Factores macro considerados por Grok (estructurado)", expanded=False):
+                    for mf in _mfs:
+                        factor = mf.get("factor", "factor")
+                        why = mf.get("why_relevant", "")
+                        impact = mf.get("impact", "")
+                        effect = mf.get("effect_on_allocation_or_conviction", "")
+                        st.markdown(f"**{factor}**")
+                        if why:
+                            st.caption(f"Relevancia: {why}")
+                        if impact:
+                            st.caption(f"Impacto: {impact}")
+                        if effect:
+                            st.caption(f"Efecto en asignación/convicción: {effect}")
+                        st.divider()
             st.divider()
 
         # Grok allocation recommendation banner
-        _grok_alloc = decision.recommended_max_allocation_pct
+        _grok_alloc = getattr(decision, "recommended_max_allocation_pct", None)
         if _grok_alloc is not None:
             st.success(
                 f"🎯 **Grok sugiere máximo {_grok_alloc:.0f}% de asignación** para **{symbol}** "
@@ -575,7 +717,7 @@ if symbol:
         _portfolio_cost = sum(
             p.shares * p.avg_cost for p in _portfolio.positions.values()
         ) if _portfolio.positions else 0.0
-        _grok_alloc_pct = decision.recommended_max_allocation_pct
+        _grok_alloc_pct = getattr(decision, "recommended_max_allocation_pct", None)
         _price = fund.current_price or 100.0
 
         _suggested_shares = 10.0

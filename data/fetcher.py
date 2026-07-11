@@ -146,6 +146,15 @@ def get_dividends(symbol: str) -> pd.Series:
         return pd.Series(dtype=float)
 
 
+def get_info_age_hours(symbol: str) -> Optional[float]:
+    """Hours since ``ticker.info`` was cached for *symbol* (None = not cached).
+
+    Used by the data-quality layer (Fase E) to flag stale data in the
+    dashboard. Read-only — never triggers a network fetch.
+    """
+    return cache.get_age_hours(f"info:{symbol}")
+
+
 def compute_cagr(series: pd.Series, years: int) -> Optional[float]:
     """
     Compute CAGR from an annual time series (most recent value first).

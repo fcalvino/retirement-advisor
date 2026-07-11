@@ -1,0 +1,48 @@
+{
+  "_doc": [
+    "Curated sector-country structural tailwinds (Idea 2). Human-maintained — edit freely.",
+    "Fields per entry:",
+    "  key               unique id (kebab-case)",
+    "  sector / country  match against yfinance sector + country (case-insensitive)",
+    "  industry          optional — when set, matches (industry, country) with higher precedence than sector",
+    "  tickers           optional explicit overrides — highest precedence, match regardless of sector/country",
+    "  score             -5 (strong headwind) … +10 (strong tailwind). See TailwindConfig thresholds.",
+    "  durability_years  estimated years the structural outlook should last",
+    "  rationale         short human-readable explanation (shown in UI and passed to prompts)",
+    "  last_reviewed     YYYY-MM of last human review — keep fresh, stale claims erode trust",
+    "Matching precedence in analysis/tailwind.py: ticker > (industry, country) > (sector, country).",
+    "This file is the SOURCE OF TRUTH for tailwind claims; the LLM only interprets/enriches it."
+  ],
+  "entries": [
+    {
+      "key": "energy-argentina-vaca-muerta",
+      "sector": "Energy",
+      "country": "Argentina",
+      "tickers": ["YPF", "PAM", "CEPU", "VIST", "TGS"],
+      "score": 8.0,
+      "durability_years": 10,
+      "rationale": "Vaca Muerta (shale oil & gas) + otros descubrimientos en rampa estructural: crecimiento de producción multi-anual visible en guidance de operadores, buildout de infraestructura de exportación (oleoductos, GNL) y política energética orientada a exportaciones. Beneficia a productores y midstream argentinos por 7-15 años.",
+      "last_reviewed": "2026-06"
+    },
+    {
+      "key": "technology-united-states-ai-capex",
+      "sector": "Technology",
+      "country": "United States",
+      "score": 4.0,
+      "durability_years": 6,
+      "rationale": "Ciclo estructural de capex en IA y datacenters (compute, software de plataforma, semis) con demanda visible en guidance de hyperscalers. Cola de viento moderada: real pero parcialmente descontada en valuaciones.",
+      "last_reviewed": "2026-06"
+    },
+    {
+      "key": "utilities-argentina-regulated-tariffs",
+      "sector": "Utilities",
+      "industry": "Utilities - Regulated Electric",
+      "country": "Argentina",
+      "tickers": ["EDN"],
+      "score": -3.0,
+      "durability_years": 5,
+      "rationale": "Distribución eléctrica regulada en Argentina: historial de congelamiento tarifario bajo inflación alta, riesgo regulatorio recurrente y margen dependiente de decisiones políticas. Viento de frente estructural mientras no haya marco tarifario estable multi-anual.",
+      "last_reviewed": "2026-06"
+    }
+  ]
+}

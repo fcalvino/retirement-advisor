@@ -16,12 +16,13 @@ FundamentalResult with equity fields set to None and is_crypto=True.
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
-import numpy as np
 import pandas as pd
 from loguru import logger
 
 from analysis.moat import MoatAnalyzer, MoatDetail
 from analysis.scoring import ConsistencyDetail, EnhancedScoring, PiotroskiDetail
+from analysis.tailwind import TailwindAnalyzer, TailwindDetail
+from config import STRATEGY
 from config import THRESHOLDS as T
 from data.fetcher import (
     _safe_float,
@@ -85,6 +86,12 @@ class FundamentalResult:
     moat_classification: str = "None"       # Wide | Narrow | Minimal | None
     moat_detail: Optional[MoatDetail] = None
 
+    # Sector-country structural tailwind (Idea 2)
+    tailwind_score: float = 0.0                  # -5…+10 curated structural outlook
+    tailwind_bonus: float = 0.0                  # capped additive bonus (can be negative)
+    tailwind_classification: str = "Neutral"     # Strong | Moderate | Neutral | Headwind
+    tailwind_detail: Optional[TailwindDetail] = None
+
     # Crypto asset fields (Phase 4)
     is_crypto: bool = False                  # True when analyzed via CryptoAnalyzer
     crypto_moat_detail: Optional[Any] = None # CryptoMoatDetail — typed as Any to avoid circular import
@@ -93,6 +100,9 @@ class FundamentalResult:
     # full_analysis() in strategy.py reuses this instead of calling TechnicalAnalyzer again.
     _cached_tech: Optional[Any] = None
 
+    # Data-quality transparency (Fase E) — see compute_data_quality()
+    data_quality: Optional[Dict[str, Any]] = None
+
     # Human-readable breakdown
     notes: Dict[str, str] = field(default_factory=dict)
     warnings: list = field(default_factory=list)
@@ -100,8 +110,94 @@ class FundamentalResult:
     def is_value_stock(self) -> bool:
         return (
             self.margin_of_safety_pct is not None
-            and self.margin_of_safety_pct >= 10.0
+            and self.margin_of_safety_pct >= STRATEGY.min_margin_of_safety_pct
         )
+
+
+# ------------------------------------------------------------------ #
+#  Data quality (Fase E)                                               #
+# ------------------------------------------------------------------ #
+
+# Equity key metrics whose absence (None) means yfinance returned partial
+# data and the corresponding score dimension silently fell back to neutral.
+# dividend_yield is deliberately excluded: None is legitimate for growth stocks.
+_QUALITY_KEY_FIELDS = (
+    "roe", "roic", "net_margin", "gross_margin",
+    "debt_equity", "current_ratio",
+    "pe_ratio", "pb_ratio",
+    "revenue_cagr_5y", "eps_cagr_5y",
+)
+
+
+def compute_data_quality(
+    result: "FundamentalResult",
+    *,
+    freshness_hours: Optional[float] = None,
+    has_financials: bool = True,
+    config=None,
+) -> Dict[str, Any]:
+    """Assess how complete/fresh the underlying yfinance data is for a ticker.
+
+    Pure function (no network, no Streamlit) so it stays unit-testable offline.
+
+    Returns a small JSON-serializable dict:
+        level           — "good" | "partial" | "poor"
+        missing_fields  — list of key metric names that came back empty
+        n_missing / n_checked
+        freshness_hours — age of the cached info (None = unknown / just fetched)
+        stale           — True when freshness exceeds DATA_QUALITY.stale_warning_hours
+        warnings        — human-readable notes for the UI
+
+    Crypto and index/ETF tickers have no financial statements by design, so
+    they are only checked for a usable market price.
+    """
+    if config is None:
+        from config import DATA_QUALITY as config  # noqa: N811 — singleton default
+
+    stale = bool(freshness_hours is not None and freshness_hours >= config.stale_warning_hours)
+    warnings: list = []
+    if stale:
+        warnings.append(f"Datos cacheados hace {freshness_hours:.0f}h — considerá refrescar.")
+
+    # Non-fundamental assets: only a usable price matters.
+    if getattr(result, "is_crypto", False) or result.sector in ("Crypto", "Index", "ETF"):
+        has_price = float(getattr(result, "current_price", 0.0) or 0.0) > 0
+        if not has_price:
+            warnings.append("Sin precio de mercado disponible.")
+        return {
+            "level": "good" if has_price else "poor",
+            "missing_fields": [] if has_price else ["current_price"],
+            "n_missing": 0 if has_price else 1,
+            "n_checked": 1,
+            "freshness_hours": round(freshness_hours, 1) if freshness_hours is not None else None,
+            "stale": stale,
+            "warnings": warnings,
+        }
+
+    missing = [f for f in _QUALITY_KEY_FIELDS if getattr(result, f, None) is None]
+    n_missing = len(missing)
+
+    if not has_financials:
+        level = "poor"
+        warnings.append("Sin estados financieros — scores de salud/crecimiento son neutrales.")
+    elif n_missing >= config.poor_missing_fields:
+        level = "poor"
+        warnings.append(f"{n_missing} métricas clave sin datos — el score puede estar subestimado.")
+    elif n_missing >= config.partial_missing_fields:
+        level = "partial"
+        warnings.append(f"{n_missing} métricas clave sin datos.")
+    else:
+        level = "good"
+
+    return {
+        "level": level,
+        "missing_fields": missing,
+        "n_missing": n_missing,
+        "n_checked": len(_QUALITY_KEY_FIELDS),
+        "freshness_hours": round(freshness_hours, 1) if freshness_hours is not None else None,
+        "stale": stale,
+        "warnings": warnings,
+    }
 
 
 class FundamentalAnalyzer:
@@ -119,7 +215,12 @@ class FundamentalAnalyzer:
         from config import is_crypto, normalize_crypto_ticker
         if is_crypto(symbol):
             from analysis.crypto_analyzer import CryptoAnalyzer
-            return CryptoAnalyzer().analyze(normalize_crypto_ticker(symbol), ai_config)
+            from data.fetcher import get_info_age_hours
+            crypto_result = CryptoAnalyzer().analyze(normalize_crypto_ticker(symbol), ai_config)
+            crypto_result.data_quality = compute_data_quality(
+                crypto_result, freshness_hours=get_info_age_hours(crypto_result.symbol),
+            )
+            return crypto_result
         # ─────────────────────────────────────────────────────────────────
 
         result = FundamentalResult(symbol=symbol)
@@ -127,6 +228,7 @@ class FundamentalAnalyzer:
         info = get_info(symbol)
         if not info:
             result.warnings.append("No data available from yfinance.")
+            result.data_quality = compute_data_quality(result, has_financials=False)
             return result
 
         financials = get_financials(symbol)
@@ -208,18 +310,50 @@ class FundamentalAnalyzer:
         result.moat_classification = moat.classification
         result.moat_detail = moat
 
-        # Final adjusted_score = base + consistency + piotroski_bonus + moat_bonus (capped at 100)
+        # Sector-country structural tailwind (Idea 2): curated always, AI enrichment optional.
+        # Neutral (no curated match / disabled) → bonus 0 → numbers identical to pre-feature.
+        tailwind_analyzer = TailwindAnalyzer()
+        tailwind = tailwind_analyzer.analyze(
+            symbol,
+            sector=result.sector,
+            country=info.get("country", "") or "",
+            industry=result.industry,
+        )
+        if ai_config and getattr(ai_config, "enabled", False):
+            tailwind = tailwind_analyzer.analyze_with_ai(tailwind, symbol, info, ai_config)
+        result.tailwind_score = tailwind.tailwind_score
+        result.tailwind_bonus = tailwind.bonus
+        result.tailwind_classification = tailwind.classification
+        result.tailwind_detail = tailwind
+
+        # Final adjusted_score = base + consistency + piotroski_bonus + moat_bonus
+        #                        + tailwind_bonus (can be negative), capped to [0, 100]
         result.adjusted_score = round(
             min(
-                result.total_score + result.consistency_score +
-                result.piotroski_bonus + result.moat_bonus,
+                max(
+                    result.total_score + result.consistency_score +
+                    result.piotroski_bonus + result.moat_bonus +
+                    result.tailwind_bonus,
+                    0.0,
+                ),
                 100.0,
             ), 1
         )
 
+        # Data quality (Fase E): completeness of key metrics + cache freshness.
+        from data.fetcher import get_info_age_hours
+        result.data_quality = compute_data_quality(
+            result,
+            freshness_hours=get_info_age_hours(symbol),
+            has_financials=bool(financials),
+        )
+        if result.data_quality["level"] != "good":
+            result.warnings.extend(result.data_quality["warnings"])
+
         logger.info(
             f"{symbol}: base={result.total_score:.1f} consistency={result.consistency_score:.1f} "
             f"piotroski={result.piotroski_score}/9 moat={result.moat_score:.1f}/{result.moat_classification} "
+            f"tailwind={result.tailwind_classification}({result.tailwind_bonus:+.1f}) "
             f"adjusted={result.adjusted_score:.1f}"
         )
         return result

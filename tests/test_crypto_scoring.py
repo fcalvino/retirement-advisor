@@ -13,10 +13,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from analysis.crypto_analyzer import CryptoAnalyzer, CryptoMoatDetail
-
 
 # ------------------------------------------------------------------ #
 #  Helpers                                                             #

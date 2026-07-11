@@ -19,14 +19,12 @@ Usage:
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 import numpy as np
 
 from portfolio.monte_carlo import MonteCarloResult, MonteCarloSimulator
-
 
 # ------------------------------------------------------------------ #
 #  Enums / constants                                                   #
@@ -152,16 +150,6 @@ class GoalResult:
     @property
     def median_terminal(self) -> float:
         return self.mc_result.median_terminal
-
-    @property
-    def shortfall_median(self) -> float:
-        """Median shortfall vs target (negative = surplus)."""
-        return max(0.0, self.target_nominal - self.median_terminal)
-
-    @property
-    def surplus_median(self) -> float:
-        """Median surplus above target (0 if under)."""
-        return max(0.0, self.median_terminal - self.target_nominal)
 
     @property
     def feasibility_label(self) -> str:

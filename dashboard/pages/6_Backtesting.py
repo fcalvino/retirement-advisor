@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -88,7 +83,7 @@ st.caption(
 )
 
 col_run, col_load = st.columns([2, 1])
-run_btn     = col_run.button("▶ Correr Backtest", type="primary", use_container_width=True)
+run_btn     = col_run.button("▶ Correr Backtest", type="primary", width="stretch")
 saved_files = BacktestEngine.list_saved()
 load_choice = col_load.selectbox(
     "Cargar resultado guardado",
@@ -210,7 +205,7 @@ with tab_curve:
             legend=dict(orientation="h"),
             hovermode="x unified",
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     else:
         st.info("Sin datos de curva de equity.")
 
@@ -232,7 +227,7 @@ with tab_drawdown:
             height=300,
             hovermode="x unified",
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
 with tab_scatter:
     if bt_result.score_vs_return:
@@ -261,7 +256,7 @@ with tab_scatter:
             annotation_text=f"{bt_result.benchmark} CAGR",
         )
         fig.update_layout(height=480, showlegend=False)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         st.caption("Cada punto es un ticker del universo. La línea naranja es el CAGR del benchmark.")
 
 with tab_tickers:
@@ -287,7 +282,7 @@ with tab_tickers:
         tdf = pd.DataFrame(rows)
         st.dataframe(
             tdf,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             column_config={
                 "CAGR %":    st.column_config.NumberColumn(format="%.1f%%"),

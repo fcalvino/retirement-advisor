@@ -16,14 +16,19 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-# Allow imports from project root when a page is run directly
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Seed repo root so first-party imports work when this module loads first.
+_sys_root = Path(__file__).resolve().parent.parent
+if str(_sys_root) not in sys.path:
+    sys.path.insert(0, str(_sys_root))
+from bootstrap import ensure_project_root
+
+ensure_project_root()
 
 import streamlit as st
 from loguru import logger
 
 from analysis.strategy import full_analysis
-from config import DEFAULT_TICKERS, AIConfig
+from config import AIConfig
 
 # ------------------------------------------------------------------ #
 #  .env helpers                                                        #
@@ -62,6 +67,41 @@ def _save_ai_config_to_env(
     elif "AI_API_KEY" in env:
         del env["AI_API_KEY"]
     _ENV_PATH.write_text("\n".join(f"{k}={v}" for k, v in env.items()) + "\n")
+
+
+def is_dev_mode() -> bool:
+    """Whether developer/admin tools (Eval IA, Calidad de Datos, Macro RAG) are visible.
+
+    True when the ``DEV_MODE`` env var is truthy *or* the user enabled the toggle
+    in Settings (stored in ``session_state["dev_mode"]``). Keeps the everyday menu
+    clean for regular use while leaving the technical pages one switch away.
+    """
+    if str(os.getenv("DEV_MODE", "")).lower() in {"1", "true", "yes", "on"}:
+        return True
+    try:
+        return bool(st.session_state.get("dev_mode", False))
+    except Exception:  # pragma: no cover - no session context
+        return False
+
+
+# ------------------------------------------------------------------ #
+#  Calculado vs IA — etiquetas de procedencia del dato                #
+# ------------------------------------------------------------------ #
+#  Make it explicit what is a deterministic calculation vs what is an
+#  AI interpretation, so a model's prose is never read as a hard number.
+
+CALC_BADGE = "📊 Calculado"
+AI_BADGE = "🤖 Interpretación IA"
+
+
+def render_calc_badge(detail: str = "sale de una fórmula, no de la IA") -> None:
+    """Caption marking a value as a deterministic calculation."""
+    st.caption(f"{CALC_BADGE} · {detail}")
+
+
+def render_ai_badge(detail: str = "lo dijo el modelo — es una opinión, no un cálculo") -> None:
+    """Caption marking content as an AI interpretation."""
+    st.caption(f"{AI_BADGE} · {detail}")
 
 
 # ------------------------------------------------------------------ #
@@ -107,6 +147,73 @@ def score_bar(score: float) -> str:
     return "█" * filled + "░" * (10 - filled) + f"  {score:.0f}/100"
 
 
+_DQ_EMOJI = {"good": "🟢", "partial": "🟡", "poor": "🔴"}
+_DQ_LABEL = {"good": "OK", "partial": "Parcial", "poor": "Pobre"}
+
+# Sector-country structural tailwind (Idea 2)
+_TAILWIND_EMOJI: dict[str, str] = {
+    "Strong":   "🌬️",
+    "Moderate": "🍃",
+    "Neutral":  "⚪",
+    "Headwind": "🌪️",
+}
+
+_TAILWIND_COLOR: dict[str, str] = {
+    "Strong":   "#00C851",
+    "Moderate": "#39b54a",
+    "Neutral":  "#888888",
+    "Headwind": "#ff4444",
+}
+
+_TAILWIND_LABEL_ES: dict[str, str] = {
+    "Strong":   "Fuerte",
+    "Moderate": "Moderada",
+    "Neutral":  "—",
+    "Headwind": "Headwind",
+}
+
+
+def tailwind_badge(classification: str | None, score: float = 0.0) -> str:
+    """Compact table-cell badge for a sector-country tailwind (Idea 2).
+
+    Neutral / missing → "—" so untouched tickers stay visually quiet.
+    """
+    cls = classification or "Neutral"
+    if cls == "Neutral":
+        return "—"
+    emoji = _TAILWIND_EMOJI.get(cls, "⚪")
+    label = _TAILWIND_LABEL_ES.get(cls, cls)
+    return f"{emoji} {label} ({score:+.0f})"
+
+
+def _tailwind_badge_html(classification: str, score: float, bonus: float) -> str:
+    """HTML badge colored by tailwind classification for st.markdown()."""
+    color = _TAILWIND_COLOR.get(classification, "#888")
+    emoji = _TAILWIND_EMOJI.get(classification, "⚪")
+    label = {
+        "Strong":   "Cola de viento fuerte",
+        "Moderate": "Cola de viento moderada",
+        "Neutral":  "Neutral",
+        "Headwind": "Viento de frente",
+    }.get(classification, classification)
+    return (
+        f'<span style="background:{color}22;border:1px solid {color};color:{color};'
+        f'padding:3px 12px;border-radius:14px;font-weight:700;font-size:0.9em;">'
+        f'{emoji} {label} &nbsp;·&nbsp; {score:+.1f} &nbsp;·&nbsp; {bonus:+.1f} pts</span>'
+    )
+
+
+def data_quality_badge(dq: dict | None) -> str:
+    """Compact table-cell badge for a FundamentalResult.data_quality dict (Fase E)."""
+    if not dq:
+        return "—"
+    level = dq.get("level", "")
+    label = f"{_DQ_EMOJI.get(level, '⚪')} {_DQ_LABEL.get(level, '—')}"
+    if dq.get("stale"):
+        label += " ⏳"
+    return label
+
+
 def _moat_badge_html(classification: str, score: float, bonus: float) -> str:
     """HTML badge colored by moat classification for st.markdown()."""
     color = _MOAT_COLOR.get(classification, "#888")
@@ -134,6 +241,721 @@ def _dim_bar_html(score: float, max_score: float = 2.0) -> str:
         f'<div style="width:{pct:.0f}%;background:{color};height:7px;border-radius:4px;"></div>'
         f'</div>'
     )
+
+
+# ------------------------------------------------------------------ #
+#  User-profile helpers (onboarding — Fase A)                          #
+# ------------------------------------------------------------------ #
+
+# Horizon options offered by the Monte Carlo selectbox in Simulaciones.
+_SIM_HORIZON_OPTIONS = (5, 10, 15, 20, 25, 30)
+
+
+def get_user_prefs():
+    """Return the session UserPreferences, loading + caching it on first use.
+
+    Safe to call from pages reached via direct st.navigation() access where
+    app.py's startup block may not have run yet.
+    """
+    prefs = st.session_state.get("user_prefs")
+    if prefs is None or not hasattr(prefs, "is_onboarded"):
+        from data.preferences import UserPreferences
+        prefs = UserPreferences.load()
+        st.session_state.user_prefs = prefs
+    return prefs
+
+
+def _snap_sim_horizon(years: int) -> int:
+    """Snap an arbitrary horizon to the nearest Monte Carlo selectbox option."""
+    if not years or years <= 0:
+        return 20
+    return min(_SIM_HORIZON_OPTIONS, key=lambda o: abs(o - years))
+
+
+def seed_session_defaults_from_profile(prefs, *, force: bool = False) -> None:
+    """Seed Optimizer/Simulaciones widget defaults from the personal profile.
+
+    Idempotent per session: runs once at startup for onboarded users so the
+    Optimizer opens with their capital and Simulaciones with a realistic
+    horizon. ``force=True`` is used right after the wizard saves, refreshing
+    the defaults and letting the Optimizer re-derive its profile from
+    ``default_profile`` (we pop its widget-state keys instead of duplicating
+    the emoji labels here).
+    """
+    if not getattr(prefs, "is_onboarded", False):
+        return
+    if st.session_state.get("_profile_defaults_seeded") and not force:
+        return
+
+    capital = int(max(0.0, getattr(prefs, "current_capital", 0.0)))
+    if capital > 0 and (force or "optimizer_total_capital" not in st.session_state):
+        st.session_state["optimizer_total_capital"] = capital
+
+    horizon = _snap_sim_horizon(getattr(prefs, "primary_horizon_years", 0))
+    sim_capital = min(max(capital or 100_000, 1_000), 10_000_000)
+    if force or "horizon_years" not in st.session_state:
+        st.session_state["horizon_years"] = horizon
+    if force or "initial_value" not in st.session_state:
+        st.session_state["initial_value"] = sim_capital
+
+    if force:
+        # Let Optimizer re-derive its profile radio from the updated default_profile.
+        st.session_state.pop("optimizer_profile_label", None)
+        st.session_state.pop("optimizer_last_saved_profile", None)
+
+    st.session_state["_profile_defaults_seeded"] = True
+
+
+# ------------------------------------------------------------------ #
+#  Mi Plan de Retiro — living-plan helpers (Fase C)                    #
+# ------------------------------------------------------------------ #
+
+def plan_price_lookup(symbol: str):
+    """Best-effort current price for a symbol, using the fetcher's disk cache.
+
+    Returns the market price (float) or None. Used both to capture
+    ``price_at_save`` when persisting a plan and to compute "plan vs reality"
+    deltas on refresh. The underlying ``get_info`` is cached for
+    ``CACHE_TTL_HOURS`` so repeated calls stay cheap.
+    """
+    try:
+        from data.fetcher import get_info
+        info = get_info(symbol)
+        price = info.get("currentPrice") or info.get("regularMarketPrice")
+        return float(price) if price else None
+    except Exception as exc:
+        logger.debug(f"plan_price_lookup failed for {symbol}: {exc}")
+        return None
+
+
+def compute_plan_health(snap, *, core_only: bool = False) -> dict:
+    """Compute a saved plan's market delta / health vs today (Fase C).
+
+    Thin wrapper over ``data.plan_context.compute_plan_vs_reality`` that injects
+    the cached price lookup. Run behind an explicit "Refrescar" button so the
+    (controlled) price fetch is user-initiated, not automatic on page load.
+    """
+    from data.plan_context import compute_plan_vs_reality
+    return compute_plan_vs_reality(snap, plan_price_lookup, core_only=core_only)
+
+
+def record_plan_health_now(snap, *, source: str = "manual", refreshed: dict | None = None):
+    """Record a longitudinal health snapshot for a plan (Fase H.2).
+
+    Thin wrapper over ``data.plan_context.record_plan_health`` injecting the
+    cached price lookup. ``refreshed`` reuses an existing plan-vs-reality result
+    to avoid a second price fetch. Returns the new record (or None if deduped).
+    """
+    from data.plan_context import record_plan_health
+    return record_plan_health(snap, plan_price_lookup, source=source, refreshed=refreshed)
+
+
+def plan_health_history(plan_id: str):
+    """Chronological health records + a longitudinal-drift summary (Fase H.2)."""
+    from data.plan_context import compute_longitudinal_drift, get_plan_health_history
+    history = get_plan_health_history(plan_id)
+    return history, compute_longitudinal_drift(history)
+
+
+def load_sample_plan_into_store(key: str):
+    """Import a bundled sample plan and persist it (Fase H.4).
+
+    Reuses ``data.plan_context.load_sample_plan`` (which goes through the same
+    import/validation path as user uploads) and upserts it into the plan store
+    so it appears in "Planes guardados" and can be activated immediately.
+    Returns the saved PlanSnapshot.
+    """
+    from data.plan_context import load_sample_plan
+    from data.plan_store import plan_store
+
+    snap = load_sample_plan(key)
+    plan_store.upsert(snap)
+    return snap
+
+
+# ------------------------------------------------------------------ #
+#  Sensitivity / scenario lab (Fase H.3)                               #
+# ------------------------------------------------------------------ #
+
+def _sensitivity_run_fn(params: dict):
+    """Map a sensitivity params dict to a (cached) Monte Carlo run.
+
+    Bridges ``portfolio.sensitivity`` (which speaks a neutral params dict) to
+    ``cached_monte_carlo``. Economic drags are passed as a single annual total
+    (``drags_total_pct``) so the lab can perturb them with one knob.
+    """
+    drag_total = float(params.get("drags_total_pct", 0.0) or 0.0)
+    drags_tuple = (("enabled", True), ("total_annual_drag_pct", round(drag_total, 4))) if drag_total > 0 else None
+    return cached_monte_carlo(
+        symbols=tuple(params["symbols"]),
+        weights_tuple=tuple(params["weights"]) if params.get("weights") else None,
+        horizon_years=int(params.get("horizon_years", 20)),
+        n_sims=int(params.get("n_sims", 2_000)),
+        initial_value=float(params.get("initial_value", 100_000)),
+        annual_withdrawal=float(params.get("annual_withdrawal", 0.0)),
+        target_value=float(params.get("target_value", 0.0)),
+        withdrawal_growth_rate=float(params.get("withdrawal_growth_rate", 0.0)),
+        vol_scale=float(params.get("vol_scale", 1.0)),
+        return_scale=float(params.get("return_scale", 1.0)),
+        drags_tuple=drags_tuple,
+        withdrawal_tuple=params.get("withdrawal_tuple"),
+        longevity_years=params.get("longevity_years"),
+    )
+
+
+def run_plan_sensitivity(base_params: dict, *, primary_metric: str = "p10_terminal"):
+    """Run the sensitivity lab for the given base params (Fase H.3).
+
+    Returns a ``SensitivityResult``. ``base_params`` mirrors ``cached_monte_carlo``
+    inputs plus ``drags_total_pct`` and ``withdrawal_tuple``. Uses the lighter
+    ``SENSITIVITY.n_sims`` for speed unless ``n_sims`` is already set.
+    """
+    from config import SENSITIVITY
+    from portfolio.sensitivity import run_sensitivity
+
+    params = dict(base_params)
+    params.setdefault("n_sims", SENSITIVITY.n_sims)
+    return run_sensitivity(_sensitivity_run_fn, params, primary_metric=primary_metric)
+
+
+def plan_journey_status(prefs) -> list[dict]:
+    """Status of the guided "from zero to active plan" flow (Fase E).
+
+    Returns the 4 canonical steps with a ``done`` flag each, so Home and
+    Mi Plan can render progress + the next-step CTA consistently:
+      1. Personal profile (onboarding wizard)
+      2. Optimized portfolio in session (Optimizer)
+      3. At least one saved plan (Mi Plan → Guardar)
+      4. An active plan (Mi Plan → Activar)
+    """
+    from data.plan_store import plan_store
+
+    has_profile = bool(getattr(prefs, "is_onboarded", False))
+    has_opt = bool(
+        st.session_state.get("optimizer_result")
+        or st.session_state.get("optimizer_prev_result")
+    )
+    has_saved = bool(plan_store.list())
+    has_active = bool((getattr(prefs, "active_plan_id", "") or "").strip())
+
+    return [
+        {
+            "label": "Definí tu perfil de retiro",
+            "done": has_profile,
+            "page": None,  # wizard lives on Home/Settings
+            "hint": "1 minuto: edad, capital, ahorro y tolerancia al riesgo.",
+        },
+        {
+            "label": "Optimizá tu cartera",
+            "done": has_opt,
+            "page": "5_Optimizer.py",
+            "hint": "El Optimizer ya usa tu perfil y capital como defaults.",
+        },
+        {
+            "label": "Guardá tu plan",
+            "done": has_saved,
+            "page": "12_Plan.py",
+            "hint": "Consolidá cartera + metas + Monte Carlo con un nombre.",
+        },
+        {
+            "label": "Activalo como objetivo vivo",
+            "done": has_active,
+            "page": "12_Plan.py",
+            "hint": "El tracker y las alertas de drift lo usan como tu meta.",
+        },
+        {
+            # Item 2 — protect the plan once it exists. "done" is best-effort:
+            # set when the user exports a plan (session flag, or a prefs flag if
+            # the model exposes one). Only nudged once there is a plan to back up.
+            "label": "Respaldá tu plan",
+            "done": bool(
+                st.session_state.get("plan_exported")
+                or getattr(prefs, "plan_exported_at", "")
+            ) or not has_saved,
+            "page": "12_Plan.py",
+            "hint": "Exportá a JSON y guardalo en tu nube/USB: sobrevive reinstalaciones.",
+        },
+    ]
+
+
+def _days_since_iso(ts: str) -> int | None:
+    """Whole days since an ISO timestamp, or None if missing/unparseable."""
+    if not ts:
+        return None
+    try:
+        from datetime import datetime
+        dt = datetime.fromisoformat(str(ts))
+        return max(0, (datetime.now(dt.tzinfo) - dt).days)
+    except Exception:
+        return None
+
+
+def next_priority_action(prefs) -> dict:
+    """The single most urgent thing to do right now ("Hoy hacé esto").
+
+    Cheap by design — no live price fetches on home load. Looks at the journey
+    state, unread alerts and plan freshness, and returns one action dict:
+    ``{icon, label, hint, page, tone}`` where tone is ``primary``/``warning``/``ok``.
+    A single action (not a list) keeps the cognitive load low.
+    """
+    # 1. Journey incomplete → the next step is the priority.
+    steps = plan_journey_status(prefs)
+    next_undone = next((s for s in steps if not s["done"]), None)
+    if next_undone is not None:
+        return {
+            "icon": "🚀", "label": next_undone["label"], "hint": next_undone["hint"],
+            "page": next_undone["page"], "tone": "primary",
+        }
+
+    # 2. Active plan exists — operational signals (all cheap, no price fetch).
+    try:
+        from alerts.store import alert_store
+        n_unread = alert_store.get_unread_count()
+    except Exception:
+        n_unread = 0
+    if n_unread > 0:
+        return {
+            "icon": "🔔", "label": f"Revisá {n_unread} alerta(s) sin leer",
+            "hint": "Cambios de señal o de salud del plan que esperan tu atención.",
+            "page": "8_Alertas.py", "tone": "warning",
+        }
+
+    try:
+        from data.plan_context import get_active_plan
+        snap = get_active_plan(prefs)
+    except Exception:
+        snap = None
+    if snap is not None:
+        _age = _days_since_iso(getattr(snap, "last_refreshed_at", "") or "")
+        if _age is None or _age > 30:
+            return {
+                "icon": "🩺", "label": "Revisá la salud de tu plan",
+                "hint": "Hace más de un mes (o nunca) que no comparás tu plan con el mercado.",
+                "page": "12_Plan.py", "tone": "warning",
+            }
+
+    # 3. Nothing urgent.
+    return {
+        "icon": "✅", "label": "Tu plan está en línea",
+        "hint": "No hay nada urgente — el tracker y las alertas lo siguen monitoreando.",
+        "page": "12_Plan.py", "tone": "ok",
+    }
+
+
+# ------------------------------------------------------------------ #
+#  Plan portability — export bundle (Item 2)                          #
+# ------------------------------------------------------------------ #
+
+def export_plan_bundle(snap, prefs=None) -> tuple[bytes, str, str]:
+    """Build a portable, self-contained export of a saved plan (Item 2).
+
+    Returns ``(json_bytes, filename, instructions_md)``:
+      - json_bytes: a versioned bundle ``{schema, exported_at, app, snapshot,
+        personal?}`` ready to download and re-import on any machine.
+      - filename: a safe, dated filename.
+      - instructions_md: human-readable "how to restore" notes.
+
+    Reuses ``PlanSnapshot.to_dict()`` entirely — no new serialization logic.
+    """
+    import json as _json
+    from datetime import datetime as _dt
+
+    bundle = {
+        "schema": "retirement_advisor.plan_bundle",
+        "schema_version": getattr(snap, "export_version", "1.0") or "1.0",
+        "exported_at": _dt.now().isoformat(timespec="seconds"),
+        "snapshot": snap.to_dict(),
+    }
+    # Optionally include a light personal-profile copy for full portability.
+    if prefs is not None and getattr(prefs, "is_onboarded", False):
+        bundle["personal"] = {
+            "age": getattr(prefs, "age", None),
+            "retirement_age": getattr(prefs, "retirement_age", None),
+            "primary_horizon_years": getattr(prefs, "primary_horizon_years", None),
+            "current_capital": getattr(prefs, "current_capital", None),
+            "monthly_savings": getattr(prefs, "monthly_savings", None),
+            "profile_key": getattr(prefs, "profile_key", ""),
+        }
+
+    json_bytes = _json.dumps(bundle, indent=2, ensure_ascii=False).encode("utf-8")
+    safe_id = "".join(c for c in (snap.id or "plan") if c.isalnum() or c in "-_") or "plan"
+    filename = f"plan_{safe_id}_{_dt.now().strftime('%Y%m%d')}.json"
+
+    drag_note = ""
+    if getattr(snap, "drags_at_save", None):
+        drag_note = (
+            f"\n- **Supuestos (drags) al guardar:** "
+            f"{snap.drags_at_save.get('total_annual_drag_pct', 0):.2f}%/año.\n"
+        )
+
+    instructions_md = (
+        f"# Backup de tu plan de retiro — {snap.name}\n\n"
+        f"Exportado el {bundle['exported_at']} · esquema v{bundle['schema_version']}.\n\n"
+        f"## Cómo restaurar\n"
+        f"1. Abrí **Retirement Advisor → 🗺️ Mi Plan**.\n"
+        f"2. En **«📦 Importar / Restaurar plan»**, subí el archivo `{filename}`.\n"
+        f"3. Revisá la vista previa y, si querés, **activalo** como objetivo vivo.\n\n"
+        f"## Qué contiene\n"
+        f"- Cartera objetivo ({snap.n_positions} posiciones), núcleo, métricas, metas y "
+        f"resumen Monte Carlo.{drag_note}\n"
+        f"- Este JSON es autocontenido y versionado: podés guardarlo en tu nube/USB y "
+        f"restaurarlo en cualquier máquina, incluso tras reinstalar.\n\n"
+        f"> Recomendación: guardá una copia cada vez que actualices el plan de forma "
+        f"importante.\n"
+    )
+    return json_bytes, filename, instructions_md
+
+
+# ------------------------------------------------------------------ #
+#  Custom tickers + effective universe (Item 3)                        #
+# ------------------------------------------------------------------ #
+
+def load_universe_with_customs(key: str, prefs=None) -> list[str]:
+    """Load a curated universe and append the user's custom tickers (Item 3).
+
+    Thin wrapper over ``data.universe_loader.get_effective_universe`` that pulls
+    the custom symbols from prefs and records which customs were actually merged
+    in ``st.session_state['custom_tickers_in_universe']`` so Screener/Optimizer
+    can badge them. With no custom tickers this equals ``load_universe(key)``.
+    """
+    from data.universe_loader import get_effective_universe
+
+    prefs = prefs if prefs is not None else get_user_prefs()
+    customs = prefs.custom_symbols() if hasattr(prefs, "custom_symbols") else []
+    tickers, custom_used = get_effective_universe(key, customs)
+    st.session_state["custom_tickers_in_universe"] = custom_used
+    return tickers
+
+
+def is_custom_ticker(symbol: str) -> bool:
+    """True if ``symbol`` is one of the customs merged into the active universe."""
+    used = st.session_state.get("custom_tickers_in_universe", []) or []
+    return str(symbol).upper().strip() in {s.upper() for s in used}
+
+
+def custom_source_badge(symbol: str) -> str:
+    """Table-cell badge marking a ticker's source: Custom (⚠️ partial) vs Default."""
+    return "⚠️ Custom" if is_custom_ticker(symbol) else "Default"
+
+
+# ------------------------------------------------------------------ #
+#  Economic drags + assumptions transparency (Item 1)                  #
+# ------------------------------------------------------------------ #
+
+# Session keys used to override the config defaults for the current session.
+_DRAG_KEYS = (
+    "annual_fee_pct",
+    "dividend_tax_drag_pct",
+    "rebalance_cost_annual_pct",
+    "ar_buffer_pct",
+)
+
+
+def get_economic_drags() -> dict:
+    """Resolve the active economic drags (Item 1) for this session.
+
+    Mirrors ``_get_ai_config`` / profile-seeding: config.DRAGS is the source of
+    truth for defaults, but the user can tune the components for the current
+    session via the "Supuestos y drags" UI (stored in ``st.session_state`` under
+    ``drag_<field>`` / ``drags_enabled``). Returns a plain dict ready to pass to
+    ``MonteCarloSimulator.run(drags=...)`` and to persist in a PlanSnapshot.
+    """
+    from config import DRAGS
+
+    enabled = bool(st.session_state.get("drags_enabled", DRAGS.enabled))
+    out = {"enabled": enabled}
+    for k in _DRAG_KEYS:
+        out[k] = float(st.session_state.get(f"drag_{k}", getattr(DRAGS, k)))
+    out["total_annual_drag_pct"] = round(
+        sum(out[k] for k in _DRAG_KEYS), 4
+    )
+    return out
+
+
+def drags_to_tuple(drags: dict | None) -> tuple | None:
+    """Hashable form of a drags dict for ``@st.cache_data`` keys."""
+    if not drags:
+        return None
+    return tuple(sorted((k, v) for k, v in drags.items() if k != "total_annual_drag_pct"))
+
+
+def format_drags_badge(drags: dict | None) -> str:
+    """One-line caption summarizing the active drags (Item 1)."""
+    if not drags or not drags.get("enabled", True):
+        return "🟢 Sin drags — números base (sin fees/impuestos/fricciones)."
+    total = drags.get("total_annual_drag_pct") or sum(
+        float(drags.get(k, 0.0)) for k in _DRAG_KEYS
+    )
+    if total <= 0:
+        return "🟢 Sin drags — números base (sin fees/impuestos/fricciones)."
+    parts = []
+    if drags.get("annual_fee_pct"):
+        parts.append(f"fee {drags['annual_fee_pct']:.2f}%")
+    if drags.get("dividend_tax_drag_pct"):
+        parts.append(f"tax div {drags['dividend_tax_drag_pct']:.2f}%")
+    if drags.get("rebalance_cost_annual_pct"):
+        parts.append(f"rebal {drags['rebalance_cost_annual_pct']:.2f}%")
+    if drags.get("ar_buffer_pct"):
+        parts.append(f"buffer AR {drags['ar_buffer_pct']:.2f}%")
+    detail = " + ".join(parts) if parts else "—"
+    return f"🟠 Drags activos: {detail} = **{total:.2f}%/año** sobre el crecimiento."
+
+
+# Canonical "what we model / what we don't" text — single source of truth for
+# the assumptions disclaimer shown across pages (Plan, About, Home, PDF).
+ASSUMPTIONS_TEXT = (
+    "**Qué modela esta herramienta y qué no.** Las proyecciones (Optimizer, "
+    "Monte Carlo, Plan) parten de historia de precios **pura** de yfinance, con "
+    "ajustes conservadores (+10% volatilidad, −20% retorno esperado). Salvo que "
+    "actives la capa de *drags económicos*, los números asumen **0% de fees, 0% "
+    "de impuestos sobre dividendos, 0% de costo de rebalanceo** y **no** modelan "
+    "fricciones locales argentinas (cepo, brecha cambiaria, diferencial de "
+    "inflación). No es asesoramiento financiero ni fiscal. Activá los drags para "
+    "ver un escenario más realista; el caso base se conserva siempre como "
+    "referencia."
+)
+
+
+def render_assumptions_disclaimer(*, expander: bool = True) -> None:
+    """Render the canonical assumptions disclaimer (Item 1).
+
+    ``expander=True`` shows it as a collapsible block (Plan/Home); ``False``
+    renders inline (About). Imposible de pasar por alto en pantallas clave.
+    """
+    if expander:
+        with st.expander("ℹ️ Supuestos y limitaciones del modelo", expanded=False):
+            st.markdown(ASSUMPTIONS_TEXT)
+    else:
+        st.markdown(ASSUMPTIONS_TEXT)
+
+
+def render_drags_controls(*, key_prefix: str = "") -> dict:
+    """Render the 'Supuestos y drags económicos' control block (Item 1).
+
+    Persistent expander used by Plan + Simulaciones. Lets the user toggle and
+    tune the drag components for the current session, seeding from config.DRAGS.
+    Returns the active drags dict (also retrievable via ``get_economic_drags``).
+    """
+    from config import DRAGS, OPTIMIZER
+
+    with st.expander("📊 Supuestos y drags económicos aplicados", expanded=False):
+        st.caption(
+            "Por defecto las proyecciones asumen cero fees/impuestos/fricciones. "
+            "Activá drags realistas para ver el impacto. El caso base se conserva "
+            "como referencia."
+        )
+        enabled = st.toggle(
+            "Aplicar drags económicos a las simulaciones",
+            value=bool(st.session_state.get("drags_enabled", DRAGS.enabled)),
+            key=f"{key_prefix}drags_enabled_toggle",
+            help="Off = números base idénticos al estado sin esta capa.",
+        )
+        st.session_state["drags_enabled"] = enabled
+        c1, c2 = st.columns(2)
+        with c1:
+            st.session_state["drag_annual_fee_pct"] = st.number_input(
+                "Fee anual % (TER + advisory)", min_value=0.0, max_value=5.0,
+                value=float(st.session_state.get("drag_annual_fee_pct", DRAGS.annual_fee_pct)),
+                step=0.05, disabled=not enabled, key=f"{key_prefix}drag_fee",
+            )
+            st.session_state["drag_dividend_tax_drag_pct"] = st.number_input(
+                "Drag por impuesto a dividendos % anual", min_value=0.0, max_value=5.0,
+                value=float(st.session_state.get("drag_dividend_tax_drag_pct", DRAGS.dividend_tax_drag_pct)),
+                step=0.05, disabled=not enabled, key=f"{key_prefix}drag_tax",
+                help="No-residente US: ~15-30% del yield bruto, expresado como % anual del NAV.",
+            )
+        with c2:
+            st.session_state["drag_rebalance_cost_annual_pct"] = st.number_input(
+                "Costo de rebalanceo % anual", min_value=0.0, max_value=5.0,
+                value=float(st.session_state.get("drag_rebalance_cost_annual_pct", DRAGS.rebalance_cost_annual_pct)),
+                step=0.05, disabled=not enabled, key=f"{key_prefix}drag_rebal",
+            )
+            st.session_state["drag_ar_buffer_pct"] = st.number_input(
+                "Buffer AR % anual (cepo / FX / inflación)", min_value=0.0, max_value=10.0,
+                value=float(st.session_state.get("drag_ar_buffer_pct", DRAGS.ar_buffer_pct)),
+                step=0.10, disabled=not enabled, key=f"{key_prefix}drag_ar",
+                help="⚠️ Evitá doble conteo: el Optimizer ya descuenta el riesgo argentino "
+                     f"(−{(1 - OPTIMIZER.ars_risk_discount) * 100:.0f}% al score de ADRs AR en "
+                     "perfiles Conservador/Moderado). Usá este buffer solo para el riesgo país "
+                     "que NO esté ya reflejado en cómo elegiste la cartera (ej. inflación/FX a "
+                     "nivel de todo el plan). Si ya ponderaste por ARS, dejalo en 0.",
+            )
+        drags = get_economic_drags()
+        st.caption(format_drags_badge(drags))
+    return get_economic_drags()
+
+
+# ------------------------------------------------------------------ #
+#  Withdrawal / decumulation strategies (Fase H.1)                     #
+# ------------------------------------------------------------------ #
+
+# Human-readable labels for the strategy selector.
+_WITHDRAWAL_LABELS = {
+    "none":         "Acumulación (sin retiros)",
+    "fixed_real":   "Retiro fijo real (regla del 4%)",
+    "constant_pct": "% constante del valor actual",
+    "guardrails":   "Guardrails (Guyton-Klinger)",
+}
+
+
+def get_withdrawal_strategy(initial_value: float | None = None) -> dict | None:
+    """Resolve the active decumulation strategy for this session (Fase H.1).
+
+    Returns a strategy dict ready for
+    ``MonteCarloSimulator.run(withdrawal_strategy=...)`` / ``PlanSnapshot``,
+    or ``None`` in accumulation mode (no strategy). Mirrors
+    ``get_economic_drags``: config.WITHDRAWAL is the source of truth for
+    defaults, overridden per-session by ``render_withdrawal_controls``.
+    ``None`` keeps the Monte Carlo result byte-identical to the base engine.
+    """
+    from config import WITHDRAWAL
+
+    kind = st.session_state.get("withdrawal_kind", "none")
+    if kind in (None, "", "none"):
+        return None
+
+    if kind == "fixed_real":
+        amount = float(st.session_state.get("withdrawal_amount", 0.0))
+        if amount <= 0:
+            return None
+        return {
+            "kind": "fixed_real",
+            "annual_amount": amount,
+            "label": f"Retiro fijo real ${amount:,.0f}/año",
+        }
+
+    if kind == "constant_pct":
+        pct = float(st.session_state.get("withdrawal_pct", WITHDRAWAL.constant_pct)) / 100.0
+        if pct <= 0:
+            return None
+        return {
+            "kind": "constant_pct",
+            "pct": pct,
+            "label": f"{pct * 100:.1f}% del valor actual",
+        }
+
+    if kind == "guardrails":
+        base = float(st.session_state.get("withdrawal_base_pct", WITHDRAWAL.base_withdrawal_pct)) / 100.0
+        if base <= 0:
+            return None
+        return {
+            "kind": "guardrails",
+            "pct": base,
+            "guardrail_ceiling_band": WITHDRAWAL.guardrail_ceiling_band,
+            "guardrail_floor_band": WITHDRAWAL.guardrail_floor_band,
+            "guardrail_cut_pct": WITHDRAWAL.guardrail_cut_pct,
+            "guardrail_raise_pct": WITHDRAWAL.guardrail_raise_pct,
+            "label": f"Guardrails {base * 100:.1f}%",
+        }
+    return None
+
+
+def get_longevity_years() -> int:
+    """Planning horizon (years) the 'income lasts' metric refers to."""
+    from config import WITHDRAWAL
+
+    return int(st.session_state.get("withdrawal_longevity_years", WITHDRAWAL.default_longevity_years))
+
+
+def withdrawal_to_tuple(strategy: dict | None) -> tuple | None:
+    """Hashable form of a withdrawal-strategy dict for ``@st.cache_data`` keys."""
+    if not strategy:
+        return None
+    return tuple(sorted(
+        (k, v) for k, v in strategy.items()
+        if k != "label" and isinstance(v, (int, float, str))
+    ))
+
+
+def format_withdrawal_badge(strategy: dict | None) -> str:
+    """One-line caption summarizing the active decumulation strategy."""
+    if not strategy:
+        return "🟢 Modo acumulación — sin estrategia de retiro (números base)."
+    kind = strategy.get("kind")
+    if kind == "fixed_real":
+        return (f"🏖️ **Retiro fijo real**: ${strategy.get('annual_amount', 0):,.0f}/año, "
+                "ajustado por inflación (estilo regla del 4%).")
+    if kind == "constant_pct":
+        return (f"🏖️ **% constante**: {strategy.get('pct', 0) * 100:.1f}% del valor *actual* "
+                "cada año (el ingreso varía con el mercado, nunca se agota del todo).")
+    if kind == "guardrails":
+        return (f"🏖️ **Guardrails**: tasa base {strategy.get('pct', 0) * 100:.1f}%, recorta el "
+                "gasto en caídas y lo sube en mercados buenos (Guyton-Klinger).")
+    return "🟢 Modo acumulación."
+
+
+def render_withdrawal_controls(*, key_prefix: str = "", initial_value: float = 100_000.0) -> dict | None:
+    """Render the 'Estrategia de retiro' control block (Fase H.1).
+
+    Persistent expander used by Simulaciones + Plan. Lets the user choose how
+    they will *spend down* the portfolio in retirement, seeding from
+    config.WITHDRAWAL. Returns the active strategy dict (or None in accumulation
+    mode), also retrievable via ``get_withdrawal_strategy``.
+    """
+    from config import WITHDRAWAL
+
+    with st.expander("🏖️ Estrategia de retiro (decumulación)", expanded=False):
+        st.caption(
+            "Define cómo vas a *gastar* la cartera en la fase de retiro. Por defecto "
+            "estás en **acumulación** (sin retiros) y los números son los base. "
+            "Elegí una estrategia para ver cuánto dura tu ingreso."
+        )
+        kinds = list(_WITHDRAWAL_LABELS.keys())
+        cur = st.session_state.get("withdrawal_kind", "none")
+        kind = st.selectbox(
+            "Estrategia de gasto",
+            options=kinds,
+            index=kinds.index(cur) if cur in kinds else 0,
+            format_func=lambda k: _WITHDRAWAL_LABELS[k],
+            key=f"{key_prefix}wd_kind",
+            help="Off (acumulación) = números base idénticos al estado sin esta capa.",
+        )
+        st.session_state["withdrawal_kind"] = kind
+
+        if kind == "fixed_real":
+            amount = st.number_input(
+                "Retiro anual (USD, ajustado por inflación)",
+                min_value=0.0, max_value=5_000_000.0,
+                value=float(st.session_state.get("withdrawal_amount",
+                            round(initial_value * WITHDRAWAL.base_withdrawal_pct / 100.0, -2))),
+                step=1_000.0, format="%.0f", key=f"{key_prefix}wd_amount",
+                help="Monto fijo que retirás el primer año; crece cada año con la inflación.",
+            )
+            st.session_state["withdrawal_amount"] = amount
+        elif kind == "constant_pct":
+            pct = st.number_input(
+                "% del valor actual a retirar cada año",
+                min_value=0.5, max_value=15.0,
+                value=float(st.session_state.get("withdrawal_pct", WITHDRAWAL.constant_pct)),
+                step=0.25, format="%.2f", key=f"{key_prefix}wd_pct",
+                help="Se recalcula sobre el saldo de cada año: el ingreso varía pero la cartera no se agota del todo.",
+            )
+            st.session_state["withdrawal_pct"] = pct
+        elif kind == "guardrails":
+            base = st.number_input(
+                "Tasa de retiro base %",
+                min_value=0.5, max_value=12.0,
+                value=float(st.session_state.get("withdrawal_base_pct", WITHDRAWAL.base_withdrawal_pct)),
+                step=0.25, format="%.2f", key=f"{key_prefix}wd_base_pct",
+                help=(f"Punto de partida. Si la tasa efectiva sube {WITHDRAWAL.guardrail_ceiling_band*100:.0f}% "
+                      f"por encima → recorta gasto {WITHDRAWAL.guardrail_cut_pct*100:.0f}%; si baja "
+                      f"{WITHDRAWAL.guardrail_floor_band*100:.0f}% → lo sube {WITHDRAWAL.guardrail_raise_pct*100:.0f}%."),
+            )
+            st.session_state["withdrawal_base_pct"] = base
+
+        if kind != "none":
+            longevity = st.number_input(
+                "Duración del retiro (años) para medir longevidad",
+                min_value=5, max_value=60,
+                value=int(st.session_state.get("withdrawal_longevity_years", WITHDRAWAL.default_longevity_years)),
+                step=1, key=f"{key_prefix}wd_longevity",
+                help="Horizonte sobre el que se calcula 'probabilidad de que el ingreso dure'.",
+            )
+            st.session_state["withdrawal_longevity_years"] = longevity
+
+        strategy = get_withdrawal_strategy(initial_value)
+        st.caption(format_withdrawal_badge(strategy))
+    return get_withdrawal_strategy(initial_value)
 
 
 # ------------------------------------------------------------------ #
@@ -176,6 +998,66 @@ def cached_full_analysis(
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
+def cached_personal_book_analysis(
+    positions_tuple: tuple,
+    convictions_tuple: tuple,
+    ai_provider: str = "",
+    ai_model: str = "",
+    ai_enabled: bool = False,
+    ai_api_key: str = "",
+):
+    """
+    Wrapper cacheado del motor de sizing del Libro Personal.
+
+    Params como tuplas para hashability de ``@st.cache_data``:
+      positions_tuple   — ((symbol, market_value, weight_pct, shares, avg_cost,
+                            purchase_date, sector), ...)
+      convictions_tuple — ((symbol, level), ...)
+
+    El enrichment reutiliza ``cached_full_analysis`` (mismo cache TTL por ticker),
+    de modo que no se re-fetchea fundamental/técnico/moat por cada análisis de libro.
+    La acción de sizing es 100% rule-based; el AIConfig sólo afecta el análisis
+    fundamental subyacente (no la decisión de tamaño).
+    """
+    from portfolio.personal_sizer import analyze_personal_book
+
+    positions = {
+        p[0]: {
+            "symbol": p[0],
+            "market_value": p[1],
+            "weight_pct": p[2],
+            "shares": p[3],
+            "avg_cost": p[4],
+            "purchase_date": p[5],
+            "sector": p[6],
+        }
+        for p in positions_tuple
+    }
+    convictions = {c[0]: c[1] for c in convictions_tuple}
+
+    def _enrich(symbol: str) -> dict:
+        fund, tech, decision = cached_full_analysis(
+            symbol, ai_provider, ai_model, ai_enabled, ai_api_key
+        )
+        dq = getattr(fund, "data_quality", None) or {}
+        return {
+            "adjusted_score": getattr(fund, "adjusted_score", 0.0) or getattr(fund, "total_score", 0.0),
+            "moat_classification": getattr(fund, "moat_classification", "None"),
+            "tailwind_classification": getattr(fund, "tailwind_classification", "Neutral"),
+            "has_margin_of_safety": bool(getattr(decision, "has_margin_of_safety", False)),
+            "margin_of_safety_pct": getattr(fund, "margin_of_safety_pct", None),
+            "data_quality_level": (dq.get("level") if isinstance(dq, dict) else "good") or "good",
+            "rsi_weekly": getattr(tech, "rsi_weekly", None),
+            "above_sma200": bool(getattr(tech, "above_sma200", True)),
+            "sma200_slope_pct": getattr(tech, "sma200_slope_pct", 0.0),
+            "price_vs_52w_high_pct": getattr(tech, "price_vs_52w_high_pct", 0.0),
+            "retirement_action": getattr(decision, "action", "HOLD"),
+        }
+
+    return analyze_personal_book(positions, convictions, enrich_fn=_enrich)
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
 def cached_monte_carlo(
     symbols: tuple[str, ...],
     weights_tuple: tuple[float, ...] | None,
@@ -188,11 +1070,20 @@ def cached_monte_carlo(
     seed: int = 42,
     vol_scale: float = 1.0,
     return_scale: float = 1.0,
+    drags_tuple: tuple | None = None,      # Item 1: hashable drags (None = base behavior)
+    withdrawal_tuple: tuple | None = None, # Fase H.1: hashable withdrawal strategy (None = base)
+    longevity_years: int | None = None,    # Fase H.1: horizon for "income lasts" metric
+    include_realistic_reference: bool = True,  # show realistic (no-haircut) next to conservative
 ):
     """Cache Monte Carlo runs for 30 min — same params = instant re-render.
 
     vol_scale / return_scale: applied on top of the global conservative adjustment.
     Used by the profile-comparison tab to show Conservador/Moderado/Agresivo on one chart.
+    drags_tuple: hashable form of the economic-drags dict (see ``drags_to_tuple``).
+    withdrawal_tuple: hashable form of the withdrawal-strategy dict (see
+    ``withdrawal_to_tuple``). When given it REPLACES ``annual_withdrawal`` and
+    populates the decumulation metrics. None for both keeps the result
+    byte-identical to the pre-feature engine.
     """
     import numpy as np
 
@@ -201,6 +1092,8 @@ def cached_monte_carlo(
     w_np = np.array(weights_tuple) if weights_tuple else None
     sim  = MonteCarloSimulator(list(symbols), w_np, seed=seed,
                                vol_scale=vol_scale, return_scale=return_scale)
+    drags = dict(drags_tuple) if drags_tuple else None
+    withdrawal_strategy = dict(withdrawal_tuple) if withdrawal_tuple else None
     return sim.run(
         horizon_years=horizon_years,
         n_sims=n_sims,
@@ -208,6 +1101,10 @@ def cached_monte_carlo(
         annual_withdrawal=annual_withdrawal,
         target_value=target_value,
         withdrawal_growth_rate=withdrawal_growth_rate,
+        drags=drags,
+        withdrawal_strategy=withdrawal_strategy,
+        longevity_years=longevity_years,
+        include_realistic_reference=include_realistic_reference,
     )
 
 
@@ -224,6 +1121,7 @@ def cached_goal_simulation(
 ):
     """Cache multi-goal simulation results for 30 min."""
     import numpy as np
+
     from portfolio.goals import Goal, GoalPlanner
 
     w_np = np.array(weights_tuple) if weights_tuple else None
@@ -283,6 +1181,141 @@ def cached_stress_test(
     return tester.run(sector_weights, initial_value=initial_value)
 
 
+def run_holdings_committee(
+    *,
+    metrics,
+    sector_weights: dict[str, float],
+    position_weights: dict[str, float],
+    total_value: float,
+    active_plan=None,
+):
+    """Convene the committee over the ACTUAL portfolio (real holdings). → CommitteeVerdict.
+
+    Interprets, does not recompute: reuses the deterministic stress test
+    (`cached_stress_test`), realized metrics already computed by the tracker,
+    drift vs the active plan (`compute_alignment_trades`) and dated macro context.
+    Verdict caching is handled by the committee's SQLite layer (keyed by a content
+    hash of the holdings + AI provider/model). Returns ``None`` when AI is disabled.
+    """
+    from analysis.committee import CommitteeAnalyzer, build_holdings_committee_context
+
+    ai_cfg = _get_ai_config()
+    if not getattr(ai_cfg, "enabled", False):
+        return None
+
+    sw = dict(sector_weights or {})
+    stress_results = cached_stress_test(sw, 100_000.0) if sw else []
+
+    # Alignment vs the active plan ("deriva inteligente"), best-effort.
+    active_plan_name = ""
+    drift_pct = None
+    alignment_trades = None
+    if active_plan is not None:
+        try:
+            from data.plan_context import compute_alignment_trades
+
+            _al = compute_alignment_trades(
+                active_plan, dict(position_weights or {}), float(total_value or 0.0),
+                price_lookup=plan_price_lookup,
+            )
+            alignment_trades = _al.get("trades")
+            drift_pct = (_al.get("summary") or {}).get("total_drift_pct")
+            active_plan_name = getattr(active_plan, "name", "")
+        except Exception:  # pragma: no cover - alignment is best-effort
+            pass
+
+    macro_context = ""
+    try:
+        from analysis.macro_rag import macro_rag_store
+
+        macro_context = macro_rag_store.build_context(
+            f"cartera de retiro {' '.join(sw.keys())} tasas inflación riesgo país"
+        )
+    except Exception:  # pragma: no cover - macro is best-effort
+        macro_context = ""
+
+    import hashlib
+
+    sig = "|".join(
+        f"{s}:{round(float(w or 0), 1)}" for s, w in sorted((position_weights or {}).items())
+    )
+    plan_key = hashlib.md5(sig.encode()).hexdigest()[:12]
+
+    ctx = build_holdings_committee_context(
+        metrics=metrics,
+        sector_weights=sw,
+        position_weights=position_weights,
+        total_value=total_value,
+        stress_results=stress_results,
+        macro_context=macro_context,
+        active_plan_name=active_plan_name,
+        drift_pct=drift_pct,
+        alignment_trades=alignment_trades,
+    )
+    return CommitteeAnalyzer(ai_config=ai_cfg).analyze_portfolio(ctx, plan_key=plan_key)
+
+
+def render_committee_verdict(verdict, *, footer_facts: str = "") -> None:
+    """Render a portfolio committee verdict: plan-health banner + consensus/dissent.
+
+    Reused by the Portfolio page. ``footer_facts`` is an optional pre-formatted
+    "hard numbers" string shown under a 📊 Calculado badge.
+    """
+    from config import COMMITTEE
+
+    label = COMMITTEE.portfolio_action_labels.get(verdict.action, verdict.action)
+    color = ACTION_COLOR.get(verdict.action, "#888")
+    n_total = len(verdict.opinions)
+    n_agree = sum(
+        1 for o in verdict.opinions
+        if o.ok and ((o.stance in ("STRONG BUY", "BUY") and verdict.action in ("STRONG BUY", "BUY"))
+                     or (o.stance == verdict.action))
+    )
+
+    st.markdown(
+        f"""<div style="background:{color}22;border-left:4px solid {color};
+        padding:12px;border-radius:4px;margin:8px 0">
+        <b style="color:{color};font-size:1.2em">🏛️ Veredicto: {label}</b>
+        &nbsp;|&nbsp; Confianza: {verdict.confidence}
+        &nbsp;|&nbsp; Acuerdo: {n_agree}/{n_total} agentes
+        </div>""",
+        unsafe_allow_html=True,
+    )
+    render_ai_badge("dictamen del comité; se apoya en los cálculos, no los reemplaza")
+
+    _c1, _c2 = st.columns(2)
+    with _c1:
+        st.markdown("**✅ Consenso**")
+        if verdict.consensus_points:
+            for _p in verdict.consensus_points:
+                st.success(_p)
+        else:
+            st.caption("Sin puntos de consenso claros.")
+    with _c2:
+        st.markdown("**⚖️ Disenso (bear case)**")
+        if verdict.dissent:
+            for _d in verdict.dissent:
+                st.warning(_d)
+        else:
+            st.caption("Sin disenso registrado.")
+
+    with st.expander("👥 Ver cada agente"):
+        for o in verdict.opinions:
+            if o.error:
+                st.caption(f"⚠️ **{o.role}** — no disponible ({o.error})")
+                continue
+            _lbl = COMMITTEE.portfolio_action_labels.get(o.stance, o.stance)
+            st.markdown(f"**{o.role}** — {_lbl} ({o.confidence})")
+            for _kp in o.key_points:
+                st.caption(f"• {_kp}")
+            for _cn in o.concerns:
+                st.caption(f"⚠️ {_cn}")
+            st.divider()
+
+    if footer_facts:
+        render_calc_badge("base del dictamen · " + footer_facts)
+
+
 def _analyse_universe_parallel(
     symbols: list[str],
     ai_cfg: AIConfig,
@@ -319,6 +1352,10 @@ def _analyse_universe_parallel(
                     f"{_MOAT_EMOJI.get(getattr(fund, 'moat_classification', ''), '⚪')} "
                     f"{getattr(fund, 'moat_classification', '—')}"
                 ),
+                "Viento": tailwind_badge(
+                    getattr(fund, "tailwind_classification", "Neutral"),
+                    getattr(fund, "tailwind_score", 0.0),
+                ),
                 "Technical": tech.signal,
                 "P/E": fund.pe_ratio,
                 "ROE %": fund.roe,
@@ -326,6 +1363,7 @@ def _analyse_universe_parallel(
                 "Div Yield %": fund.dividend_yield,
                 "MoS %": fund.margin_of_safety_pct,
                 "Price": fund.current_price,
+                "Datos": data_quality_badge(getattr(fund, "data_quality", None)),
             }
         except Exception as exc:
             logger.error(f"Screener: {sym} failed — {exc}")
@@ -336,7 +1374,7 @@ def _analyse_universe_parallel(
         for future in as_completed(futures):
             completed += 1
             sym = futures[future]
-            status_text.text(f"Analyzing… {completed}/{total} done (last: {sym})")
+            status_text.text(f"Analizando… {completed}/{total} listos (último: {sym})")
             progress_bar.progress(completed / total)
             result = future.result()
             if result is not None:

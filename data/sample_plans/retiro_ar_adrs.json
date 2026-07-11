@@ -1,0 +1,75 @@
+{
+  "id": "ejemplo-retiro-ar-adrs",
+  "name": "Ejemplo · Retiro AR con ADRs + buffer",
+  "created_at": "2026-01-02T10:00:00",
+  "updated_at": "2026-01-02T10:00:00",
+  "profile_name": "Moderado",
+  "profile_key": "moderate",
+  "universe_key": "argentina_adrs",
+  "universe_name": "Argentina ADRs",
+  "n_positions": 6,
+  "allocation": [
+    {"symbol": "MELI", "weight_pct": 22.0, "sector": "Consumer Discretionary", "dividend_yield_pct": 0.0, "adjusted_score": 82.0, "price_at_save": 1850.0, "tailwind_classification": "Strong", "tailwind_score": 7.5},
+    {"symbol": "VIST", "weight_pct": 18.0, "sector": "Energy", "dividend_yield_pct": 0.0, "adjusted_score": 76.0, "price_at_save": 52.0, "tailwind_classification": "Strong", "tailwind_score": 8.0},
+    {"symbol": "YPF", "weight_pct": 16.0, "sector": "Energy", "dividend_yield_pct": 0.0, "adjusted_score": 68.0, "price_at_save": 38.0, "tailwind_classification": "Moderate", "tailwind_score": 4.5},
+    {"symbol": "GGAL", "weight_pct": 16.0, "sector": "Financials", "dividend_yield_pct": 1.5, "adjusted_score": 70.0, "price_at_save": 55.0},
+    {"symbol": "PAM", "weight_pct": 14.0, "sector": "Utilities", "dividend_yield_pct": 2.0, "adjusted_score": 72.0, "price_at_save": 78.0},
+    {"symbol": "SPY", "weight_pct": 14.0, "sector": "Diversified", "dividend_yield_pct": 1.3, "adjusted_score": 75.0, "price_at_save": 590.0}
+  ],
+  "sector_weights": {"Energy": 34.0, "Consumer Discretionary": 22.0, "Financials": 16.0, "Utilities": 14.0, "Diversified": 14.0},
+  "core_holdings": [
+    {"symbol": "MELI", "suggested_weight_pct": 22.0, "why": "Líder de e-commerce y fintech en LatAm, cola de viento estructural fuerte."},
+    {"symbol": "VIST", "suggested_weight_pct": 18.0, "why": "Productor Vaca Muerta, crecimiento de producción."},
+    {"symbol": "SPY", "suggested_weight_pct": 14.0, "why": "Ancla diversificada global para reducir riesgo idiosincrático AR."}
+  ],
+  "core_from_ai": false,
+  "metrics": {
+    "expected_return_pct": 10.5,
+    "volatility_pct": 22.0,
+    "sharpe_ratio": 0.45,
+    "dividend_yield_pct": 0.8,
+    "adjusted_score_avg": 74.0,
+    "moat_score_avg": 14.0,
+    "max_drawdown_estimate_pct": 45.0
+  },
+  "goals": [
+    {"name": "Retiro complementario", "target_amount_today": 300000, "horizon_years": 20, "priority": "importante"}
+  ],
+  "mc_summary": {
+    "horizon_years": 20,
+    "initial_value": 120000,
+    "inflation_rate": 4.0,
+    "target_value": 300000,
+    "median_terminal": 360000,
+    "p10_terminal": 95000,
+    "p90_terminal": 1050000,
+    "prob_target_pct": 58.0,
+    "prob_ruin_pct": 14.0,
+    "median_cagr_pct": 5.6,
+    "total_annual_drag_pct": 1.45,
+    "base_median_terminal": 470000,
+    "base_p10_terminal": 130000,
+    "base_p90_terminal": 1300000,
+    "prob_sustain_real_pct": 69.0,
+    "prob_legacy_pct": 55.0,
+    "median_legacy": 140000,
+    "expected_depletion_year": 26.0,
+    "longevity_years": 25
+  },
+  "narrative": "Cartera de ADRs argentinos con colas de viento estructurales (energía Vaca Muerta, e-commerce LatAm) y un ancla global (SPY). Asume fricciones locales explícitas (buffer AR por cepo/brecha/diferencial de inflación) y un retiro como % constante para no agotar capital en un contexto volátil.",
+  "personal": {
+    "age": 50,
+    "retirement_age": 65,
+    "primary_horizon_years": 20,
+    "current_capital": 120000,
+    "monthly_savings": 800,
+    "primary_goal_type": "retiro"
+  },
+  "macro_risks": [
+    {"factor": "Riesgo país y FX argentino", "why": "Concentración en ADRs AR expone a cepo, brecha cambiaria y volatilidad regulatoria; el buffer AR busca reflejarlo.", "severity": "alta"}
+  ],
+  "drags_at_save": {"enabled": true, "annual_fee_pct": 0.25, "dividend_tax_drag_pct": 0.2, "rebalance_cost_annual_pct": 0.1, "ar_buffer_pct": 0.9, "total_annual_drag_pct": 1.45},
+  "withdrawal_strategy": {"kind": "constant_pct", "pct": 0.045, "label": "4.5% del valor actual"},
+  "export_version": "1.0",
+  "export_notes": "Plan de ejemplo de retiro con ADRs argentinos, buffer AR explícito y retiro por % constante. Muestra cómo modelar fricciones locales y un contexto de alta volatilidad."
+}

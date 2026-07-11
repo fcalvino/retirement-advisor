@@ -6,7 +6,7 @@ from typing import Any, Optional
 
 from loguru import logger
 from sqlalchemy import Column, DateTime, String, Text, create_engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from sqlalchemy.pool import NullPool
 
 from config import CACHE_TTL_HOURS, DB_PATH
@@ -62,12 +62,18 @@ class DataCache:
                 session.add(CacheEntry(key=key, data=serialized, cached_at=datetime.utcnow()))
             session.commit()
 
-    def invalidate(self, key: str) -> None:
+    def get_age_hours(self, key: str) -> Optional[float]:
+        """Age (in hours) of a cache entry, or None if the key is not cached.
+
+        Unlike ``get``, this never deletes expired rows — it is a read-only
+        metadata probe used by the data-quality layer (Fase E) to surface
+        cache freshness in the dashboard.
+        """
         with self._Session() as session:
-            entry = session.get(CacheEntry, key)
-            if entry:
-                session.delete(entry)
-                session.commit()
+            entry: Optional[CacheEntry] = session.get(CacheEntry, key)
+            if entry is None or entry.cached_at is None:
+                return None
+            return (datetime.utcnow() - entry.cached_at).total_seconds() / 3600.0
 
     def clear_all(self) -> None:
         with self._Session() as session:

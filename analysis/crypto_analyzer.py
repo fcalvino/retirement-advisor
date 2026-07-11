@@ -31,14 +31,13 @@ CRYPTO MOAT FRAMEWORK (0–8 pts, AI qualitative only):
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
+from analysis.utils import extract_json_object
 from config import CRYPTO_MOAT, AIConfig
-
 
 # ---------------------------------------------------------------------------
 # Crypto Moat data class
@@ -92,6 +91,10 @@ class CryptoMoatDetail:
     # Additional fields from Grok final prompt (v2, May 2026)
     moat_durability_years: int = 10
     retirement_risk_summary: str = ""
+
+    # Structured macro factors (structural improvement, same as equity MoatDetail / Decision).
+    macro_factors: List[Dict[str, Any]] = field(default_factory=list)
+    macro_impact_on_moat_durability: str = ""
 
     @property
     def color(self) -> str:
@@ -154,9 +157,9 @@ class CryptoAnalyzer:
         """
         # Lazy import to avoid circular deps at module load
         from analysis.fundamental import FundamentalResult
-        from data.crypto_fetcher import get_crypto_info, compute_crypto_metrics
-        from data.fetcher import get_history
         from analysis.technical import TechnicalAnalyzer
+        from data.crypto_fetcher import compute_crypto_metrics, get_crypto_info
+        from data.fetcher import get_history
 
         result = FundamentalResult(symbol=symbol)
         result.is_crypto = True   # sentinel used by dashboard & ai_analyzer
@@ -418,7 +421,7 @@ class CryptoAnalyzer:
             # --- Fresh API call ---
             try:
                 prompt = self._build_crypto_moat_prompt(symbol, info, metrics)
-                from analysis.moat import call_ai_api, MoatAPIError, MoatParseError
+                from analysis.moat import call_ai_api
                 raw    = call_ai_api(prompt, ai_config)
                 parsed = self._parse_crypto_moat_response(raw, symbol)
 
@@ -434,6 +437,8 @@ class CryptoAnalyzer:
                 )
                 moat.moat_durability_years   = parsed.get("moat_durability_years", 10)
                 moat.retirement_risk_summary = parsed.get("retirement_risk_summary", "")
+                moat.macro_factors = parsed.get("macro_factors", []) or []
+                moat.macro_impact_on_moat_durability = parsed.get("macro_impact_on_moat_durability", "")
                 moat.ai_total = round(
                     moat.network_adoption + moat.monetary_scarcity +
                     moat.security_decentralization + moat.institutional_regulatory +
@@ -453,6 +458,8 @@ class CryptoAnalyzer:
                     "recommended_max_allocation_pct": moat.recommended_max_allocation_pct,
                     "moat_durability_years":          moat.moat_durability_years,
                     "retirement_risk_summary":        moat.retirement_risk_summary,
+                    "macro_factors":                  moat.macro_factors,
+                    "macro_impact_on_moat_durability": moat.macro_impact_on_moat_durability,
                 })
                 logger.info(
                     f"{symbol}: crypto moat AI={moat.ai_total:.1f}/8 "
@@ -462,6 +469,8 @@ class CryptoAnalyzer:
                 )
 
             except Exception as exc:
+                # call_ai_api raises MoatAPIError; parse raises MoatParseError;
+                # both inherit Exception — keep broad catch so UI degrades cleanly.
                 logger.warning(f"{symbol}: crypto moat AI failed — {exc}")
                 moat.ai_reasoning = f"[AI error: {exc}]"
 
@@ -483,6 +492,8 @@ class CryptoAnalyzer:
         moat.recommended_max_allocation_pct  = float(cached.get("recommended_max_allocation_pct", 5.0))
         moat.moat_durability_years           = int(cached.get("moat_durability_years", 10))
         moat.retirement_risk_summary         = cached.get("retirement_risk_summary", "")
+        moat.macro_factors                   = cached.get("macro_factors", []) or []
+        moat.macro_impact_on_moat_durability = cached.get("macro_impact_on_moat_durability", "")
         moat.ai_available                    = True
 
     @staticmethod
@@ -522,12 +533,11 @@ class CryptoAnalyzer:
             text = "\n".join(l for l in lines if not l.startswith("```")).strip()
 
         try:
-            data = json.loads(text)
-        except json.JSONDecodeError:
-            match = re.search(r'\{.*?\}', text, re.DOTALL)
-            if not match:
-                raise ValueError(f"No JSON in crypto moat response for {symbol}: {text[:200]!r}")
-            data = json.loads(match.group())
+            data = extract_json_object(text)
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                f"JSON extraction failed for crypto moat {symbol}: {exc} — raw: {text[:200]!r}"
+            ) from exc
 
         clamp_rules = {
             "network_adoption":          (0.0, 2.0),
@@ -559,6 +569,12 @@ class CryptoAnalyzer:
 
         # retirement_risk_summary — plain string, no clamping needed
         data["retirement_risk_summary"] = str(data.get("retirement_risk_summary", ""))
+
+        # Structured macro (new, structural improvement) — graceful
+        data.setdefault("macro_factors", [])
+        if not isinstance(data.get("macro_factors"), list):
+            data["macro_factors"] = []
+        data.setdefault("macro_impact_on_moat_durability", "")
 
         # total_moat_score from LLM is cross-check only; we recompute ourselves
         return data

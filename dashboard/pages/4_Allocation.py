@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 import plotly.express as px
 import streamlit as st
 
+from dashboard.shared import get_user_prefs
 from portfolio.allocation import AllocationAdvisor
 from portfolio.tracker import Portfolio
 
@@ -19,11 +15,19 @@ from portfolio.tracker import Portfolio
 
 st.title("📐 Asset Allocation Advisor")
 
+# Smart defaults from the personal profile (onboarding — Fase A)
+_prefs = get_user_prefs()
+_default_age = int(_prefs.age) if getattr(_prefs, "age", 0) else 35
+_default_age = min(max(_default_age, 20), 80)
+_default_ret = min(max(int(getattr(_prefs, "retirement_age", 65)), _default_age + 1), 80)
+if _prefs.is_onboarded:
+    st.caption("📋 Valores iniciales tomados de **Mi Perfil** (editable en ⚙️ Settings).")
+
 col1, col2 = st.columns(2)
 with col1:
-    age = st.slider("Your current age", 20, 80, 35)
+    age = st.slider("Tu edad actual", 20, 80, _default_age)
 with col2:
-    retirement_age = st.slider("Target retirement age", age + 1, 80, max(age + 5, 65))
+    retirement_age = st.slider("Edad objetivo para el retiro", age + 1, 80, max(age + 1, _default_ret))
 
 portfolio: Portfolio = st.session_state.portfolio
 sector_weights   = portfolio.get_sector_weights()   if portfolio.positions else {}
@@ -34,7 +38,7 @@ advice = advisor.advise(age, retirement_age, sector_weights, position_weights)
 
 # Allocation pie
 fig = px.pie(
-    names=["US Equities", "International", "Real Estate", "Bonds", "Cash"],
+    names=["Acciones EE.UU.", "Internacional", "Bienes Raíces", "Bonos", "Efectivo"],
     values=[
         advice.us_large_cap_pct,
         advice.international_pct,
@@ -42,26 +46,26 @@ fig = px.pie(
         advice.bonds_pct,
         advice.cash_pct,
     ],
-    title=f"Recommended Allocation — Age {age}",
+    title=f"Asignación Recomendada — Edad {age}",
     color_discrete_sequence=px.colors.qualitative.Set2,
     hole=0.3,
 )
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig, width="stretch")
 
 # Detail
 col1, col2, col3 = st.columns(3)
-col1.metric("Total Equities", f"{advice.equity_pct:.0f}%")
-col2.metric("Bonds",          f"{advice.bonds_pct:.0f}%")
-col3.metric("Cash Buffer",    f"{advice.cash_pct:.0f}%")
+col1.metric("Acciones Totales", f"{advice.equity_pct:.0f}%")
+col2.metric("Bonos",          f"{advice.bonds_pct:.0f}%")
+col3.metric("Buffer de Efectivo",    f"{advice.cash_pct:.0f}%")
 
 st.info(f"💡 {advice.inflation_note}")
 
 if advice.concentration_warnings:
-    st.subheader("⚠️ Concentration Issues")
+    st.subheader("⚠️ Problemas de Concentración")
     for w in advice.concentration_warnings:
         st.warning(w)
 
 if advice.rebalancing_actions:
-    st.subheader("🔄 Rebalancing Actions")
+    st.subheader("🔄 Acciones de Rebalanceo")
     for a in advice.rebalancing_actions:
         st.info(f"→ {a}")

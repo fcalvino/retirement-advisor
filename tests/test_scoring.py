@@ -1,11 +1,10 @@
 """Tests for EnhancedScoring — Consistency Score and Piotroski F-Score."""
 
-import numpy as np
 import pandas as pd
 import pytest
 
 from analysis.scoring import ConsistencyDetail, EnhancedScore, EnhancedScoring, PiotroskiDetail
-from config import ConsistencyThresholds, PiotroskiConfig
+from config import PiotroskiConfig
 
 
 @pytest.fixture

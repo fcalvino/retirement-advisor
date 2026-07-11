@@ -1,6 +1,5 @@
 """Tests for StressTester — pure math, no network calls."""
 
-import pytest
 
 from portfolio.stress_test import SCENARIOS, StressTester, StressTestResult
 

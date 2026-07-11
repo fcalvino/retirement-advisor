@@ -1,0 +1,69 @@
+{
+  "id": "ejemplo-fire-moderado",
+  "name": "Ejemplo · FIRE Moderado",
+  "created_at": "2026-01-02T10:00:00",
+  "updated_at": "2026-01-02T10:00:00",
+  "profile_name": "Moderado",
+  "profile_key": "moderate",
+  "universe_key": "us_quality",
+  "universe_name": "US Quality",
+  "n_positions": 6,
+  "allocation": [
+    {"symbol": "MSFT", "weight_pct": 20.0, "sector": "Technology", "dividend_yield_pct": 0.8, "adjusted_score": 85.0, "price_at_save": 430.0},
+    {"symbol": "GOOGL", "weight_pct": 18.0, "sector": "Communication Services", "dividend_yield_pct": 0.0, "adjusted_score": 83.0, "price_at_save": 175.0},
+    {"symbol": "V", "weight_pct": 17.0, "sector": "Financials", "dividend_yield_pct": 0.7, "adjusted_score": 82.0, "price_at_save": 280.0},
+    {"symbol": "UNH", "weight_pct": 16.0, "sector": "Healthcare", "dividend_yield_pct": 1.4, "adjusted_score": 79.0, "price_at_save": 490.0},
+    {"symbol": "COST", "weight_pct": 15.0, "sector": "Consumer Staples", "dividend_yield_pct": 0.6, "adjusted_score": 80.0, "price_at_save": 850.0},
+    {"symbol": "HD", "weight_pct": 14.0, "sector": "Consumer Discretionary", "dividend_yield_pct": 2.4, "adjusted_score": 77.0, "price_at_save": 360.0}
+  ],
+  "sector_weights": {"Technology": 20.0, "Communication Services": 18.0, "Financials": 17.0, "Healthcare": 16.0, "Consumer Staples": 15.0, "Consumer Discretionary": 14.0},
+  "core_holdings": [
+    {"symbol": "MSFT", "suggested_weight_pct": 20.0, "why": "Moat amplio, crecimiento de nube y márgenes altos."},
+    {"symbol": "V", "suggested_weight_pct": 17.0, "why": "Red de pagos con peaje, capital-light."},
+    {"symbol": "COST", "suggested_weight_pct": 15.0, "why": "Membresías recurrentes, lealtad fuerte."}
+  ],
+  "core_from_ai": false,
+  "metrics": {
+    "expected_return_pct": 8.8,
+    "volatility_pct": 13.5,
+    "sharpe_ratio": 0.55,
+    "dividend_yield_pct": 0.9,
+    "adjusted_score_avg": 81.0,
+    "moat_score_avg": 18.0,
+    "max_drawdown_estimate_pct": 32.0
+  },
+  "goals": [
+    {"name": "Independencia financiera a los 50", "target_amount_today": 1000000, "horizon_years": 18, "priority": "esencial"}
+  ],
+  "mc_summary": {
+    "horizon_years": 25,
+    "initial_value": 400000,
+    "inflation_rate": 3.0,
+    "target_value": 1000000,
+    "median_terminal": 1350000,
+    "p10_terminal": 520000,
+    "p90_terminal": 3100000,
+    "prob_target_pct": 66.0,
+    "prob_ruin_pct": 9.0,
+    "median_cagr_pct": 5.0,
+    "prob_sustain_real_pct": 78.0,
+    "prob_legacy_pct": 62.0,
+    "median_legacy": 540000,
+    "expected_depletion_year": 28.0,
+    "longevity_years": 30
+  },
+  "narrative": "Cartera moderada estilo FIRE: empresas de calidad con moat amplio y crecimiento sostenido, asumiendo más volatilidad a cambio de mayor capital terminal. Usa una estrategia de retiro con guardrails para reducir el riesgo de secuencia de retornos durante la fase de gasto.",
+  "personal": {
+    "age": 32,
+    "retirement_age": 50,
+    "primary_horizon_years": 18,
+    "current_capital": 400000,
+    "monthly_savings": 3500,
+    "primary_goal_type": "fire"
+  },
+  "macro_risks": [],
+  "drags_at_save": {"enabled": true, "annual_fee_pct": 0.15, "dividend_tax_drag_pct": 0.2, "rebalance_cost_annual_pct": 0.05, "ar_buffer_pct": 0.0, "total_annual_drag_pct": 0.4},
+  "withdrawal_strategy": {"kind": "guardrails", "pct": 0.04, "guardrail_ceiling_band": 0.2, "guardrail_floor_band": 0.2, "guardrail_cut_pct": 0.1, "guardrail_raise_pct": 0.1, "label": "Guardrails 4.0%"},
+  "export_version": "1.0",
+  "export_notes": "Plan de ejemplo FIRE moderado con retiro por guardrails (Guyton-Klinger). Muestra el balance crecimiento/longevidad para un retiro temprano."
+}

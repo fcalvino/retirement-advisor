@@ -11,12 +11,12 @@ adjusted_score = min(fundamental + consistency + piotroski_bonus, 100).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
 
-from config import ConsistencyThresholds, PiotroskiConfig
+from config import CONSISTENCY, PIOTROSKI, ConsistencyThresholds, PiotroskiConfig
 
 
 @dataclass
@@ -91,8 +91,8 @@ class EnhancedScoring:
         consistency_thresholds: ConsistencyThresholds = None,
         piotroski_config: PiotroskiConfig = None,
     ):
-        self.ct = consistency_thresholds or ConsistencyThresholds()
-        self.pc = piotroski_config or PiotroskiConfig()
+        self.ct = consistency_thresholds or CONSISTENCY
+        self.pc = piotroski_config or PIOTROSKI
 
     def get_enhanced_score(
         self,

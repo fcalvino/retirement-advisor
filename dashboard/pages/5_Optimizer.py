@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+import dataclasses
 import io
-import sys
+from datetime import datetime
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import pandas as pd
 import plotly.express as px
@@ -15,9 +14,10 @@ import streamlit as st
 
 from config import OPTIMIZER, OPTIMIZER_PROFILES
 from dashboard.shared import (
-    _MOAT_EMOJI,
     _fetch_universe_parallel,
     _get_ai_config,
+    seed_session_defaults_from_profile,
+    tailwind_badge,
 )
 from data.preferences import UserPreferences
 from data.universe_loader import UNIVERSE_META, list_universes, load_universe
@@ -114,13 +114,17 @@ if "user_prefs" not in st.session_state:
     st.session_state.user_prefs = UserPreferences.load()
 if "universe" not in st.session_state:
     _uk = getattr(st.session_state.user_prefs, "active_universe", "default") or "default"
-    st.session_state.universe = load_universe(_uk)
+    from dashboard.shared import load_universe_with_customs
+    st.session_state.universe = load_universe_with_customs(_uk, st.session_state.user_prefs)
     st.session_state.active_universe_key = _uk
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = Portfolio()
 
 _prefs: UserPreferences = st.session_state.user_prefs
 portfolio: Portfolio = st.session_state.portfolio
+
+# Seed capital/profile defaults from the personal profile (direct-nav safe)
+seed_session_defaults_from_profile(_prefs)
 
 # ------------------------------------------------------------------ #
 #  Helpers                                                             #
@@ -155,7 +159,7 @@ for _i, _preset in enumerate(_PRESETS):
         if st.button(
             _preset["label"],
             key=f"preset_{_i}",
-            use_container_width=True,
+            width="stretch",
             help=_preset["description"],
         ):
             _apply_preset(_preset["universe"], _preset["profile"])
@@ -224,6 +228,17 @@ _extra_keys: list[str] = st.sidebar.multiselect(
 _base_tickers  = list(st.session_state.universe)
 _extra_tickers = [t for k in _extra_keys for t in load_universe(k) if t not in _base_tickers]
 _combined      = _base_tickers + _extra_tickers
+
+# Item 3 — warn when custom tickers are part of the optimization universe.
+_customs_here = st.session_state.get("custom_tickers_in_universe", []) or []
+if _customs_here:
+    st.warning(
+        "🧪 Esta optimización incluye **tickers personalizados** ("
+        + ", ".join(_customs_here)
+        + "). Su scoring y calidad de datos pueden ser **parciales**; el optimizador "
+        "los trata con cautela. Revisá su peso antes de invertir.",
+        icon="⚠️",
+    )
 
 _active_meta  = UNIVERSE_META.get(_active_key, {})
 _active_name  = _active_meta.get("name", _active_key)
@@ -316,7 +331,7 @@ if "optimizer_result" in st.session_state and not has_valid_result:
 
 btn_col, ctx_col = st.columns([1, 3])
 with btn_col:
-    run_now = st.button("🚀 Ejecutar Optimización", type="primary", use_container_width=True)
+    run_now = st.button("🚀 Ejecutar Optimización", type="primary", width="stretch")
 with ctx_col:
     if "optimizer_scored" in st.session_state and st.session_state.get("optimizer_universe") == universe_key:
         st.info(
@@ -375,7 +390,7 @@ if not run_now and not has_valid_result:
             if st.button(
                 _preset["label"],
                 key=f"welcome_preset_{_qi}",
-                use_container_width=True,
+                width="stretch",
                 help=_preset["description"],
             ):
                 _apply_preset(_preset["universe"], _preset["profile"])
@@ -395,6 +410,21 @@ if run_now or not has_valid_result:
     ):
         ai_cfg = _get_ai_config(context="screener")
         n      = len(selected_universe)
+
+        # For large universes, AI screener adds cost/latency without improving
+        # optimizer output — quant scores are sufficient for ranking candidates.
+        _ai_universe_too_large = n > OPTIMIZER.max_ai_screener_tickers
+        if _ai_universe_too_large and getattr(ai_cfg, "use_in_screener", False):
+            st.warning(
+                f"🔇 **AI desactivado para el screener** — {n} tickers excede el límite "
+                f"({OPTIMIZER.max_ai_screener_tickers}) para análisis AI masivo. "
+                "Se usa scoring cuantitativo puro (más rápido y suficiente para el optimizer). "
+                "Para analizar stocks individuales con AI usá la página **Stock Analysis**.",
+                icon="⚡",
+            )
+            # Override: disable use_in_screener for this run without changing user settings
+            ai_cfg = dataclasses.replace(ai_cfg, use_in_screener=False)
+
         st.info(f"⚡ Analizando {n} tickers en paralelo… (primera vez tarda ~15s)")
         prog = st.progress(0)
         stat = st.empty()
@@ -410,6 +440,8 @@ if run_now or not has_valid_result:
                 "dividend_yield":      fund.dividend_yield or 0.0,
                 "moat_score":          getattr(fund, "moat_score", 0.0),
                 "moat_classification": getattr(fund, "moat_classification", "None"),
+                "tailwind_score":          getattr(fund, "tailwind_score", 0.0),
+                "tailwind_classification": getattr(fund, "tailwind_classification", "Neutral"),
                 "sector":              fund.sector or "Unknown",
                 "company_name":        fund.company_name,
             }
@@ -507,6 +539,120 @@ else:
 for w in result.warnings:
     st.warning(w, icon="⚠️")
 
+# Plain-language conclusion up top, before the detailed stats below.
+st.markdown(
+    f"#### 🎯 En una frase\n"
+    f"Esta cartera **{result.profile_name}** busca un retorno de "
+    f"**~{result.expected_return_pct:.1f}% anual** asumiendo una volatilidad de "
+    f"**~{result.volatility_pct:.1f}%** (cuánto puede subir y bajar en el camino). "
+    f"El detalle de pesos, métricas y cumplimiento de límites está más abajo."
+)
+
+# Next step in the recommended flow (Fase E): consolidate into Mi Plan
+_cta1, _cta2 = st.columns([4, 1])
+_cta1.caption(
+    "💡 **Siguiente paso:** agregá metas y Monte Carlo en 🎲 Simulaciones, y consolidá "
+    "todo en 🗺️ **Mi Plan** para guardarlo y activarlo como tu objetivo de retiro."
+)
+if _cta2.button("🗺️ Ir a Mi Plan", key="optimizer_goto_plan", width="stretch"):
+    st.switch_page(str(Path(__file__).parent / "12_Plan.py"))
+
+# ------------------------------------------------------------------ #
+#  Core portfolio — always visible (deterministic) + Grok AI (optional)#
+# ------------------------------------------------------------------ #
+_ai_cfg = _get_ai_config()
+_full_n = len(getattr(result, "tickers", []))
+
+# Attempt Grok narrative only when AI is enabled.
+# generate_optimizer_advice() now handles N>45 gracefully with a fallback
+# narrative and always returns the deterministic core_holdings.
+if getattr(_ai_cfg, "enabled", False):
+    try:
+        from analysis.ai_analyzer import AIAnalyzer
+        _advice = AIAnalyzer(_ai_cfg).generate_optimizer_advice(
+            result,
+            goals=st.session_state.get("optimizer_goals", []),
+            current_weights=st.session_state.get("optimizer_current_weights"),
+        )
+        result.ai_grok_narrative                   = _advice.get("narrative", "")
+        result.grok_recommended_max_human_positions = _advice.get("recommended_max_human_positions", 0)
+        result.grok_core_holdings                  = _advice.get("core_holdings", []) or []
+        result.grok_dropped_tickers                = _advice.get("dropped_tickers", []) or []
+        result.grok_human_review_tips              = _advice.get("human_review_tips", []) or []
+    except Exception:
+        pass  # deterministic core is still shown below
+
+# Deterministic core — always shown regardless of AI status
+_det_core = getattr(result, "profile_core_holdings", []) or []
+# If AI produced a core, prefer it; otherwise use deterministic
+_display_core  = getattr(result, "grok_core_holdings", []) or _det_core
+_core_from_ai  = bool(getattr(result, "grok_core_holdings", []))
+
+# ---- Grok narrative expander (only if AI narrative exists) ----
+if getattr(result, "ai_grok_narrative", ""):
+    with st.expander(
+        "🤖 Grok explica esta optimización + cartera núcleo manejable",
+        expanded=True,
+    ):
+        st.markdown(result.ai_grok_narrative)
+
+        _grok_n = getattr(result, "grok_recommended_max_human_positions", 0)
+        if _grok_n and _grok_n < _full_n:
+            st.caption(
+                f"Grok recomienda **{_grok_n} posiciones** para que un humano "
+                f"pueda seguir la cartera (la optimización completa tiene {_full_n})."
+            )
+
+        _tips = getattr(result, "grok_human_review_tips", []) or []
+        if _tips:
+            st.subheader("Tips de Grok para revisar y ajustar")
+            for tip in _tips:
+                st.info(f"💡 {tip}")
+
+        _dropped = getattr(result, "grok_dropped_tickers", []) or []
+        if _dropped:
+            dropped_names = ", ".join(d.get("symbol", "") for d in _dropped[:6])
+            st.caption(
+                f"Posiciones que Grok sugiere dejar fuera de la versión humana: {dropped_names}"
+            )
+
+# ---- Deterministic core — always rendered ----
+if _display_core:
+    _core_label = "🤖 Cartera núcleo (Grok)" if _core_from_ai else f"🧠 Cartera núcleo — {prof.name}"
+    _core_help   = (
+        "Selección de Grok de las posiciones más relevantes para gestión activa."
+        if _core_from_ai
+        else (
+            f"Top-{len(_display_core)} posiciones calculadas automáticamente por el optimizador "
+            f"(sin IA) según peso × score × moat del perfil **{prof.name}**. "
+            "Siempre disponible — no requiere API key."
+        )
+    )
+    with st.expander(_core_label, expanded=not getattr(result, "ai_grok_narrative", "")):
+        if not _core_from_ai:
+            st.caption(_core_help)
+        _core_data = [
+            {
+                "Ticker":             c.get("symbol", ""),
+                "Peso % sugerido":    round(float(c.get("suggested_weight_pct", 0)), 1),
+                "Justificación":      c.get("why", "")[:140],
+            }
+            for c in _display_core
+        ]
+        st.dataframe(
+            pd.DataFrame(_core_data),
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "Peso % sugerido": st.column_config.NumberColumn("Peso %", format="%.1f%%"),
+            },
+        )
+        if not _core_from_ai and _full_n > len(_display_core):
+            st.caption(
+                f"Las otras {_full_n - len(_display_core)} posiciones de la cartera completa "
+                "tienen menor peso relativo en el ranking de selección del perfil."
+            )
+
 # ------------------------------------------------------------------ #
 #  Summary metrics                                                     #
 # ------------------------------------------------------------------ #
@@ -579,6 +725,10 @@ with tab_cart:
                 "Empresa": (t.get("company_name", a.symbol) or a.symbol)[:28],
                 "Score":   a.adjusted_score,
                 "Moat":    _MOAT_BADGES.get(moat_cls, f"⚪ {moat_cls}"),
+                "Viento":  tailwind_badge(
+                    getattr(a, "tailwind_classification", "Neutral"),
+                    getattr(a, "tailwind_score", 0.0),
+                ),
                 "Div %":   a.dividend_yield_pct,
                 "Sector":  a.sector,
                 "Notas":   ("🇦🇷" + discount_note) if a.is_ars else "",
@@ -635,7 +785,7 @@ with tab_cart:
                 margin=dict(t=40, b=10, l=10, r=10),
                 title_font_size=14,
             )
-            st.plotly_chart(fig_donut, use_container_width=True)
+            st.plotly_chart(fig_donut, width="stretch")
 
         with col_bar:
             df_bar   = df_alloc[df_alloc["Peso %"] > 0].sort_values("Peso %")
@@ -667,10 +817,10 @@ with tab_cart:
                 margin=dict(t=40, b=10),
                 title_font_size=14,
             )
-            st.plotly_chart(fig_bar, use_container_width=True)
+            st.plotly_chart(fig_bar, width="stretch")
 
         # ---- Allocation table ----
-        _col_order = ["Peso %", "Ticker", "Empresa", "Score", "Moat", "Div %", "Sector", "Notas"]
+        _col_order = ["Peso %", "Ticker", "Empresa", "Score", "Moat", "Viento", "Div %", "Sector", "Notas"]
         if _total_val > 0:
             _col_order.insert(3, "Valor USD")
         _col_order_present = [c for c in _col_order if c in df_alloc.columns]
@@ -681,6 +831,7 @@ with tab_cart:
             "Empresa": st.column_config.TextColumn("Empresa", width="medium"),
             "Score":   st.column_config.NumberColumn("Score",  format="%.0f", help="Score Ajustado /100"),
             "Moat":    st.column_config.TextColumn("Moat",    help="Wide=ventaja duradera · Narrow=moderada · Minimal=limitada"),
+            "Viento":  st.column_config.TextColumn("Viento",  help="Cola de viento estructural sector-país (curada) — 🌬️ fuerte · 🍃 moderada · 🌪️ headwind"),
             "Div %":   st.column_config.NumberColumn("Div %",  format="%.2f%%"),
             "Sector":  st.column_config.TextColumn("Sector"),
             "Notas":   st.column_config.TextColumn("Notas",   width="small"),
@@ -690,10 +841,26 @@ with tab_cart:
 
         st.dataframe(
             df_alloc[_col_order_present],
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             column_config=_col_cfg,
         )
+
+        # Structural tailwind summary (Idea 2) — surfaced only when material
+        _tw_rows = [
+            (a.symbol, getattr(a, "tailwind_classification", "Neutral"), getattr(a, "tailwind_score", 0.0))
+            for a in result.tickers
+            if getattr(a, "tailwind_classification", "Neutral") not in ("Neutral", "")
+        ]
+        if _tw_rows:
+            _tw_txt = " · ".join(
+                f"{tailwind_badge(c, s)} {sym}" for sym, c, s in _tw_rows
+            )
+            st.caption(
+                f"🌬️ **Colas de viento estructurales sector-país (curadas):** {_tw_txt}. "
+                "El factor ya está incluido en los scores y en el retorno esperado "
+                "(tilt configurable) — outlook a la fecha de curaduría, no garantía."
+            )
 
         # ---- CSV export ----
         _csv_buf = io.StringIO()
@@ -719,7 +886,7 @@ with tab_cart:
                 )
                 fig_sec.update_traces(textposition="inside", textinfo="percent+label")
                 fig_sec.update_layout(height=340, title_font_size=14)
-                st.plotly_chart(fig_sec, use_container_width=True)
+                st.plotly_chart(fig_sec, width="stretch")
             with col_top:
                 df_top     = df_alloc.nlargest(10, "Peso %")
                 others_pct = 100 - df_top["Peso %"].sum()
@@ -736,7 +903,7 @@ with tab_cart:
                 )
                 fig_top.update_traces(textposition="inside", textinfo="percent+label")
                 fig_top.update_layout(height=340, title_font_size=14)
-                st.plotly_chart(fig_top, use_container_width=True)
+                st.plotly_chart(fig_top, width="stretch")
 
         # ARS disclaimer
         if any(a.is_ars for a in result.tickers):
@@ -803,7 +970,7 @@ with tab_front:
             height=540,
             legend=dict(yanchor="bottom", y=0.01, xanchor="right", x=0.99),
         )
-        st.plotly_chart(fig_front, use_container_width=True)
+        st.plotly_chart(fig_front, width="stretch")
         st.caption(
             "⭐ Estrella azul = cartera óptima del perfil. "
             "💎 Diamantes grises = benchmarks de referencia (SPY, 60/40, BND). "
@@ -912,7 +1079,7 @@ with tab_metrics:
     _bench_df = pd.DataFrame(_bench_rows)
     st.dataframe(
         _bench_df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "Portafolio / Benchmark": st.column_config.TextColumn("Portafolio / Benchmark"),
@@ -942,7 +1109,7 @@ with tab_metrics:
         yaxis_title="Valor",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
-    st.plotly_chart(_fig_bench, use_container_width=True)
+    st.plotly_chart(_fig_bench, width="stretch")
     st.caption(
         "⚠️ Los retornos del portafolio son proyecciones del modelo, no retornos históricos reales. "
         "Los benchmarks reflejan performance pasada y no garantizan resultados futuros."
@@ -1002,7 +1169,7 @@ with tab_rebal:
             )
             fig_rebal.add_vline(x=0, line_color="gray", line_width=1)
             fig_rebal.update_layout(height=max(300, len(df_rebal) * 22), coloraxis_showscale=False)
-            st.plotly_chart(fig_rebal, use_container_width=True)
+            st.plotly_chart(fig_rebal, width="stretch")
 
         all_rebal_data = [
             {
@@ -1016,7 +1183,7 @@ with tab_rebal:
         ]
         st.dataframe(
             pd.DataFrame(rebal_data if rebal_data else all_rebal_data),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             column_config={"Δ %": st.column_config.NumberColumn("Δ %", format="%.1f")},
         )
@@ -1087,6 +1254,8 @@ with tab_compare:
                     "dividend_yield":      fund.dividend_yield or 0.0,
                     "moat_score":          getattr(fund, "moat_score", 0.0),
                     "moat_classification": getattr(fund, "moat_classification", "None"),
+                    "tailwind_score":          getattr(fund, "tailwind_score", 0.0),
+                    "tailwind_classification": getattr(fund, "tailwind_classification", "Neutral"),
                     "sector":              fund.sector or "Unknown",
                     "company_name":        fund.company_name,
                 }
@@ -1130,7 +1299,7 @@ with tab_compare:
             _comp_df = pd.DataFrame(_comp_rows)
             st.dataframe(
                 _comp_df,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 column_config={
                     "Retorno %":     st.column_config.NumberColumn("Retorno %",  format="%.1f%%"),
@@ -1157,7 +1326,7 @@ with tab_compare:
                 yaxis_title="%",
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             )
-            st.plotly_chart(_fig_comp, use_container_width=True)
+            st.plotly_chart(_fig_comp, width="stretch")
 
             _fig_sharpe = px.bar(
                 _comp_df.sort_values("Sharpe"),
@@ -1168,7 +1337,7 @@ with tab_compare:
             )
             _fig_sharpe.update_traces(texttemplate="%{text:.2f}", textposition="inside")
             _fig_sharpe.update_layout(height=300, coloraxis_showscale=False)
-            st.plotly_chart(_fig_sharpe, use_container_width=True)
+            st.plotly_chart(_fig_sharpe, width="stretch")
 
             st.caption(
                 f"⚠️ Comparación basada en los primeros {_COMPARE_CAP} tickers de cada universo. "
@@ -1181,3 +1350,62 @@ with tab_compare:
             f"Presioná **Comparar todos los universos** para ver qué universo "
             f"rinde mejor con el perfil **{prof.name}**."
         )
+
+# ------------------------------------------------------------------ #
+#  PDF Report Download                                                 #
+# ------------------------------------------------------------------ #
+
+st.divider()
+with st.expander("📄 Descargar Reporte PDF del portafolio", expanded=False):
+    st.markdown("Generá un reporte PDF profesional con el portafolio optimizado y proyecciones.")
+    _opt_col1, _opt_col2 = st.columns(2)
+    with _opt_col1:
+        _opt_pdf_name = st.text_input(
+            "Nombre (opcional)", placeholder="Ej: Juan Pérez", key="pdf_opt_user_name")
+        _opt_pdf_version = st.radio(
+            "Versión", ["completo", "breve"], key="pdf_opt_version",
+            format_func=lambda v: "📋 Completo" if v == "completo" else "📝 Breve",
+        )
+    with _opt_col2:
+        _opt_pdf_ai = st.checkbox("Incluir narrativa IA", value=True, key="pdf_opt_ai")
+        _opt_pdf_charts = st.checkbox("Incluir gráficos", value=True, key="pdf_opt_charts")
+
+    if st.button("📄 Generar y Descargar PDF", type="primary", key="pdf_opt_generate"):
+        with st.spinner("Generando reporte PDF…"):
+            try:
+                from dashboard.shared import _get_ai_config
+                from reports.investment_plan import InvestmentPlanReport, ReportOptions
+                _opt_pdf_options = ReportOptions(
+                    user_name=_opt_pdf_name,
+                    version=_opt_pdf_version,
+                    include_ai_narrative=_opt_pdf_ai,
+                    include_charts=_opt_pdf_charts,
+                    include_risk_section=False,
+                    include_recommendations=True,
+                )
+                _opt_pdf_mc_params = {
+                    "profile_name": result.profile_name if hasattr(result, "profile_name") else prof.name,
+                }
+                _opt_pdf_ai_cfg = _get_ai_config() if _opt_pdf_ai else None
+                _opt_pdf_bytes = InvestmentPlanReport().generate(
+                    goal_plan=None,
+                    opt_result=result,
+                    mc_result=None,
+                    mc_params=_opt_pdf_mc_params,
+                    ai_config=_opt_pdf_ai_cfg,
+                    options=_opt_pdf_options,
+                )
+                st.session_state["pdf_opt_bytes"] = _opt_pdf_bytes
+            except Exception as _opt_pdf_err:
+                st.error(f"Error generando el PDF: {_opt_pdf_err}")
+
+    if "pdf_opt_bytes" in st.session_state:
+        _opt_fname = f"portafolio_optimizado_{datetime.now().strftime('%Y%m%d')}.pdf"
+        st.download_button(
+            label="⬇️ Descargar PDF",
+            data=st.session_state["pdf_opt_bytes"],
+            file_name=_opt_fname,
+            mime="application/pdf",
+            key="pdf_opt_dl_btn",
+        )
+        st.success("✅ PDF listo para descargar.")

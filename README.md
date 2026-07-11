@@ -4,7 +4,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/streamlit-1.x-FF4B4B)](https://streamlit.io/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-179%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-419%20passing-brightgreen)]()
 
 > **Motor de análisis de inversiones a largo plazo orientado al retiro.**  
 > Calificá, filtrá y optimizá un universo de acciones en segundos — con score fundamental 0–100, Economic Moat, decisión AI y simulaciones de riesgo — todo en una sola app local, sin subscripciones.
@@ -123,6 +123,29 @@ streamlit run dashboard/app.py
 Abrí `http://localhost:8501` — sin necesidad de API keys para el análisis básico.
 
 > **AI opcional**: Si querés decisiones en lenguaje natural, agregá tu `ANTHROPIC_API_KEY` (u OpenAI/xAI) en `.env`. Sin AI, el motor rule-based funciona perfectamente.
+
+### ⚡ Probar en 5 minutos (sin ser técnico)
+
+Si solo querés **ver la herramienta funcionando** sin armar una cartera desde cero:
+
+```bash
+git clone https://github.com/fcalvino/retirement-advisor.git
+cd retirement-advisor
+./run.sh            # crea el entorno, instala todo y lanza la app (macOS/Linux)
+```
+
+`run.sh` es idempotente: la primera vez crea el `venv` e instala dependencias; las siguientes solo lanza la app. En Windows con `make` disponible podés usar `make run`.
+
+Una vez abierta la app:
+
+1. Andá a **🗺️ Mi Plan**.
+2. En el recuadro **«🎁 ¿Querés probar con un plan de ejemplo?»** elegí uno (Conservador 30 años, FIRE Moderado o Retiro AR con ADRs) y tocá **«📥➕ Cargar y activar»**.
+3. Explorá las secciones del plan activo: **salud vs mercado**, **evolución**, **estrategia de retiro** y, en **🎲 Simulaciones**, el **🔬 laboratorio de sensibilidad**.
+4. Descargá el **PDF del plan** desde **🗺️ Mi Plan → «🧾 Descargar PDF»**.
+
+Los planes de ejemplo viven en `data/sample_plans/*.json` y se cargan con el mismo flujo que un plan importado — podés borrarlos cuando quieras desde «Planes guardados».
+
+> **Respaldá tu plan**: Después de crear tu primer plan activo en **🗺️ Mi Plan**, **exportalo a JSON** (botón «📥 Exportar / Respaldar este plan») y guardalo en tu nube personal o USB. Así sobrevive a una reinstalación o cambio de máquina, y podés restaurarlo desde «📦 Importar / Restaurar plan». Tus planes viven en `data/retirement_plans.json` + `data/db/`: hacé backup de esas carpetas con regularidad.
 
 ---
 
@@ -404,7 +427,45 @@ python scripts/run_scheduler.py
 
 Los logs se escriben en `logs/retirement_advisor.log` (rotación 10 MB, retención 7 días).
 
-### Cron (Linux/macOS)
+### Alertas Diarias (Cron — recomendado)
+
+Para ejecutar una sola verificación de alertas y salir (ideal para cron), usá el script dedicado:
+
+```bash
+# Ejecución manual (con logs completos)
+bash scripts/run_daily_alerts.sh
+
+# Ejecución en background (solo logs WARNING+)
+bash scripts/run_daily_alerts.sh --quiet
+```
+
+**Configurar cron** — todos los días a las 9:00 AM:
+
+```bash
+crontab -e
+```
+
+```cron
+0 9 * * * /ruta/a/retirement_advisor/scripts/run_daily_alerts.sh --quiet >> /ruta/a/retirement_advisor/logs/daily_alerts.log 2>&1
+```
+
+**Optimización de tokens AI:** por defecto solo las alertas WARNING y CRITICAL generan explicaciones con AI (Grok/Claude/xAI). Las alertas INFO usan mensaje estándar, reduciendo el consumo de tokens.
+
+| Severity | AI call | Configuración |
+|----------|---------|---------------|
+| CRITICAL | ✅ Sí | Siempre |
+| WARNING  | ✅ Sí | Default |
+| INFO     | ❌ No  | Ahorro de tokens |
+
+Para ajustar, agregá en `.env`:
+```env
+ALERT_AI_MIN_SEVERITY=warning   # default — solo WARNING+ usan AI
+ALERT_AI_MIN_SEVERITY=critical  # máximo ahorro — solo CRITICAL usa AI
+ALERT_AI_MIN_SEVERITY=info      # máxima cobertura — todas usan AI
+ALERT_AI_EXPLANATIONS=false     # deshabilitar AI completamente
+```
+
+### Cron (Linux/macOS) — Scheduler continuo
 
 ```cron
 @reboot cd /ruta/a/retirement_advisor && /ruta/a/venv/bin/python scripts/run_scheduler.py >> logs/scheduler.log 2>&1
@@ -431,23 +492,38 @@ WantedBy=multi-user.target
 
 ### Docker
 
+Imagen basada en `python:3.12-slim` (alineada con el CI). Montá `data/` completo
+para que **tus planes guardados, el historial de salud y la base SQLite**
+persistan entre reinicios del contenedor, y `reports/` para los PDF.
+
 ```bash
-# Dashboard
+# 0. Construir la imagen
+docker build -t retirement-advisor .
+
+# 1. Preparar config (AI opcional)
+cp .env.example .env   # editá ANTHROPIC_API_KEY / OPENAI_API_KEY si querés AI
+
+# 2. Dashboard
 docker run -d --name ra-dashboard \
   -p 8501:8501 \
   --env-file .env \
-  -v $(pwd)/data/db:/app/data/db \
+  -v $(pwd)/data:/app/data \
   -v $(pwd)/reports:/app/reports \
   retirement-advisor
 
-# Scheduler
+# 3. Scheduler (alertas + reporte mensual + salud del plan)
 docker run -d --name ra-scheduler \
   --env-file .env \
-  -v $(pwd)/data/db:/app/data/db \
+  -v $(pwd)/data:/app/data \
   -v $(pwd)/reports:/app/reports \
   retirement-advisor \
   python scripts/run_scheduler.py
 ```
+
+> **Persistencia:** los planes viven en `data/retirement_plans.json`, el historial
+> de salud en `data/plan_health_history.json` y la base de alertas en `data/db/`.
+> Montar `-v $(pwd)/data:/app/data` los conserva fuera del contenedor — hacé backup
+> de esa carpeta con regularidad.
 
 ---
 
@@ -522,7 +598,9 @@ retirement_advisor/
 
 ## Limitaciones conocidas
 
-- **Datos**: Yahoo Finance puede tener datos faltantes o inconsistentes en empresas pequeñas. El sistema cae a valores neutrales cuando hay datos parciales.
+- **Supuestos económicos (drags)**: Por defecto las proyecciones (Optimizer, Monte Carlo, Plan) asumen **0% de fees, 0% de impuestos sobre dividendos y 0% de costo de rebalanceo**, y no modelan fricciones locales argentinas (cepo, brecha cambiaria, diferencial de inflación). Desde la pestaña **🎲 Simulaciones → 📊 Supuestos y drags** podés activar una capa configurable de drags realistas (fee, tax de dividendos, rebalanceo, buffer AR); el caso base sin drags se conserva siempre como referencia y los planes guardados recuerdan bajo qué supuestos se generaron.
+- **Datos**: Yahoo Finance (yfinance) es la única fuente; puede tener datos faltantes o inconsistentes en empresas pequeñas. El sistema cae a valores neutrales cuando hay datos parciales y muestra un badge de calidad por ticker. Podés **exportar un snapshot del universo** (⚙️ Settings) para respaldo/offline.
+- **Tickers personalizados**: Desde ⚙️ Settings podés agregar tickers custom (ej. VIST). Se integran al flujo pero quedan marcados como **⚠️ Custom** con calidad de datos parcial; su scoring es experimental y el optimizador los trata con cautela.
 - **Monte Carlo**: El block-bootstrap usa historia real — no modela cambios estructurales (nuevas regulaciones, disrupciones de sector).
 - **AI Moat**: La evaluación cualitativa está basada en training data del LLM y puede estar desactualizada para empresas que cambian rápido.
 - **Optimización**: El perfil Conservador puede ser matemáticamente infeasible con el universo default (vol 12% + div 3.5% son constraints difíciles de cumplir con acciones growth). En ese caso se aplica fallback score-weighted.

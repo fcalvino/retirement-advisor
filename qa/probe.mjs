@@ -1,0 +1,16 @@
+import { chromium } from 'playwright';
+const BASE = process.env.QA_BASE || 'http://localhost:8502';
+const b = await chromium.launch({ headless: true });
+const p = await (await b.newContext({ viewport: { width: 1600, height: 1200 } })).newPage();
+const errs = [];
+p.on('console', m => { if (m.type()==='error') errs.push(m.text()); });
+p.on('pageerror', e => errs.push('PAGEERROR '+e.message));
+await p.goto(BASE, { waitUntil: 'networkidle' });
+await p.waitForTimeout(4000);
+const main = await p.$eval('[data-testid="stMain"], section.main, .main', e => e.innerText.slice(0,2000)).catch(()=> 'NO MAIN FOUND');
+console.log('=== MAIN TEXT ===\n' + main);
+const exc = await p.$$eval('[data-testid="stException"]', e=>e.map(x=>x.innerText.slice(0,800)));
+console.log('=== EXCEPTIONS ===', JSON.stringify(exc));
+console.log('=== CONSOLE ERRORS ===', JSON.stringify(errs.slice(0,10)));
+await p.screenshot({ path: './shots/probe_home.png' });
+await b.close();

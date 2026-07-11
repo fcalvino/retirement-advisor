@@ -10,15 +10,11 @@ No network calls — price history is synthetic.
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import numpy as np
 import pandas as pd
-import pytest
 
-from config import CONSERVATIVE_PROFILE, MODERATE_PROFILE, AGGRESSIVE_PROFILE
+from config import AGGRESSIVE_PROFILE, CONSERVATIVE_PROFILE, MODERATE_PROFILE
 from portfolio.optimizer import PortfolioOptimizer
-
 
 # ------------------------------------------------------------------ #
 #  Helpers                                                             #

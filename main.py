@@ -12,7 +12,13 @@ Usage:
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+# Seed root so ``bootstrap`` is importable regardless of cwd.
+_sys_root = Path(__file__).resolve().parent
+if str(_sys_root) not in sys.path:
+    sys.path.insert(0, str(_sys_root))
+from bootstrap import ensure_project_root
+
+ensure_project_root()
 
 import argparse
 
@@ -41,7 +47,7 @@ def cmd_analyze(symbols: list[str]) -> None:
             moat_detail = getattr(fund, "crypto_moat_detail", None)
             moat_str = f"{fund.moat_classification} ({fund.moat_score:.1f}/8)" if fund.moat_score > 0 else "N/A (AI disabled)"
             print(f"\n  🪙 Crypto Score: {fund.adjusted_score:.1f}/100  |  Moat: {moat_str}")
-            print(f"    (base 35 + técnico + moat − volatilidad − drawdown)")
+            print("    (base 35 + técnico + moat − volatilidad − drawdown)")
             for key in ("crypto_vol", "crypto_dd", "crypto_cagr", "crypto_supply", "crypto_halving"):
                 if key in fund.notes:
                     print(f"    {fund.notes[key]}")

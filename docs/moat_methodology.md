@@ -52,7 +52,7 @@ Evaluado por un LLM con contexto de la empresa. **Cacheado 7 días por ticker.**
 - `0.5` = Ventaja incipiente o débil, podría erosionarse en 5 años
 - `0.0` = Sin ventaja identificable
 
-**Descuento para mercados emergentes:** el LLM aplica automáticamente −0.5 en dimensiones afectadas por riesgo político o macro (Argentina, Venezuela, etc.).
+**Descuento para mercados emergentes:** el LLM aplica automáticamente −0.5 en dimensiones afectadas por riesgo político o macro (Argentina, Venezuela, etc.). Desde la mejora estructural, el LLM también reporta explícitamente los factores macro relevantes a través de `macro_factors` (en el objeto MoatDetail / CryptoMoatDetail) y `macro_impact_on_moat_durability` cuando afectan la durabilidad estructural.
 
 ---
 

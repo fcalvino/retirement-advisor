@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 from config import OPTIMIZER
-from portfolio.optimizer import _ARS_TICKERS, _ETF_TICKERS, OptimizationResult, PortfolioOptimizer
+from portfolio.optimizer import _ETF_TICKERS, OptimizationResult, PortfolioOptimizer
 
 # ------------------------------------------------------------------ #
 #  Fixtures                                                            #
@@ -363,3 +363,185 @@ class TestFullOptimize:
         # Only one non-ETF, non-low-score ticker → not enough to optimize
         result = opt.optimize([_ticker("AAPL", score=70.0)])
         assert len(result.warnings) > 0
+
+    @patch("portfolio.optimizer.get_history", side_effect=_fake_price_history)
+    def test_instrumentation_fields_populated(self, _mock):
+        opt = PortfolioOptimizer("aggressive")
+        tickers = [_ticker(f"S{i:02d}", score=65.0, div=2.0, sector="Technology") for i in range(8)]
+        result = opt.optimize(tickers)
+        assert result.n_input == 8
+        assert result.n_eligible >= 0
+        assert result.n_candidates >= 0
+        assert result.build_matrix_ms >= 0.0
+
+
+# ------------------------------------------------------------------ #
+#  Profile candidate down-select (Fase C)                              #
+# ------------------------------------------------------------------ #
+
+class TestSelectCandidatesForProfile:
+    def test_no_downselect_when_below_topk(self):
+        opt = PortfolioOptimizer("conservative")  # pre_filter_top_k=20
+        tickers = _make_tickers(10)
+        result = opt._select_candidates_for_profile(tickers)
+        assert len(result) == 10  # fewer than top_k, no truncation
+
+    def test_downselect_when_above_topk(self):
+        opt = PortfolioOptimizer("conservative")  # pre_filter_top_k=20
+        tickers = _make_tickers(50)
+        result = opt._select_candidates_for_profile(tickers)
+        assert len(result) <= opt.cfg.pre_filter_top_k
+
+    def test_conservative_profile_favors_dividends(self):
+        # Conservative has high dividend_weight=0.45; should prefer high-div tickers
+        opt = PortfolioOptimizer("conservative")
+        high_div = [_ticker(f"HD{i:02d}", score=65.0, div=5.0, moat=8.0, sector="Financials") for i in range(10)]
+        low_div  = [_ticker(f"LD{i:02d}", score=65.0, div=0.5, moat=8.0, sector="Technology") for i in range(30)]
+        tickers  = high_div + low_div  # 40 total, top_k=20
+        result   = opt._select_candidates_for_profile(tickers)
+        selected_syms = {t["symbol"] for t in result}
+        # At least 8 of the 10 high-div tickers should make the cut
+        hd_selected = sum(1 for t in high_div if t["symbol"] in selected_syms)
+        assert hd_selected >= 8
+
+    def test_aggressive_profile_has_larger_topk(self):
+        opt_cons = PortfolioOptimizer("conservative")
+        opt_agg  = PortfolioOptimizer("aggressive")
+        assert opt_agg.cfg.pre_filter_top_k > opt_cons.cfg.pre_filter_top_k
+
+    def test_min_positions_always_preserved(self):
+        opt = PortfolioOptimizer("conservative")
+        # Even with a huge universe, we keep at least min_positions+2
+        tickers = _make_tickers(100)
+        result  = opt._select_candidates_for_profile(tickers)
+        assert len(result) >= opt.cfg.min_positions
+
+
+# ------------------------------------------------------------------ #
+#  Deterministic core holdings (Fase C / Fase B fallback)             #
+# ------------------------------------------------------------------ #
+
+class TestSelectCoreHoldings:
+    def _make_allocations(self, n=15):
+        from portfolio.optimizer import TickerAllocation
+        allocs = []
+        for i in range(n):
+            allocs.append(TickerAllocation(
+                symbol=f"T{i:02d}",
+                weight_pct=round(100.0 / n, 1),
+                expected_return_pct=8.0,
+                volatility_pct=12.0,
+                dividend_yield_pct=2.5,
+                adjusted_score=65.0 + i,
+                moat_score=8.0,
+                sector="Technology",
+            ))
+        return allocs
+
+    def test_core_length_bounded_by_target(self):
+        opt = PortfolioOptimizer("conservative")  # target_max_human_positions=10
+        allocs = self._make_allocations(20)
+        core = opt._select_core_holdings(allocs)
+        assert len(core) <= opt.cfg.target_max_human_positions
+
+    def test_core_weights_sum_to_100(self):
+        opt = PortfolioOptimizer("moderate")
+        allocs = self._make_allocations(20)
+        core = opt._select_core_holdings(allocs)
+        total = sum(c["suggested_weight_pct"] for c in core)
+        assert abs(total - 100.0) < 0.5
+
+    def test_core_has_required_keys(self):
+        opt = PortfolioOptimizer("aggressive")
+        allocs = self._make_allocations(10)
+        core = opt._select_core_holdings(allocs)
+        for item in core:
+            assert "symbol" in item
+            assert "suggested_weight_pct" in item
+            assert "why" in item
+
+    def test_empty_allocations_returns_empty(self):
+        opt = PortfolioOptimizer("conservative")
+        assert opt._select_core_holdings([]) == []
+
+    def test_core_fewer_than_full_for_large_portfolio(self):
+        opt = PortfolioOptimizer("conservative")  # target=10
+        allocs = self._make_allocations(25)
+        core = opt._select_core_holdings(allocs)
+        assert len(core) < len(allocs)
+
+    @patch("portfolio.optimizer.get_history", side_effect=_fake_price_history)
+    def test_profile_core_populated_in_full_optimize(self, _mock):
+        """profile_core_holdings is always set by optimize(), no LLM needed."""
+        opt = PortfolioOptimizer("conservative")
+        tickers = [
+            _ticker(f"S{i:02d}", score=65.0, div=3.5, moat=8.0, sector="Financials")
+            for i in range(15)
+        ]
+        result = opt.optimize(tickers)
+        assert isinstance(result.profile_core_holdings, list)
+        assert len(result.profile_core_holdings) > 0
+        # Core should be smaller than or equal to full result
+        assert len(result.profile_core_holdings) <= len(result.tickers)
+
+
+# ------------------------------------------------------------------ #
+#  Large-N behaviour                                                   #
+# ------------------------------------------------------------------ #
+
+class TestLargeN:
+    """Verify that the optimizer handles large universes without crashing
+    and produces manageable outputs respecting the profile constraints."""
+
+    def _make_diverse_tickers(self, n: int) -> list[dict]:
+        sectors = ["Technology", "Financials", "Healthcare", "Consumer Staples",
+                   "Energy", "Industrials", "Telecom / REIT"]
+        return [
+            _ticker(
+                f"LN{i:03d}",
+                score=45.0 + (i % 40),
+                div=0.5 + (i % 6) * 0.8,
+                moat=4.0 + (i % 10),
+                sector=sectors[i % len(sectors)],
+            )
+            for i in range(n)
+        ]
+
+    @patch("portfolio.optimizer.get_history", side_effect=_fake_price_history)
+    def test_large_n_conservative_produces_manageable_result(self, _mock):
+        opt = PortfolioOptimizer("conservative")  # pre_filter_top_k=20
+        tickers = self._make_diverse_tickers(80)
+        result = opt.optimize(tickers)
+        assert isinstance(result, OptimizationResult)
+        assert result.n_input == 80
+        assert result.n_candidates <= opt.cfg.pre_filter_top_k
+
+    @patch("portfolio.optimizer.get_history", side_effect=_fake_price_history)
+    def test_large_n_different_profiles_produce_different_candidates(self, _mock):
+        tickers = self._make_diverse_tickers(60)
+        r_cons = PortfolioOptimizer("conservative").optimize(tickers)
+        r_agg  = PortfolioOptimizer("aggressive").optimize(tickers)
+        # Conservative pre_filter_top_k=20, aggressive=45 → different candidate counts
+        assert r_cons.n_candidates <= 20
+        assert r_agg.n_candidates <= 45
+        # Conservative should generally have fewer positions than aggressive
+        # (both are bounded, but aggressive allows more)
+        assert r_cons.n_candidates <= r_agg.n_candidates
+
+    @patch("portfolio.optimizer.get_history", side_effect=_fake_price_history)
+    def test_core_holdings_always_present_for_large_n(self, _mock):
+        opt = PortfolioOptimizer("moderate")
+        tickers = self._make_diverse_tickers(50)
+        result = opt.optimize(tickers)
+        assert len(result.profile_core_holdings) > 0
+        assert len(result.profile_core_holdings) <= opt.cfg.target_max_human_positions
+
+    @patch("portfolio.optimizer.get_history", side_effect=_fake_price_history)
+    def test_instrumentation_fields_for_large_n(self, _mock):
+        opt = PortfolioOptimizer("aggressive")
+        tickers = self._make_diverse_tickers(70)
+        result = opt.optimize(tickers)
+        assert result.n_input == 70
+        assert result.n_eligible <= 70
+        assert result.n_candidates <= opt.cfg.pre_filter_top_k
+        assert result.build_matrix_ms >= 0
