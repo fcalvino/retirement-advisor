@@ -129,6 +129,7 @@ if _active_plan is not None:
                 f"{_avg_drift:.1f}%",
                 delta="rebalancear" if _over else "alineado",
                 delta_color="inverse" if _over else "normal",
+                delta_arrow="off",
             )
         with _mc2:
             if _avg_drift > ALERTS.portfolio_rebalance_threshold_pct:

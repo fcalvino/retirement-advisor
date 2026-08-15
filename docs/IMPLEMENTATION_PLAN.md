@@ -1,9 +1,12 @@
 # Plan de Implementación — El Gran Salto
 
-> Plan operativo derivado de `VISION_GRAN_SALTO.md`. Traduce las 3 apuestas + habilitadores
-> en fases ejecutables, ancladas al codebase real. **Fase 1 detallada al nivel de
-> esquema/módulos/tests; Fases 2–5 a nivel de épica** (se detallarán al cerrar la fase previa).
-> Fecha: 2026-06. Base: 419 tests, Fases 1–H completas.
+> **Estado: HISTÓRICO (2026-06).** Las 5 fases de este plan ya están implementadas
+> (track record, comité + eval, RAG macro + multi-source, chat, Black-Litterman).
+> **No es el próximo sprint.** Estado actual: [`CONTEXT.md` §6](CONTEXT.md).
+> Diario de fases: [`ROADMAP.md`](ROADMAP.md). Visión original: [`VISION_GRAN_SALTO.md`](VISION_GRAN_SALTO.md).
+>
+> Plan operativo derivado de `VISION_GRAN_SALTO.md`. Se conserva como registro de
+> cómo se ejecutó el salto, no como backlog. Fecha original: 2026-06.
 
 ---
 
@@ -17,11 +20,11 @@ Orden (de la matriz de priorización del documento, principio de menor esfuerzo 
 confianza primero):
 
 ```
-Fase 1  Track record / calibración        ◄── EMPEZAR YA (sin dependencias duras)
-Fase 2  Comité multi-agente + eval harness     (eval harness es prerequisito)
-Fase 3  RAG macro + multi-source data           (vuelve creíbles 1 y 2)
-Fase 4  Interfaz conversacional                 (tras motor agéntico + evals)
-Fase 5  Black-Litterman + módulos de planificación (profundidad de modelo)
+Fase 1  Track record / calibración              ✅ implementada
+Fase 2  Comité multi-agente + eval harness      ✅ implementada
+Fase 3  RAG macro + multi-source data           ✅ implementada
+Fase 4  Interfaz conversacional                 ✅ implementada
+Fase 5  Black-Litterman + módulos de planificación ✅ implementada
 ```
 
 Riesgo transversal que es un *gate*, no un detalle: **compliance**. Cuanto más el producto
@@ -151,7 +154,7 @@ Nuevo `tests/test_track_record.py`:
 - [x] La página muestra calibración + equity curve + tabla, con framing honesto.
 - [x] `pytest tests/test_track_record.py` en verde (11/11) y `test_alert_engine` sin regresiones (23/23).
 
-**Esfuerzo estimado:** 1–2 semanas. **Sin dependencias.** Se arranca ya.
+**Esfuerzo estimado (en su día):** 1–2 semanas. **Sin dependencias.** (Arranque original; ya cerrado.)
 
 **Estado: IMPLEMENTADO (2026-06).** Archivos entregados:
 `analysis/track_record.py` (esquema + captura), `analysis/track_record_scorer.py`
@@ -401,14 +404,8 @@ saltee por inercia.
 
 ---
 
-# Resumen de arranque inmediato
+# Resumen de arranque (cerrado)
 
-Esta semana, sin esperar a nada:
-
-1. Crear `analysis/track_record.py` con las dos tablas (1.1).
-2. Implementar `log_recommendation` y enganchar en `2_Stock_Analysis.py` + `alerts/engine.py` (1.2).
-3. Implementar el scorer y las métricas de calibración (1.3).
-4. Página `13_Track_Record.py` (1.4).
-5. `tests/test_track_record.py` en verde (1.5).
-
-Todo lo demás se planifica en detalle al cerrar la fase previa.
+La lista de “esta semana” (crear `track_record.py`, scorer, página 13, tests)
+ya se ejecutó. Ver **Estado: IMPLEMENTADO** en cada fase de este mismo archivo.
+Para trabajo nuevo, partí de [`CONTEXT.md`](CONTEXT.md), no de este kickoff.

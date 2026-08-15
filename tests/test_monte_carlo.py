@@ -195,6 +195,108 @@ class TestFullRun:
         )
         assert result.prob_achieve_target_pct > 95.0
 
+
+# ------------------------------------------------------------------ #
+#  Year-of-max-drawdown dispersion (card audit, case 02)               #
+# ------------------------------------------------------------------ #
+
+class TestYearOfMaxDrawdownDispersion:
+    """The median alone is an artifact of the horizon — the quartiles say so."""
+
+    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
+    def test_quartiles_are_ordered_and_inside_horizon(self, _mock):
+        sim = _make_simulator(["AAPL", "MSFT"])
+        horizon = 20
+        r = sim.run(horizon_years=horizon, n_sims=2000, initial_value=100_000)
+
+        assert r.p25_year_of_max_dd <= r.median_year_of_max_dd <= r.p75_year_of_max_dd
+        for v in (r.p25_year_of_max_dd, r.median_year_of_max_dd, r.p75_year_of_max_dd):
+            assert 0.0 <= v <= horizon
+
+    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
+    def test_timing_of_worst_drawdown_is_essentially_unpredictable(self, _mock):
+        """The IQR covers a large slice of the horizon — which is exactly why the
+        UI must show a band and not a precise "worst year" line.
+
+        Note we assert dispersion, NOT location: where the median lands depends
+        on the drift of the series (a strongly trending series pushes the worst
+        drawdown late, a driftless one puts it near horizon/2). Neither makes the
+        point estimate meaningful — the spread does the talking.
+        """
+        sim = _make_simulator(["AAPL", "MSFT"])
+        horizon = 24
+        r = sim.run(horizon_years=horizon, n_sims=3000, initial_value=100_000)
+
+        iqr = r.p75_year_of_max_dd - r.p25_year_of_max_dd
+        assert iqr > horizon * 0.25, (
+            f"IQR {iqr:.1f}y over a {horizon}y horizon — if this ever gets small, "
+            "a point estimate would become defensible and the UI could show one."
+        )
+        # And the median is not a spike: both quartiles sit clearly away from it.
+        assert r.median_year_of_max_dd - r.p25_year_of_max_dd > 1.0
+        assert r.p75_year_of_max_dd - r.median_year_of_max_dd > 1.0
+
+    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
+    def test_preexisting_drawdown_metrics_unchanged_by_the_wider_tuple(self, _mock):
+        """The 5→7 tuple widening must not disturb the metrics that already existed."""
+        sim = _make_simulator(["AAPL"])
+        r = sim.run(horizon_years=10, n_sims=1000, initial_value=100_000)
+
+        assert 0.0 <= r.sorr_early_drawdown_pct <= 100.0
+        assert 0.0 <= r.median_max_drawdown_pct <= 100.0
+        assert 0.0 <= r.pct_paths_severe_drawdown <= 100.0
+        assert r.p10_intra_min >= 0.0
+
+
+# ------------------------------------------------------------------ #
+#  Contributions: a NEGATIVE annual_withdrawal is an inflow             #
+# ------------------------------------------------------------------ #
+
+class TestContributionsAreApplied:
+    """Regression guard for the ``> 0`` guard that dropped inflows silently.
+
+    ``GoalPlanner`` models ``Goal.annual_contribution`` as a negative
+    ``annual_withdrawal``. The engine used to test ``if annual_withdrawal > 0``,
+    so every contribution the user entered was discarded and goal projections
+    were identical with and without savings.
+    """
+
+    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
+    def test_contribution_raises_the_projection(self, _mock):
+        sim = _make_simulator(["AAPL"])
+        kw = dict(horizon_years=10, n_sims=1000, initial_value=10_000)
+
+        without = sim.run(annual_withdrawal=0.0, **kw)
+        with_contrib = sim.run(annual_withdrawal=-6_000.0, **kw)
+
+        assert with_contrib.median_terminal > without.median_terminal * 2
+
+    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
+    def test_more_contribution_is_monotonically_better(self, _mock):
+        sim = _make_simulator(["AAPL"])
+        # Target picked so the three contribution levels land at clearly
+        # different probabilities (≈0% / ≈10% / ≈100%) instead of all saturating.
+        kw = dict(horizon_years=10, n_sims=1000, initial_value=10_000,
+                  target_value=60_000)
+
+        probs = [
+            sim.run(annual_withdrawal=-c, **kw).prob_achieve_target_pct
+            for c in (0.0, 3_000.0, 12_000.0)
+        ]
+        # STRICTLY increasing: equality would mean the inflows are being ignored,
+        # which is exactly the bug this guards against.
+        assert probs[0] < probs[1] < probs[2]
+
+    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
+    def test_zero_withdrawal_still_touches_nothing(self, _mock):
+        """The guard change must be a no-op for the accumulation-only path."""
+        sim_a = _make_simulator(["AAPL"])
+        sim_b = _make_simulator(["AAPL"])
+        kw = dict(horizon_years=8, n_sims=500, initial_value=50_000)
+
+        assert (sim_a.run(annual_withdrawal=0.0, **kw).median_terminal
+                == sim_b.run(**kw).median_terminal)
+
     @patch("portfolio.monte_carlo.get_history", return_value=pd.DataFrame())
     def test_spy_fallback_on_empty_history(self, _mock_empty):
         """When all tickers return empty history, simulator falls back to SPY."""

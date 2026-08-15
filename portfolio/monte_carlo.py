@@ -34,6 +34,7 @@ from portfolio.decumulation import (
     WithdrawalStrategy,
     apply_withdrawal_strategy,
     decumulation_metrics,
+    withdraw_at_week,
 )
 
 # ------------------------------------------------------------------ #
@@ -66,7 +67,12 @@ class MonteCarloResult:
     prob_achieve_target_pct: float = 0.0   # % of sims that reach target_value
     prob_ruin_pct: float = 0.0             # % of sims that hit $0 before end
 
-    # Annualised return stats across simulations
+    # Annualised growth of the pot: (terminal / initial) ** (1/years) - 1.
+    # WARNING: this is NOT a rate of return when there are cash flows. With
+    # contributions (annual_withdrawal < 0) the contributed capital lands in
+    # ``terminal`` but not in ``initial``, so the figure inflates far above any
+    # return the portfolio earned (e.g. 30 %/yr for a 7 % portfolio fed monthly).
+    # Callers MUST NOT label it "CAGR"/"retorno" when cash flows are present.
     median_cagr_pct: float = 0.0
     p10_cagr_pct: float = 0.0
 
@@ -79,8 +85,13 @@ class MonteCarloResult:
     pct_paths_severe_drawdown: float = 0.0
     # P10 intra-horizon minimum value (worst path 10th pct)
     p10_intra_min: float = 0.0
-    # Median year in which the maximum drawdown typically occurs
+    # Median year in which the maximum drawdown typically occurs.
+    # WARNING: near-uniform distribution ⇒ this tends to horizon/2 for any
+    # portfolio. Never present it alone as "the dangerous year"; use the
+    # P25–P75 band below, which states the real (usually large) uncertainty.
     median_year_of_max_dd: float = 0.0
+    p25_year_of_max_dd: float = 0.0
+    p75_year_of_max_dd: float = 0.0
 
     # Data quality note
     n_weeks_history: int = 0
@@ -192,7 +203,10 @@ class MonteCarloSimulator:
         horizon_years : projection horizon (5, 10, 15, 20, 30, etc.)
         n_sims        : number of simulation paths (default 10 000)
         initial_value : starting portfolio value in USD
-        annual_withdrawal : amount withdrawn at end of each year (0 = accumulation phase)
+        annual_withdrawal : amount withdrawn at end of each year (0 = accumulation
+                        phase). A NEGATIVE value is a contribution (inflow) and is
+                        applied as such — that is how GoalPlanner models
+                        ``Goal.annual_contribution``.
         target_value  : retirement goal for probability calculation (0 = skip)
         drags         : optional economic-drag dict (Item 1). When None the
                         simulation is byte-identical to the pre-feature engine.
@@ -295,7 +309,15 @@ class MonteCarloSimulator:
                     p, initial_value, strategy, n_horizon_weeks,
                     inflation_rate=withdrawal_growth_rate,
                 )
-            if annual_withdrawal > 0:
+            # ``!= 0``, not ``> 0``: a NEGATIVE annual_withdrawal is a
+            # CONTRIBUTION (inflow), which is how GoalPlanner models
+            # ``Goal.annual_contribution``. The old ``> 0`` guard dropped those
+            # inflows silently, so every goal simulation ignored the savings the
+            # user had entered in the form. ``withdraw_at_week`` already handles
+            # the negative case (it adds units instead of removing them), so the
+            # fix is the guard, not the math. Every other caller passes ≥ 0, so
+            # non-goal simulations are byte-identical.
+            if annual_withdrawal != 0:
                 return self._apply_withdrawals(
                     p, initial_value, annual_withdrawal, n_horizon_weeks,
                     withdrawal_growth_rate=withdrawal_growth_rate
@@ -352,12 +374,19 @@ class MonteCarloSimulator:
                     (realistic_terminal >= target_value).mean() * 100
                 )
 
-        result.prob_ruin_pct = float((terminal <= 0).mean() * 100)
+        # Ruin is measured on the intra-horizon minimum, not the terminal value:
+        # a path that runs dry mid-horizon has failed even if the market later
+        # recovers. With the absorbing kernel the two agree, but measuring the
+        # minimum states the intent and stays correct if the kernel changes.
+        # (audit D2 — the terminal-only test used to hide early bankruptcies.)
+        _ruin_eps = max(initial_value, 1.0) * 1e-9
+        result.prob_ruin_pct = float((paths_usd.min(axis=1) <= _ruin_eps).mean() * 100)
 
         # SORR and intra-horizon drawdown metrics
         (result.sorr_early_drawdown_pct, result.median_max_drawdown_pct,
          result.pct_paths_severe_drawdown, result.p10_intra_min,
-         result.median_year_of_max_dd) = \
+         result.median_year_of_max_dd, result.p25_year_of_max_dd,
+         result.p75_year_of_max_dd) = \
             self._compute_drawdown_metrics(paths_usd, horizon_years)
 
         # CAGR per simulation
@@ -582,17 +611,21 @@ class MonteCarloSimulator:
         Apply annual withdrawals (as fraction of initial_value) at every 52-week mark.
         If withdrawal_growth_rate > 0, the withdrawal amount grows each year
         (e.g. 0.03 = 3% inflation adjustment — common for long-term retirement planning).
-        Portfolio cannot go below 0.
+
+        Delegates to ``portfolio.decumulation.withdraw_at_week`` — the single
+        implementation of the withdrawal maths — so this legacy entry point and
+        the strategy engine cannot drift apart. The withdrawal removes capital
+        (the remaining balance keeps tracking the market) and depletion is
+        permanent. See ``docs/AUDITORIA_2026-08.md`` D1/D2.
         """
-        withdrawal_fraction = annual_withdrawal / initial_value
+        withdrawal_fraction = (annual_withdrawal / initial_value) if initial_value > 0 else 0.0
         horizon_years = n_horizon_weeks // 52
 
         for yr in range(1, horizon_years + 1):
             week_idx = min(yr * 52, paths.shape[1] - 1)
             # Grow the withdrawal fraction over time if requested
             grown_fraction = withdrawal_fraction * ((1 + withdrawal_growth_rate) ** (yr - 1))
-            paths[:, week_idx:] -= grown_fraction
-            paths = np.maximum(paths, 0)
+            paths = withdraw_at_week(paths, week_idx, grown_fraction)
 
         return paths
 
@@ -607,7 +640,15 @@ class MonteCarloSimulator:
         Returns
         -------
         (sorr_early_pct, median_max_dd_pct, pct_severe_pct, p10_intra_min,
-         median_year_of_max_dd)
+         median_year_of_max_dd, p25_year_of_max_dd, p75_year_of_max_dd)
+
+        Note on the *year* of the max drawdown: the distribution of
+        ``argmax(drawdown)`` is close to uniform over the horizon, so its median
+        lands near ``horizon / 2`` for almost any portfolio. The median alone is
+        therefore an artifact of the horizon, not a property of the portfolio —
+        the quartiles are returned so the UI can show the dispersion (a wide
+        band = the timing of the worst drawdown is essentially unpredictable)
+        instead of a single misleadingly precise year.
         """
         n_sims, n_weeks_plus1 = paths_usd.shape
 
@@ -621,9 +662,12 @@ class MonteCarloSimulator:
         median_max_dd = float(np.median(max_dd_per_path) * 100)
         pct_severe = float((max_dd_per_path >= 0.50).mean() * 100)
 
-        # Year of max drawdown (median across paths)
+        # Year of max drawdown: median AND quartiles across paths. The IQR is
+        # what makes the number honest — see the docstring.
         max_dd_week = np.argmax(drawdown, axis=1)   # week index of worst drawdown per path
         median_year_max_dd = float(np.median(max_dd_week) / 52)
+        p25_year_max_dd = float(np.percentile(max_dd_week, 25) / 52)
+        p75_year_max_dd = float(np.percentile(max_dd_week, 75) / 52)
 
         # SORR: % of paths with >30% drawdown in first 5 years
         early_weeks = min(5 * 52, n_weeks_plus1)
@@ -633,7 +677,8 @@ class MonteCarloSimulator:
         # P10 intra-horizon minimum value
         p10_min = float(np.percentile(paths_usd.min(axis=1), 10))
 
-        return sorr_early, median_max_dd, pct_severe, p10_min, median_year_max_dd
+        return (sorr_early, median_max_dd, pct_severe, p10_min,
+                median_year_max_dd, p25_year_max_dd, p75_year_max_dd)
 
     def _fan_paths(
         self,

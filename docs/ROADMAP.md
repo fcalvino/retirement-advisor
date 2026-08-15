@@ -76,10 +76,7 @@ Trabajo iniciado a partir del brainstorming de mejoras (ver plan en `.grok/sessi
 - Tests: 179 pasando (sin regresiones).
 - Actualización de flujo recomendado y documentación inicial.
 
-**Próximos pasos sugeridos (Fase 0 restante o Fase 1):**
-- Pulir la experiencia de presets (widget keys + valores por defecto reales).
-- Mover más prompts de narrativa al flujo de Optimizer.
-- ~~Agregar un wizard de perfil más completo (edad, horizonte principal, otras metas).~~ ✅ Entregado en Fase A.
+**Cierre de esta fase:** el leftover de “próximos pasos” de Fase 0 quedó absorbido por las fases A–J y el Gran Salto (todas shipped). No es backlog abierto — ver [`CONTEXT.md` §6](CONTEXT.md) para el estado actual.
 
 ---
 
@@ -427,7 +424,7 @@ Refinamiento posterior: salida estructurada `macro_factors` (además del texto l
 | `analysis/backtesting.py` | Motor de backtesting histórico |
 | `analysis/strategy.py` | `full_analysis()` orquestador |
 | `portfolio/optimizer.py` | Mean-Variance optimizer + 3 perfiles |
-| `dashboard/app.py` | UI Streamlit: 7 páginas |
+| `dashboard/app.py` | UI Streamlit: 18 páginas (menú por intención; 3 solo en DEV_MODE) |
 | `config.py` | AIConfig, MoatConfig, BacktestConfig, ProfileConfig, OptimizerConfig |
 | `docs/moat_methodology.md` | Documentación del moat |
 | `docs/ROADMAP.md` | Estado del proyecto y fases completadas |

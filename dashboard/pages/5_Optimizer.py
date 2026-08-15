@@ -299,12 +299,47 @@ with st.expander(
     pc4.metric("Sector máx.",     f"{prof.max_sector_pct:.0f}%")
     pc5.metric("Min. posiciones", prof.min_positions)
     st.caption(
-        f"Pesos objetivo — Score: {prof.score_weight:.0%} "
+        f"Preferencias del perfil (ranking y filtros, no retorno esperado) — "
+        f"Score: {prof.score_weight:.0%} "
         f"· Dividendo: {prof.dividend_weight:.0%} "
         f"· Moat: {prof.moat_weight:.0%}"
     )
     if _profile_just_changed:
         st.info("Presioná **🚀 Ejecutar Optimización** para generar la cartera con el nuevo perfil.", icon="🔄")
+
+# ------------------------------------------------------------------ #
+#  Allocation by age — integrated (backlog 6); full page under Ajustes #
+# ------------------------------------------------------------------ #
+
+with st.expander("📊 Asignación por edad (acciones / bonos / cash)", expanded=False):
+    from dashboard.shared import get_user_prefs as _gup
+    from portfolio.allocation import AllocationAdvisor
+
+    _ap = _gup()
+    _age0 = int(getattr(_ap, "age", 0) or 35)
+    _age0 = min(max(_age0, 20), 80)
+    _ret0 = min(max(int(getattr(_ap, "retirement_age", 65) or 65), _age0 + 1), 80)
+    _ac1, _ac2 = st.columns(2)
+    _age_w = _ac1.slider("Edad actual", 20, 80, _age0, key="opt_alloc_age")
+    _ret_w = _ac2.slider("Edad de retiro", _age_w + 1, 80, max(_age_w + 1, _ret0), key="opt_alloc_ret")
+    _adv = AllocationAdvisor().advise(_age_w, _ret_w, {}, {})
+    _m1, _m2, _m3 = st.columns(3)
+    _m1.metric("Acciones", f"{_adv.equity_pct:.0f}%")
+    _m2.metric("Bonos", f"{_adv.bonds_pct:.0f}%")
+    _m3.metric("Efectivo", f"{_adv.cash_pct:.0f}%")
+    st.caption(
+        f"📊 Calculado · regla por edad (no IA). Detalle completo en Ajustes → Allocation. "
+        f"{getattr(_adv, 'inflation_note', '')}"
+    )
+    st.caption(
+        "Usá este marco para elegir el **perfil** del optimizer (más bonos → Conservador; "
+        "más equity → Agresivo)."
+    )
+
+st.caption(
+    "🔬 Calidad de datos: los tickers del universo muestran badges en Screener; "
+    "customs ⚠️ se tratan con cautela. Cruzá fuentes en Stock Analysis."
+)
 
 # ------------------------------------------------------------------ #
 #  Cache validity                                                      #
@@ -444,6 +479,11 @@ if run_now or not has_valid_result:
                 "tailwind_classification": getattr(fund, "tailwind_classification", "Neutral"),
                 "sector":              fund.sector or "Unknown",
                 "company_name":        fund.company_name,
+                "data_quality_level":  (
+                    (getattr(fund, "data_quality", None) or {}).get("level")
+                    if isinstance(getattr(fund, "data_quality", None), dict)
+                    else "good"
+                ) or "good",
             }
             for sym, fund, _tech, _dec in raw
         ]
@@ -542,8 +582,9 @@ for w in result.warnings:
 # Plain-language conclusion up top, before the detailed stats below.
 st.markdown(
     f"#### 🎯 En una frase\n"
-    f"Esta cartera **{result.profile_name}** busca un retorno de "
-    f"**~{result.expected_return_pct:.1f}% anual** asumiendo una volatilidad de "
+    f"Esta cartera **{result.profile_name}** tiene un atractivo estimado de "
+    f"**~{result.expected_return_pct:.1f}% anual** (proxy de score, no un pronóstico) "
+    f"asumiendo una volatilidad de "
     f"**~{result.volatility_pct:.1f}%** (cuánto puede subir y bajar en el camino). "
     f"El detalle de pesos, métricas y cumplimiento de límites está más abajo."
 )
@@ -663,17 +704,22 @@ mc1.metric(
     help="Promedio ponderado del Score Ajustado (fundamentals + moat + dividendo) de todos los activos.",
 )
 mc2.metric(
-    "Retorno esperado", f"{result.expected_return_pct:.1f}%",
-    help="Retorno anual estimado (proxy: score + dividendo + moat). No es garantía de performance futura.",
+    "Atractivo estimado", f"{result.expected_return_pct:.1f}%",
+    help=(
+        "Proxy anual construido con score + dividendo + moat, no un pronóstico de retorno. "
+        "Sirve para ordenar y comparar carteras entre sí; la proyección de patrimonio la da "
+        "el Monte Carlo, que usa la historia real de precios. Desde agosto 2026 este número "
+        "ya no depende del perfil de riesgo elegido."
+    ),
 )
 mc3.metric(
     "Div. Yield", f"{result.dividend_yield_pct:.2f}%",
-    delta=f"mín {prof.min_dividend_yield_pct:.1f}%", delta_color="off",
+    delta=f"mín {prof.min_dividend_yield_pct:.1f}%", delta_color="off", delta_arrow="off",
     help="Dividend yield total ponderado de la cartera.",
 )
 mc4.metric(
     "Volatilidad", f"{result.volatility_pct:.1f}%",
-    delta=f"límite {prof.max_volatility_pct:.0f}%", delta_color="off",
+    delta=f"límite {prof.max_volatility_pct:.0f}%", delta_color="off", delta_arrow="off",
     help="Volatilidad anual estimada de la cartera (desviación estándar de retornos).",
 )
 mc5.metric(
@@ -991,7 +1037,7 @@ with tab_metrics:
 | Métrica | Valor |
 |---|---|
 | Universo | **{_display_universe}** |
-| Retorno esperado | **{result.expected_return_pct:.1f}%** anual |
+| Atractivo estimado (proxy) | **{result.expected_return_pct:.1f}%** anual |
 | Volatilidad | **{result.volatility_pct:.1f}%** anual |
 | Sharpe Ratio | **{result.sharpe_ratio:.2f}** |
 | Max Drawdown est. | **{_dd_str}** (1 año) |
@@ -1054,7 +1100,12 @@ with tab_metrics:
     # ---- Benchmark comparison ----
     st.divider()
     st.subheader("📊 Comparación vs. Benchmarks")
-    st.caption("Referencia histórica anualizada 2014–2024. Los datos del portafolio son estimaciones del modelo.")
+    st.caption(
+        "Referencia histórica anualizada 2014–2024. ⚠️ La fila de tu cartera **no es comparable "
+        "cabeza a cabeza**: los benchmarks muestran retorno histórico realizado, mientras que tu "
+        "cartera muestra el atractivo estimado por el modelo (proxy de score + dividendo + moat). "
+        "Para proyectar patrimonio usá Simulaciones, que sí parte de la historia de precios."
+    )
 
     _bench_rows = [
         {
@@ -1258,6 +1309,11 @@ with tab_compare:
                     "tailwind_classification": getattr(fund, "tailwind_classification", "Neutral"),
                     "sector":              fund.sector or "Unknown",
                     "company_name":        fund.company_name,
+                    "data_quality_level":  (
+                        (getattr(fund, "data_quality", None) or {}).get("level")
+                        if isinstance(getattr(fund, "data_quality", None), dict)
+                        else "good"
+                    ) or "good",
                 }
                 for sym, fund, _t, _d in _u_raw
             ]
@@ -1287,7 +1343,7 @@ with tab_compare:
                 "Universo":      _u_meta.get("name", _uk),
                 "Tickers base":  _u_meta.get("count", "?"),
                 "Posiciones":    len(_ures.tickers),
-                "Retorno %":     round(_ures.expected_return_pct, 1),
+                "Atractivo %":   round(_ures.expected_return_pct, 1),
                 "Volatilidad %": round(_ures.volatility_pct, 1),
                 "Sharpe":        round(_ures.sharpe_ratio, 2),
                 "Div Yield %":   round(_ures.dividend_yield_pct, 2),
@@ -1302,7 +1358,7 @@ with tab_compare:
                 width="stretch",
                 hide_index=True,
                 column_config={
-                    "Retorno %":     st.column_config.NumberColumn("Retorno %",  format="%.1f%%"),
+                    "Atractivo %":   st.column_config.NumberColumn("Atractivo %", format="%.1f%%"),
                     "Volatilidad %": st.column_config.NumberColumn("Vol %",      format="%.1f%%"),
                     "Sharpe":        st.column_config.NumberColumn("Sharpe",     format="%.2f"),
                     "Div Yield %":   st.column_config.NumberColumn("Div %",      format="%.2f%%"),
@@ -1311,7 +1367,7 @@ with tab_compare:
             )
 
             _fig_comp = go.Figure()
-            for _metric in ["Retorno %", "Volatilidad %", "Div Yield %"]:
+            for _metric in ["Atractivo %", "Volatilidad %", "Div Yield %"]:
                 _fig_comp.add_trace(go.Bar(
                     name=_metric,
                     x=_comp_df["Universo"],
@@ -1383,9 +1439,18 @@ with st.expander("📄 Descargar Reporte PDF del portafolio", expanded=False):
                     include_risk_section=False,
                     include_recommendations=True,
                 )
-                _opt_pdf_mc_params = {
-                    "profile_name": result.profile_name if hasattr(result, "profile_name") else prof.name,
-                }
+                from dashboard.shared import get_user_prefs as _gup_pdf
+                from data.product_ux import assemble_plan_pdf_mc_params
+
+                _opt_pdf_mc_params = assemble_plan_pdf_mc_params(
+                    session=dict(st.session_state),
+                    prefs=_gup_pdf(),
+                    profile_name=(
+                        result.profile_name
+                        if hasattr(result, "profile_name")
+                        else prof.name
+                    ),
+                )
                 _opt_pdf_ai_cfg = _get_ai_config() if _opt_pdf_ai else None
                 _opt_pdf_bytes = InvestmentPlanReport().generate(
                     goal_plan=None,

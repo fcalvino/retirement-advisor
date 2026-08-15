@@ -29,6 +29,9 @@ from typing import Callable, Dict, List, Optional
 
 from loguru import logger
 
+from config import ENGINE_VERSION
+from data.env_provenance import env_drift, numeric_env
+
 _PLANS_PATH = Path(__file__).parent / "retirement_plans.json"
 
 
@@ -98,6 +101,25 @@ class PlanSnapshot:
     # ------------------------------------------------------------------ #
     export_version: str = "1.0"
     export_notes: str = ""
+
+    # ------------------------------------------------------------------ #
+    #  Numeric-engine provenance. Distinct from export_version (that is    #
+    #  the FILE format; this is the MATHS). Empty for plans saved before   #
+    #  the 2026-08 Tier 0 fix — those carry decumulation figures that      #
+    #  overstated terminal wealth, so the UI flags them as stale and       #
+    #  offers to re-simulate. See docs/AUDITORIA_2026-08.md.               #
+    # ------------------------------------------------------------------ #
+    engine_version: str = ""
+
+    # ------------------------------------------------------------------ #
+    #  Numeric-environment provenance (audit D5). engine_version says which #
+    #  of OUR maths produced the figures; this says which build of numpy /  #
+    #  scipy / pandas executed them. A scipy bump can move SLSQP to a       #
+    #  different optimum and a numpy bump can move percentiles, so without  #
+    #  this a saved plan cannot be reproduced, only believed. Empty for     #
+    #  plans saved before sealing — unknown, not "same".                    #
+    # ------------------------------------------------------------------ #
+    lib_versions: Optional[dict] = None
 
     # ------------------------------------------------------------------ #
     #  Fase H.1 — decumulation strategy active when the plan was built,   #
@@ -284,7 +306,36 @@ class PlanSnapshot:
                 else (dict(getattr(mc_result, "withdrawal_strategy_applied", None))
                       if getattr(mc_result, "withdrawal_strategy_applied", None) else None)
             ),
+            engine_version=ENGINE_VERSION,
+            lib_versions=numeric_env(),
         )
+
+    # ------------------------------------------------------------------ #
+    #  Reproducibility (audit D5)                                          #
+    # ------------------------------------------------------------------ #
+
+    def has_sealed_env(self) -> bool:
+        """True when this snapshot recorded the numeric environment it ran in."""
+        return bool(self.lib_versions)
+
+    def numeric_env_drift(self) -> Dict[str, tuple]:
+        """Return ``{lib: (then, now)}`` for numeric libs that changed since save.
+
+        Empty when nothing moved *or* when the plan predates sealing — use
+        :meth:`has_sealed_env` to tell those two apart. This is deliberately
+        separate from :meth:`is_engine_stale`: our formulas changing and the
+        libraries under them changing are different reasons to re-simulate.
+        """
+        return env_drift(self.lib_versions)
+
+    def is_engine_stale(self) -> bool:
+        """True when this snapshot's figures predate the current numeric engine.
+
+        Plans saved before the 2026-08 Tier 0 fix carry no ``engine_version``
+        and their decumulation figures overstated terminal wealth, so the UI
+        offers to re-simulate rather than silently showing stale numbers.
+        """
+        return (self.engine_version or "") != ENGINE_VERSION
 
     def to_dict(self) -> dict:
         return asdict(self)

@@ -362,6 +362,57 @@ class AlertEngine:
         explanation = _get_ai_explanation(atype.value, symbol, context, AlertSeverity.WARNING)
         return self._fire(atype, symbol, msg, AlertSeverity.WARNING, explanation)
 
+    def check_market_drop_coach(
+        self,
+        portfolio_return_pct: float,
+        plan_name: str = "",
+        plan_prob_target_pct: Optional[float] = None,
+        drop_threshold_pct: Optional[float] = None,
+        plan_prob_floor_pct: Optional[float] = None,
+    ) -> Optional[FiredAlert]:
+        """Proactive coach after a portfolio drop (backlog 12).
+
+        Uses ``data.product_ux.coach_should_fire_on_drop`` (pure predicate) and
+        the existing fire/cooldown path. Message reassures when the plan still
+        looks OK, or escalates when probability of goal is weak.
+        """
+        from data.product_ux import coach_should_fire_on_drop
+
+        thr = (
+            float(drop_threshold_pct)
+            if drop_threshold_pct is not None
+            else float(getattr(ALERTS, "coach_drop_threshold_pct", 8.0))
+        )
+        floor = (
+            float(plan_prob_floor_pct)
+            if plan_prob_floor_pct is not None
+            else float(getattr(ALERTS, "coach_plan_prob_floor_pct", 40.0))
+        )
+        symbol = f"COACH:{(plan_name or 'portfolio').strip() or 'portfolio'}"
+        atype = AlertType.MARKET_DROP_COACH
+        on_cd = self._store.is_on_cooldown(atype, symbol)
+        decision = coach_should_fire_on_drop(
+            portfolio_return_pct=float(portfolio_return_pct),
+            drop_threshold_pct=thr,
+            plan_prob_target_pct=plan_prob_target_pct,
+            plan_prob_floor_pct=floor,
+            already_on_cooldown=on_cd,
+        )
+        if not decision.get("should_fire"):
+            return None
+        severity = (
+            AlertSeverity.WARNING
+            if decision.get("severity") == "warning"
+            else AlertSeverity.INFO
+        )
+        if self._store.is_muted(symbol, atype.value):
+            return None
+        msg = str(decision.get("message") or "")
+        context = dict(decision.get("context") or {})
+        context["plan_name"] = plan_name
+        explanation = _get_ai_explanation(atype.value, symbol, context, severity)
+        return self._fire(atype, symbol, msg, severity, explanation)
+
     # ------------------------------------------------------------------ #
     #  Alert check helpers                                                 #
     # ------------------------------------------------------------------ #

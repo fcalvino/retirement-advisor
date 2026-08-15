@@ -100,7 +100,7 @@ Dos componentes independientes:
 2. **AI cualitativo (0–8)**: Llama al LLM con contexto financiero, pide evaluación de 4 dimensiones, parsea JSON. Resultado cacheado 7 días en SQLite.
 
 #### `technical.py`
-Descarga barras semanales de 10 años y calcula con `pandas_ta`: SMA200, RSI, MACD, ADX, Bollinger Bands. Retorna un `TechnicalResult` con todos los indicadores y una señal técnica (BULLISH/NEUTRAL/BEARISH).
+Descarga barras semanales de 10 años y calcula los indicadores **a mano con NumPy/Pandas** (SMA200 + su pendiente, EMA200, golden/death cross, RSI 14, MACD 12/26/9). Retorna un `TechnicalResult` con todos los indicadores y una señal técnica (BULLISH/NEUTRAL/BEARISH). No usa librería de análisis técnico: `pandas_ta` se eliminó como código muerto (ver `docs/DEAD_CODE_AUDIT.md`).
 
 #### `strategy.py`
 `full_analysis(symbol, ai_config=None)` — orquestador:
@@ -182,7 +182,7 @@ Tres tablas SQLite:
 
 UI multipágina moderna usando `st.navigation` + `st.Page(path)` (carga dinámica de archivos numerados en `pages/`). 
 
-- `app.py`: `st.set_page_config`, logger idempotente (`_ensure_logger` con guard en session_state para evitar sinks duplicados/EMFILE), validación de config al startup, init de session_state (user_prefs, universe desde active_universe, portfolio, ai_provider/model/key), sidebar (selector de universo persistido en prefs + badges de watchlist/alertas + warnings de config), home page informativa + flujo recomendado, y orquestación de la navegación por secciones (Análisis / Portfolio / Simulaciones / Alertas / Info).
+- `app.py`: `st.set_page_config`, logger idempotente (`_ensure_logger` con guard en session_state para evitar sinks duplicados/EMFILE), validación de config al startup, init de session_state (user_prefs, universe desde active_universe, portfolio, ai_provider/model/key), sidebar (selector de universo persistido en prefs + badges de watchlist/alertas + warnings de config), home page informativa + flujo recomendado, y orquestación de la navegación por intención (Inicio / Mi dinero / Investigar / Proyectar / Seguimiento / Ajustes). Hay **18** páginas en `dashboard/pages/` (Eval IA, Calidad de Datos y Macro RAG solo en `DEV_MODE`).
 - `shared.py`: fuente canónica de helpers usados por **todas** las páginas (`_load_env_vars` / `_save_ai_config_to_env`, `_get_ai_config` (resuelve desde session_state con override por contexto screener), `score_bar` + helpers HTML de moat, `cached_full_analysis`, `cached_monte_carlo` / `cached_goal_simulation` / `cached_goal_optimization` / `cached_stress_test` (con params como tuplas para hashability), `_analyse_universe_parallel` y `_fetch_universe_parallel` con `max_workers` capped en 6 por límites de FD en macOS + EMFILE mitigation documentada en CONTEXT §8). Lazy imports pesados dentro de las cached funcs.
 - `pages/N_*.py`: lógica específica de cada página (delgada). Importan de `shared` + módulos de analysis/portfolio/alerts/data/config. Incluyen guards defensivos para el orden de inicialización de multipage (ej. "volvé a Inicio si session_state no está listo").
 
@@ -233,8 +233,7 @@ No hay base de datos externa ni servicios remotos más allá de Yahoo Finance y 
 | Paquete | Uso |
 |---------|-----|
 | `yfinance` | Datos de mercado |
-| `pandas`, `numpy` | Procesamiento de datos |
-| `pandas_ta` | Indicadores técnicos |
+| `pandas`, `numpy` | Procesamiento de datos + indicadores técnicos (calculados a mano) |
 | `scipy` | SLSQP optimizer |
 | `streamlit` | Dashboard UI |
 | `plotly` | Gráficos interactivos |

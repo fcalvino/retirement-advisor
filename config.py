@@ -14,6 +14,17 @@ DB_DIR = BASE_DIR / "data" / "db"
 DB_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DB_DIR / "retirement_advisor.db"
 
+# Version of the numeric engine (Monte Carlo + decumulation + optimizer μ).
+# Stamped onto every saved PlanSnapshot so a plan can be traced back to the
+# maths that produced it. Bump ONLY when a change alters the numbers a saved
+# plan would produce, so the UI can flag stale snapshots.
+#
+#   2026.08-tier0 — audit D1/D2/D3 fix: withdrawals remove capital (were a
+#                   constant nominal level), ruin is absorbing, and the
+#                   optimizer's μ no longer depends on the risk profile.
+#                   See docs/AUDITORIA_2026-08.md.
+ENGINE_VERSION = "2026.08-tier0"
+
 
 @dataclass
 class FundamentalThresholds:
@@ -141,6 +152,9 @@ class AlertConfig:
     portfolio_rebalance_threshold_pct: float = 8.0  # total drift to trigger PORTFOLIO_REBALANCE
     sorr_high_threshold_pct: float = 30.0          # SORR early drawdown % to trigger SORR_HIGH
     goal_risk_prob_drop_pct: float = 15.0          # probability drop to trigger GOAL_RISK
+    # Proactive coach (backlog 12): "plan sigue OK" after a material portfolio drop
+    coach_drop_threshold_pct: float = 8.0          # fire when portfolio return ≤ -this
+    coach_plan_prob_floor_pct: float = 40.0        # below this, coach severity escalates
     # Fase E: suggested alignment trades (plan target vs tracker positions)
     alignment_min_trade_usd: float = 200.0   # ignore trades smaller than this (noise / fees)
     alignment_max_trades: int = 6            # cap the suggested-trades list (prioritized)
@@ -397,10 +411,26 @@ class ProfileConfig:
       max_sector_pct     — hard upper bound per GICS sector
       min_positions      — minimum number of positions (diversification floor)
 
-    Objective function weights (must sum to 1.0):
-      score_weight    — weight of adjusted_score in composite expected-return proxy
-      dividend_weight — weight of dividend yield in composite expected-return proxy
-      moat_weight     — weight of moat score in composite expected-return proxy
+    Preference / ranking weights (must sum to 1.0) — NOT expected returns:
+      score_weight    — weight of adjusted_score when RANKING candidates
+      dividend_weight — weight of dividend yield when RANKING candidates
+      moat_weight     — weight of moat score when RANKING candidates
+
+      These express what the investor *prefers to own*, and are used by
+      ``_select_candidates_for_profile`` (down-select) and
+      ``_score_weighted_optimize`` (no-covariance fallback).
+
+      They must NOT feed the expected-return vector μ. Until the 2026-08 audit
+      they did, which made the same asset "yield" 5.08% for a conservative
+      investor and 7.72% for an aggressive one — an artifact, since an asset's
+      return does not depend on who is looking at it. μ now comes from the
+      profile-independent ``VIEW_WEIGHTS`` (audit D3).
+
+    Risk appetite:
+      risk_aversion — δ in the Black-Litterman prior Π = δ·Σ·w_market. This is
+                      where the profile legitimately belongs: a conservative
+                      investor demands more return per unit of risk, so the
+                      equilibrium anchor tilts defensive. Higher = more averse.
 
     Large-universe controls:
       pre_filter_top_k           — max candidates entering SLSQP after profile-tilt ranking.
@@ -421,6 +451,7 @@ class ProfileConfig:
     max_crypto_pct: float = 3.0   # hard cap per crypto ticker (% of portfolio)
     pre_filter_top_k: int = 30    # max candidates into SLSQP (profile-tilt down-select)
     target_max_human_positions: int = 12  # ideal core size for deterministic core selector
+    risk_aversion: float = 2.5    # δ for the Black-Litterman equilibrium prior
 
 
 # Module-level profile definitions (importable by name)
@@ -438,6 +469,7 @@ CONSERVATIVE_PROFILE = ProfileConfig(
     max_crypto_pct=3.0,
     pre_filter_top_k=20,       # conservative: smaller, income-tilted pool
     target_max_human_positions=10,
+    risk_aversion=4.0,         # most risk-averse → defensive equilibrium anchor
 )
 
 MODERATE_PROFILE = ProfileConfig(
@@ -454,6 +486,7 @@ MODERATE_PROFILE = ProfileConfig(
     max_crypto_pct=5.0,
     pre_filter_top_k=30,       # moderate: balanced pool
     target_max_human_positions=12,
+    risk_aversion=2.5,         # textbook default δ
 )
 
 AGGRESSIVE_PROFILE = ProfileConfig(
@@ -470,6 +503,7 @@ AGGRESSIVE_PROFILE = ProfileConfig(
     max_crypto_pct=10.0,
     pre_filter_top_k=45,       # aggressive: larger pool for growth coverage
     target_max_human_positions=15,
+    risk_aversion=1.5,         # most risk-tolerant → growth-tilted anchor
 )
 
 OPTIMIZER_PROFILES: Dict[str, ProfileConfig] = {
@@ -477,6 +511,35 @@ OPTIMIZER_PROFILES: Dict[str, ProfileConfig] = {
     "moderate":     MODERATE_PROFILE,
     "aggressive":   AGGRESSIVE_PROFILE,
 }
+
+
+@dataclass
+class ViewWeightConfig:
+    """
+    Weights of the score-derived *view* on expected returns (audit D3, 2026-08).
+
+    In the Black-Litterman framing the optimizer already uses
+    (``portfolio/black_litterman.py``), the market equilibrium Π = δ·Σ·w_market
+    is the prior and the product's quality score is a **view** on top of it.
+
+    These weights build that view. They are deliberately a single global set,
+    NOT per-profile: an asset's expected return is a property of the asset, not
+    of the investor looking at it. The investor's profile enters through
+    ``ProfileConfig.risk_aversion`` (δ) and through the SLSQP constraints
+    (max position, max volatility, dividend floor, sector caps).
+
+    Must sum to 1.0. Defaults mirror the previous moderate profile, so a
+    moderate investor's numbers move least.
+    """
+    score: float = 0.50       # weight of adjusted_score in the view
+    dividend: float = 0.30    # weight of dividend yield in the view
+    moat: float = 0.20        # weight of moat score in the view
+
+    def as_dict(self) -> dict:
+        return {"score": self.score, "dividend": self.dividend, "moat": self.moat}
+
+
+VIEW_WEIGHTS = ViewWeightConfig()
 
 
 @dataclass
@@ -500,6 +563,10 @@ class OptimizerConfig:
     er_absolute_cap         — P2 audit D4: hard annual expected-return ceiling per ticker
                               (fraction, e.g. 0.14 = 14%). Score-proxy μ can otherwise
                               imply ~18%+ with no economic anchor. Set 0 to disable.
+                              NOTE (2026-08 D3): with the global VIEW_WEIGHTS the
+                              proxy now tops out at 13%, so this ceiling no longer
+                              binds. It is kept as a guardrail in case the view
+                              weights or component scales are widened later.
     """
     default_profile: str = "conservative"
     risk_free_rate: float = 0.045
@@ -563,7 +630,7 @@ class TailwindConfig:
 @dataclass
 class DataQualityConfig:
     """
-    Thresholds for the data-quality transparency layer (Fase E).
+    Thresholds for the data-quality transparency layer (Fase E + P0 policy).
 
     The whole pipeline (scores, moat, optimizer, MC, plan deltas) depends on
     yfinance. Missing fields silently degrade scores to neutral values, so the
@@ -576,10 +643,22 @@ class DataQualityConfig:
                                financial statements always mean "poor".
       stale_warning_hours    — cached info older than this is flagged stale
                                (independent dimension from completeness).
+
+    Signal / optimizer policy (P0 — quality governs decisions without rewriting
+    scored fundamentals):
+      partial_caps_strong_buy — STRONG BUY demoted to BUY when level is partial
+      partial_max_confidence  — confidence ceiling for partial (e.g. MEDIUM)
+      exclude_poor_from_optimizer — drop poor tickers from SLSQP eligible set
+      partial_optimizer_score_haircut — multiply adjusted_score for partial
+                               candidates (1.0 = no haircut; default mild 0.95)
     """
     stale_warning_hours: float = 48.0
     partial_missing_fields: int = 3
     poor_missing_fields: int = 6
+    partial_caps_strong_buy: bool = True
+    partial_max_confidence: str = "MEDIUM"
+    exclude_poor_from_optimizer: bool = True
+    partial_optimizer_score_haircut: float = 0.95
 
 
 @dataclass
@@ -810,6 +889,59 @@ class SensitivityConfig:
             "longevity_delta_years": self.longevity_delta_years,
             "full_drag_pct": self.full_drag_pct,
             "n_sims": self.n_sims,
+        }
+
+
+@dataclass
+class GoalCardConfig:
+    """
+    Umbrales de la card "🎯 Resultados por meta" (`7_Simulaciones.py`).
+
+    Existe para que la UI de metas deje de hardcodear números y, sobre todo,
+    para que el semáforo SORR del dashboard **no contradiga al motor de
+    alertas** (auditoría de la card, 2026-08).
+
+    Semáforo SORR — la regla es «cualquiera de los dos ejes basta»:
+        🔴 Alto  : sorr >= high_sorr_pct  OR  drawdown >= high_dd_pct
+        🟢 Bajo  : sorr <  low_sorr_pct   AND drawdown <  low_dd_pct
+        🟡 Medio : el resto
+    `high_sorr_pct` se alinea deliberadamente con
+    `ALERTS.sorr_high_threshold_pct`: sin eso, un plan con SORR 35 % dispara
+    un email SORR_HIGH mientras el dashboard lo pinta de amarillo.
+
+    Fields:
+      high_sorr_pct        — SORR temprano (%) a partir del cual el riesgo es Alto.
+      high_dd_pct          — drawdown mediano (%) a partir del cual el riesgo es Alto.
+      low_sorr_pct         — SORR por debajo del cual (junto a low_dd_pct) es Bajo.
+      low_dd_pct           — drawdown por debajo del cual (junto a low_sorr_pct) es Bajo.
+      success_target_pct   — probabilidad objetivo del consejo de ahorro y del
+                             KPI "metas con >X% de prob. de éxito".
+      advice_n_sims        — sims por iteración del solver de ahorro (lab liviano,
+                             mismo criterio que SENSITIVITY.n_sims).
+      advice_max_iter      — iteraciones de bisección del solver de ahorro.
+      chart_log_scale_ratio— si la meta supera N× el escenario optimista (p95),
+                             el eje Y del fan chart pasa a escala logarítmica;
+                             si no, la meta aplasta la proyección contra el 0.
+    """
+    high_sorr_pct: float = 30.0        # == ALERTS.sorr_high_threshold_pct
+    high_dd_pct: float = 45.0
+    low_sorr_pct: float = 25.0
+    low_dd_pct: float = 30.0
+    success_target_pct: float = 80.0
+    advice_n_sims: int = 2_000
+    advice_max_iter: int = 12
+    chart_log_scale_ratio: float = 4.0
+
+    def as_dict(self) -> dict:
+        return {
+            "high_sorr_pct": self.high_sorr_pct,
+            "high_dd_pct": self.high_dd_pct,
+            "low_sorr_pct": self.low_sorr_pct,
+            "low_dd_pct": self.low_dd_pct,
+            "success_target_pct": self.success_target_pct,
+            "advice_n_sims": self.advice_n_sims,
+            "advice_max_iter": self.advice_max_iter,
+            "chart_log_scale_ratio": self.chart_log_scale_ratio,
         }
 
 
@@ -1083,6 +1215,9 @@ class MultiSourceConfig:
 
     Fields:
       enabled              — master switch for multi-source reconciliation.
+      attach_in_pipeline   — when True (and enabled), FundamentalAnalyzer.analyze
+                            best-effort attaches cross-source quality to the
+                            badge. UI Calidad de Datos works regardless.
       source_priority      — order used to pick the "chosen" value per field
                             (earlier = more trusted). SEC filings beat yfinance.
       discrepancy_pct      — relative difference (%) above which two sources are
@@ -1094,6 +1229,7 @@ class MultiSourceConfig:
       request_timeout_s    — network timeout for source adapters.
     """
     enabled: bool = True
+    attach_in_pipeline: bool = True
     source_priority: tuple = ("sec_edgar", "yfinance", "fred", "fmp", "alpha_vantage")
     discrepancy_pct: float = 5.0
     conflict_downgrades_quality: bool = True
@@ -1107,6 +1243,7 @@ class MultiSourceConfig:
     def as_dict(self) -> dict:
         return {
             "enabled": self.enabled,
+            "attach_in_pipeline": self.attach_in_pipeline,
             "source_priority": list(self.source_priority),
             "discrepancy_pct": self.discrepancy_pct,
             "conflict_downgrades_quality": self.conflict_downgrades_quality,
@@ -1183,6 +1320,28 @@ class ChatConfig:
 
 
 @dataclass
+class ArFxConfig:
+    """
+    Argentina dual-currency presentation (backlog 10).
+
+    Product context only: show USD amounts also in ARS (oficial + optional parallel)
+    so LatAm users see the brecha. Not a tax/compliance engine; not a live FX feed
+    by default — rates are user/config overrideable.
+    """
+    enabled: bool = True
+    # Pesos per 1 USD — defaults are placeholders; override in Settings/session.
+    usd_ars_oficial: float = float(os.getenv("USD_ARS_OFICIAL", "1000"))
+    usd_ars_parallel: float = float(os.getenv("USD_ARS_PARALLEL", "1200"))
+
+    def as_dict(self) -> dict:
+        return {
+            "enabled": self.enabled,
+            "usd_ars_oficial": self.usd_ars_oficial,
+            "usd_ars_parallel": self.usd_ars_parallel,
+        }
+
+
+@dataclass
 class BlackLittermanConfig:
     """
     Black-Litterman + covariance-shrinkage parameters (Gran Salto — Fase 5).
@@ -1234,6 +1393,7 @@ DRAGS = EconomicDragConfig()
 WITHDRAWAL = WithdrawalConfig()
 HEALTH = PlanHealthConfig()
 SENSITIVITY = SensitivityConfig()
+GOAL_CARD = GoalCardConfig()
 PERSONAL_BOOK = PersonalBookConfig()
 TRACK_RECORD = TrackRecordConfig()
 EVAL = EvalConfig()
@@ -1241,4 +1401,5 @@ COMMITTEE = CommitteeConfig()
 MULTI_SOURCE = MultiSourceConfig()
 MACRO_RAG = MacroRagConfig()
 CHAT = ChatConfig()
+AR_FX = ArFxConfig()
 BLACK_LITTERMAN = BlackLittermanConfig()

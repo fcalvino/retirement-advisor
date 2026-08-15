@@ -34,7 +34,9 @@ from dashboard.shared import (
     record_plan_health_now,
     render_ai_badge,
     render_assumptions_disclaimer,
+    track_record_home_line,
 )
+from data.env_provenance import format_drift
 from data.plan_context import activate_plan, compute_alignment_trades, deactivate_plan
 from data.plan_store import PlanSnapshot, _slugify, plan_store
 from data.universe_loader import UNIVERSE_META
@@ -54,6 +56,7 @@ st.caption(
     "💵 Valores en USD. Esta herramienta es educativa, no es asesoramiento financiero."
 )
 render_assumptions_disclaimer()   # Item 1: radical transparency of assumptions
+st.caption(f"📒 {track_record_home_line()}")  # backlog 15
 
 prefs = get_user_prefs()
 
@@ -85,14 +88,24 @@ _active_name = UNIVERSE_META.get(_active_key, {}).get("name", _active_key)
 
 
 def _session_mc_params() -> dict:
-    """Assemble MC params from the Simulaciones widget keys."""
-    return {
-        "horizon_years":  st.session_state.get("horizon_years"),
-        "initial_value":  st.session_state.get("initial_value"),
-        "inflation_rate": st.session_state.get("inflation_rate"),
-        "target_value":   st.session_state.get("target_value"),
-        "profile_name":   getattr(opt_result, "profile_name", ""),
-    }
+    """Assemble MC params for PDF/plan from session widgets + user prefs.
+
+    Uses the shipped pure helper so savings from the profile are never dropped
+    when Simulaciones was never opened (backlog 11 skeptic fix).
+    """
+    from data.product_ux import assemble_plan_pdf_mc_params
+
+    return assemble_plan_pdf_mc_params(
+        session=dict(st.session_state),
+        prefs=prefs,
+        profile_name=str(getattr(opt_result, "profile_name", "") or ""),
+        personal={
+            "monthly_savings": getattr(prefs, "monthly_savings", None),
+            "annual_savings": getattr(prefs, "annual_savings", None),
+            "current_capital": getattr(prefs, "current_capital", None),
+            "primary_horizon_years": getattr(prefs, "primary_horizon_years", None),
+        },
+    )
 
 
 def _metrics_row(metrics: dict) -> None:
@@ -375,12 +388,60 @@ else:
 #  Read-only snapshot renderer                                        #
 # ------------------------------------------------------------------ #
 
+def _render_env_provenance(snap: PlanSnapshot) -> None:
+    """Show which numeric libraries produced this plan, and whether they moved.
+
+    Audit D5: scipy/numpy/pandas bumps can shift SLSQP optima and percentiles,
+    so a saved plan is only reproducible if we know — and can check — the build
+    that computed it.
+    """
+    if not getattr(snap, "has_sealed_env", None) or not snap.has_sealed_env():
+        st.caption(
+            "🔎 Este plan no registró las versiones de las librerías numéricas "
+            "(se guardó antes del sellado). No se puede verificar si sus números "
+            "se reproducen en el entorno actual."
+        )
+        return
+
+    drift = snap.numeric_env_drift()
+    sealed = ", ".join(f"{k} {v}" for k, v in sorted(snap.lib_versions.items()))
+    if drift:
+        st.caption(
+            f"🔎 Calculado con: {sealed}. **Cambió desde entonces: "
+            f"{format_drift(drift)}** — los números pueden no reproducirse exactamente."
+        )
+    else:
+        st.caption(f"🔎 Calculado con: {sealed} — entorno numérico sin cambios.")
+
+
+def _render_engine_staleness(snap: PlanSnapshot) -> None:
+    """Warn when a saved plan's numbers predate the 2026-08 Tier 0 engine fix."""
+    _render_env_provenance(snap)
+    if not getattr(snap, "is_engine_stale", None) or not snap.is_engine_stale():
+        return
+
+    st.warning(
+        "⚠️ **Este plan se calculó con el motor anterior a la corrección de agosto 2026.** "
+        "Las cifras de retiro (cuánto dura el ingreso, herencia, probabilidad de ruina) "
+        "sobrestimaban el capital final: los retiros descontaban un monto fijo en vez de "
+        "capital, así que el dinero retirado seguía creciendo. Volvé a simular para ver "
+        "los números corregidos."
+    )
+    if st.button("🔄 Recalcular con el motor corregido", key=f"recalc_{snap.id}"):
+        st.session_state["_plan_recalc_target"] = snap.id
+        st.session_state["mc_initial_capital"] = float(
+            (snap.personal or {}).get("current_capital", 0) or 0
+        ) or st.session_state.get("mc_initial_capital", 0)
+        st.switch_page("pages/7_Simulaciones.py")
+
+
 def _render_snapshot(snap: PlanSnapshot) -> None:
     st.caption(
         f"Universo **{snap.universe_name or snap.universe_key or '—'}** · "
         f"perfil **{snap.profile_name or '—'}** · {snap.n_positions} posiciones · "
         f"guardado {snap.updated_at[:16].replace('T', ' ')}"
     )
+    _render_engine_staleness(snap)
     _metrics_row(snap.metrics)
     _core_table(snap.core_holdings, snap.core_from_ai)
 
@@ -431,7 +492,6 @@ def _render_snapshot(snap: PlanSnapshot) -> None:
                 _dep_txt = f"se agota típicamente en año {_dep:.0f}" if _dep > 0 else "no se agota en el horizonte"
                 st.caption(
                     f"Prob. de que el ingreso dure {_ly} años: **{m.get('prob_sustain_real_pct', 0):.0f}%** · "
-                    f"prob. herencia **{m.get('prob_legacy_pct', 0):.0f}%** · "
                     f"herencia mediana \\${m.get('median_legacy', 0):,.0f} · {_dep_txt}."
                 )
 
@@ -857,7 +917,9 @@ if not _plans:
 else:
     # Compare
     if len(_plans) >= 2:
-        with st.expander("⚖️ Comparar planes"):
+        with st.expander("⚖️ Comparar planes (supuestos + resultados)", expanded=False):
+            from data.product_ux import deep_compare_plans
+
             _by_id = {p.id: p for p in _plans}
             _sel = st.multiselect(
                 "Elegí 2 planes para comparar",
@@ -868,21 +930,24 @@ else:
             )
             if len(_sel) == 2:
                 a, b = _by_id[_sel[0]], _by_id[_sel[1]]
-                _rows = []
-                for label, key, fmt in [
-                    ("Retorno esp. %", "expected_return_pct", "{:.1f}"),
-                    ("Volatilidad %", "volatility_pct", "{:.1f}"),
-                    ("Sharpe", "sharpe_ratio", "{:.2f}"),
-                    ("Div Yield %", "dividend_yield_pct", "{:.2f}"),
-                    ("Score prom.", "adjusted_score_avg", "{:.0f}"),
-                    ("Max DD est. %", "max_drawdown_estimate_pct", "{:.1f}"),
-                ]:
-                    _rows.append({
-                        "Métrica": label,
-                        a.name: fmt.format(a.metrics.get(key, 0)),
-                        b.name: fmt.format(b.metrics.get(key, 0)),
+                _cmp = deep_compare_plans(a, b)
+                st.caption(
+                    f"📊 Calculado · {_cmp['n_differences']} diferencia(s) entre "
+                    f"**{_cmp['name_a']}** y **{_cmp['name_b']}**"
+                )
+                if _cmp.get("highlights"):
+                    st.markdown("**Diferencias clave:**")
+                    for _h in _cmp["highlights"][:8]:
+                        st.markdown(f"- {_h}")
+                _df_rows = []
+                for _r in _cmp["rows"]:
+                    _df_rows.append({
+                        "Campo": _r["label"],
+                        _cmp["name_a"]: _r["a"],
+                        _cmp["name_b"]: _r["b"],
+                        "Δ": _r["delta"] if _r["delta"] is not None else ("≠" if _r["differs"] else "—"),
                     })
-                st.dataframe(pd.DataFrame(_rows), width="stretch", hide_index=True)
+                st.dataframe(pd.DataFrame(_df_rows), width="stretch", hide_index=True)
 
     _active_plan_id = (getattr(prefs, "active_plan_id", "") or "").strip()
     if _active_plan_id and any(p.id == _active_plan_id for p in _plans):
@@ -892,6 +957,50 @@ else:
             "lo usan como tu objetivo de retiro.",
             icon="🎯",
         )
+        # Backlog 8 — qué hacer este año
+        from data.product_ux import build_annual_action_list, ar_dual_amounts, format_ar_dual_line
+
+        _active_snap = next(p for p in _plans if p.id == _active_plan_id)
+        _port = st.session_state.get("portfolio")
+        _has_pos = bool(getattr(_port, "positions", None))
+        _drift = None
+        _rm = getattr(_active_snap, "refreshed_metrics", None) or {}
+        if isinstance(_rm, dict):
+            _drift = (_rm.get("summary") or {}).get("weighted_delta_pct")
+        _actions = build_annual_action_list(
+            plan_snapshot=_active_snap,
+            monthly_savings=float(getattr(prefs, "monthly_savings", 0) or 0),
+            has_portfolio_positions=_has_pos,
+            drift_pct=float(_drift) if _drift is not None else None,
+            last_backup_days=None if not st.session_state.get("plan_exported") else 0,
+        )
+        with st.container(border=True):
+            st.markdown("#### ✅ Qué hacer este año")
+            st.caption("📊 Calculado · checklist a partir de tu plan y perfil (no es IA).")
+            for _a in _actions:
+                st.markdown(
+                    f"- **{_a['title']}** · _{_a.get('when', '')}_  \n"
+                    f"  {_a.get('detail', '')}"
+                )
+
+        # Backlog 10 — AR dual on plan capital/median
+        try:
+            from config import AR_FX
+
+            if getattr(AR_FX, "enabled", True):
+                _mc = getattr(_active_snap, "mc_summary", None) or {}
+                _med = _mc.get("median_terminal")
+                if _med:
+                    with st.expander("🇦🇷 Vista dual USD / ARS", expanded=False):
+                        _d = ar_dual_amounts(
+                            float(_med),
+                            usd_ars_oficial=float(AR_FX.usd_ars_oficial),
+                            usd_ars_parallel=float(AR_FX.usd_ars_parallel),
+                        )
+                        st.markdown(format_ar_dual_line(_d))
+                        st.caption("Tasas de config/env — contexto de producto, no cotización en vivo.")
+        except Exception:
+            pass
 
     for p in _plans:
         _is_active = p.id == _active_plan_id

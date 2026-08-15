@@ -29,11 +29,13 @@ from loguru import logger
 from config_validator import log_config_issues, validate_config
 from dashboard.shared import (
     _load_env_vars,
+    build_home_hub_for_prefs,
     is_dev_mode,
     next_priority_action,
     plan_journey_status,
     render_assumptions_disclaimer,
     seed_session_defaults_from_profile,
+    track_record_home_line,
 )
 from data.preferences import _PREFS_PATH, UserPreferences
 from data.universe_loader import UNIVERSE_META, list_universes
@@ -145,46 +147,84 @@ def _home_page() -> None:
 
     st.divider()
 
-    # ---- "Hoy hacé esto": the single most urgent action, front and center ----
-    _action = next_priority_action(_prefs_home)
+    # ---- Daily hub: how is my plan? + one action + sample plan (backlog 1) ----
+    _hub = build_home_hub_for_prefs(_prefs_home)
+    _action = _hub.get("primary_action") or next_priority_action(_prefs_home)
+
     with st.container(border=True):
-        st.markdown(f"### {_action['icon']} Hoy hacé esto")
-        if _action["tone"] == "ok":
-            st.success(f"**{_action['label']}** — {_action['hint']}", icon=_action["icon"])
-        elif _action["tone"] == "warning":
-            st.warning(f"**{_action['label']}** — {_action['hint']}", icon=_action["icon"])
+        st.markdown("### 🗺️ ¿Cómo viene tu plan?")
+        if _hub.get("has_plan"):
+            st.markdown(f"**Plan activo:** {_hub.get('plan_name') or '—'}")
+            _hc1, _hc2, _hc3, _hc4 = st.columns(4)
+            _prob = _hub.get("prob_target_pct")
+            _hc1.metric(
+                "Prob. de alcanzar la meta",
+                f"{_prob:.0f}%" if _prob is not None else "—",
+                help="Del último guardado del plan (no es un fetch en vivo).",
+            )
+            _drift = _hub.get("drift_pct")
+            _hc2.metric(
+                "Desvío vs mercado",
+                f"{_drift:+.1f}%" if _drift is not None else "—",
+                help="Deriva ponderada del último refresh en Mi Plan. Vacío = todavía no refrescaste.",
+            )
+            _median = _hub.get("median_terminal")
+            _hc3.metric("Resultado mediano", f"${_median:,.0f}" if _median else "—")
+            _n_al = int(_hub.get("unread_alerts") or 0)
+            _age = _hub.get("data_age_days")
+            _hc4.metric(
+                "Alertas sin leer",
+                str(_n_al),
+                delta=("datos nunca refrescados" if _age is None else f"datos hace {_age}d"),
+                delta_color="off",
+                delta_arrow="off",
+            )
+            st.caption(
+                "📊 Calculado · números del último guardado/refresh. "
+                "Para actualizar vs el mercado andá a 🗺️ Mi Plan."
+            )
         else:
-            st.info(f"**{_action['label']}** — {_action['hint']}", icon=_action["icon"])
+            st.info(
+                _hub.get("empty_reason")
+                or "Todavía no tenés un plan activo. Completá el camino o probá un ejemplo.",
+                icon="🗺️",
+            )
+            if _hub.get("sample_plan_available"):
+                if st.button(
+                    "🎁 Cargar y activar plan de ejemplo (1 clic)",
+                    type="primary",
+                    key="home_hub_sample",
+                ):
+                    from data.plan_context import activate_plan, list_sample_plans
+                    from dashboard.shared import load_sample_plan_into_store
+
+                    try:
+                        _samples = list_sample_plans()
+                        _snap = load_sample_plan_into_store(_samples[0]["key"])
+                        activate_plan(_snap.id, _prefs_home)
+                        st.session_state.user_prefs = _prefs_home
+                        st.toast(f"✅ Ejemplo cargado: {_snap.name}", icon="🎁")
+                        st.switch_page(str(_pages_dir / "12_Plan.py"))
+                    except Exception as exc:
+                        st.error(f"No se pudo cargar el ejemplo: {exc}")
+
+        # Track record one-liner (backlog 15)
+        _tr_line = _hub.get("track_record_line") or track_record_home_line()
+        if _tr_line:
+            st.caption(f"📒 {_tr_line}")
+
+    with st.container(border=True):
+        st.markdown(f"### {_action.get('icon', '🚀')} Hoy hacé esto")
+        _tone = _action.get("tone") or "primary"
+        if _tone == "ok":
+            st.success(f"**{_action.get('label')}** — {_action.get('hint')}", icon=_action.get("icon", "✅"))
+        elif _tone == "warning":
+            st.warning(f"**{_action.get('label')}** — {_action.get('hint')}", icon=_action.get("icon", "⚠️"))
+        else:
+            st.info(f"**{_action.get('label')}** — {_action.get('hint')}", icon=_action.get("icon", "ℹ️"))
         if _action.get("page"):
-            if st.button(f"➡️ {_action['label']}", type="primary", key="home_today_action"):
+            if st.button(f"➡️ {_action.get('label')}", type="primary", key="home_today_action"):
                 st.switch_page(str(_pages_dir / _action["page"]))
-
-    # ---- Active-plan health summary (saved metrics — no live price fetch) ----
-    from data.plan_context import get_active_plan
-
-    _active_snap = None
-    try:
-        _active_snap = get_active_plan(_prefs_home)
-    except Exception:
-        _active_snap = None
-    if _active_snap is not None:
-        _mc = getattr(_active_snap, "mc_summary", None) or {}
-        _metrics = getattr(_active_snap, "metrics", None) or {}
-        from dashboard.shared import _days_since_iso
-        _age = _days_since_iso(getattr(_active_snap, "last_refreshed_at", "") or "")
-        st.markdown(f"#### 🗺️ Tu plan activo: {getattr(_active_snap, 'name', '—')}")
-        _hc1, _hc2, _hc3, _hc4 = st.columns(4)
-        _prob = _mc.get("prob_target_pct")
-        _hc1.metric("Prob. de alcanzar la meta", f"{_prob:.0f}%" if _prob is not None else "—")
-        _median = _mc.get("median_terminal")
-        _hc2.metric("Resultado mediano", f"${_median:,.0f}" if _median else "—")
-        _exp_ret = _metrics.get("expected_return_pct")
-        _hc3.metric("Retorno esperado", f"{_exp_ret:.1f}%" if _exp_ret is not None else "—")
-        _hc4.metric(
-            "Frescura de datos",
-            "nunca" if _age is None else (f"hace {_age}d"),
-        )
-        st.caption("Estos números son del último guardado. Refrescá contra el mercado en 🗺️ Mi Plan.")
 
     st.divider()
 
@@ -267,39 +307,36 @@ def _home_page() -> None:
     st.divider()
 
     st.markdown("""
-### ¿Por dónde empezar?
+### ¿Por dónde empezar? (primera hora)
 
-| Página | ¿Cuándo usarla? |
-|---|---|
-| **🏠 Screener** | Ver el ranking completo del universo — empezá aquí |
-| **🔍 Stock Analysis** | Análisis profundo de un ticker específico |
-| **💼 Portfolio** | Ver y gestionar tus posiciones actuales |
-| **📊 Allocation** | Recomendación de acciones/bonos/cash según tu edad |
-| **📈 Optimizer** | Construir una cartera óptima por perfil de riesgo |
-| **🗺️ Mi Plan** | Consolidar y **guardar** tu plan (cartera + metas + proyección + narrativa) |
-| **📉 Backtesting** | Simular performance histórica de la estrategia |
-| **🎲 Simulaciones** | Monte Carlo + Stress Test para proyecciones |
-| **🔔 Alertas** | Monitoreo automático y reportes PDF |
-| **📋 Watchlist** | Tickers favoritos con alertas de precio en tiempo real |
-| **⚙️ Settings** | Configurar universo, AI y preferencias |
+| Paso | Dónde | Qué lográs |
+|---|---|---|
+| 1 | **Inicio** / **🎁 plan de ejemplo** | Ver un plan vivo sin cargar datos |
+| 2 | **🧭 Perfil** (1 min) | Edad, capital, ahorro, tolerancia |
+| 3 | **📈 Optimizer** (+ asignación por edad) | Cartera objetivo según tu riesgo |
+| 4 | **🎲 Simulaciones** | ¿Llegás a la meta? palancas si no |
+| 5 | **🗺️ Mi Plan** | Guardar, activar, PDF, qué hacer este año |
+| 6 | **💼 Portfolio + 🔔 Alertas** | Monitoreo y coach en caídas |
+| Alt | **💬 Hablá con tu plan** | Preguntas en castellano con números reales |
+| Invest | **Screener → Stock Analysis** (Comité/Chat enlazados) | Research sin perderse en 3 pantallas |
 """)
 
     st.info(
-        "💡 **Flujo recomendado para inversionistas de largo plazo:** "
-        "Screener → Stock Analysis → Optimizer → Simulaciones → 🗺️ Mi Plan "
-        "(guardar + activar) → Portfolio + Alertas (monitoreo continuo)",
+        "💡 **Flujo de retiro recomendado:** "
+        "Perfil → Optimizer → Simulaciones → 🗺️ Mi Plan (guardar + activar + respaldar) "
+        "→ Portfolio + Alertas. El chat es un atajo a todo el motor.",
         icon="💡",
     )
 
-    # Phase 0 lightweight onboarding hint
-    with st.expander("🧭 ¿Nuevo aquí? Empezá por definir tu horizonte de largo plazo"):
+    with st.expander("🧭 ¿Nuevo aquí? Camino de 5 minutos"):
         st.markdown("""
-        1. Elegí o creá un **Universo** en la barra lateral (o usá "default").
-        2. Andá al **Screener** y mirá el ranking de calidad.
-        3. Usá el **Optimizer** para construir una cartera que respete **tu** tolerancia al riesgo.
-        4. Volvé a **Simulaciones** y proyectá a 10-30 años (con retiros crecientes por inflación si corresponde).
+        1. Tocá **🎁 Cargar plan de ejemplo** arriba (o en Mi Plan).
+        2. Mirá **¿cómo viene tu plan?** y **qué hacer este año**.
+        3. En **Simulaciones**, revisá realista vs conservador y las palancas si no llegás.
+        4. Exportá el **PDF para compartir** y un **respaldo JSON**.
+        5. Cuando quieras lo tuyo: perfil → Optimizer → guardar como plan nuevo.
         """)
-        st.caption("Todos los valores están en USD. Esta herramienta es educativa — consultá a un asesor certificado antes de tomar decisiones.")
+        st.caption("Valores en USD (con vista ARS opcional en plan/simulaciones). Educativo — no es asesoramiento financiero regulado.")
 
 
 _pages_dir = Path(__file__).parent / "pages"
@@ -307,9 +344,13 @@ _pages_dir = Path(__file__).parent / "pages"
 # Menu grouped by user intention (not by technical module). Developer/admin
 # tools (Eval IA, Calidad de Datos, Macro RAG) only appear when dev mode is on,
 # keeping the everyday menu clean — see is_dev_mode().
+# Lean everyday menu (backlog 6): Allocation lives inside Optimizer; Comité is
+# reachable from Stock Analysis / Chat and listed under Ajustes (not Investigar).
 _ajustes_pages = [
     st.Page(str(_pages_dir / "9_Settings.py"), title="Settings", icon="⚙️"),
     st.Page(str(_pages_dir / "10_About.py"),   title="About",    icon="ℹ️"),
+    st.Page(str(_pages_dir / "15_Comite.py"),  title="Comité",   icon="🏛️"),
+    st.Page(str(_pages_dir / "4_Allocation.py"), title="Allocation (detalle)", icon="📊"),
 ]
 if is_dev_mode():
     _ajustes_pages += [
@@ -328,12 +369,10 @@ pg = st.navigation(
             st.Page(str(_pages_dir / "12_Plan.py"),      title="Mi Plan",    icon="🗺️"),
             st.Page(str(_pages_dir / "3_Portfolio.py"),  title="Portfolio",  icon="💼"),
             st.Page(str(_pages_dir / "5_Optimizer.py"),  title="Optimizer",  icon="📈"),
-            st.Page(str(_pages_dir / "4_Allocation.py"), title="Allocation", icon="📊"),
         ],
         "Investigar": [
             st.Page(str(_pages_dir / "1_Screener.py"),       title="Screener",       icon="🏠"),
             st.Page(str(_pages_dir / "2_Stock_Analysis.py"), title="Stock Analysis", icon="🔍"),
-            st.Page(str(_pages_dir / "15_Comite.py"),        title="Comité",         icon="🏛️"),
             st.Page(str(_pages_dir / "11_Watchlist.py"),     title="Watchlist",      icon="📋"),
         ],
         "Proyectar": [

@@ -192,11 +192,17 @@ def data_quality_agent(base_quality: dict, recon: Optional[ReconciliationReport]
     out.setdefault("warnings", [])
     out["warnings"] = list(out["warnings"])  # copy
 
+    _SCOPE_NOTE = (
+        "Verificación cruzada sobre hechos crudos (revenue, NI, equity, assets), "
+        "no sobre ratios del score (ROE/PE)."
+    )
+
     if recon is None or not recon.cross_checked_fields:
         out["cross_source_agreement_pct"] = None
         out["n_source_conflicts"] = 0
         out["conflicts"] = []
         out["sources_used"] = recon.sources_used if recon else []
+        out["cross_check_scope"] = "raw_facts"
         if recon is not None and len(recon.sources_used) < 2:
             out["warnings"].append(
                 "Solo una fuente de datos disponible — sin verificación cruzada."
@@ -210,6 +216,9 @@ def data_quality_agent(base_quality: dict, recon: Optional[ReconciliationReport]
         for f in recon.conflicts
     ]
     out["sources_used"] = recon.sources_used
+    out["cross_check_scope"] = "raw_facts"
+    if _SCOPE_NOTE not in out["warnings"]:
+        out["warnings"].append(_SCOPE_NOTE)
 
     if recon.n_conflicts > 0:
         fields = ", ".join(f.field for f in recon.conflicts)

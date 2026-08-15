@@ -35,6 +35,7 @@ from config import (
     OPTIMIZER,
     OPTIMIZER_PROFILES,
     TAILWINDS,
+    VIEW_WEIGHTS,
     ProfileConfig,
 )
 from data.fetcher import get_history
@@ -386,9 +387,22 @@ class PortfolioOptimizer:
     #  Filtering                                                           #
     # ------------------------------------------------------------------ #
 
+    @staticmethod
+    def _data_quality_level(t: dict) -> str:
+        """Resolve data-quality level from flat or nested scored-ticker dicts."""
+        level = t.get("data_quality_level")
+        if level:
+            return str(level)
+        dq = t.get("data_quality")
+        if isinstance(dq, dict) and dq.get("level"):
+            return str(dq["level"])
+        return "good"
+
     def _filter_eligible(
         self, scored_tickers: List[dict]
     ) -> Tuple[List[dict], List[Tuple[str, str]]]:
+        from config import DATA_QUALITY
+
         eligible = []
         excluded = []
         for t in scored_tickers:
@@ -400,7 +414,18 @@ class PortfolioOptimizer:
             if score < self.opt.min_score_threshold:
                 excluded.append((sym, f"Score {score:.0f} < mínimo {self.opt.min_score_threshold:.0f}"))
                 continue
-            eligible.append(t)
+            dq_level = self._data_quality_level(t)
+            if DATA_QUALITY.exclude_poor_from_optimizer and dq_level == "poor":
+                excluded.append((sym, "Data quality pobre — excluido de optimización"))
+                continue
+            # Work on a shallow copy so screener cache scores stay intact.
+            row = dict(t)
+            haircut = float(getattr(DATA_QUALITY, "partial_optimizer_score_haircut", 1.0) or 1.0)
+            if dq_level == "partial" and 0 < haircut < 1.0:
+                base = float(row.get("adjusted_score", row.get("total_score", 0)) or 0)
+                row["adjusted_score"] = round(base * haircut, 4)
+                row["_dq_partial_haircut"] = haircut
+            eligible.append(row)
         return eligible, excluded
 
     def _apply_ars_discount(self, tickers: List[dict]) -> List[dict]:
@@ -562,9 +587,17 @@ class PortfolioOptimizer:
 
     def _expected_returns(self, tickers: List[dict]) -> np.ndarray:
         """
-        Composite expected return proxy per ticker.
-        Blends adjusted_score, dividend_yield, and moat_score
-        using the profile's objective weights.
+        Composite expected-return *view* per ticker (Black-Litterman views).
+
+        Blends adjusted_score, dividend_yield and moat_score using the global
+        ``VIEW_WEIGHTS`` — deliberately NOT the profile's preference weights.
+
+        An asset's expected return is a property of the asset, not of who is
+        looking at it. Until the 2026-08 audit this used ``cfg.score_weight``
+        et al., so the same ticker "yielded" 5.08% for a conservative investor
+        and 7.72% for an aggressive one (audit D3). The profile now enters
+        through ``cfg.risk_aversion`` (the δ of the BL equilibrium prior) and
+        through the SLSQP constraints, which is where preference belongs.
 
         A small explicit sector-country tailwind tilt (Idea 2) is added on top:
         the tailwind bonus already flows in via adjusted_score; this term
@@ -572,7 +605,7 @@ class PortfolioOptimizer:
         structural outlooks a light direct ER expression. Set the config to 0
         to disable. Neutral tickers (score 0) are unaffected.
         """
-        cfg = self.cfg
+        views = VIEW_WEIGHTS
         mu = []
         for t in tickers:
             score = float(t.get("adjusted_score", 0) or 0)
@@ -586,9 +619,9 @@ class PortfolioOptimizer:
             moat_ret = (moat / 20) * 0.05            # max ~5% from moat (Wide moat)
 
             composite = (
-                cfg.score_weight * score_ret
-                + cfg.dividend_weight * div_ret
-                + cfg.moat_weight * moat_ret
+                views.score * score_ret
+                + views.dividend * div_ret
+                + views.moat * moat_ret
             )
             if TAILWINDS.enabled and tailwind != 0.0:
                 composite += TAILWINDS.optimizer_er_tilt * (tailwind / 10.0) * 0.18
@@ -646,9 +679,14 @@ class PortfolioOptimizer:
                     [max(0.1, float(t.get("adjusted_score", 0) or 0) / 100.0) for t in tickers],
                     dtype=float,
                 )
+            # δ comes from the PROFILE, not the global BL default: this is the
+            # one place the investor's risk appetite legitimately shapes the
+            # return anchor (audit D3). Falls back to the global when a profile
+            # predates the field.
+            delta = float(getattr(self.cfg, "risk_aversion", 0) or _BL.risk_aversion)
             posterior = bl_expected_returns(
                 mu, cov, market_weights=market_weights, view_confidence=conf,
-                risk_aversion=_BL.risk_aversion, tau=_BL.tau,
+                risk_aversion=delta, tau=_BL.tau,
             )
             if posterior is not None and len(posterior) == len(mu) and np.all(np.isfinite(posterior)):
                 return np.asarray(posterior, dtype=float)

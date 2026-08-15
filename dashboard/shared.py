@@ -542,6 +542,71 @@ def next_priority_action(prefs) -> dict:
     }
 
 
+def track_record_home_line() -> str:
+    """Honest one-liner for Home / Mi Plan (backlog 15). Cheap: scored rows only."""
+    try:
+        from analysis.track_record import track_record_store
+        from analysis.track_record_scorer import hit_rate_by_action, summary_stats
+        from config import TRACK_RECORD
+        from data.product_ux import track_record_one_liner
+
+        horizon = list(TRACK_RECORD.horizons_days)[0] if TRACK_RECORD.horizons_days else 365
+        rows = track_record_store.get_scored_rows(horizon) or []
+        stats = summary_stats(rows)
+        by_act = hit_rate_by_action(rows) if rows else {}
+        return track_record_one_liner(
+            stats,
+            by_action=by_act,
+            horizon_label=f"{horizon}d",
+            benchmark_label=str(getattr(TRACK_RECORD, "benchmark", "SPY") or "SPY"),
+        )
+    except Exception:
+        from data.product_ux import track_record_one_liner
+
+        return track_record_one_liner({"n": 0})
+
+
+def build_home_hub_for_prefs(prefs) -> dict:
+    """Home plan hub payload (backlog 1) — pure core + cheap I/O wrappers."""
+    from data.plan_context import get_active_plan, list_sample_plans
+    from data.product_ux import build_home_plan_hub
+
+    unread = 0
+    try:
+        from alerts.store import alert_store
+
+        unread = int(alert_store.get_unread_count() or 0)
+    except Exception:
+        unread = 0
+
+    snap = None
+    try:
+        snap = get_active_plan(prefs)
+    except Exception:
+        snap = None
+
+    age = None
+    if snap is not None:
+        age = _days_since_iso(getattr(snap, "last_refreshed_at", "") or "")
+
+    samples = []
+    try:
+        samples = list_sample_plans() or []
+    except Exception:
+        samples = []
+
+    action = next_priority_action(prefs)
+    hub = build_home_plan_hub(
+        plan_snapshot=snap,
+        primary_action=action,
+        unread_alerts=unread,
+        sample_plan_available=bool(samples),
+        track_record_line=track_record_home_line(),
+        data_age_days=age,
+    )
+    return hub.as_dict()
+
+
 # ------------------------------------------------------------------ #
 #  Plan portability — export bundle (Item 2)                          #
 # ------------------------------------------------------------------ #
@@ -1145,6 +1210,58 @@ def cached_goal_simulation(
     return planner.run(
         goals=goals,
         total_capital=total_capital,
+        n_sims=n_sims,
+        vol_scale=vol_scale,
+        return_scale=return_scale,
+    )
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def cached_goal_savings_target(
+    symbols: tuple,
+    weights_tuple: tuple | None,
+    goal_serialized: tuple,    # tuple of (key, value) pairs for hashability
+    allocated_capital: float,
+    target_prob_pct: float,
+    n_sims: int,
+    vol_scale: float = 1.0,
+    return_scale: float = 1.0,
+    seed: int = 42,
+):
+    """TOTAL monthly contribution that lifts a goal to ``target_prob_pct``.
+
+    Thin cached wrapper over :func:`portfolio.goals.monthly_savings_for_probability`.
+    Returns ``float`` or ``None`` when saving alone cannot get there.
+
+    Pass the SAME ``vol_scale``/``return_scale`` used by ``cached_goal_simulation``
+    for this profile — otherwise the advice answers a different model than the
+    probability shown on the card, which is the whole defect being fixed.
+    """
+    import numpy as np
+
+    from portfolio.goals import Goal, monthly_savings_for_probability, GoalPlanner
+
+    w_np = np.array(weights_tuple) if weights_tuple else None
+    planner = GoalPlanner(list(symbols), w_np, seed=seed)
+    g = dict(goal_serialized)
+
+    goal = Goal(
+        name=g["name"],
+        target_amount_today=g["target_amount_today"],
+        horizon_years=g["horizon_years"],
+        priority=g["priority"],
+        expected_inflation=g["expected_inflation"],
+        annual_contribution=g["annual_contribution"],
+        allocated_capital=g["allocated_capital"],
+        notes=g.get("notes", ""),
+        goal_type=g.get("goal_type", "otro"),
+    )
+
+    return monthly_savings_for_probability(
+        planner,
+        goal,
+        allocated_capital=allocated_capital,
+        target_prob_pct=target_prob_pct,
         n_sims=n_sims,
         vol_scale=vol_scale,
         return_scale=return_scale,

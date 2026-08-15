@@ -21,6 +21,9 @@ from typing import List
 from loguru import logger
 
 _PREFS_PATH = Path(__file__).parent / "user_preferences.json"
+# Tracked template used to seed a fresh clone. The real file above is
+# gitignored — it contains the user's personal financial profile (audit D6).
+_PREFS_EXAMPLE_PATH = Path(__file__).parent / "user_preferences.example.json"
 
 # ------------------------------------------------------------------ #
 #  Personal-profile mappings (onboarding wizard — Fase A)              #
@@ -152,16 +155,34 @@ class UserPreferences:
         self.save()
 
     @classmethod
+    def _from_raw(cls, data: dict) -> "UserPreferences":
+        """Build from a raw dict, dropping unknown keys (old/annotated files)."""
+        known = {f for f in cls.__dataclass_fields__}
+        return cls(**{k: v for k, v in data.items() if k in known})
+
+    @classmethod
     def load(cls) -> "UserPreferences":
-        """Load from disk. Returns defaults on missing or corrupt file."""
+        """Load from disk. Returns defaults on missing or corrupt file.
+
+        The real file is gitignored (audit D6: it holds the user's actual age,
+        capital and savings). On a fresh clone it does not exist, so we seed
+        from the tracked ``user_preferences.example.json`` template — which is
+        deliberately ``onboarded: false`` so the wizard runs. Any failure to
+        read the template falls back to the in-code defaults.
+        """
         if not _PREFS_PATH.exists():
+            if _PREFS_EXAMPLE_PATH.exists():
+                try:
+                    return cls._from_raw(
+                        json.loads(_PREFS_EXAMPLE_PATH.read_text(encoding="utf-8"))
+                    )
+                except Exception as exc:
+                    logger.warning(f"Could not seed prefs from template ({exc}) — using defaults")
             return cls.get_default()
         try:
             data = json.loads(_PREFS_PATH.read_text(encoding="utf-8"))
             # Unknown keys are silently dropped so old files stay compatible
-            known = {f for f in cls.__dataclass_fields__}
-            filtered = {k: v for k, v in data.items() if k in known}
-            return cls(**filtered)
+            return cls._from_raw(data)
         except Exception as exc:
             logger.warning(f"Could not load preferences ({exc}) — using defaults")
             return cls.get_default()

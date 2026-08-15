@@ -19,11 +19,12 @@ Usage:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Dict, List, Optional
 
 import numpy as np
 
+from config import GOAL_CARD
 from portfolio.monte_carlo import MonteCarloResult, MonteCarloSimulator
 
 # ------------------------------------------------------------------ #
@@ -343,6 +344,26 @@ class GoalPlanner:
     #  Per-goal simulation                                                 #
     # ------------------------------------------------------------------ #
 
+    def make_simulator(
+        self,
+        vol_scale: float = 1.0,
+        return_scale: float = 1.0,
+    ) -> MonteCarloSimulator:
+        """Build a simulator with this planner's symbols/weights/seed.
+
+        Exposed so callers that need MANY runs with the same assumptions (e.g.
+        the savings solver below) can build one instance and reuse it: the
+        simulator caches the loaded price history per instance, so reusing it
+        avoids re-loading the history on every iteration.
+        """
+        return MonteCarloSimulator(
+            symbols=self.symbols,
+            weights=self.weights,
+            seed=self.seed,
+            vol_scale=vol_scale,
+            return_scale=return_scale,
+        )
+
     def _simulate_goal(
         self,
         goal: Goal,
@@ -350,15 +371,15 @@ class GoalPlanner:
         n_sims: int,
         vol_scale: float,
         return_scale: float,
+        sim: Optional[MonteCarloSimulator] = None,
     ) -> MonteCarloResult:
-        """Run MonteCarloSimulator for a single goal."""
-        sim = MonteCarloSimulator(
-            symbols=self.symbols,
-            weights=self.weights,
-            seed=self.seed,
-            vol_scale=vol_scale,
-            return_scale=return_scale,
-        )
+        """Run MonteCarloSimulator for a single goal.
+
+        ``sim`` lets a caller inject an already-built simulator to reuse its
+        cached price history. When omitted the behavior is unchanged.
+        """
+        if sim is None:
+            sim = self.make_simulator(vol_scale=vol_scale, return_scale=return_scale)
         # annual_contribution is modeled as a negative withdrawal (inflow to portfolio)
         annual_withdrawal = -goal.annual_contribution
 
@@ -410,3 +431,127 @@ def required_monthly_savings(
     # PMT = gap * r / ((1+r)^n - 1)
     pmt = gap * r / ((1 + r) ** n - 1)
     return max(0.0, pmt)
+
+
+def monthly_savings_for_probability(
+    planner: "GoalPlanner",
+    goal: Goal,
+    allocated_capital: float,
+    target_prob_pct: float = GOAL_CARD.success_target_pct,
+    n_sims: int = GOAL_CARD.advice_n_sims,
+    max_iter: int = GOAL_CARD.advice_max_iter,
+    vol_scale: float = 1.0,
+    return_scale: float = 1.0,
+) -> Optional[float]:
+    """
+    TOTAL monthly contribution that brings this goal to ``target_prob_pct``.
+
+    Why this exists instead of :func:`required_monthly_savings`: that function
+    solves a deterministic annuity at the *median* CAGR. A no-volatility
+    calculation at the median return lands, by construction, near 50 % success —
+    never the 80 % the UI implies. This one bisects on the **same metric the
+    card displays** (``prob_achieve_target_pct`` from the Monte Carlo engine),
+    so advice and metric stop living in different models.
+
+    Returns ``None`` when no contribution reaches the target within the
+    explored range — saying "more saving alone won't do it" is more honest than
+    handing back a reassuring number.
+
+    Notes
+    -----
+    - The returned figure is the **total** monthly contribution. Callers that
+      want the *additional* amount must subtract ``goal.annual_contribution/12``.
+    - One simulator is built and reused across all iterations (cached price
+      history), so the ~12–18 runs cost well under two seconds at
+      ``GOAL_CARD.advice_n_sims``.
+    """
+    if goal.horizon_years <= 0 or target_prob_pct <= 0:
+        return None
+
+    sim = planner.make_simulator(vol_scale=vol_scale, return_scale=return_scale)
+
+    def _prob(monthly: float) -> float:
+        g = replace(goal, annual_contribution=max(0.0, monthly) * 12.0)
+        return planner._simulate_goal(
+            g, allocated_capital, n_sims, vol_scale, return_scale, sim=sim
+        ).prob_achieve_target_pct
+
+    # Already there without extra saving? Nothing to advise.
+    if _prob(0.0) >= target_prob_pct:
+        return 0.0
+
+    # Seed the bracket with the deterministic annuity: it is the wrong model for
+    # a probability promise, but it is a decent order-of-magnitude first guess.
+    seed = required_monthly_savings(
+        target_nominal=goal.target_nominal,
+        initial_capital=allocated_capital,
+        horizon_years=goal.horizon_years,
+        expected_annual_return=0.07,
+    )
+    hi = max(seed, goal.target_nominal / (goal.horizon_years * 12), 100.0)
+
+    for _ in range(6):                       # expand until the target is cleared
+        if _prob(hi) >= target_prob_pct:
+            break
+        hi *= 2
+    else:
+        return None                          # unreachable with saving alone
+
+    lo = 0.0
+    for _ in range(max_iter):                # bisection
+        mid = (lo + hi) / 2
+        if _prob(mid) >= target_prob_pct:
+            hi = mid
+        else:
+            lo = mid
+
+    return hi
+
+
+# ------------------------------------------------------------------ #
+#  SORR badge: risk level + its tooltip, from a single source          #
+# ------------------------------------------------------------------ #
+
+def sorr_risk_badge(sorr_pct: float, dd_pct: float) -> tuple:
+    """
+    (badge_label, hex_color) for the SORR traffic light.
+
+    The severe case is evaluated FIRST and with an OR: either axis on its own is
+    enough to call the risk high. The previous implementation tested
+    ``elif sorr < 50 or dd < 45`` in the middle branch, which by De Morgan
+    required BOTH to be breached to ever reach "Alto" — so a median drawdown of
+    90 % was labelled 🟡 Medio. See :func:`sorr_badge_tooltip`, which states the
+    same rule to the user from the same thresholds.
+    """
+    if sorr_pct >= GOAL_CARD.high_sorr_pct or dd_pct >= GOAL_CARD.high_dd_pct:
+        return "🔴 Alto", "#DC3545"
+    if sorr_pct < GOAL_CARD.low_sorr_pct and dd_pct < GOAL_CARD.low_dd_pct:
+        return "🟢 Bajo", "#28A745"
+    return "🟡 Medio", "#FFC107"
+
+
+def sorr_badge_tooltip(is_accumulation: bool = True) -> str:
+    """
+    Help text for the SORR badge, generated from the SAME thresholds as
+    :func:`sorr_risk_badge` so the two cannot drift apart again.
+
+    ``is_accumulation`` picks the right consequence: a goal that only receives
+    contributions (``annual_contribution > 0`` ⇒ the engine models a negative
+    withdrawal) has no withdrawals to collide with, so the damage there is
+    buying expensive right before the fall — not selling into it.
+    """
+    consequence = (
+        "En una meta de acumulación el daño es aportar caro justo antes de la "
+        "caída: el capital que entra arriba tarda años en recuperarse."
+        if is_accumulation else
+        "Si la mala secuencia coincide con retiros, el daño se multiplica: "
+        "vender abajo consume unidades que ya no vuelven a componer."
+    )
+    return (
+        "Sequence of Returns Risk: riesgo de que una mala secuencia de retornos "
+        "al inicio del horizonte destruya el plan aunque el CAGR promedio sea "
+        f"positivo. {consequence}\n\n"
+        f"🟢 Bajo (<{GOAL_CARD.low_sorr_pct:.0f}% SORR y <{GOAL_CARD.low_dd_pct:.0f}% drawdown) · "
+        f"🟡 Medio · "
+        f"🔴 Alto (≥{GOAL_CARD.high_sorr_pct:.0f}% SORR o ≥{GOAL_CARD.high_dd_pct:.0f}% drawdown)."
+    )

@@ -23,6 +23,7 @@ from __future__ import annotations
 import io
 from dataclasses import dataclass
 from datetime import datetime
+from types import SimpleNamespace
 from typing import Optional
 
 import matplotlib
@@ -205,6 +206,11 @@ class InvestmentPlanReport:
             narrative = None
         story += self._section_executive_summary(st, goal_plan, opt_result, mc_result, mc_params, narrative, options)
 
+        # --- 2b. Partner/advisor shareable narrative (backlog 11) ---
+        story += self._section_shareable_for_partner(
+            st, goal_plan, opt_result, mc_result, mc_params, options
+        )
+
         # --- 3. Resumen de Metas ---
         if goal_plan is not None:
             story += self._section_goals(st, goal_plan, options)
@@ -229,6 +235,126 @@ class InvestmentPlanReport:
 
         buf.seek(0)
         return buf.getvalue()
+
+    # ---------------------------------------------------------------- #
+    #  Section: Shareable for partner/advisor (backlog 11)              #
+    # ---------------------------------------------------------------- #
+
+    def _section_shareable_for_partner(
+        self, st, goal_plan, opt_result, mc_result, mc_params, options
+    ) -> list:
+        """Plain-language blocks for sharing with a partner or advisor."""
+        from data.product_ux import (
+            build_annual_action_list,
+            shareable_report_narrative_blocks,
+        )
+
+        plan_name = ""
+        if options and getattr(options, "user_name", ""):
+            plan_name = f"Plan de {options.user_name}"
+        if goal_plan is not None and getattr(goal_plan, "goals", None):
+            plan_name = plan_name or "Plan con metas"
+        plan_name = plan_name or "Plan de retiro"
+
+        prob = None
+        median = None
+        if mc_result is not None:
+            prob = getattr(mc_result, "prob_achieve_target_pct", None)
+            median = getattr(mc_result, "median_terminal", None)
+        horizon = None
+        if mc_params:
+            horizon = mc_params.get("horizon_years")
+        profile = ""
+        if opt_result is not None:
+            profile = str(getattr(opt_result, "profile_name", "") or "")
+        elif mc_params:
+            profile = str(mc_params.get("profile_name") or "")
+
+        # Prefer real savings from mc_params, then goal_plan.personal, then
+        # UserPreferences on disk — so call sites that only pass sim widgets still
+        # get a useful "Qué hacer este año" when the user set monthly_savings.
+        from data.product_ux import enrich_pdf_mc_params
+
+        personal_src: dict = {}
+        if goal_plan is not None:
+            personal_src = dict(getattr(goal_plan, "personal", None) or {})
+        # Best-effort prefs load (no Streamlit) when params omit savings.
+        prefs_obj = None
+        try:
+            from data.preferences import UserPreferences
+
+            prefs_obj = UserPreferences.load()
+        except Exception:
+            prefs_obj = None
+
+        mc_params = enrich_pdf_mc_params(
+            mc_params or {}, prefs=prefs_obj, personal=personal_src
+        )
+        if horizon is None and mc_params.get("horizon_years") is not None:
+            horizon = mc_params.get("horizon_years")
+
+        monthly_savings = 0.0
+        try:
+            monthly_savings = float(mc_params.get("monthly_savings") or 0.0)
+        except (TypeError, ValueError):
+            monthly_savings = 0.0
+
+        personal = {
+            "primary_horizon_years": horizon,
+            "monthly_savings": monthly_savings if monthly_savings > 0 else None,
+            "annual_savings": (
+                float(mc_params["annual_savings"])
+                if mc_params.get("annual_savings") is not None
+                else (monthly_savings * 12.0 if monthly_savings > 0 else None)
+            ),
+            "current_capital": mc_params.get("initial_value"),
+        }
+        # Strip Nones for a clean plan-like personal dict
+        personal = {k: v for k, v in personal.items() if v is not None}
+
+        plan_like = SimpleNamespace(
+            name=plan_name,
+            personal=personal,
+            profile_name=profile,
+            n_positions=(
+                len(getattr(opt_result, "tickers", []) or [])
+                if opt_result is not None
+                else 0
+            ),
+            metrics={},
+            mc_summary={
+                "prob_target_pct": prob,
+                "median_terminal": median,
+            },
+        )
+
+        actions = build_annual_action_list(
+            plan_snapshot=plan_like,
+            monthly_savings=monthly_savings,
+            has_portfolio_positions=bool(opt_result),
+            last_backup_days=0,
+        )
+        blocks = shareable_report_narrative_blocks(
+            plan_name=plan_name,
+            prob_target_pct=float(prob) if prob is not None else None,
+            median_terminal=float(median) if median is not None else None,
+            horizon_years=float(horizon) if horizon is not None else None,
+            profile=profile,
+            annual_actions=actions,
+        )
+        elements = [
+            Paragraph("Para compartir (pareja / asesor)", st.get("h1", st["cover_title"])),
+            Spacer(1, 0.2 * cm),
+            HRFlowable(width="100%", thickness=1, color=_TEAL, spaceAfter=8),
+        ]
+        body_style = st.get("body") or st.get("normal") or list(st.values())[0]
+        h2 = st.get("h2") or body_style
+        for b in blocks:
+            elements.append(Paragraph(str(b.get("heading", "")), h2))
+            elements.append(Paragraph(str(b.get("body", "")), body_style))
+            elements.append(Spacer(1, 0.15 * cm))
+        elements.append(Spacer(1, 0.3 * cm))
+        return elements
 
     # ---------------------------------------------------------------- #
     #  Section: Cover                                                   #
@@ -260,7 +386,7 @@ class InvestmentPlanReport:
         exp_ret = f"{opt_result.expected_return_pct:.1f}%" if opt_result else "—"
 
         kpi_data = [
-            ["Metas planificadas", "Score del plan", "Tickers en cartera", "Retorno esperado"],
+            ["Metas planificadas", "Score del plan", "Tickers en cartera", "Atractivo (proxy)"],
             [str(n_goals), plan_score, str(n_tickers), exp_ret],
         ]
         kpi_tbl = Table(kpi_data, colWidths=[4.3 * cm] * 4)
@@ -319,7 +445,7 @@ class InvestmentPlanReport:
             rows.append(["Retiro anual", f"${withdrawal:,.0f}"])
         rows.append(["Inflación estimada", f"{inflation:.1f}%"])
         if opt_result:
-            rows.append(["Retorno esperado (cartera)", f"{opt_result.expected_return_pct:.1f}%"])
+            rows.append(["Atractivo estimado (proxy)", f"{opt_result.expected_return_pct:.1f}%"])
             rows.append(["Volatilidad estimada",       f"{opt_result.volatility_pct:.1f}%"])
             rows.append(["Sharpe ratio",               f"{opt_result.sharpe_ratio:.2f}"])
             rows.append(["Dividend yield",             f"{opt_result.dividend_yield_pct:.1f}%"])
@@ -497,7 +623,7 @@ class InvestmentPlanReport:
 
         # Portfolio stats KPI bar
         kpi_rows = [
-            ["Retorno esperado", "Volatilidad", "Sharpe", "Div. Yield", "Moat Avg", "Tickers"],
+            ["Atractivo (proxy)", "Volatilidad", "Sharpe", "Div. Yield", "Moat Avg", "Tickers"],
             [
                 f"{opt_result.expected_return_pct:.1f}%",
                 f"{opt_result.volatility_pct:.1f}%",
@@ -538,7 +664,7 @@ class InvestmentPlanReport:
 
         # Allocation table
         elements.append(Paragraph("Asignación detallada", st["h2"]))
-        headers = ["Ticker", "Empresa", "Peso %", "Ret. esp. %", "Vol %", "Div %", "Moat", "Sector"]
+        headers = ["Ticker", "Empresa", "Peso %", "Atract. %", "Vol %", "Div %", "Moat", "Sector"]
         col_w = [1.6, 4.0, 1.5, 2.0, 1.5, 1.3, 1.8, 3.5]
         col_w = [w * cm for w in col_w]
 
@@ -696,9 +822,6 @@ class InvestmentPlanReport:
                 [f"Prob. de que el ingreso dure {_ly} años",
                  f"{getattr(mc_result, 'prob_sustain_real_pct', 0):.0f}%",
                  "≥ 85% es robusto para retiro"],
-                ["Prob. de dejar herencia",
-                 f"{getattr(mc_result, 'prob_legacy_pct', 0):.0f}%",
-                 "Casos con capital remanente al final"],
                 ["Herencia mediana",
                  f"${getattr(mc_result, 'median_legacy', 0):,.0f}",
                  "Valor final mediano"],

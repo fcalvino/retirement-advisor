@@ -1,30 +1,43 @@
 # Retirement Advisor
 
 [![CI](https://github.com/fcalvino/retirement-advisor/actions/workflows/ci.yml/badge.svg)](https://github.com/fcalvino/retirement-advisor/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/streamlit-1.x-FF4B4B)](https://streamlit.io/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-419%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-992%20passing-brightgreen)]()
 
-> **Motor de análisis de inversiones a largo plazo orientado al retiro.**  
-> Calificá, filtrá y optimizá un universo de acciones en segundos — con score fundamental 0–100, Economic Moat, decisión AI y simulaciones de riesgo — todo en una sola app local, sin subscripciones.
+> **Sistema local de planificación de retiro.**
+> Armá un plan vivo (perfil → cartera → simulaciones → activar), lo seguís contra el mercado y lo actualizás — con score fundamental, Monte Carlo (decumulación, drags, realista vs conservador), comité, chat y alertas. Una sola app en tu máquina, sin suscripciones ni cuentas.
 
 ---
 
 ## ¿Qué hace?
 
-Retirement Advisor analiza automáticamente un universo de 38+ tickers (acciones US, ETFs, ADRs argentinos y **Bitcoin**) combinando:
+Retirement Advisor es el **sistema operativo de un plan de retiro**, no solo un screener. Sobre un universo de 39 tickers (acciones US, ETFs, ADRs argentinos y **BTC-USD**) combina:
 
-- **Análisis fundamental profundo** en 5 dimensiones (rentabilidad, salud financiera, valuación, crecimiento, dividendos)
-- **Consistency Score + Piotroski F-Score** para calidad contable real
-- **Economic Moat** cuantitativo + evaluación qualitativa por AI
-- **Análisis técnico** (SMA200, RSI, MACD, ADX, Bollinger) sobre barras semanales de 10 años
+**Plan vivo**
+- **Onboarding de perfil** (edad, capital, ahorro, tolerancia) que siembra defaults en Optimizer y Simulaciones
+- **🗺️ Mi Plan**: guardar / activar / cargar escenarios, salud vs mercado, trades de alineación, evolución longitudinal, PDF para compartir y respaldo JSON
+- **Simulaciones Monte Carlo** con decumulación (fixed real / % constante / guardrails), drags económicos opt-in y caja **realista vs conservador** siempre visible
+- **💬 Hablá con tu plan** — chat con herramientas reales del motor (atajo en lenguaje natural; necesita API key)
+- **Comité de inversión** por ticker y sobre el portfolio actual (interpreta, no recalcula; opt-in con IA)
+- **Track Record** honesto de señales (hit rate, no marketing)
+- **Calidad de datos** por ticker (completitud + frescura; política partial/poor en score y optimizer)
+- **Colas de viento** sector-país (curadas; la IA solo interpreta, no cambia el score)
+- **Libro personal** — sizing de convicciones en paralelo al optimizer de retiro
+
+**Research y motor**
+- **Análisis fundamental** en 5 dimensiones (rentabilidad, salud financiera, valuación, crecimiento, dividendos)
+- **Consistency Score + Piotroski F-Score** para calidad contable
+- **Economic Moat** cuantitativo + evaluación cualitativa por AI
+- **Análisis técnico** (SMA200, RSI, MACD, ADX, Bollinger) sobre barras semanales de 10 años — cálculo local con NumPy/Pandas, sin librería de indicadores
 - **Decisión AI** con razonamiento en lenguaje natural (Claude, GPT-4o, Grok o Nous)
-- **Optimizador de portafolio** Mean-Variance con 3 perfiles de riesgo
-- **Monte Carlo** block-bootstrap con 10 000 simulaciones
+- **Optimizador Mean-Variance** con 3 perfiles, glide path por edad y núcleo determinístico
 - **Stress testing** en 6 crisis históricas
-- **Watchlist** con alertas de precio en tiempo real
-- **Motor de alertas** persistente con email, Telegram y reportes PDF mensuales
+- **Watchlist** con alertas de precio
+- **Motor de alertas** persistente (12 tipos) con email, Telegram y reportes PDF mensuales
+
+No es un SaaS multiusuario, no modela doble moneda AR como eje de producto, no compara en profundidad dos planes guardados y no corre un LLM local.
 
 ---
 
@@ -35,7 +48,7 @@ Retirement Advisor analiza automáticamente un universo de 38+ tickers (acciones
 ┌─────────────────────────────────────────────────────────────────────┐
 │  📊 Opportunity Screener                                            │
 │                                                                     │
-│  Strong/Buy: 14  │  Hold: 18  │  Sell/Reduce: 6  │  Screened: 38  │
+│  Strong/Buy: 14  │  Hold: 18  │  Sell/Reduce: 6  │  Screened: 39  │
 │                                                                     │
 │  Ticker │ Company          │ Signal      │ Score ████░ │ Moat       │
 │  ────── │ ──────────────── │ ─────────── │ ─────────── │ ────────── │
@@ -44,6 +57,21 @@ Retirement Advisor analiza automáticamente un universo de 38+ tickers (acciones
 │  GOOGL  │ Alphabet Inc     │ 🟢 BUY      │ ████░ 79.4  │ 🟦 Wide    │
 │  AAPL   │ Apple Inc        │ 🟢 BUY      │ ████░ 77.1  │ 🟦 Wide    │
 │  ...                                                                │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 🗺️ Mi Plan — el hub del retiro
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  🗺️ Mi Plan                         ● Activo · Conservador 30y      │
+│                                                                     │
+│  Prob. de la meta   │  Desvío vs mercado  │  Qué hacer este año     │
+│       78%           │      −4.2%          │  Aportar + rebalancear  │
+│                                                                     │
+│  Realista (sin haircut)  mediana $1.9M  │  p10 $0.81M               │
+│  Conservador (motor)     mediana $1.6M  │  p10 $0.68M               │
+│                                                                     │
+│  [PDF para compartir]  [Exportar JSON]  [Cargar en Simulaciones]    │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -96,6 +124,7 @@ Retirement Advisor analiza automáticamente un universo de 38+ tickers (acciones
 │                                                                     │
 │  Mediana final: $1.82M  │  Mejor caso (p95): $2.94M               │
 │  Peor caso (p5): $0.74M │  Prob. superar $1M: 78.3%               │
+│  Realista vs conservador siempre visible (mediana + p10)          │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -104,6 +133,8 @@ Retirement Advisor analiza automáticamente un universo de 38+ tickers (acciones
 ---
 
 ## Quick Start
+
+Python **3.11 o 3.12** (eso corre el CI). El lockfile se genera contra 3.11; Docker usa `python:3.12-slim`.
 
 ```bash
 # 1. Clonar y entrar al directorio
@@ -124,7 +155,17 @@ Abrí `http://localhost:8501` — sin necesidad de API keys para el análisis b�
 
 > **AI opcional**: Si querés decisiones en lenguaje natural, agregá tu `ANTHROPIC_API_KEY` (u OpenAI/xAI) en `.env`. Sin AI, el motor rule-based funciona perfectamente.
 
-### ⚡ Probar en 5 minutos (sin ser técnico)
+### Instalación reproducible (mismos números)
+
+`requirements.txt` son rangos `>=` para editar a mano. Lo que **reproduce** numpy/scipy/pandas (y por tanto un plan auditado) es el lockfile hasheado — es lo que instala el `Dockerfile`:
+
+```bash
+pip install --require-hashes -r requirements.lock
+# Tras cambiar requirements.txt:
+make lock    # uv pip compile … --python-version 3.11
+```
+
+### ⚡ Primera hora (flujo real del producto)
 
 Si solo querés **ver la herramienta funcionando** sin armar una cartera desde cero:
 
@@ -136,35 +177,45 @@ cd retirement-advisor
 
 `run.sh` es idempotente: la primera vez crea el `venv` e instala dependencias; las siguientes solo lanza la app. En Windows con `make` disponible podés usar `make run`.
 
+#### Demo con Docker (sin instalar Python)
+
+```bash
+docker compose up --build
+# → http://localhost:8501
+```
+
+Detalle y cómo publicarla: [`docs/DEMO_HOSTED.md`](docs/DEMO_HOSTED.md).
+**Nota:** es una **demo single-user** (no SaaS multiusuario con cuentas).
+
 Una vez abierta la app:
 
-1. Andá a **🗺️ Mi Plan**.
-2. En el recuadro **«🎁 ¿Querés probar con un plan de ejemplo?»** elegí uno (Conservador 30 años, FIRE Moderado o Retiro AR con ADRs) y tocá **«📥➕ Cargar y activar»**.
-3. Explorá las secciones del plan activo: **salud vs mercado**, **evolución**, **estrategia de retiro** y, en **🎲 Simulaciones**, el **🔬 laboratorio de sensibilidad**.
-4. Descargá el **PDF del plan** desde **🗺️ Mi Plan → «🧾 Descargar PDF»**.
+1. En **Inicio**, tocá **🎁 Cargar y activar plan de ejemplo** (o andá a **🗺️ Mi Plan**).
+2. Mirá el hub **¿cómo viene tu plan?** (probabilidad, desvío, alertas) y **Hoy hacé esto**.
+3. En **Mi Plan**: **qué hacer este año**, salud vs mercado, PDF **para compartir**, respaldo JSON.
+4. En **🎲 Simulaciones**: realista vs conservador siempre visible + palancas si no llegás a la meta.
+5. Opcional: **💬 Hablá con tu plan** (preguntas sugeridas; necesita API key de IA).
+6. Research: **Screener → Stock Analysis** (desde ahí, Comité y Chat están a un clic).
 
-Los planes de ejemplo viven en `data/sample_plans/*.json` y se cargan con el mismo flujo que un plan importado — podés borrarlos cuando quieras desde «Planes guardados».
+Los planes de ejemplo viven en `data/sample_plans/*.json` (conservador 30y, FIRE moderado, retiro AR con ADRs).
 
-> **Respaldá tu plan**: Después de crear tu primer plan activo en **🗺️ Mi Plan**, **exportalo a JSON** (botón «📥 Exportar / Respaldar este plan») y guardalo en tu nube personal o USB. Así sobrevive a una reinstalación o cambio de máquina, y podés restaurarlo desde «📦 Importar / Restaurar plan». Tus planes viven en `data/retirement_plans.json` + `data/db/`: hacé backup de esas carpetas con regularidad.
+> **Respaldá tu plan**: exportalo a JSON desde **🗺️ Mi Plan** y guardalo en tu nube/USB. Los datos viven en `data/retirement_plans.json` + `data/db/`. El perfil financiero (`data/user_preferences.json`) no se commitea — la plantilla versionada es `data/user_preferences.example.json`.
 
 ---
 
-## Páginas del dashboard
+## Páginas del dashboard (menú por intención)
 
-| Página | ¿Para qué? |
-|--------|-----------|
-| **🏠 Screener** | Ranking completo del universo — empezá aquí |
-| **🔍 Stock Analysis** | Análisis profundo de un ticker: Piotroski, Moat, AI |
-| **💼 Portfolio** | Posiciones abiertas, P&L, gráficos de sector |
-| **📊 Allocation** | Regla conservadora acciones/bonos/cash según tu edad |
-| **📈 Optimizer** | Cartera óptima Mean-Variance con Efficient Frontier |
-| **📉 Backtesting** | Curva de equity histórica, Sharpe, Sortino, Calmar |
-| **🎲 Simulaciones** | Monte Carlo 10k sims + stress test 6 crisis históricas |
-| **🔔 Alertas** | Motor de alertas + email/Telegram + reportes PDF |
-| **📋 Watchlist** | Tickers favoritos con alertas de precio en tiempo real |
-| **⚙️ Settings** | Universo, AI, cache |
+| Sección | Páginas | ¿Para qué? |
+|---------|---------|-----------|
+| Inicio | **Inicio**, **Hablá con tu plan** | Hub del plan + chat con herramientas reales |
+| Mi dinero | **Mi Plan**, Portfolio, **Optimizer** (incluye asignación por edad) | Plan vivo, posiciones, cartera objetivo |
+| Investigar | Screener, Stock Analysis, Watchlist | Research (Comité enlazado desde ficha/chat) |
+| Proyectar | Simulaciones, Backtesting | Monte Carlo, stress, sensibilidad, decumulación |
+| Seguimiento | Alertas, Track Record | Monitoreo + historial honesto de señales |
+| Ajustes | Settings, About, Comité, Allocation detalle | Config + herramientas secundarias |
+| Ajustes (`DEV_MODE`) | Eval IA, Calidad de Datos, Macro RAG | Solo con `DEV_MODE=1` o el toggle en Settings |
 
-**Flujo recomendado**: Screener → Stock Analysis → Optimizer → Portfolio
+**Flujo de retiro recomendado:** Perfil → Optimizer → Simulaciones → **Mi Plan** (guardar + activar + respaldar) → Portfolio + Alertas.
+**Atajo:** plan de ejemplo en 1 clic o chat en lenguaje natural.
 
 ---
 
@@ -238,9 +289,10 @@ Cada empresa se califica en 5 dimensiones:
 | **Consistency Score** | +15 | Estabilidad de ROE, EPS y márgenes a 4+ años (std/CV) |
 | **Piotroski F-Score** | +6 / +12 | 9 checks YoY de rentabilidad, liquidez y eficiencia |
 | **Moat Bonus** | +10 | `min(moat_score × 0.5, 10)` según clasificación Wide/Narrow/Minimal |
+| **Tailwind Bonus** | ±8 | `clamp(score × 0.8, −8, +8)` — colas de viento sector-país (puede restar) |
 
 ```
-adjusted_score = min(fundamental + consistency + piotroski_bonus + moat_bonus, 100)
+adjusted_score = clamp(fundamental + consistency + piotroski_bonus + moat_bonus + tailwind_bonus, 0, 100)
 ```
 
 ### Economic Moat (0–20 pts)
@@ -251,6 +303,10 @@ adjusted_score = min(fundamental + consistency + piotroski_bonus + moat_bonus, 1
 | AI cualitativo | 0–8 | LLM evalúa 4 dimensiones: network effects, switching costs, brand, regulatory moat |
 
 Clasificación: **Wide** ≥14 / **Narrow** ≥8 / **Minimal** ≥4 / **None**
+
+### Colas de viento (tailwinds)
+
+Outlook estructural **sector × país**, curado en `data/tailwinds/sector_country.json` (ej. Energy + Argentina / Vaca Muerta). Matching: ticker > industria+país > sector+país. La IA opcional (cache 30 días) **solo interpreta** — nunca cambia el score. Apagable con `TAILWINDS.enabled=False`.
 
 ### Señales de decisión
 
@@ -274,15 +330,32 @@ Scipy SLSQP minimizando Sharpe negativo sujeto a constraints por posición, sect
 | Moderado | 18% | 2.5% | 12% | **5%** |
 | Agresivo | 25% | 1.5% | 18% | **10%** |
 
-Los límites de crypto se aplican **por ticker** (BTC, ETH, etc.) independientemente del score — protección estructural para carteras de retiro. Fallback score-weighted cuando SLSQP es infeasible (e.g., universo growth-heavy con perfil Conservador).
+Los límites de crypto se aplican **por ticker** (BTC, ETH, etc.) independientemente del score — protección estructural para carteras de retiro. Fallback score-weighted cuando SLSQP es infeasible (e.g., universo growth-heavy con perfil Conservador). Goal-aware + glide path por edad viven en la misma página del Optimizer.
 
 ### Monte Carlo
 
 Block-bootstrap sobre retornos semanales históricos de 10 años:
 - Bloques de 4 semanas → preserva autocorrelación y fat tails (sin asunción gaussiana)
-- Ajuste conservador: +10% volatilidad, -20% retorno esperado
+- Ajuste conservador: +10% volatilidad, −20% retorno esperado
+- **Referencia realista** (opt-in, default en la UI): mismos paths **sin** haircut, para comparar apples-to-apples. La caja muestra **mediana + p10** (no p90: inflar vol puede ensanchar el techo)
 - 10 000 simulaciones en < 2 segundos (vectorizado con NumPy)
 - Fan chart con percentiles 5/10/25/50/75/90/95
+
+### Decumulación y drags
+
+Tres estrategias de retiro, opt-in (sin estrategia el MC de acumulación queda byte-idéntico):
+
+| Estrategia | Qué hace |
+|------------|----------|
+| `fixed_real` | Retiro anual constante en poder de compra |
+| `constant_pct` | % fijo del capital remanente |
+| `guardrails` | % base con techo/piso y recortes/aumentos |
+
+El retiro reduce **unidades** (el capital sacado deja de componer). Ruina absorbente: si un path llega a 0, se queda en 0.
+
+Drags económicos (también opt-in; default 0%): fee anual, tax de dividendos, costo de rebalanceo, buffer AR. El caso base sin drags se conserva siempre como referencia; los planes guardados recuerdan bajo qué supuestos se generaron. El buffer AR **no** debe sumarse al descuento ARS del optimizer (ya inclina la asignación lejos de ADRs).
+
+Laboratorio de sensibilidad en Simulaciones: tornado (inflación, fricciones, retorno, vol) + escenarios what-if.
 
 ### Stress Testing
 
@@ -296,6 +369,12 @@ Block-bootstrap sobre retornos semanales históricos de 10 años:
 | 2022 Inflación + Suba de Tasas | -19.4% |
 | Recesión Severa (hipotético) | -30.0% |
 | Stagflación Extrema (hipotético) | -25.0% |
+
+### Mi Plan, chat y comité
+
+- **Mi Plan** persiste un snapshot (allocation, núcleo, metas, MC, narrativa, supuestos) en `data/retirement_plans.json`. Activarlo lo convierte en objetivo vivo: drift, trades de alineación y alertas se miden contra esos pesos. Cada snapshot sella `lib_versions` (python/numpy/scipy/pandas) para detectar deriva de entorno.
+- **Chat** enruta preguntas a herramientas del motor (plan, simulación, ticker) y narra solo sobre datos determinísticos.
+- **Comité** (4 roles, disenso siempre presente vía «Abogado del Diablo»): por ticker desde Stock Analysis; sobre el **portfolio real** desde Portfolio. Interpreta números ya calculados; no relanza el optimizer.
 
 ### 🪙 Bitcoin y activos crypto
 
@@ -316,17 +395,22 @@ python main.py analyze BTC-USD
 
 #### Scoring crypto (0–100)
 
+Fórmula (lee `CRYPTO_MOAT` + `CryptoAnalyzer._compute_score`):
+
+`clamp(base_score + tech_pts − vol_penalty − dd_penalty + moat_bonus, 0, 100)`
+
 | Componente | Rango | Descripción |
 |---|---|---|
-| Base institucional | +35 | Floor — BTC es activo de clase reconocida globalmente |
-| Señal técnica | 0 a +45 | BULLISH+fuerte=+45, BULLISH=+35, NEUTRAL=+22, BEARISH=+10 |
-| Penalidad volatilidad | 0 a −25 | Vol anualizada: <40%→0, 40-60%→−8, 60-80%→−15, >100%→−25 |
-| Penalidad drawdown | 0 a −15 | Max drawdown: >-30%→0, -30 a -50%→−5, -70%→−10, <-70%→−15 |
-| Bonus moat AI | 0 a +5 | Evaluación Grok: Wide/Narrow/Minimal/None |
+| Base institucional | +28 | `CRYPTO_MOAT.base_score` — floor institucional |
+| Señal técnica | +4 a +30 | BULLISH+fuerte=+30, BULLISH=+24, NEUTRAL=+16, BEARISH=+8, BEARISH+fuerte=+4 |
+| Penalidad volatilidad | 0 a −25 | Vol anualizada: <40%→0, 40–60%→−8, 60–80%→−15, >100%→−25 |
+| Penalidad drawdown | 0 a −15 | Max drawdown: >−30%→0, −30 a −50%→−5, −50 a −70%→−10, <−70%→−15 |
+| Bonus moat AI | 0 a +8 | `min(total × bonus_factor, max_bonus)` — Wide puede sumar el tope |
 
 **Rango típico BTC:**
-- Bull market + Wide Moat → **55–70** (HOLD — correcto para perfil conservador)
-- Bear market + vol extrema → **10–25** (SELL / REDUCE)
+- Bull + Wide Moat y vol/dd no extremos → **55–65** (HOLD — no STRONG BUY)
+- Perfil histórico BTC (vol ~65 %, max DD ~−77 %) → **~28–36** (HOLD / REDUCE); el momentum solo no llega a BUY
+- Bear + vol extrema → **0–10** (SELL / REDUCE)
 
 #### Crypto Moat Framework (AI qualitative, 0–8 pts)
 
@@ -356,15 +440,22 @@ Los límites se aplican a través del optimizer (SLSQP bounds + fallback score-w
 
 ### Smart Alerts
 
-5 tipos de alerta con debounce inteligente (SQLite):
+12 tipos de alerta con debounce inteligente (SQLite):
 
-| Tipo | Cooldown |
-|------|---------|
-| Signal change | 24h |
-| Score drop ≥ 8 pts | 168h (7d) |
-| Score surge ≥ 8 pts + BUY | 168h |
-| Nueva oportunidad (BUY/STRONG_BUY) | 72h |
-| Moat downgrade | 336h (14d) |
+| Tipo | Cooldown | Qué dispara |
+|------|----------|-------------|
+| Signal change | 24h | Cambio de señal (BUY→HOLD, HOLD→SELL, …) |
+| Score drop ≥ 8 pts | 168h (7d) | Caída material del score ajustado |
+| Score surge ≥ 8 pts + BUY | 168h | Suba material con señal de compra |
+| Nueva oportunidad (BUY/STRONG_BUY) | 72h | Entra al radar por primera vez |
+| Moat change | 336h (14d) | Cambia la clasificación de moat |
+| Portfolio loss | 72h | P&L de una posición bajo el umbral |
+| Portfolio drift | 168h | Peso se desvía del objetivo (plan activo u optimizer) |
+| Portfolio rebalance | 168h | Deriva agregada: hay que rebalancear |
+| SORR high | 336h (14d) | Prob. de drawdown temprano sobre el umbral |
+| Goal risk | 168h | Cayó la probabilidad de cumplir una meta |
+| Plan health degradation | 168h | Deriva estructural sostenida del plan activo |
+| Market drop coach | 72h | Coach post-caída: el plan sigue OK o no |
 
 Primera ejecución: guarda baseline silenciosamente sin disparar alertas (cold start).
 
@@ -372,7 +463,7 @@ Primera ejecución: guarda baseline silenciosamente sin disparar alertas (cold s
 
 ## Universo de tickers por defecto
 
-38 empresas, ETFs y ADRs argentinos (todos operados en USD):
+39 símbolos en `config.DEFAULT_TICKERS` (todos operados en USD):
 
 ```
 US Mega-Cap: AAPL  MSFT  GOOGL  AMZN  NVDA  META  BRK-B
@@ -382,6 +473,7 @@ Staples:     PG    KO    PEP    WMT
 Industrials: HD    CAT   HON
 Dividend:    O     T     XOM    CVX
 ETFs:        SPY   QQQ   VTI    BND
+Crypto:      BTC-USD
 Argentina ADRs (USD): YPF  PAM  CEPU  LOMA  MELI  GLOB  TEO  EDN
 ```
 
@@ -396,8 +488,9 @@ Para modificar el universo: editar `DEFAULT_TICKERS` en `config.py` o usar **⚙
 Todos los datos provienen de **Yahoo Finance** vía `yfinance` (gratuito, sin API key):
 
 - **Fundamentals**: `yf.Ticker().info`, `.financials`, `.balance_sheet`, `.cashflow`, `.dividends`
-- **Técnicos**: precios semanales históricos de 10 años + cálculo local con `pandas_ta`
+- **Técnicos**: precios semanales históricos de 10 años + cálculo local con NumPy/Pandas (SMA200, EMA200, RSI, MACD — sin librería de indicadores)
 - **Cache**: SQLite local con TTL configurable (default 24h)
+- **Calidad**: badge por ticker (completitud + frescura). Partial capea STRONG BUY; poor no entra al optimizer. Podés exportar un snapshot del universo desde ⚙️ Settings.
 
 ---
 
@@ -406,11 +499,13 @@ Todos los datos provienen de **Yahoo Finance** vía `yfinance` (gratuito, sin AP
 ```bash
 pip install pytest
 pytest tests/ -v
+# o, con el venv del repo:
+./venv/bin/python3 -m pytest tests/
 ```
 
-**179 tests** cubriendo: `StressTester`, `EnhancedScoring`, `Piotroski`, `MonteCarloSimulator`, `AlertEngine`, `PortfolioOptimizer`, `ConfigValidator`, `CryptoAnalyzer`, `PromptLibrary`.
+La suite (992 tests) cubre el motor (scoring, moat, Monte Carlo, optimizer, decumulación), alertas, crypto, prompts, UI helpers y **oráculos del motor** (`tests/test_engine_oracles.py`, `tests/test_withdrawal_oracle.py`: el código vectorizado se compara contra una implementación de referencia escrita desde la definición financiera). Los tests de Monte Carlo, Optimizer y Crypto mockean `get_history`/`get_crypto_info` para no hacer llamadas de red.
 
-Los tests de Monte Carlo, Optimizer y Crypto mockean `get_history`/`get_crypto_info` para no hacer llamadas de red.
+Documentación completa (por rol): [`docs/INDEX.md`](docs/INDEX.md).
 
 ---
 
@@ -419,6 +514,7 @@ Los tests de Monte Carlo, Optimizer y Crypto mockean `get_history`/`get_crypto_i
 El scheduler corre en background:
 - **Alertas** cada `ALERT_INTERVAL_HOURS` horas — analiza el universo y despacha notificaciones si hay cambios de señal, caídas de score u oportunidades
 - **Reporte PDF mensual** el día `REPORT_DAY` de cada mes a las 08:00
+- **Salud del plan** (opt-in, `HEALTH.auto_record`) — registra un punto de la evolución del plan activo
 
 ```bash
 source venv/bin/activate
@@ -492,7 +588,7 @@ WantedBy=multi-user.target
 
 ### Docker
 
-Imagen basada en `python:3.12-slim` (alineada con el CI). Montá `data/` completo
+Imagen basada en `python:3.12-slim` (alineada con el CI). Instala `requirements.lock` con `--require-hashes`. Montá `data/` completo
 para que **tus planes guardados, el historial de salud y la base SQLite**
 persistan entre reinicios del contenedor, y `reports/` para los PDF.
 
@@ -532,67 +628,23 @@ docker run -d --name ra-scheduler \
 ```
 retirement_advisor/
 ├── config.py                    # Umbrales, perfiles, universo de tickers
-├── requirements.txt
+├── requirements.txt             # Rangos editables
+├── requirements.lock            # Hash-pineado (make lock; lo usa Docker)
 ├── .env.example
-├── analysis/
-│   ├── fundamental.py           # Score fundamental (5 dimensiones, 0–100)
-│   ├── scoring.py               # Consistency Score + Piotroski F-Score
-│   ├── moat.py                  # Economic Moat cuantitativo + AI (0–20)
-│   ├── crypto_analyzer.py       # Pipeline crypto: score (0–100) + CryptoMoatDetail
-│   ├── technical.py             # Indicadores técnicos semanales
-│   ├── strategy.py              # full_analysis() — orquestador principal
-│   ├── prompts.py               # Librería centralizada de prompts LLM (4 funciones)
-│   └── ai_analyzer.py           # Capa AI (Claude / GPT-4o / Grok / Nous)
-├── data/
-│   ├── fetcher.py               # Wrapper yfinance con caché
-│   ├── crypto_fetcher.py        # Datos crypto: vol, drawdown, CAGR, ciclo halving
-│   ├── cache.py                 # SQLite cache TTL
-│   └── preferences.py           # UserPreferences — watchlist, alertas, config
-├── portfolio/
-│   ├── optimizer.py             # Mean-Variance SLSQP + 3 perfiles
-│   ├── monte_carlo.py           # Block-bootstrap Monte Carlo
-│   ├── stress_test.py           # 6 escenarios de crisis histórica
-│   ├── tracker.py               # Posiciones, P&L, métricas de riesgo
-│   └── allocation.py            # Asset allocation por edad
-├── alerts/
-│   ├── engine.py                # Motor de detección de alertas
-│   ├── store.py                 # Persistencia SQLite (snapshots + historial)
-│   ├── notifier.py              # Email + Telegram
-│   └── reporter.py              # Generación de PDFs con reportlab
-├── scripts/
-│   └── run_scheduler.py         # Scheduler: alertas diarias + PDF mensual
-├── tests/
-│   ├── conftest.py
-│   ├── test_scoring.py
-│   ├── test_stress_test.py
-│   ├── test_monte_carlo.py
-│   ├── test_alert_engine.py
-│   ├── test_optimizer.py
-│   ├── test_crypto_scoring.py   # vol/dd penalty, tech pts, score range (22 tests)
-│   ├── test_optimizer_crypto.py # max_crypto_pct por perfil (6 tests)
-│   └── test_prompts.py          # JSON fields + Grok voice en 4 prompts (18 tests)
-├── docs/
-│   ├── architecture.md
-│   ├── moat_methodology.md
-│   ├── portfolio_optimizer.md
-│   ├── alert_system.md
-│   └── ROADMAP.md
+├── analysis/                    # Scoring, moat, strategy, comité, chat, track record
+├── data/                        # Fetcher, cache SQLite, planes, preferencias
+├── portfolio/                   # Optimizer, Monte Carlo, decumulación, metas
+├── alerts/                      # Engine, store, notifier, reporter
+├── scripts/                     # Scheduler, refresh_context, check_doc_catalog
+├── tests/                       # Suite pytest (oráculos + motor + UI helpers)
+├── docs/                        # Catálogo por rol: docs/INDEX.md
 └── dashboard/
-    ├── app.py                   # Entry point Streamlit + home page
-    ├── shared.py                # Helpers, cache wrappers, parallel fetcher
-    └── pages/                   # 10 páginas multipage
-        ├── 1_Screener.py
-        ├── 2_Stock_Analysis.py
-        ├── 3_Portfolio.py
-        ├── 4_Allocation.py
-        ├── 5_Optimizer.py
-        ├── 6_Backtesting.py
-        ├── 7_Simulaciones.py
-        ├── 8_Alertas.py
-        ├── 9_Settings.py
-        ├── 10_About.py
-        └── 11_Watchlist.py
+    ├── app.py                   # Entry Streamlit + home (menú por intención)
+    ├── shared.py                # Helpers cacheados, AI config, badges
+    └── pages/                   # 18 páginas (3 solo en modo DEV_MODE)
 ```
+
+El listado vivo de cada `.md` (guía vs metodología vs auditoría vs ideación) está en [`docs/INDEX.md`](docs/INDEX.md). No uses un recuento fijo de páginas del dashboard como si fuera el menú actual: hay 18 archivos en `dashboard/pages/` (Eval IA, Calidad de Datos y Macro RAG solo aparecen con `DEV_MODE`).
 
 ---
 
@@ -601,7 +653,7 @@ retirement_advisor/
 - **Supuestos económicos (drags)**: Por defecto las proyecciones (Optimizer, Monte Carlo, Plan) asumen **0% de fees, 0% de impuestos sobre dividendos y 0% de costo de rebalanceo**, y no modelan fricciones locales argentinas (cepo, brecha cambiaria, diferencial de inflación). Desde la pestaña **🎲 Simulaciones → 📊 Supuestos y drags** podés activar una capa configurable de drags realistas (fee, tax de dividendos, rebalanceo, buffer AR); el caso base sin drags se conserva siempre como referencia y los planes guardados recuerdan bajo qué supuestos se generaron.
 - **Datos**: Yahoo Finance (yfinance) es la única fuente; puede tener datos faltantes o inconsistentes en empresas pequeñas. El sistema cae a valores neutrales cuando hay datos parciales y muestra un badge de calidad por ticker. Podés **exportar un snapshot del universo** (⚙️ Settings) para respaldo/offline.
 - **Tickers personalizados**: Desde ⚙️ Settings podés agregar tickers custom (ej. VIST). Se integran al flujo pero quedan marcados como **⚠️ Custom** con calidad de datos parcial; su scoring es experimental y el optimizador los trata con cautela.
-- **Monte Carlo**: El block-bootstrap usa historia real — no modela cambios estructurales (nuevas regulaciones, disrupciones de sector).
+- **Monte Carlo**: El block-bootstrap usa historia real — no modela cambios estructurales (nuevas regulaciones, disrupciones de sector). El haircut conservador infla vol: por eso realista-vs-conservador compara mediana + p10, no p90.
 - **AI Moat**: La evaluación cualitativa está basada en training data del LLM y puede estar desactualizada para empresas que cambian rápido.
 - **Optimización**: El perfil Conservador puede ser matemáticamente infeasible con el universo default (vol 12% + div 3.5% son constraints difíciles de cumplir con acciones growth). En ese caso se aplica fallback score-weighted.
 - **Stress test**: Los shocks sectoriales son calibrados desde datos históricos; una crisis futura podría diferir materialmente.

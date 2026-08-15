@@ -32,6 +32,12 @@
 
 ## 2. Flujo de trabajo con AI assistants
 
+**Path canónico:** `docs/PROMPT_INSTRUCTIONS.md` (regla: leer `docs/CONTEXT.md` primero).
+Los demás archivos de instrucciones son punteros a ese path:
+
+- `CLAUDE.md` → `@docs/PROMPT_INSTRUCTIONS.md` (no editar el bloque RTK)
+- `AI_CODING_GUIDELINES.md` → puntero corto al mismo archivo
+
 **Todo prompt a Claude Code o Grok Build debe comenzar así:**
 
 ```
@@ -39,20 +45,30 @@ Antes de responder, lee docs/CONTEXT.md completo.
 [tu pregunta o tarea aquí]
 ```
 
-O configurar Claude Code para leerlo automáticamente mediante `CLAUDE.md` (ya está configurado via `@docs/PROMPT_INSTRUCTIONS.md`).
+O configurar Claude Code para leerlo automáticamente mediante `CLAUDE.md`.
 
 ---
 
-## 3. Docs técnicos existentes
+## 3. Docs existentes
+
+El catálogo por rol (guía viva vs metodología vs auditoría histórica vs ideación)
+es `docs/INDEX.md`. Al agregar o borrar un `.md` de primera parte, actualizá la
+**tabla canónica** de ese índice y corré:
+
+```bash
+./venv/bin/python3 scripts/check_doc_catalog.py
+```
 
 | Archivo | Cuándo actualizarlo |
 |---------|---------------------|
+| `docs/INDEX.md` | Al agregar, mover o borrar un `.md` de primera parte |
 | `docs/architecture.md` | Cuando cambia el flujo de datos o se agrega una capa |
-| `docs/ROADMAP.md` | Al completar una Fase o definir una nueva |
+| `docs/ROADMAP.md` | Al completar una Fase (es diario histórico, no backlog abierto) |
 | `docs/moat_methodology.md` | Al cambiar algoritmo o umbrales de moat |
 | `docs/portfolio_optimizer.md` | Al cambiar constraints o función objetivo del optimizer |
 | `docs/alert_system.md` | Al agregar tipos de alerta o cambiar el scheduler |
-| `docs/INDEX.md` | Al agregar un nuevo archivo de docs |
+| `docs/DEMO_HOSTED.md` | Al cambiar el empaquetado Docker de la demo |
+| `docs/IMPLEMENTATION_PLAN.md` / `docs/VISION_GRAN_SALTO.md` | No reabrir como “empezar ya”; son históricos / ideación |
 
 ---
 
@@ -101,27 +117,10 @@ Para producción (cron diario):
 - **Parámetros de cache como tuplas** — para hashability de `@st.cache_data`
 - **No romper la API pública de los módulos de análisis** — el dashboard depende de `FundamentalResult`, `MonteCarloResult`, `GoalPlan`, etc.
 
-## 8. Limpieza de código innecesario, inutilizado y duplicado
+## 8. Limpieza de código muerto
 
-Sigue el plan dedicado en `.grok/sessions/.../plan.md` (o búscalo en el historial de la sesión) para investigar y remover dead code / duplicados que cumplen la misma función.
-
-**Pasos típicos (resumen):**
-1. Investigación (antes de borrar):
-   - `./venv/bin/python3 -m pytest tests/ -q` (baseline).
-   - Auditoría: `ruff check --select F401,F811,F841` (o equivalente). Instalar `vulture` si es necesario (`pip install vulture`) y correr con `--min-confidence 70 --exclude venv,__pycache__`. **Siempre** triage manual: falsos positivos comunes por carga dinámica de páginas Streamlit (`st.Page`), lazy imports, re-exports en `__init__.py`, entry points y `@st.cache_data`.
-   - Conteo de referencias: `grep` / `rg` por `from X import|import X` (excluyendo tests/venv) para cada módulo bajo `analysis/`, `portfolio/`, `data/`, `alerts/`, `reports/`, `dashboard/` (excluyendo el monolith ya removido).
-   - Buscar duplicados explícitos de funciones (mismo nombre/firma o comportamiento idéntico) vía grep de `^def ` + diff manual.
-2. Limpieza priorizada:
-   - El caso más grande histórico fue `dashboard/app_monolith.py` (2540 LOC de UI legacy + copia exacta de helpers que ahora están solo en `shared.py`). Confirmado 0 refs → `git rm`.
-   - Pequeños: duplicados de datos (ej. tickers repetidos en `config.py`), funciones internas sin callers.
-   - **No tocar** (salvo evidencia clara): split crypto/equity (intencional, usa `CRYPTO_MOAT`, `crypto_analyzer`, tests dedicados), scripts documentados en este archivo (refresh_context, run_scheduler, test_telegram), features marcadas ✅ en `docs/CONTEXT.md` §6.
-3. Después de cada borrado/edición:
-   - Tests completos + smoke manual de **todas** las páginas (Screener, Optimizer, Simulaciones, Stock Analysis, etc.) + CLI (`main.py`).
-   - `grep -r --include="*.py" --include="*.md" --exclude-dir=venv --exclude-dir=__pycache__ "nombre_del_archivo_borrado" .` debe dar 0.
-   - `git add` **solo** los paths intencionales (el D del rm + tus edits). Ignora otros M/?? locales (prefs, logs, artifacts).
-4. Docs:
-   - Actualizar `docs/architecture.md` (descripciones de UI), `docs/CONTEXT.md` (mapa de archivos, §9 últimos cambios si aplica) y este archivo.
-   - Correr siempre `./venv/bin/python3 scripts/refresh_context.py` y pegar bloques relevantes.
-5. Convención: documentar la limpieza en el commit ("chore: remove dead monolith...") y opcionalmente agregar nota en ROADMAP o como "último cambio" en CONTEXT.
-
-Este proceso mantiene el repo magro, reduce confusión y respeta la deuda técnica del refactor multipage + estándares del proyecto.
+El informe histórico está en [`docs/DEAD_CODE_AUDIT.md`](DEAD_CODE_AUDIT.md).
+Antes de borrar: `ruff check --select F401,F811,F841`, triage manual (páginas
+Streamlit cargadas con `st.Page`, lazy imports, re-exports) y
+`./venv/bin/python3 -m pytest tests/ -q`. No tocar el split crypto/equity ni
+features marcadas ✅ en `docs/CONTEXT.md` §6 salvo evidencia clara.

@@ -128,7 +128,12 @@ def job_alert_check() -> None:
             return
         engine = AlertEngine()
 
-        drift_inputs = _active_plan_drift_inputs()
+        drift_inputs = None
+        try:
+            drift_inputs = _active_plan_drift_inputs()
+        except Exception as exc:
+            logger.debug(f"drift inputs unavailable: {exc}")
+            drift_inputs = None
         if drift_inputs is not None:
             positions, current_prices, target_weights, label = drift_inputs
             logger.info(f"Alert check: measuring portfolio drift vs {label}")
@@ -154,10 +159,73 @@ def job_alert_check() -> None:
         except Exception as exc:
             logger.error(f"Plan MC alert check failed: {exc}")
 
+        # Backlog 12 — proactive coach after portfolio drop
+        try:
+            _check_market_drop_coach(engine, drift_inputs)
+        except Exception as exc:
+            logger.error(f"Market-drop coach check failed: {exc}")
+
         logger.info(f"Alert check complete — {len(fired)} alerts fired")
     except Exception as exc:
         logger.error(f"Alert check failed: {exc}")
     logger.info("=== Alert check finished ===")
+
+
+def _check_market_drop_coach(engine, drift_inputs) -> None:
+    """Proactive coach when the tracked portfolio has dropped hard (backlog 12).
+
+    Uses positions + current prices when available; falls back to weighted
+    plan drift from the active plan refresh metrics.
+    """
+    from data.plan_context import get_active_plan
+
+    plan = get_active_plan()
+    plan_name = getattr(plan, "name", "") if plan is not None else ""
+    prob = None
+    if plan is not None:
+        mc = getattr(plan, "mc_summary", None) or {}
+        if mc.get("prob_target_pct") is not None:
+            try:
+                prob = float(mc["prob_target_pct"])
+            except (TypeError, ValueError):
+                prob = None
+
+    portfolio_return_pct = None
+    if drift_inputs is not None:
+        positions, current_prices, _tw, _label = drift_inputs
+        cost = 0.0
+        value = 0.0
+        for sym, pos in (positions or {}).items():
+            try:
+                shares = float(pos.get("shares") or 0)
+                avg = float(pos.get("avg_cost") or 0)
+                px = float((current_prices or {}).get(sym) or 0)
+            except (TypeError, ValueError):
+                continue
+            cost += shares * avg
+            value += shares * px
+        if cost > 0:
+            portfolio_return_pct = (value / cost - 1.0) * 100.0
+
+    if portfolio_return_pct is None and plan is not None:
+        refreshed = getattr(plan, "refreshed_metrics", None) or {}
+        summary = refreshed.get("summary") if isinstance(refreshed, dict) else None
+        if isinstance(summary, dict) and summary.get("weighted_delta_pct") is not None:
+            try:
+                portfolio_return_pct = float(summary["weighted_delta_pct"])
+            except (TypeError, ValueError):
+                portfolio_return_pct = None
+
+    if portfolio_return_pct is None:
+        return
+
+    fired = engine.check_market_drop_coach(
+        portfolio_return_pct=portfolio_return_pct,
+        plan_name=plan_name or "portfolio",
+        plan_prob_target_pct=prob,
+    )
+    if fired is not None:
+        logger.info(f"Market-drop coach fired ({portfolio_return_pct:.1f}%).")
 
 
 def _check_plan_health(engine) -> None:

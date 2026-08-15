@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import zlib
 from unittest.mock import patch
 
 import numpy as np
@@ -33,7 +34,10 @@ def _make_tickers(n: int = 10, score: float = 65.0, sector: str = "Technology") 
 def _fake_price_history(sym, period="2y", interval="1wk"):
     """Return 2+ years of weekly prices to pass the min_obs check."""
     n = 110  # > 2 * 40 = 80 weeks required
-    rng = np.random.default_rng(hash(sym) % 2**31)
+    rng = np.random.default_rng(zlib.crc32(sym.encode()))  # stable across runs:
+        # `hash()` is randomized per process (PYTHONHASHSEED), so seeding from it
+        # regenerated different synthetic prices on every run and made this suite
+        # non-reproducible — a green run proved nothing. Audit D4/D5.
     prices = 100.0 * np.cumprod(1 + rng.normal(0.001, 0.015, n))
     dates = pd.date_range("2022-01-01", periods=n, freq="W")
     return pd.DataFrame({"close": prices}, index=dates)
@@ -85,6 +89,41 @@ class TestFilterEligible:
         assert len(eligible) == 1
         assert eligible[0]["symbol"] == "AAPL"
         assert len(excluded) == 2
+
+    def test_poor_data_quality_excluded(self):
+        from config import DATA_QUALITY
+
+        opt = PortfolioOptimizer("conservative")
+        tickers = [
+            _ticker("AAPL", score=70.0),
+            {**_ticker("MSFT", score=75.0), "data_quality_level": "poor"},
+        ]
+        eligible, excluded = opt._filter_eligible(tickers)
+        assert all(t["symbol"] != "MSFT" for t in eligible)
+        assert any(e[0] == "MSFT" and "pobre" in e[1].lower() for e in excluded)
+        assert DATA_QUALITY.exclude_poor_from_optimizer is True
+
+    def test_partial_applies_score_haircut_without_mutating_input(self):
+        from config import DATA_QUALITY
+
+        opt = PortfolioOptimizer("conservative")
+        original = {**_ticker("AAPL", score=80.0), "data_quality_level": "partial"}
+        eligible, excluded = opt._filter_eligible([original])
+        assert excluded == []
+        assert len(eligible) == 1
+        expected = round(80.0 * DATA_QUALITY.partial_optimizer_score_haircut, 4)
+        assert eligible[0]["adjusted_score"] == expected
+        assert original["adjusted_score"] == 80.0  # screener cache untouched
+        assert eligible[0].get("_dq_partial_haircut") == DATA_QUALITY.partial_optimizer_score_haircut
+
+    def test_nested_data_quality_dict_resolved(self):
+        opt = PortfolioOptimizer("conservative")
+        tickers = [
+            {**_ticker("BAD", score=70.0), "data_quality": {"level": "poor"}},
+        ]
+        eligible, excluded = opt._filter_eligible(tickers)
+        assert eligible == []
+        assert excluded[0][0] == "BAD"
 
 
 # ------------------------------------------------------------------ #
@@ -182,16 +221,27 @@ class TestExpectedReturns:
         assert opt._expected_returns(t_high)[0] > opt._expected_returns(t_low)[0]
 
     def test_er_cap_disabled_allows_higher(self):
-        """er_absolute_cap=0 disables the ceiling."""
+        """er_absolute_cap=0 disables the ceiling; a binding cap clamps μ.
+
+        Tested against a deliberately low cap rather than the shipped 14%:
+        since the 2026-08 D3 fix the view weights are global, so the highest μ
+        the proxy can produce is 13% and the shipped cap never binds. It stays
+        as a guardrail for future weight changes — see OptimizerConfig.
+        """
         from unittest.mock import patch
+
         from config import OPTIMIZER
 
         opt = PortfolioOptimizer("aggressive")
         t = [_ticker("MAX", score=100.0, div=10.0, moat=20.0)]
+
+        with patch.object(OPTIMIZER, "er_absolute_cap", 0.05):
+            capped = opt._expected_returns(t)[0]
         with patch.object(OPTIMIZER, "er_absolute_cap", 0.0):
-            mu = opt._expected_returns(t)[0]
-        # Uncapped aggressive max is well above 14%
-        assert mu > 0.14
+            uncapped = opt._expected_returns(t)[0]
+
+        assert capped == pytest.approx(0.05)
+        assert uncapped > capped
 
 
 # ------------------------------------------------------------------ #

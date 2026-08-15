@@ -2,18 +2,31 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import streamlit as st
 from loguru import logger
 
 from config import CHAT
-from dashboard.shared import AI_BADGE, _get_ai_config
+from dashboard.shared import AI_BADGE, CALC_BADGE, _get_ai_config, get_user_prefs
+from data.product_ux import (
+    chat_missing_context_message,
+    chat_suggested_questions,
+    guided_empty_state,
+)
 
 st.title("💬 Hablá con tu plan")
 st.caption(
-    "Preguntá en lenguaje natural (\"¿conviene comprar AAPL?\", \"¿cómo viene mi plan?\", "
-    "\"¿me alcanza si me jubilo en 15 años?\") y el asesor elige la herramienta correcta, "
+    "Preguntá en lenguaje natural y el asesor elige la herramienta correcta, "
     "corre el cálculo real y te responde. Nunca inventa cifras: siempre podés ver el dato crudo."
 )
+
+# Research experience deep-links (backlog 6)
+_rl1, _rl2 = st.columns(2)
+if _rl1.button("🔍 Abrir ficha (Stock Analysis)", key="chat_to_sa", width="stretch"):
+    st.switch_page(str(Path(__file__).parent / "2_Stock_Analysis.py"))
+if _rl2.button("🏛️ Convocar comité", key="chat_to_comite", width="stretch"):
+    st.switch_page(str(Path(__file__).parent / "15_Comite.py"))
 
 if not CHAT.enabled:
     st.warning("El chat está desactivado en config (`CHAT.enabled`).")
@@ -27,27 +40,38 @@ if not getattr(ai_cfg, "enabled", False):
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []  # list of {role, content, data}
 
+_prefs = get_user_prefs()
+_has_plan = bool((getattr(_prefs, "active_plan_id", "") or "").strip())
+try:
+    _has_portfolio = bool(getattr(st.session_state.get("portfolio"), "positions", None))
+except Exception:
+    _has_portfolio = False
+
+_ctx_tip = chat_missing_context_message(
+    has_active_plan=_has_plan, has_goal_target=True, tool_name=""
+)
+if _ctx_tip:
+    st.info(_ctx_tip, icon="💡")
+
 # Replay history
 for msg in st.session_state.chat_history:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
         if msg["role"] == "assistant":
-            st.caption(f"{AI_BADGE} · respuesta en palabras; el dato duro está abajo")
+            st.caption(f"{AI_BADGE} · respuesta en palabras; el dato duro es {CALC_BADGE}")
         if msg.get("data") and CHAT.show_raw_data:
             with st.expander("📊 Calculado · dato crudo usado (sin inventar)"):
                 st.json(msg["data"])
         if msg.get("tool") and msg["tool"] != "none":
             st.caption(f"Herramienta: `{msg['tool']}`")
 
-# Suggested clickable questions when the conversation is empty — a blank chat
-# paralyses; examples teach what can be asked.
-_SUGGESTED = [
-    "¿Conviene comprar AAPL?",
-    "¿Cómo viene mi plan?",
-    "¿Me alcanza si me jubilo en 15 años?",
-    "¿Qué riesgos tiene mi cartera?",
-]
+# Suggested clickable questions (backlog 5)
+_SUGGESTED = chat_suggested_questions(
+    has_active_plan=_has_plan, has_portfolio=_has_portfolio
+)
 if not st.session_state.chat_history:
+    _es = guided_empty_state("chat")
+    st.markdown(f"**{_es['title']}** — {_es['body']}")
     st.markdown("**Probá con una de estas preguntas:**")
     _sug_cols = st.columns(2)
     for _i, _q in enumerate(_SUGGESTED):
@@ -74,8 +98,24 @@ if prompt:
                 st.error(f"No pude procesar la consulta: {exc}")
                 st.stop()
 
+        # Human messages when tools report missing plan/meta (never raw misleading 0%).
+        _tool = getattr(resp, "tool_used", "") or ""
+        _data = getattr(resp, "data", None) or {}
+        _human = None
+        if isinstance(_data, dict) and not _data.get("ok", True):
+            _err = str(_data.get("error") or "")
+            if "plan" in _err.lower():
+                _human = chat_missing_context_message(
+                    has_active_plan=False, has_goal_target=False, tool_name=_tool or "plan_status"
+                )
+        if isinstance(_data, dict) and _data.get("prob_achieve_target_pct_available") is False:
+            _human = chat_missing_context_message(
+                has_active_plan=True, has_goal_target=False, tool_name="retirement_projection"
+            )
+        if _human:
+            st.info(_human, icon="🧭")
         st.markdown(resp.answer)
-        st.caption(f"{AI_BADGE} · respuesta en palabras; el dato duro está abajo")
+        st.caption(f"{AI_BADGE} · respuesta en palabras; el dato duro es {CALC_BADGE}")
         if resp.data and CHAT.show_raw_data:
             with st.expander("📊 Calculado · dato crudo usado (sin inventar)"):
                 st.json(resp.data)

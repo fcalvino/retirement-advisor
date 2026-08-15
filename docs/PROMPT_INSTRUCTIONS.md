@@ -28,6 +28,7 @@ Nunca propongas cambios sin haber cargado primero este contexto.
 - Los estándares de código del proyecto (cache con tuplas, `_get_ai_config()`, loguru, NullPool) están documentados en `docs/CONTEXT.md §5`
 - El estado actual de features (qué está ✅ completo y qué está ⏳ pendiente) está en `docs/CONTEXT.md §6`
 - Las limitaciones conocidas (EMFILE, KaTeX, hot-reload, etc.) están en `docs/CONTEXT.md §8`
+- El catálogo de documentación (guía viva vs auditoría histórica vs ideación) está en `docs/INDEX.md`
 
 ---
 
@@ -39,6 +40,7 @@ Nunca propongas cambios sin haber cargado primero este contexto.
 - [ ] ¿Toco lógica AI? → revisar `analysis/prompts.py` y `analysis/ai_analyzer.py`
 - [ ] ¿Los tests pasan? → `./venv/bin/python3 -m pytest tests/`
 - [ ] ¿Actualicé `docs/CONTEXT.md` si el cambio es grande?
+- [ ] ¿Agregué o borré un `.md`? → actualizar la tabla canónica de `docs/INDEX.md`
 
 ---
 

@@ -69,6 +69,18 @@ if "portfolio" not in st.session_state:
 # ------------------------------------------------------------------ #
 
 st.title("🔍 Análisis Profundo")
+st.caption(
+    "Ficha + enlaces al **Comité** y al **Chat** (misma pregunta, tres capas: "
+    "números · debate · conversación)."
+)
+_rx1, _rx2 = st.columns(2)
+from pathlib import Path as _PathSA
+if _rx1.button("🏛️ Convocar comité sobre este ticker", key="sa_to_comite", width="stretch"):
+    if st.session_state.get("sa_last_symbol"):
+        st.session_state["comite_last_symbol"] = st.session_state["sa_last_symbol"]
+    st.switch_page(str(_PathSA(__file__).parent / "15_Comite.py"))
+if _rx2.button("💬 Preguntar en el chat", key="sa_to_chat", width="stretch"):
+    st.switch_page(str(_PathSA(__file__).parent / "18_Chat.py"))
 
 _universe_tickers = sorted(st.session_state.get("universe", []))
 
@@ -141,6 +153,7 @@ if _selected and _selected != _target:
 symbol = _target
 
 if symbol:
+    st.session_state["sa_last_symbol"] = symbol
     ai_cfg = _get_ai_config()
     with st.spinner(f"Analizando {symbol}…"):
         fund, tech, decision = cached_full_analysis(
@@ -161,27 +174,33 @@ if symbol:
 
     # Cross-source data check (Gran Salto, Fase 3A) — verifies the numbers against
     # a second source (SEC EDGAR) when available. Isolated + cached.
+    # Also surfaces second_source_quality_signal on the decision path (backlog 9).
     try:
         from config import MULTI_SOURCE
+        from data.product_ux import second_source_quality_signal
 
+        _dq = getattr(fund, "data_quality", None) or {}
+        _xs = None
         if MULTI_SOURCE.enabled and not getattr(fund, "is_crypto", False):
             _xs = _cross_source_check(symbol)
-            if _xs and len(_xs.get("sources_used", [])) >= 2:
-                _agree = _xs.get("agreement_pct")
-                _ncf = _xs.get("n_conflicts", 0)
-                _label = (
-                    f"🔬 Verificación entre fuentes: {', '.join(_xs['sources_used'])}"
-                    f" · acuerdo {_agree:.0f}%" if _agree is not None else "🔬 Verificación entre fuentes"
-                )
-                with st.expander(_label, expanded=bool(_ncf)):
-                    if _ncf:
-                        st.warning(f"{_ncf} discrepancia(s) entre fuentes — revisá antes de confiar en el score.")
-                        for _c in _xs.get("fields", []):
-                            if _c.get("conflict"):
-                                _vals = " vs ".join(f"{s}={v:,.0f}" for s, v in _c["values"].items())
-                                st.markdown(f"- **{_c['field']}**: {_vals}  (Δ {_c['max_rel_diff_pct']:.0f}%)")
-                    else:
-                        st.success("Los datos crudos coinciden entre las fuentes consultadas.")
+        _sig = second_source_quality_signal(_xs, data_quality=_dq if isinstance(_dq, dict) else None)
+        st.caption(f"🔬 {_sig['message']}")
+        if _xs and len(_xs.get("sources_used", [])) >= 2:
+            _agree = _xs.get("agreement_pct")
+            _ncf = _xs.get("n_conflicts", 0)
+            _label = (
+                f"🔬 Verificación entre fuentes: {', '.join(_xs['sources_used'])}"
+                f" · acuerdo {_agree:.0f}%" if _agree is not None else "🔬 Verificación entre fuentes"
+            )
+            with st.expander(_label, expanded=bool(_ncf)):
+                if _ncf:
+                    st.warning(f"{_ncf} discrepancia(s) entre fuentes — revisá antes de confiar en el score.")
+                    for _c in _xs.get("fields", []):
+                        if _c.get("conflict"):
+                            _vals = " vs ".join(f"{s}={v:,.0f}" for s, v in _c["values"].items())
+                            st.markdown(f"- **{_c['field']}**: {_vals}  (Δ {_c['max_rel_diff_pct']:.0f}%)")
+                else:
+                    st.success("Los datos crudos coinciden entre las fuentes consultadas.")
     except Exception:
         pass  # cross-source check is best-effort
 
@@ -261,6 +280,8 @@ if symbol:
             "Crypto Moat",
             f"{_moat_score:.1f}/8" if _moat_detail_crypto and _moat_detail_crypto.ai_available else "N/A",
             delta=_moat_class,
+            delta_color="off",
+            delta_arrow="off",
             help="Moat crypto AI: network adoption + escasez monetaria + seguridad + regulatorio + tecnología",
         )
         col2b.metric("Ciclo Halving", _halving_str.replace("Ciclo halving: ", "") or "—")
@@ -327,6 +348,8 @@ if symbol:
             "Economic Moat",
             f"{_moat_score:.1f}/20",
             delta=_moat_class,
+            delta_color="off",
+            delta_arrow="off",
             help="Ventaja competitiva sostenible (Wide ≥14 | Narrow ≥8 | Minimal ≥4)",
         )
         col5.metric("Score Ajustado", f"{fund.adjusted_score:.1f}/100")
@@ -612,6 +635,7 @@ if symbol:
                         f"{fund.margin_of_safety_pct:.1f}%",
                         delta=f"vs ${fund.current_price:.2f} current",
                         delta_color=delta_color,
+                        delta_arrow="off",
                     )
 
     with tab_tech:

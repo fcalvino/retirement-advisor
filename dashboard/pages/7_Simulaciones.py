@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import io
+import math
 from datetime import datetime
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from config import MONTE_CARLO, SECTOR_MAP
+from config import GOAL_CARD, MONTE_CARLO, SECTOR_MAP
 from dashboard.shared import (
     _get_ai_config,
     cached_goal_optimization,
+    cached_goal_savings_target,
     cached_goal_simulation,
     cached_monte_carlo,
     cached_stress_test,
@@ -36,7 +38,8 @@ from portfolio.goals import (
     PRIORITY_COLORS,
     PRIORITY_EMOJIS,
     PRIORITY_LABELS,
-    required_monthly_savings,
+    sorr_badge_tooltip,
+    sorr_risk_badge,
 )
 from portfolio.sensitivity import tornado_rows
 
@@ -324,7 +327,18 @@ def _tab_mc_content():
 
     mc = st.session_state.get("mc_result")
     if mc is None:
-        st.warning("No hay resultado de simulación disponible.")
+        from data.product_ux import guided_empty_state
+
+        _es = guided_empty_state("simulaciones")
+        st.warning(f"**{_es['title']}** — {_es['body']}", icon="🎲")
+        st.info(_es["demo_hint"], icon="💡")
+        _e1, _e2 = st.columns(2)
+        if _e1.button("📈 Ir al Optimizer", key="sim_empty_opt", width="stretch"):
+            from pathlib import Path as _P
+            st.switch_page(str(_P(__file__).parent / "5_Optimizer.py"))
+        if _e2.button("🗺️ Mi Plan (ejemplo)", key="sim_empty_plan", width="stretch"):
+            from pathlib import Path as _P
+            st.switch_page(str(_P(__file__).parent / "12_Plan.py"))
         return
 
     for w in mc.warnings:
@@ -338,6 +352,8 @@ def _tab_mc_content():
         "Valor más probable (mediana)",
         f"${mc.median_terminal:,.0f}",
         delta=f"{mc.median_cagr_pct:.1f}% CAGR promedio",
+        delta_color="off",
+        delta_arrow="off",
         help="En la mitad de las simulaciones terminás por encima de este número, y en la mitad por debajo.",
     )
 
@@ -345,7 +361,10 @@ def _tab_mc_content():
         "⚠️ Escenario pesimista (peor 10%)",
         f"${mc.p10_terminal:,.0f}",
         delta=f"{mc.p10_cagr_pct:.1f}% CAGR",
-        delta_color="inverse",
+        # "off", no "inverse": teñir de rojo un CAGR positivo confunde. Lo malo
+        # acá es el escenario, y eso ya lo dice la etiqueta "pesimista".
+        delta_color="off",
+        delta_arrow="off",
         help="En 1 de cada 10 simulaciones terminás con este valor o menos. Este es el caso 'malo' que debés estar dispuesto a aceptar.",
     )
 
@@ -361,6 +380,7 @@ def _tab_mc_content():
             f"{mc.prob_achieve_target_pct:.1f}%",
             delta=f"de llegar a ${target_value:,.0f}",
             delta_color="off",
+            delta_arrow="off",
             help="Porcentaje de las 10.000 simulaciones que superaron o igualaron tu objetivo.",
         )
     else:
@@ -386,19 +406,76 @@ def _tab_mc_content():
             icon="📊",
         )
 
-    # From "no llegás" to "hacé esto": when the goal is unlikely, point to the
-    # concrete levers (the 🔬 Sensibilidad section below quantifies each one).
+    # From "no llegás" to "hacé esto" with *numbers* (backlog 3).
     if target_value > 0 and mc.prob_achieve_target_pct < 70:
+        from data.product_ux import compute_gap_to_goal_levers
+
+        _ann_contrib = float(st.session_state.get("annual_contribution") or 0.0)
+        if _ann_contrib <= 0:
+            _ann_contrib = float(getattr(_prefs_sim, "annual_savings", 0) or 0)
+        _er = float(getattr(mc, "median_cagr_pct", 0) or 0) / 100.0
+        if _er <= 0:
+            _er = 0.05
+        _levers = compute_gap_to_goal_levers(
+            capital=float(initial_value),
+            annual_contribution=_ann_contrib,
+            years=float(horizon_years),
+            annual_return=_er,
+            target=float(target_value),
+            prob_achieve_pct=float(mc.prob_achieve_target_pct),
+        )
         st.warning(
             f"🎯 **Con holgura no llegás** (probabilidad {mc.prob_achieve_target_pct:.0f}%). "
-            "No es un callejón sin salida — probá mover una de estas palancas:\n\n"
-            "- 💵 **Aportar más por mes** — lo que más mueve la aguja en horizontes largos.\n"
-            "- ⏳ **Extender el horizonte** unos años — el interés compuesto hace el resto.\n"
-            "- 🎯 **Ajustar la meta** a un número más alcanzable.\n"
-            "- ⚖️ **Subir un escalón de riesgo** (más retorno esperado, más volatilidad).\n\n"
-            "Bajá a la sección **🔬 Sensibilidad** para ver cuánto sube tu probabilidad con cada cambio.",
+            "Palancas concretas (modelo simple de capitalización — orientativo):",
             icon="🧭",
         )
+        if _levers:
+            for _lv in _levers:
+                st.markdown(f"- **{_lv['label']}:** {_lv['detail']}  \n  → _{_lv['cta_hint']}_")
+        else:
+            st.markdown(
+                "- 💵 Aportar más · ⏳ más años · 🎯 bajar meta · ⚖️ más riesgo (Optimizer)"
+            )
+        _lc1, _lc2 = st.columns(2)
+        if _lc1.button("🗺️ Ir a Mi Plan", key="sim_gap_plan", width="stretch"):
+            from pathlib import Path as _P
+            st.switch_page(str(_P(__file__).parent / "12_Plan.py"))
+        if _lc2.button("💼 Ir a Portfolio", key="sim_gap_port", width="stretch"):
+            from pathlib import Path as _P
+            st.switch_page(str(_P(__file__).parent / "3_Portfolio.py"))
+        st.caption(
+            "📊 Calculado · palancas con fórmula de valor futuro (no IA). "
+            "Bajá a **🔬 Sensibilidad** para el impacto estocástico de cada factor."
+        )
+
+    # AR dual-currency context (backlog 10) — product presentation, not tax advice.
+    try:
+        from config import AR_FX
+        from data.product_ux import ar_dual_amounts, format_ar_dual_line
+
+        if getattr(AR_FX, "enabled", True) and mc.median_terminal:
+            with st.expander("🇦🇷 Vista dual USD / ARS (contexto)", expanded=False):
+                st.caption(
+                    "Misma plata en pesos (oficial + paralelo). Tasas configurables "
+                    "(`AR_FX` / env USD_ARS_*). No es cotización en vivo ni asesoramiento cambiario."
+                )
+                _dual_m = ar_dual_amounts(
+                    float(mc.median_terminal),
+                    usd_ars_oficial=float(AR_FX.usd_ars_oficial),
+                    usd_ars_parallel=float(AR_FX.usd_ars_parallel),
+                    label="mediana final",
+                )
+                st.markdown(f"**Mediana proyectada:** {format_ar_dual_line(_dual_m)}")
+                if target_value > 0:
+                    _dual_t = ar_dual_amounts(
+                        float(target_value),
+                        usd_ars_oficial=float(AR_FX.usd_ars_oficial),
+                        usd_ars_parallel=float(AR_FX.usd_ars_parallel),
+                        label="meta",
+                    )
+                    st.markdown(f"**Tu meta:** {format_ar_dual_line(_dual_t)}")
+    except Exception:
+        pass
 
     # ---- Fase H.1: decumulation / retirement-income metrics ----
     _wd = getattr(mc, "withdrawal_strategy_applied", None)
@@ -406,7 +483,7 @@ def _tab_mc_content():
         st.divider()
         st.markdown("#### 🏖️ ¿Cuánto dura tu ingreso de retiro?")
         st.caption(format_withdrawal_badge(_wd))
-        d1, d2, d3, d4 = st.columns(4)
+        d1, d2, d3 = st.columns(3)
         _longevity = getattr(mc, "longevity_years", 0) or horizon_years
         d1.metric(
             f"Prob. de que dure {_longevity} años",
@@ -414,24 +491,19 @@ def _tab_mc_content():
             help="Porcentaje de simulaciones en las que el ingreso NUNCA se agotó durante el horizonte de retiro.",
         )
         d2.metric(
-            "Prob. de dejar herencia",
-            f"{mc.prob_legacy_pct:.0f}%",
-            help="Casos en los que todavía queda capital al final del horizonte.",
-        )
-        d3.metric(
             "Herencia mediana",
             f"${mc.median_legacy:,.0f}",
             help="Valor final mediano (lo que típicamente queda al final).",
         )
         if mc.expected_depletion_year > 0:
-            d4.metric(
+            d3.metric(
                 "Si se agota, año típico",
                 f"Año {mc.expected_depletion_year:.0f}",
                 delta_color="off",
                 help="Entre las simulaciones que SÍ se quedaron sin fondos, el año mediano en que ocurrió.",
             )
         else:
-            d4.metric(
+            d3.metric(
                 "Si se agota, año típico",
                 "Nunca",
                 delta_color="off",
@@ -1601,11 +1673,13 @@ with tab_goals:
                 f"{plan_result.plan_feasibility_score:.0f}/100",
                 delta=plan_result.feasibility_label,
                 delta_color="off",
+                delta_arrow="off",
                 help="Score ponderado por prioridad: P(éxito) × peso de prioridad.",
             )
+            _success_target = GOAL_CARD.success_target_pct
             pk3.metric(
-                "Metas con >80% prob. éxito",
-                f"{sum(1 for gr in plan_result.goal_results if gr.prob_success_pct >= 80)}"
+                f"Metas con >{_success_target:.0f}% prob. éxito",
+                f"{sum(1 for gr in plan_result.goal_results if gr.prob_success_pct >= _success_target)}"
                 f"/{len(plan_result.goal_results)}",
             )
             capital_gap = plan_result.capital_gap
@@ -1614,6 +1688,7 @@ with tab_goals:
                 f"${capital_gap:,.0f}" if capital_gap > 0 else "✅ Sin gap",
                 delta="déficit proyectado" if capital_gap > 0 else None,
                 delta_color="inverse" if capital_gap > 0 else "off",
+                delta_arrow="off",
                 help="Diferencia entre las medianas proyectadas y los valores objetivo nominales.",
             )
 
@@ -1626,14 +1701,6 @@ with tab_goals:
             # ---------------------------------------------------------------- #
             st.subheader("🎯 Resultados por meta")
 
-            def _sorr_risk_score(sorr_pct: float, dd_pct: float) -> tuple:
-                """Return (badge_label, hex_color) for SORR risk level."""
-                if sorr_pct < 25 and dd_pct < 30:
-                    return "🟢 Bajo", "#28A745"
-                elif sorr_pct < 50 or dd_pct < 45:
-                    return "🟡 Medio", "#FFC107"
-                return "🔴 Alto", "#DC3545"
-
             for gr in plan_result.goal_results:
                 goal = gr.goal
                 mc = gr.mc_result
@@ -1642,10 +1709,18 @@ with tab_goals:
                 p_label = goal.priority_label
                 g_icon  = goal.icon
 
-                # SORR Risk Score
-                sorr_badge, sorr_color = _sorr_risk_score(
+                # SORR Risk Score — regla y tooltip salen de la misma fuente
+                # (portfolio/goals.py + GOAL_CARD), así no pueden divergir.
+                sorr_badge, sorr_color = sorr_risk_badge(
                     mc.sorr_early_drawdown_pct, mc.median_max_drawdown_pct
                 )
+
+                # Una meta que solo recibe aportes no tiene retiros con los que
+                # colisionar, y su "CAGR" no es un retorno: el capital aportado
+                # entra en el terminal pero no en el inicial.
+                _aporte_mensual = goal.annual_contribution / 12.0
+                _con_aportes = _aporte_mensual > 0
+                _total_aportado = goal.annual_contribution * goal.horizon_years
 
                 with st.container(border=True):
                     # Header: icon + name + priority badge + horizon
@@ -1667,23 +1742,45 @@ with tab_goals:
                         f"${gr.target_nominal:,.0f}",
                         delta=f"${goal.target_amount_today:,.0f} hoy + {goal.expected_inflation:.1f}% inf.",
                         delta_color="off",
+                        delta_arrow="off",
                     )
                     m3.metric(
                         "Prob. éxito",
                         f"{gr.prob_success_pct:.1f}%",
                         delta=gr.feasibility_label,
                         delta_color="off",
+                        delta_arrow="off",
                     )
+                    # Con aportes, `median_cagr_pct` deja de ser un retorno (el
+                    # capital aportado infla el terminal sin estar en el inicial),
+                    # así que ahí se informa cuánto se aportó, no un "CAGR".
                     m4.metric(
                         "Mediana proyectada",
                         f"${gr.median_terminal:,.0f}",
-                        delta=f"CAGR {mc.median_cagr_pct:.1f}%",
+                        delta=(
+                            f"incl. ${_total_aportado:,.0f} aportados"
+                            if _con_aportes else
+                            f"CAGR {mc.median_cagr_pct:.1f}%"
+                        ),
+                        delta_color="off",
+                        delta_arrow="off",
+                        help=(
+                            "Aportás "
+                            f"${_aporte_mensual:,.0f}/mes durante {goal.horizon_years} años. "
+                            "El crecimiento del pozo mezcla retorno y capital aportado, "
+                            "así que no se muestra como CAGR."
+                        ) if _con_aportes else None,
                     )
                     m5.metric(
                         "Pesimista (P10)",
                         f"${mc.p10_terminal:,.0f}",
-                        delta=f"CAGR {mc.p10_cagr_pct:.1f}%",
-                        delta_color="inverse",
+                        delta=(
+                            "peor 10% de las simulaciones"
+                            if _con_aportes else
+                            f"CAGR {mc.p10_cagr_pct:.1f}%"
+                        ),
+                        delta_color="off",
+                        delta_arrow="off",
                     )
 
                     # Progreso estimado (si hay valor del portfolio actual en sesión)
@@ -1707,34 +1804,46 @@ with tab_goals:
 
                     # SORR section header with badge
                     _sorr_col_badge, _sorr_col_title = st.columns([1.5, 4.5])
+                    # NUNCA combinar unsafe_allow_html=True con help= en el mismo
+                    # st.markdown: Streamlit concatena " :help[]" al final del
+                    # markdown y el bloque HTML se lo traga como texto crudo
+                    # (CommonMark: un bloque HTML tipo 6 corre hasta una línea en
+                    # blanco). El tooltip va en su propio elemento.
                     _sorr_col_badge.markdown(
                         f"<div style='background:{sorr_color}22;border:2px solid {sorr_color};"
                         f"border-radius:12px;padding:14px 8px;text-align:center;"
                         f"font-weight:700;font-size:1.8em;color:{sorr_color};line-height:1.3'>"
                         f"SORR<br>{sorr_badge}"
-                        f"<div style='font-size:0.42em;margin-top:6px;color:{sorr_color}cc;font-weight:600'>"
-                        f"año típico: {mc.median_year_of_max_dd:.0f}</div>"
                         f"</div>",
                         unsafe_allow_html=True,
-                        help="Sequence of Returns Risk: riesgo de que una mala secuencia de retornos al inicio del horizonte destruya el plan, incluso si el CAGR promedio es positivo. "
-                             "🟢 Bajo (<25% SORR, <30% drawdown máx.) · 🟡 Medio · 🔴 Alto (>50% SORR o >45% drawdown).",
+                    )
+                    _sorr_col_badge.caption(
+                        "¿Qué es SORR?",
+                        help=sorr_badge_tooltip(is_accumulation=_con_aportes),
                     )
                     with _sorr_col_title:
                         ds1, ds2, ds3, ds4 = st.columns(4)
                         ds1.metric(
                             "Drawdown máx. mediano",
                             f"{mc.median_max_drawdown_pct:.1f}%",
-                            delta=f"típ. en año {mc.median_year_of_max_dd:.1f}",
+                            delta=f"peor momento: años {mc.p25_year_of_max_dd:.0f}–{mc.p75_year_of_max_dd:.0f}",
                             delta_color="off",
+                            delta_arrow="off",
                             help="Caída pico-a-valle mediana durante todo el horizonte. "
-                                 "El 'delta' indica en qué año ocurre típicamente el peor drawdown.",
+                                 "El rango marca dónde cae el 50% central de los peores drawdowns: "
+                                 "si es ancho, el momento del golpe es esencialmente impredecible.",
                         )
                         ds2.metric(
                             "Riesgo SORR (5a)",
                             f"{mc.sorr_early_drawdown_pct:.1f}%",
                             help="% de simulaciones con caída >30% en los **primeros 5 años**. "
-                                 "Una secuencia negativa temprana puede ser devastadora si coincide con retiros.",
-                            delta_color="inverse",
+                                 + (
+                                     "En una meta de acumulación, aportar caro justo antes de la "
+                                     "caída deja capital que tarda años en recuperarse."
+                                     if _con_aportes else
+                                     "Una secuencia negativa temprana puede ser devastadora si "
+                                     "coincide con retiros."
+                                 ),
                         )
                         ds3.metric(
                             "Paths caída ≥50%",
@@ -1789,48 +1898,118 @@ with tab_goals:
                             mode="lines",
                             line=dict(color="#DC3545", width=1.5, dash="dot"),
                             name="P10",
+                            showlegend=False,   # ya está en la leyenda vía la banda P5–P10
                         ))
                         fig_g.add_hline(
                             y=gr.target_nominal,
                             line_dash="dash", line_color="gold", line_width=2,
                             annotation_text=f"Meta ${gr.target_nominal:,.0f}",
-                            annotation_position="right",
+                            annotation_position="top right",
                         )
-                        # Vertical line at median year of max drawdown
-                        if 0 < mc.median_year_of_max_dd < goal.horizon_years:
-                            fig_g.add_vline(
-                                x=mc.median_year_of_max_dd,
-                                line_dash="dot", line_color="rgba(220,53,69,0.85)", line_width=2,
-                                annotation_text=f"Peor año típico: {mc.median_year_of_max_dd:.1f}",
-                                annotation_position="top left",
-                                annotation_font_size=11,
-                                annotation_bgcolor="rgba(220,53,69,0.12)",
+                        # Banda del peor drawdown, NO una línea: la distribución
+                        # del año del peor drawdown es casi uniforme, así que su
+                        # mediana tiende a horizonte/2 para cualquier cartera.
+                        # Un punto preciso comunicaría una certeza que la
+                        # simulación no respalda; el rango P25–P75 dice la verdad.
+                        if 0 <= mc.p25_year_of_max_dd < mc.p75_year_of_max_dd:
+                            fig_g.add_vrect(
+                                x0=mc.p25_year_of_max_dd, x1=mc.p75_year_of_max_dd,
+                                fillcolor="rgba(220,53,69,0.07)", line_width=0, layer="below",
+                                annotation_text="50% central de los peores drawdowns",
+                                annotation_position="bottom right",
+                                annotation_font_size=10,
                             )
+
+                        # La meta se dibuja en coordenadas de datos, así que entra
+                        # en el autorange: si está muy por encima del escenario
+                        # optimista, aplasta toda la proyección contra el $0 y el
+                        # gráfico deja de informar. En ese caso, escala log.
+                        # Contra P75/P5, que son las series efectivamente
+                        # dibujadas. Medir contra P95 (que no se traza) haría que
+                        # el rango lineal estirara el eje para incluir una cola
+                        # invisible, aplastando igual lo que sí se ve.
+                        _fan_hi = max(mc.fan_paths[y][75] for y in _yrs)
+                        _fan_lo = min(mc.fan_paths[y][5] for y in _yrs)
+                        if gr.target_nominal > GOAL_CARD.chart_log_scale_ratio * _fan_hi:
+                            fig_g.update_yaxes(
+                                type="log",
+                                range=[
+                                    math.log10(max(_fan_lo * 0.7, 1.0)),
+                                    math.log10(max(gr.target_nominal * 1.3, 10.0)),
+                                ],
+                                # Rotularlo es obligatorio: en log, la pendiente
+                                # no se lee como en escala lineal.
+                                title_text="USD (escala logarítmica)",
+                            )
+                        else:
+                            fig_g.update_yaxes(
+                                range=[0, max(gr.target_nominal, _fan_hi) * 1.10],
+                                title_text="USD",
+                            )
+
                         fig_g.update_layout(
                             title=f"{g_icon} {goal.name} — Proyección Monte Carlo",
+                            title_y=0.97, title_yanchor="top",
                             xaxis_title="Años",
-                            yaxis_title="USD",
                             yaxis_tickformat="$,.0f",
-                            height=320,
-                            margin=dict(l=0, r=80, t=45, b=30),
+                            height=360,
+                            # t=86 deja lugar real para título + leyenda: con
+                            # t=45 la leyenda horizontal se montaba sobre el título.
+                            margin=dict(l=0, r=90, t=86, b=30),
                             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
                             hovermode="x unified",
                         )
                         st.plotly_chart(fig_g, width="stretch")
 
-                    # Monthly savings estimate
-                    if gr.prob_success_pct < 80:
-                        monthly_needed = required_monthly_savings(
-                            target_nominal=gr.target_nominal,
-                            initial_capital=gr.allocated_capital,
-                            horizon_years=goal.horizon_years,
-                            expected_annual_return=max(mc.median_cagr_pct / 100, 0.03),
-                        )
-                        if monthly_needed > 0:
+                    # Monthly savings advice. Se resuelve contra la MISMA métrica
+                    # que muestra la card (prob_achieve_target_pct del motor MC),
+                    # no contra una anualidad determinística con la CAGR mediana:
+                    # un cálculo sin volatilidad al retorno mediano da ~50% de
+                    # éxito por construcción, nunca el objetivo que se promete.
+                    if gr.prob_success_pct < GOAL_CARD.success_target_pct:
+                        with st.spinner(f"Calculando el ahorro necesario para {goal.name}…"):
+                            _total_mensual = cached_goal_savings_target(
+                                symbols=tuple(symbols),
+                                weights_tuple=tuple(weights) if weights else None,
+                                # Reconstruido desde gr.goal (no desde
+                                # goals_serialized, que solo existe en la rama
+                                # que corre la simulación). Tupla de pares para
+                                # que st.cache_data pueda hashearlo.
+                                goal_serialized=(
+                                    ("name", goal.name),
+                                    ("target_amount_today", float(goal.target_amount_today)),
+                                    ("horizon_years", int(goal.horizon_years)),
+                                    ("priority", int(goal.priority)),
+                                    ("expected_inflation", float(goal.expected_inflation)),
+                                    ("annual_contribution", float(goal.annual_contribution)),
+                                    ("allocated_capital", float(goal.allocated_capital)),
+                                    ("goal_type", goal.goal_type),
+                                ),
+                                allocated_capital=float(gr.allocated_capital),
+                                target_prob_pct=GOAL_CARD.success_target_pct,
+                                n_sims=GOAL_CARD.advice_n_sims,
+                                vol_scale=plan_scales["vol_scale"],
+                                return_scale=plan_scales["return_scale"],
+                            )
+
+                        _obj = f"{GOAL_CARD.success_target_pct:.0f}%"
+                        if _total_mensual is None:
+                            st.warning(
+                                f"⚠️ **{g_icon} {goal.name}** no llega al {_obj} de probabilidad "
+                                "solo con más ahorro. Hay que bajar la meta, estirar el plazo "
+                                "o asignarle más capital."
+                            )
+                        elif _total_mensual <= 0:
+                            pass  # ya está en el objetivo sin aportes extra
+                        else:
+                            _adicional = max(0.0, _total_mensual - _aporte_mensual)
+                            _extra = (
+                                f" (**\\${_adicional:,.0f}/mes** más de lo que ya aportás)"
+                                if _aporte_mensual > 0 else ""
+                            )
                             st.info(
-                                f"💡 Para mejorar la probabilidad de éxito de **{g_icon} {goal.name}**, "
-                                f"necesitarías ahorrar aprox. **${monthly_needed:,.0f}/mes** adicionales "
-                                f"(estimación con CAGR mediana {mc.median_cagr_pct:.1f}%)."
+                                f"💡 Para llevar **{g_icon} {goal.name}** al {_obj} de probabilidad: "
+                                f"**\\${_total_mensual:,.0f}/mes** en total{_extra}."
                             )
 
             # ---------------------------------------------------------------- #
@@ -1968,14 +2147,26 @@ with tab_goals:
                                 include_charts=_pdf_incl_charts,
                                 include_risk_section=_pdf_incl_risk,
                             )
-                            _pdf_mc_params = {
-                                "horizon_years":     st.session_state.get("horizon_years", 20),
-                                "initial_value":     st.session_state.get("initial_value", 0),
-                                "annual_withdrawal": st.session_state.get("annual_withdrawal", 0),
-                                "target_value":      st.session_state.get("target_value", 0),
-                                "inflation_rate":    st.session_state.get("inflation_rate", 3.0),
-                                "profile_name":      {"conservative": "Conservador", "moderate": "Moderado", "aggressive": "Agresivo"}.get(plan_profile, plan_profile),
-                            }
+                            from data.product_ux import assemble_plan_pdf_mc_params
+
+                            _pdf_mc_params = assemble_plan_pdf_mc_params(
+                                session=dict(st.session_state),
+                                prefs=_prefs_sim,
+                                profile_name={
+                                    "conservative": "Conservador",
+                                    "moderate": "Moderado",
+                                    "aggressive": "Agresivo",
+                                }.get(plan_profile, plan_profile),
+                            )
+                            # Keep explicit sim keys if present
+                            _pdf_mc_params.setdefault(
+                                "annual_withdrawal",
+                                st.session_state.get("annual_withdrawal", 0),
+                            )
+                            _pdf_mc_params.setdefault(
+                                "inflation_rate",
+                                st.session_state.get("inflation_rate", 3.0),
+                            )
                             _pdf_opt_result = st.session_state.get("goal_optimizer_result")
                             _pdf_ai_config = _get_ai_config() if _pdf_incl_ai else None
                             _pdf_bytes = InvestmentPlanReport().generate(

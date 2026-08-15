@@ -10,8 +10,11 @@ from dashboard.shared import (
     _analyse_universe_parallel,
     _get_ai_config,
     custom_source_badge,
+    data_quality_badge,
+    render_calc_badge,
 )
 from data.preferences import UserPreferences
+from data.product_ux import second_source_quality_signal
 
 # ------------------------------------------------------------------ #
 #  Page                                                                #
@@ -106,9 +109,15 @@ if not rows:
         "No se pudieron obtener datos. Verificá la conexión a internet y volvé a intentar. "
         "Si el problema persiste, reducí el universo en **⚙️ Settings**."
     )
+    st.info(
+        "💡 Mientras tanto: andá a **Stock Analysis** y probá AAPL, o cargá un "
+        "**plan de ejemplo** en Mi Plan para ver el producto con datos.",
+        icon="🧭",
+    )
     st.stop()
 
 df = pd.DataFrame(rows).sort_values("Adj. Score", ascending=False)
+render_calc_badge("ranking del universo — fórmulas + reglas; la IA solo si está activada en screener")
 
 # Item 3 — mark each ticker's source (curated vs user-added custom).
 df["Fuente"] = df["Ticker"].apply(custom_source_badge)
@@ -138,7 +147,12 @@ col3.metric("Sell/Reduce signals", sell_count,
 )
 col4.metric("Stocks screened", len(df))
 
-# Data-quality transparency (Fase E): surface partial/poor/stale tickers
+# Data-quality + second-source path (backlog 4 / 9) on the decision surface
+_sig_home = second_source_quality_signal(
+    None,
+    data_quality={"level": "partial" if _n_custom else "good", "stale": False},
+)
+st.caption(f"🔬 {_sig_home['message']} · En **Stock Analysis** podés reconciliar SEC vs Yahoo por ticker.")
 if "Datos" in df.columns:
     _dq_poor    = df["Datos"].str.contains("🔴").sum()
     _dq_partial = df["Datos"].str.contains("🟡").sum()

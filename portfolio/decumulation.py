@@ -12,9 +12,25 @@ Design rules (mirror the rest of the project):
   - Functions operate on the *relative* paths array (start = 1.0) produced by
     ``MonteCarloSimulator._simulate_paths``; ``initial_value`` converts to USD.
   - Strategies are config-driven (``config.WITHDRAWAL``); nothing hardcoded.
-  - "fixed_real" replicates the legacy ``_apply_withdrawals`` math exactly, so
-    a strategy run with the same amount + inflation is byte-identical to the
-    pre-feature engine (guaranteed by tests).
+  - ``withdraw_at_week`` is the single implementation of the withdrawal maths.
+    ``MonteCarloSimulator._apply_withdrawals`` delegates to it, so the two entry
+    points cannot drift apart.
+
+Withdrawal semantics (corrected 2026-08, audit D1/D2)
+-----------------------------------------------------
+A withdrawal removes **capital**: units are sold, the cash leaves the portfolio,
+and only the *remaining* capital keeps compounding with the market. The engine
+therefore scales the whole remaining path by ``remaining / current`` rather than
+subtracting a constant nominal level from every future week.
+
+The previous implementation subtracted a fixed amount from all future weeks,
+which let the withdrawn money keep participating in growth implicitly. It
+overstated terminal wealth by ~60% over a 30-year horizon in a rising market and
+let bankrupt paths "resurrect" when the market recovered. See
+``docs/AUDITORIA_2026-08.md`` (D1, D2) and ``tests/test_withdrawal_oracle.py``.
+
+Ruin is absorbing by construction: when nothing is left the scale factor is 0,
+so every later week is 0 too — no separate bookkeeping needed.
 
 Strategies
 ----------
@@ -125,6 +141,38 @@ class WithdrawalStrategy:
 
 
 # ------------------------------------------------------------------ #
+#  Withdrawal kernel — the single source of withdrawal maths           #
+# ------------------------------------------------------------------ #
+
+def withdraw_at_week(paths: np.ndarray, week_idx: int, amount) -> np.ndarray:
+    """Remove ``amount`` of capital at ``week_idx`` and rescale the future.
+
+    Parameters
+    ----------
+    paths : (n_sims, n_weeks+1) array of *relative* portfolio values, modified
+            in place and also returned.
+    week_idx : the week the withdrawal happens at.
+    amount : scalar or ``(n_sims,)`` array, in the same relative units as
+            ``paths`` (1.0 == the initial portfolio value).
+
+    Selling units scales the remaining position: every later week is multiplied
+    by ``remaining / current``. The withdrawn capital stops compounding, which is
+    what a real withdrawal does — subtracting a constant level instead would let
+    it keep growing implicitly (audit D1).
+
+    When ``current <= 0`` or the withdrawal empties the portfolio the factor is
+    0, so the path is dead from here on and cannot recover (audit D2).
+    """
+    current = paths[:, week_idx]
+    remaining = np.maximum(current - amount, 0.0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        factor = np.where(current > 0, remaining / current, 0.0)
+    factor = np.nan_to_num(factor, nan=0.0, posinf=0.0, neginf=0.0)
+    paths[:, week_idx:] *= factor[:, np.newaxis]
+    return paths
+
+
+# ------------------------------------------------------------------ #
 #  Path transformation                                                 #
 # ------------------------------------------------------------------ #
 
@@ -145,9 +193,9 @@ def apply_withdrawal_strategy(
     n_horizon_weeks : total simulated weeks (``horizon_years * 52``).
     inflation_rate : annual growth applied to spending (e.g. 0.03).
 
-    Returns a NEW array (input is copied) with withdrawals subtracted at each
-    52-week mark, floored at 0. Mirrors the legacy convention of decrementing
-    every week from the withdrawal point onward.
+    Returns a NEW array (input is copied). At each 52-week mark the withdrawal
+    is taken out of capital via :func:`withdraw_at_week`, so the remaining
+    balance keeps tracking the market and depletion is permanent.
     """
     p = paths.copy()
     horizon_years = n_horizon_weeks // 52
@@ -155,23 +203,20 @@ def apply_withdrawal_strategy(
     n_sims = p.shape[0]
 
     if strategy.kind == "fixed_real":
-        # Byte-identical to MonteCarloSimulator._apply_withdrawals.
+        # Same maths as MonteCarloSimulator._apply_withdrawals (shared kernel).
         withdrawal_fraction = (strategy.annual_amount / initial_value) if initial_value > 0 else 0.0
         for yr in range(1, horizon_years + 1):
             week_idx = min(yr * 52, n_cols - 1)
             grown = withdrawal_fraction * ((1 + inflation_rate) ** (yr - 1))
-            p[:, week_idx:] -= grown
-            p = np.maximum(p, 0)
+            p = withdraw_at_week(p, week_idx, grown)
         return p
 
     if strategy.kind == "constant_pct":
         pct = strategy.pct
         for yr in range(1, horizon_years + 1):
             week_idx = min(yr * 52, n_cols - 1)
-            current = p[:, week_idx]                 # per-path relative value
-            w = pct * current
-            p[:, week_idx:] -= w[:, np.newaxis]
-            p = np.maximum(p, 0)
+            w = pct * p[:, week_idx]                 # per-path relative value
+            p = withdraw_at_week(p, week_idx, w)
         return p
 
     if strategy.kind == "guardrails":
@@ -192,8 +237,7 @@ def apply_withdrawal_strategy(
             # Prosperity rule: withdrawal rate too low → raise spending.
             spend = np.where(rate < floor_rate, spend * (1.0 + strategy.guardrail_raise_pct), spend)
             w = np.minimum(spend, np.maximum(current, 0.0))   # never withdraw more than available
-            p[:, week_idx:] -= w[:, np.newaxis]
-            p = np.maximum(p, 0)
+            p = withdraw_at_week(p, week_idx, w)
         return p
 
     raise ValueError(f"Unknown withdrawal strategy '{strategy.kind}'")
@@ -215,7 +259,13 @@ def decumulation_metrics(
       prob_sustain_real_pct  — % of paths that NEVER ran dry over the horizon
                                (income sustained the whole way).
       prob_legacy_pct        — % of paths with a positive terminal value
-                               (money left to leave behind).
+                               (money left to leave behind). Since the 2026-08
+                               fix ruin is absorbing, so "ends positive" and
+                               "never ran dry" are the same event and this
+                               equals ``prob_sustain_real_pct``. Kept for
+                               ``mc_summary`` backward compatibility; the UI
+                               shows ``prob_sustain_real_pct`` + ``median_legacy``
+                               instead of two identical percentages.
       median_legacy          — median terminal value (USD).
       expected_depletion_year — among paths that DID run dry, the median year
                                in which depletion first occurred (0 if none).

@@ -20,6 +20,10 @@ qa/shots/
 qa/out_*.json
 
 # User-local runtime data (samples live under data/sample_plans/)
+# user_preferences.json holds the real personal financial profile (age, capital,
+# savings, risk tolerance) — it must never be versioned. The tracked template is
+# data/user_preferences.example.json; preferences.py seeds from it on first run.
+data/user_preferences.json
 data/retirement_plans.json
 data/plan_health_history.json
 data/personal_book_convictions.json

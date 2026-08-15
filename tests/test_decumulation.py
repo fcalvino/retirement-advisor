@@ -57,11 +57,17 @@ class TestWithdrawalStrategy:
 
 
 # ------------------------------------------------------------------ #
-#  fixed_real byte-identity with legacy engine                         #
+#  Both entry points share one withdrawal kernel                       #
 # ------------------------------------------------------------------ #
 
 class TestFixedRealParity:
-    def test_matches_legacy_apply_withdrawals(self):
+    def test_mc_and_decumulation_share_kernel(self):
+        """``fixed_real`` and the MC entry point must stay bit-identical.
+
+        Both delegate to ``decumulation.withdraw_at_week``; this guards against
+        one of them growing its own copy of the maths again — the duplication
+        that let the 2026-08 withdrawal bug survive in two places at once.
+        """
         rng = np.random.default_rng(0)
         n_weeks = 20 * 52
         paths = np.cumprod(

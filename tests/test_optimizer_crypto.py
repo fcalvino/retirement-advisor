@@ -10,6 +10,8 @@ No network calls — price history is synthetic.
 
 from __future__ import annotations
 
+import zlib
+
 import numpy as np
 import pandas as pd
 
@@ -43,7 +45,10 @@ def _crypto_ticker(symbol: str = "BTC", score: float = 55.0) -> dict:
 def _fake_price_history(sym, period="2y", interval="1wk"):
     """110 weeks of synthetic price history — passes the min_obs check."""
     n = 110
-    rng = np.random.default_rng(hash(sym) % 2**31)
+    rng = np.random.default_rng(zlib.crc32(sym.encode()))  # stable across runs:
+        # `hash()` is randomized per process (PYTHONHASHSEED), so seeding from it
+        # regenerated different synthetic prices on every run and made this suite
+        # non-reproducible — a green run proved nothing. Audit D4/D5.
     prices = 100.0 * np.cumprod(1 + rng.normal(0.001, 0.015, n))
     dates = pd.date_range("2022-01-01", periods=n, freq="W")
     return pd.DataFrame({"close": prices}, index=dates)

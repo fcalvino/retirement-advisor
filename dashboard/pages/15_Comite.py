@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import streamlit as st
 from loguru import logger
 
-from dashboard.shared import _get_ai_config, cached_full_analysis
+from dashboard.shared import AI_BADGE, CALC_BADGE, _get_ai_config, cached_full_analysis, render_ai_badge
+from data.product_ux import guided_empty_state
 
 st.title("🏛️ Comité de Inversión")
 st.caption(
@@ -13,6 +16,13 @@ st.caption(
     "dictamen con **disenso explícito**. El Abogado del Diablo siempre arma el bear case, así "
     "el desacuerdo queda a la vista en lugar de barrerse bajo la alfombra."
 )
+
+# Coherent research experience (backlog 6)
+_c1, _c2 = st.columns(2)
+if _c1.button("🔍 Ver ficha completa", key="comite_to_sa", width="stretch"):
+    st.switch_page(str(Path(__file__).parent / "2_Stock_Analysis.py"))
+if _c2.button("💬 Preguntar en el chat", key="comite_to_chat", width="stretch"):
+    st.switch_page(str(Path(__file__).parent / "18_Chat.py"))
 
 ai_cfg = _get_ai_config()
 if not getattr(ai_cfg, "enabled", False):
@@ -22,17 +32,27 @@ if not getattr(ai_cfg, "enabled", False):
     )
     st.stop()
 
-symbol = st.text_input("Ticker a evaluar", value="MSFT").strip().upper()
+_default_sym = st.session_state.get("comite_last_symbol") or "MSFT"
+symbol = st.text_input("Ticker a evaluar", value=_default_sym).strip().upper()
 run = st.button("🏛️ Convocar al comité", type="primary")
 
-if not run:
+# Show last verdict instead of a dead-empty page (backlog 2)
+_last = st.session_state.get("comite_last_verdict")
+if not run and _last and _last.get("symbol"):
+    st.success(
+        f"Último dictamen en esta sesión: **{_last['symbol']}** → {_last.get('action', '—')} "
+        f"(conf. {_last.get('confidence', '—')}). Convocá de nuevo para actualizar.",
+        icon="📋",
+    )
+elif not run:
+    _es = guided_empty_state("comite")
     st.info(
-        "Escribí un ticker y tocá **🏛️ Convocar al comité**. Vas a ver el dictamen de un panel de "
-        "agentes — **Analista Fundamental**, **Analista Técnico**, **Gestor de Riesgo** y el "
-        "**Abogado del Diablo** (que siempre arma el bear case) — con su nivel de acuerdo y el "
-        "desacuerdo a la vista.",
+        f"**{_es['title']}** — {_es['body']}  \n{_es['demo_hint']}",
         icon="🏛️",
     )
+    if st.button(f"Probar con {_es['demo_ticker']}", key="comite_demo"):
+        st.session_state["comite_last_symbol"] = _es["demo_ticker"]
+        st.rerun()
 
 if run and symbol:
     with st.spinner(f"Analizando {symbol}…"):
@@ -109,4 +129,12 @@ if run and symbol:
                 for c in op.concerns:
                     st.markdown(f"- {c}")
 
+    render_ai_badge("dictamen multi-agente; se apoya en cálculos, no los reemplaza")
+    st.caption(f"{CALC_BADGE} base del análisis · {AI_BADGE} votación del panel")
     st.caption("Este dictamen quedó registrado en el Track Record con fuente `committee`.")
+    st.session_state["comite_last_symbol"] = symbol
+    st.session_state["comite_last_verdict"] = {
+        "symbol": symbol,
+        "action": getattr(verdict, "action", ""),
+        "confidence": getattr(verdict, "confidence", ""),
+    }

@@ -1,0 +1,21 @@
+{
+  "_comment": "Plantilla versionada. El archivo real (data/user_preferences.json) contiene el perfil financiero del usuario y está en .gitignore — nunca lo commitees. Al arrancar sin ese archivo, data/preferences.py siembra los valores de acá y deja onboarded=false para que corra el wizard.",
+  "default_profile": "Moderado",
+  "onboarded": false,
+  "age": 0,
+  "retirement_age": 0,
+  "current_capital": 0.0,
+  "monthly_savings": 0.0,
+  "risk_tolerance": "moderada",
+  "primary_goal_type": "retirement",
+  "dividend_preference": "balance",
+  "active_universe": "default",
+  "favorite_universe": [],
+  "last_used_universe": [],
+  "watched_tickers": [],
+  "price_alerts": [],
+  "preferred_currency": "USD",
+  "ai_enabled_in_screener": false,
+  "active_plan_id": "",
+  "custom_tickers": []
+}

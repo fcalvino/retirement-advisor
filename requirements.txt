@@ -1,7 +1,10 @@
+# Loose ranges — the human-editable input. For anything that must REPRODUCE a
+# number (Docker image, CI, an audited plan), install from requirements.lock
+# instead: it is hash-pinned and regenerated with `make lock`.
+# See docs/AUDITORIA_2026-08.md (D5).
 yfinance>=0.2.40
 pandas>=2.0.0
 numpy>=1.24.0
-pandas-ta>=0.3.14b
 streamlit>=1.32.0
 plotly>=5.18.0
 sqlalchemy>=2.0.0
@@ -12,7 +15,6 @@ schedule>=1.2.0
 scipy>=1.11.0
 anthropic>=0.40.0
 openai>=1.50.0
-pyyaml>=6.0
 matplotlib>=3.8.0
 reportlab>=4.0.0
 pytest>=8.0.0

@@ -12,6 +12,11 @@ is where a like-for-like comparison between providers is valid:
     total_revenue, net_income, shares_outstanding, total_equity,
     total_assets, current_price, market_cap
 
+Cross-source overlap (yfinance + SEC) is strongest on total_revenue, net_income,
+total_equity and total_assets. Price/mcap/shares are typically yfinance-only.
+This does **not** validate score ratios (ROE, PE, …) directly — only the raw
+inputs that can support a like-for-like check.
+
 Sources degrade gracefully: any network/parse failure yields ``{}`` (and a log
 line), never an exception, so the rest of the pipeline keeps working. The
 abstraction is the point — adapters can be injected/faked, so the reconciliation
@@ -84,6 +89,9 @@ class YFinanceSource(DataSource):
             "shares_outstanding": info.get("sharesOutstanding"),
             "current_price": info.get("currentPrice") or info.get("regularMarketPrice"),
             "market_cap": info.get("marketCap"),
+            # Overlap with SEC EDGAR raw facts (P0.3) — absolute $, not ratios.
+            "total_equity": info.get("totalStockholderEquity") or info.get("stockholdersEquity"),
+            "total_assets": info.get("totalAssets"),
         }
         out: Dict[str, SourceValue] = {}
         for field_name, raw in mapping.items():

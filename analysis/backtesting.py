@@ -419,7 +419,11 @@ class BacktestEngine:
         returns = prices.pct_change().dropna()
         annual_factor = 52  # weekly data
 
-        years = max(len(prices) / annual_factor, 0.1)
+        # Elapsed time, not bar count: N weekly bars span N−1 weeks. Dividing by
+        # len(prices) stretched the horizon by one period and understated every
+        # CAGR (a series that doubled in exactly one year reported +97.4%/year
+        # instead of +100%). Caught by tests/test_engine_oracles.py — audit D4.
+        years = max((len(prices) - 1) / annual_factor, 0.1)
         total_return = (prices.iloc[-1] / prices.iloc[0] - 1) * 100
         cagr = ((prices.iloc[-1] / prices.iloc[0]) ** (1 / years) - 1) * 100
 

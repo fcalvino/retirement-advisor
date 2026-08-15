@@ -213,6 +213,51 @@ render_assumptions_disclaimer(expander=False)
 
 st.divider()
 
+# Tier 0 engine correction — full disclosure of what moved and why.
+st.subheader("🔧 Qué cambió en el motor de cálculo (agosto 2026)")
+from config import ENGINE_VERSION
+
+st.caption(f"Versión del motor numérico: `{ENGINE_VERSION}`")
+st.markdown("""
+Una auditoría interna encontró tres defectos en el núcleo de cálculo. Están corregidos.
+Si guardaste planes antes de este cambio, **sus cifras de retiro estaban infladas** — la
+página *Mi Plan* te avisa y te ofrece recalcular.
+
+**1. Los retiros no descontaban capital.**
+El motor restaba un monto nominal fijo a todo el futuro de la proyección, en vez de sacar
+capital. En la práctica, el dinero retirado seguía creciendo con el mercado. En un horizonte
+de 30 años con un retiro del 4% anual y un mercado alcista, esto **sobrestimaba el patrimonio
+final en un 60%**. Ahora el retiro vende unidades: sólo el capital que queda sigue al mercado.
+
+*Detalle importante:* el error no era siempre optimista. En mercados bajistas restar un monto
+fijo de un saldo que cae **castigaba de más**. El signo dependía del escenario — por eso ningún
+promedio lo hacía visible.
+
+**2. Las carteras quebradas "resucitaban".**
+Un escenario que llegaba a $0 en el año 3,6 volvía a mostrar saldo positivo si el mercado se
+recuperaba después. Como consecuencia, dos métricas de la misma pantalla se contradecían: una
+decía que el capital se había agotado y la otra que quedaba herencia. Ahora, cuando el capital
+llega a cero, se queda en cero — y la probabilidad de ruina mide todo el horizonte, no sólo el
+valor final.
+
+**3. El retorno esperado dependía de tu perfil de riesgo.**
+El mismo activo "rendía" 5,1% para un perfil conservador y 7,7% para uno agresivo, porque los
+pesos del perfil se usaban a la vez como preferencia y como estimador de retorno. Un activo no
+rinde más porque el inversor sea agresivo. Ahora el perfil actúa donde corresponde —las
+restricciones de la cartera y la aversión al riesgo— y la estimación por activo es única.
+
+**Por qué ahora dice "atractivo estimado" y no "retorno esperado".**
+Ese número se construye con score + dividendo + moat: sirve para **ordenar y comparar carteras**,
+no es un pronóstico de rendimiento. La proyección de patrimonio la hace el Monte Carlo, que parte
+de la historia real de precios. Mientras las dos cosas no compartan un mismo modelo de retorno,
+llamarlas igual sería engañoso.
+
+**Si estabas en fase de acumulación (sin retiros), tus números no cambiaron:** la corrección sólo
+actúa cuando hay retiros en la proyección.
+""")
+
+st.divider()
+
 # Project highlights
 st.subheader("Highlights del proyecto")
 h1, h2, h3 = st.columns(3)

@@ -37,6 +37,8 @@ class AlertType(str, Enum):
     GOAL_RISK           = "goal_risk"            # probability of meeting a goal dropped significantly
     # Fase H.2 — longitudinal plan health
     PLAN_HEALTH_DEGRADATION = "plan_health_degradation"  # sustained structural drift of the active plan
+    # Backlog 12 — proactive coach after market/portfolio drops
+    MARKET_DROP_COACH = "market_drop_coach"  # "plan sigue OK" (or needs attention) after a drop
 
 
 class AlertSeverity(str, Enum):
@@ -57,6 +59,8 @@ _COOLDOWN_HOURS: dict[AlertType, int] = {
     AlertType.PORTFOLIO_REBALANCE: 168,   # 7 days
     AlertType.SORR_HIGH:           336,   # 14 days
     AlertType.GOAL_RISK:           168,   # 7 days
+    AlertType.PLAN_HEALTH_DEGRADATION: 168,  # 7 days
+    AlertType.MARKET_DROP_COACH:   72,    # 3 days — coach should not spam
 }
 
 

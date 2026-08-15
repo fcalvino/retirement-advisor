@@ -1,0 +1,39 @@
+# Hosted demo packaging (backlog 13) — single-user public demo, NOT multi-tenant SaaS.
+#
+# Definitive distribution choice: Docker demo anyone can run or reverse-proxy,
+# without accounts/billing (lower compliance risk; keeps data local to the host).
+#
+# Quick start:
+#   docker compose up --build
+#   open http://localhost:8501
+#
+# Optional: mount a host folder so plans/cache survive restarts.
+# Copy .env.example → .env for AI/alert keys if you want those features.
+
+services:
+  retirement-advisor-demo:
+    build: .
+    image: retirement-advisor:demo
+    container_name: retirement-advisor-demo
+    ports:
+      - "8501:8501"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - STREAMLIT_SERVER_HEADLESS=true
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+      # Demo: keep sample plans available; no multi-user auth.
+      - DEMO_MODE=1
+    volumes:
+      # Persist local SQLite + saved plans on the host
+      - ./data:/app/data
+      - ./reports:/app/reports
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

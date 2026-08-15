@@ -1142,7 +1142,6 @@ def plan_level_narrative_prompt(
             _metrics_txt = (
                 f" RESULTADOS SIMULADOS: probabilidad de que el ingreso dure {_ly} años "
                 f"= {float(_m.get('prob_sustain_real_pct', 0) or 0):.0f}%, "
-                f"probabilidad de dejar herencia = {float(_m.get('prob_legacy_pct', 0) or 0):.0f}%, "
                 f"herencia mediana ${float(_m.get('median_legacy', 0) or 0):,.0f}; {_dep_txt}."
             )
         else:

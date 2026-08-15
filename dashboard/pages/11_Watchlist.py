@@ -129,6 +129,7 @@ s4.metric(
     triggered_count,
     delta=str(triggered_count) if triggered_count > 0 else None,
     delta_color="inverse" if triggered_count > 0 else "off",
+    delta_arrow="off",
 )
 
 # ------------------------------------------------------------------ #

@@ -165,3 +165,73 @@ def test_attach_skips_crypto():
     res = _FakeResult("BTC-USD")
     res.is_crypto = True
     assert attach_cross_source_quality(res, sources=[_FakeSource("yfinance", {})]) is None
+
+
+def test_quality_agent_marks_raw_facts_scope():
+    base = {"level": "good", "warnings": []}
+    results = {
+        "yfinance": {"net_income": _sv("net_income", 100.0, "yfinance")},
+        "sec_edgar": {"net_income": _sv("net_income", 100.5, "sec_edgar")},
+    }
+    merged = data_quality_agent(base, reconcile("AAA", results))
+    assert merged.get("cross_check_scope") == "raw_facts"
+    assert any("hechos crudos" in w for w in merged["warnings"])
+
+
+def test_fundamental_analyzer_wires_attach_when_enabled():
+    """P0.1: analyze path calls attach_cross_source_quality when gated on."""
+    from unittest.mock import MagicMock, patch
+
+    from analysis.fundamental import FundamentalAnalyzer
+
+    result = MagicMock()
+    result.symbol = "AAPL"
+    result.is_crypto = False
+    result.data_quality = {"level": "good", "warnings": []}
+
+    with patch("config.MULTI_SOURCE") as ms:
+        ms.enabled = True
+        ms.attach_in_pipeline = True
+        with patch(
+            "analysis.data_reconciliation.attach_cross_source_quality",
+            return_value=None,
+        ) as attach:
+            FundamentalAnalyzer._attach_cross_source_quality(result)
+            attach.assert_called_once_with(result)
+
+
+def test_fundamental_analyzer_skips_attach_when_pipeline_flag_off():
+    from unittest.mock import MagicMock, patch
+
+    from analysis.fundamental import FundamentalAnalyzer
+
+    result = MagicMock()
+    with patch("config.MULTI_SOURCE") as ms:
+        ms.enabled = True
+        ms.attach_in_pipeline = False
+        with patch(
+            "analysis.data_reconciliation.attach_cross_source_quality"
+        ) as attach:
+            FundamentalAnalyzer._attach_cross_source_quality(result)
+            attach.assert_not_called()
+
+
+def test_yfinance_source_maps_equity_and_assets():
+    from unittest.mock import patch
+
+    from data.data_sources import YFinanceSource
+
+    fake_info = {
+        "totalRevenue": 100.0,
+        "netIncomeToCommon": 10.0,
+        "sharesOutstanding": 1e9,
+        "currentPrice": 50.0,
+        "marketCap": 5e10,
+        "totalStockholderEquity": 2e10,
+        "totalAssets": 5e10,
+    }
+    with patch("data.fetcher.get_info", return_value=fake_info):
+        out = YFinanceSource().fetch_fundamentals("AAPL")
+    assert "total_equity" in out and out["total_equity"].value == 2e10
+    assert "total_assets" in out and out["total_assets"].value == 5e10
+    assert "total_revenue" in out

@@ -206,6 +206,23 @@ class FundamentalAnalyzer:
     a weighted 0–100 score. All data sourced from yfinance.
     """
 
+    @staticmethod
+    def _attach_cross_source_quality(result: "FundamentalResult") -> None:
+        """Best-effort multi-source fold into ``result.data_quality`` (P0.1).
+
+        Gated by ``MULTI_SOURCE.enabled`` and ``attach_in_pipeline``. Never
+        raises; never overwrites scored metrics — only badge metadata/warnings.
+        """
+        try:
+            from config import MULTI_SOURCE
+            if not MULTI_SOURCE.enabled or not MULTI_SOURCE.attach_in_pipeline:
+                return
+            from analysis.data_reconciliation import attach_cross_source_quality
+            attach_cross_source_quality(result)
+        except Exception as exc:  # pragma: no cover - defensive
+            from loguru import logger as _logger
+            _logger.debug(f"cross-source attach skipped: {exc}")
+
     def analyze(self, symbol: str, ai_config=None) -> FundamentalResult:
         symbol = symbol.upper()
 
@@ -229,6 +246,7 @@ class FundamentalAnalyzer:
         if not info:
             result.warnings.append("No data available from yfinance.")
             result.data_quality = compute_data_quality(result, has_financials=False)
+            self._attach_cross_source_quality(result)
             return result
 
         financials = get_financials(symbol)
@@ -351,8 +369,13 @@ class FundamentalAnalyzer:
             freshness_hours=get_info_age_hours(symbol),
             has_financials=bool(financials),
         )
-        if result.data_quality["level"] != "good":
-            result.warnings.extend(result.data_quality["warnings"])
+        # Multi-source badge (P0.1): fold SEC/yfinance reconciliation into the
+        # same data_quality dict. Best-effort; never rewrites scored metrics.
+        self._attach_cross_source_quality(result)
+        if result.data_quality and result.data_quality.get("level") != "good":
+            for w in result.data_quality.get("warnings") or []:
+                if w not in result.warnings:
+                    result.warnings.append(w)
 
         logger.info(
             f"{symbol}: base={result.total_score:.1f} consistency={result.consistency_score:.1f} "

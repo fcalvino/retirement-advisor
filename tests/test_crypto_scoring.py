@@ -230,3 +230,73 @@ class TestCryptoScoreRange:
             moat_bonus=moat_none.bonus,
         )
         assert score_with_moat > score_no_moat
+
+
+# ------------------------------------------------------------------ #
+#  README must quote the live motor, not the pre-D9 module docstring   #
+# ------------------------------------------------------------------ #
+
+def _readme_crypto_scoring_section() -> str:
+    from pathlib import Path
+
+    text = Path(__file__).resolve().parents[1].joinpath("README.md").read_text()
+    start = text.index("#### Scoring crypto")
+    end = text.index("#### Crypto Moat Framework")
+    return text[start:end]
+
+
+class TestReadmeQuotesLiveCryptoMoat:
+    """The README scoring table is a user-facing contract of CRYPTO_MOAT + _compute_score."""
+
+    def test_table_lists_every_live_tech_pts_and_base_and_max_bonus(self):
+        from config import CRYPTO_MOAT as CM
+
+        section = _readme_crypto_scoring_section()
+        assert f"+{int(CM.base_score)}" in section
+        assert f"+{int(CM.max_bonus)}" in section
+        for signal, strength in (
+            ("BULLISH", 75),
+            ("BULLISH", 30),
+            ("NEUTRAL", 0),
+            ("BEARISH", -20),
+            ("BEARISH", -80),
+        ):
+            pts = int(CryptoAnalyzer._tech_pts(_tech(signal, strength)))
+            assert f"+{pts}" in section, (
+                f"README crypto table missing tech pts +{pts} for {signal}/{strength}"
+            )
+
+    def test_table_does_not_repeat_pre_d9_constants_the_motor_no_longer_uses(self):
+        from config import CRYPTO_MOAT as CM
+
+        section = _readme_crypto_scoring_section()
+        live = {
+            int(CM.base_score),
+            int(CM.max_bonus),
+            int(CryptoAnalyzer._tech_pts(_tech("BULLISH", 75))),
+            int(CryptoAnalyzer._tech_pts(_tech("BULLISH", 30))),
+            int(CryptoAnalyzer._tech_pts(_tech("NEUTRAL", 0))),
+            int(CryptoAnalyzer._tech_pts(_tech("BEARISH", -20))),
+            int(CryptoAnalyzer._tech_pts(_tech("BEARISH", -80))),
+        }
+        # Historical table: base 35 / tech 45-35-22-10 / moat +5
+        for stale in (35, 45, 22, 10, 5):
+            if stale in live:
+                continue
+            assert f"+{stale}" not in section, (
+                f"README crypto table still quotes pre-D9 +{stale}"
+            )
+        assert "80–100%" not in section and "80-100%" not in section
+
+    def test_historical_btc_profile_stays_below_buy(self):
+        from config import STRATEGY
+
+        score = _analyzer._compute_score(
+            tech=_tech("BULLISH", 75),
+            vol=65.0,
+            max_drawdown=-77.0,
+            moat_bonus=8.0,
+        )
+        section = _readme_crypto_scoring_section()
+        assert score < STRATEGY.buy_score
+        assert str(int(score)) in section

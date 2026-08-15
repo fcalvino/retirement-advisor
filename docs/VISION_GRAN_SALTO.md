@@ -1,8 +1,12 @@
 # Visión — El Gran Salto
 
-> Documento estratégico de producto. No describe trabajo ya hecho (para eso está
-> `ROADMAP.md`), sino **hacia dónde saltar**. Pensado para guiar las próximas fases.
-> Fecha: 2026-06. Estado del producto al escribir: 419 tests, Fases 1–H completas.
+> **Estado (2026-08):** visión de producto escrita en 2026-06. Las 3 apuestas
+> (chat, comité, track record) y los habilitadores (RAG, multi-source, Black-Litterman)
+> **ya están en el producto**. No tomar el “empezar ya” de las secciones de abajo
+> como backlog actual — ver [`CONTEXT.md` §6](CONTEXT.md) y [`ROADMAP.md`](ROADMAP.md).
+>
+> Documento estratégico (ideación). Fecha original: 2026-06.
+> Estado del producto al escribir: 419 tests, Fases 1–H completas.
 
 ---
 

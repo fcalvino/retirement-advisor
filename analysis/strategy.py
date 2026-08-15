@@ -25,7 +25,9 @@ from loguru import logger
 
 from analysis.fundamental import FundamentalResult
 from analysis.technical import TechnicalResult
-from config import STRATEGY as CFG
+from config import DATA_QUALITY, STRATEGY as CFG
+
+_CONFIDENCE_RANK = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
 
 
 def effective_decision_score(fundamental: FundamentalResult) -> float:
@@ -82,19 +84,55 @@ def apply_safety_overlay(
             decision.rationale or []
         )
 
-    # Soft data-quality gate also on AI path (same as decide())
+    # Soft data-quality policy also on AI path (same as decide())
+    if not decision.blocked:
+        apply_data_quality_policy(decision, fundamental)
+
+    return decision
+
+
+def apply_data_quality_policy(
+    decision: "Decision",
+    fundamental: FundamentalResult,
+    *,
+    config=None,
+) -> "Decision":
+    """Apply soft data-quality gates to a decision (rule-based and AI paths).
+
+    Policy (P0 — from ``DATA_QUALITY``, never rewrites scores):
+      - ``poor``: STRONG BUY / BUY → HOLD, confidence LOW
+      - ``partial``: STRONG BUY → BUY (optional), confidence capped
+      - risks already annotated by decide() for missing fields; this helper
+        focuses on action/confidence demotions
+    """
+    if config is None:
+        config = DATA_QUALITY
     dq = getattr(fundamental, "data_quality", None) or {}
-    if (
-        isinstance(dq, dict)
-        and dq.get("level") == "poor"
-        and decision.action in ("STRONG BUY", "BUY")
-        and not decision.blocked
-    ):
+    if not isinstance(dq, dict):
+        return decision
+    level = dq.get("level") or ""
+
+    if level == "poor" and decision.action in ("STRONG BUY", "BUY"):
         decision.action = "HOLD"
         decision.confidence = "LOW"
-        decision.rationale = [
-            "BUY degradado a HOLD por data quality pobre (datos incompletos)"
-        ] + list(decision.rationale or [])
+        note = "BUY degradado a HOLD por data quality pobre (datos incompletos)"
+        if note not in (decision.rationale or []):
+            decision.rationale = [note] + list(decision.rationale or [])
+        return decision
+
+    if level == "partial":
+        if getattr(config, "partial_caps_strong_buy", True) and decision.action == "STRONG BUY":
+            decision.action = "BUY"
+            note = "STRONG BUY capado a BUY por data quality partial (métricas incompletas)"
+            if note not in (decision.rationale or []):
+                decision.rationale = [note] + list(decision.rationale or [])
+        cap = getattr(config, "partial_max_confidence", "MEDIUM") or "MEDIUM"
+        cur = decision.confidence or "MEDIUM"
+        if _CONFIDENCE_RANK.get(cur, 1) > _CONFIDENCE_RANK.get(cap, 1):
+            decision.confidence = cap
+            note = f"Confianza capada a {cap} por data quality partial"
+            if note not in (decision.rationale or []):
+                decision.rationale = list(decision.rationale or []) + [note]
 
     return decision
 
@@ -255,23 +293,14 @@ class RetirementStrategy:
                     "BUY capado a HOLD por volatilidad extrema crypto (perfil retiro)"
                 )
 
-        # Data quality soft gate (coherence gap): poor yfinance fill → no BUY
+        # Data quality: risks for incomplete fill + soft policy (partial/poor)
         dq = getattr(fundamental, "data_quality", None) or {}
         if isinstance(dq, dict) and dq.get("level") in ("partial", "poor"):
             missing = ", ".join((dq.get("missing_fields") or [])[:5]) or "métricas clave"
             decision.risks.append(
                 f"Calidad de datos {dq['level']}: faltan {missing}"
             )
-        if (
-            isinstance(dq, dict)
-            and dq.get("level") == "poor"
-            and decision.action in ("STRONG BUY", "BUY")
-        ):
-            decision.action = "HOLD"
-            decision.confidence = "LOW"
-            decision.rationale.append(
-                "BUY degradado a HOLD por data quality pobre (datos incompletos)"
-            )
+        apply_data_quality_policy(decision, fundamental)
 
         logger.info(f"{symbol}: {decision.action} (F={score:.1f}, T={tech}{'  🪙crypto' if _is_crypto else ''})")
         return decision

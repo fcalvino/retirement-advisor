@@ -8,11 +8,12 @@ from unittest.mock import MagicMock, patch
 from analysis.strategy import (
     Decision,
     RetirementStrategy,
+    apply_data_quality_policy,
     apply_safety_overlay,
     effective_decision_score,
     full_analysis,
 )
-from config import STRATEGY
+from config import DATA_QUALITY, STRATEGY
 
 
 def _fund(
@@ -259,6 +260,38 @@ class TestDataQualityAndCryptoVol:
                 d = eng.decide(fund, tech)
         assert d.action == "HOLD"
         assert any("data quality" in r.lower() or "calidad de datos" in r.lower() for r in d.rationale + d.risks)
+
+    def test_partial_caps_strong_buy_to_buy(self):
+        eng = RetirementStrategy()
+        fund = _fund(
+            score=90.0, mos=25.0,
+            data_quality={"level": "partial", "missing_fields": ["roe", "roic", "net_margin"]},
+        )
+        tech = _tech(signal="BULLISH", above_sma200=True)
+        with patch.object(STRATEGY, "require_technical_uptrend", True):
+            with patch.object(STRATEGY, "require_margin_of_safety", False):
+                d = eng.decide(fund, tech)
+        assert d.action == "BUY"
+        assert d.confidence in ("LOW", "MEDIUM")
+        assert any("partial" in r.lower() for r in d.rationale)
+
+    def test_apply_data_quality_policy_partial_caps_confidence(self):
+        fund = _fund(data_quality={"level": "partial", "missing_fields": ["roe"]})
+        d = Decision(symbol="X", action="BUY", confidence="HIGH")
+        apply_data_quality_policy(d, fund, config=DATA_QUALITY)
+        assert d.action == "BUY"
+        assert d.confidence == DATA_QUALITY.partial_max_confidence
+
+    def test_apply_data_quality_policy_on_ai_overlay(self):
+        fund = _fund(
+            score=80.0,
+            data_quality={"level": "partial", "missing_fields": ["roe", "pe_ratio", "pb_ratio"]},
+        )
+        tech = _tech(signal="BULLISH", above_sma200=True)
+        d = Decision(symbol="X", action="STRONG BUY", confidence="HIGH")
+        d = apply_safety_overlay(d, fund, tech)
+        assert d.action == "BUY"
+        assert d.confidence == "MEDIUM"
 
     def test_crypto_extreme_vol_caps_buy(self):
         eng = RetirementStrategy()
