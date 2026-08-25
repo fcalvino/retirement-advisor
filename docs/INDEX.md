@@ -8,6 +8,8 @@ Para una introducción general, leé el [`README.md`](../README.md). Para contri
 guía viva, metodología, contexto para AI, auditoría histórica e ideación.
 
 No son docs de producto (y no están acá): `logs/*.md` y notas de sesión en `qa/`.
+Las skills de Grok Build en `.grok/skills/*/SKILL.md` son procedimientos de agente,
+no guías de producto; se listan abajo bajo `ai-context`.
 
 El chequeo `scripts/check_doc_catalog.py` usa la tabla canónica de abajo como
 fuente de verdad.
@@ -48,6 +50,8 @@ Roles:
 | methodology | `docs/alert_system.md` | Tipos de alerta, cooldowns, scheduler |
 | ai-context | `docs/PROMPT_INSTRUCTIONS.md` | **Path canónico** — leer `docs/CONTEXT.md` primero |
 | ai-context | `docs/CONTEXT.md` | Contexto canónico del proyecto (arquitectura, features, estándares) |
+| ai-context | `AGENTS.md` | Reglas cortas inyectadas por Grok Build en cada sesión |
+| ai-context | `.grok/skills/` | Colección: skills de proyecto (`verify`, `refresh-context`, `engine-change`) |
 | ai-context | `AI_CODING_GUIDELINES.md` | Puntero corto al path canónico |
 | ai-context | `CLAUDE.md` | Puntero Claude Code (`@docs/PROMPT_INSTRUCTIONS.md`) |
 | historical-plan | `docs/ROADMAP.md` | Fases ya completadas (no es backlog abierto) |
@@ -93,12 +97,15 @@ antes de modificar los módulos correspondientes.
 ## Contexto y guías para AI
 
 Un solo path canónico: **`docs/PROMPT_INSTRUCTIONS.md`** (regla: leer
-`docs/CONTEXT.md` primero). El resto son punteros.
+`docs/CONTEXT.md` primero). Grok Build también carga **`AGENTS.md`** y las
+skills bajo **`.grok/skills/`**. El resto son punteros.
 
 | Documento | Descripción |
 |-----------|-------------|
 | [`PROMPT_INSTRUCTIONS.md`](PROMPT_INSTRUCTIONS.md) | Instrucciones obligatorias (Claude Code, Grok Build, etc.) |
 | [`CONTEXT.md`](CONTEXT.md) | Contexto canónico — arquitectura, features, estándares, limitaciones |
+| [`../AGENTS.md`](../AGENTS.md) | Reglas cortas de sesión para Grok Build |
+| [`.grok/skills/`](../.grok/skills/) | Skills de proyecto: `/verify`, `/refresh-context`, `/engine-change` |
 | [`../AI_CODING_GUIDELINES.md`](../AI_CODING_GUIDELINES.md) | Puntero a `PROMPT_INSTRUCTIONS.md` |
 | [`../CLAUDE.md`](../CLAUDE.md) | Puntero Claude Code (no editar el bloque RTK) |
 | [`MAINTENANCE.md`](MAINTENANCE.md) | Cómo refrescar CONTEXT (`scripts/refresh_context.py`) |
@@ -179,6 +186,7 @@ descripción viva del sistema.
 
 ### Voy a tocar código con un AI assistant
 → [`PROMPT_INSTRUCTIONS.md`](PROMPT_INSTRUCTIONS.md) (leer `CONTEXT.md` primero)
+→ [`AGENTS.md`](../AGENTS.md) + skills en `.grok/skills/` si usás Grok Build
 
 ---
 
