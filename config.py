@@ -23,7 +23,13 @@ DB_PATH = DB_DIR / "retirement_advisor.db"
 #                   constant nominal level), ruin is absorbing, and the
 #                   optimizer's μ no longer depends on the risk profile.
 #                   See docs/AUDITORIA_2026-08.md.
-ENGINE_VERSION = "2026.08-tier0"
+#   2026.08-tier1 — U2-2: drawdown/SORR (sorr_early_drawdown_pct,
+#                   median_max_drawdown_pct, pct_paths_severe_drawdown,
+#                   *_year_of_max_dd) are measured on the market series —
+#                   the bootstrap path before drags and before cash flows.
+#                   Plans saved under tier0 counted planned withdrawals as a
+#                   crash and persist inflated SORR figures.
+ENGINE_VERSION = "2026.08-tier1"
 
 
 @dataclass
