@@ -15,7 +15,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from analysis.strategy import Decision
-from data.product_ux import guided_empty_state, second_source_quality_signal
+from data.product_ux import (
+    guided_empty_state,
+    second_source_quality_signal,
+    universe_quality_summary,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 SCREENER = (ROOT / "dashboard" / "pages" / "1_Screener.py").read_text(encoding="utf-8")
@@ -33,61 +37,77 @@ def test_screener_ships_last_run_cache_progress_datos_fuente_sidebar_watchlist()
     assert 'st.session_state.get("screener_rows")' in SCREENER
     assert 'st.session_state.get("screener_rows_key")' in SCREENER
     assert 'st.session_state.get("screener_rows_at"' in SCREENER
-    assert "Refresh Analysis" in SCREENER
-    assert "Max tickers to screen" in SCREENER
+    assert "Actualizar análisis" in SCREENER
+    assert "Máximo de tickers a analizar" in SCREENER
     assert "Agregar a watchlist" in SCREENER
     assert "➕ Agregar" in SCREENER
     assert '"Fuente"' in SCREENER
     assert '"Datos"' in SCREENER
     assert "Calidad de datos (yfinance)" in SCREENER
-    assert "Strong/Buy signals" in SCREENER
-    assert "Hold signals" in SCREENER
-    assert "Sell/Reduce signals" in SCREENER
-    assert "Stocks screened" in SCREENER
-    assert "Hacé clic en cualquier ticker" in SCREENER
+    # The headline is the funnel now, not a bare buy count (audit item 06).
+    assert "_shortlist.steps" in SCREENER
+    # The footer used to promise a click that did nothing; it now describes the
+    # selection that exists (audit item 10).
+    assert "Tocá una fila" in SCREENER
     assert "Analizando…" in SHARED
 
 
 def test_screener_remaining_gaps_are_still_in_source():
     """Remaining increments the audit ranks — still true on the shipped page."""
-    # 1. Click-through is a caption only: dataframe has no selection API.
-    df_block = SCREENER[SCREENER.index("st.dataframe") : SCREENER.index("st.plotly_chart")]
-    assert "on_select" not in df_block
-    assert "selection_mode" not in df_block
-    # Stock Analysis does not consume a screener-clicked ticker.
+    # Stock Analysis still owns its own selector; the Screener deep-links into it
+    # rather than that page reaching back into screener state.
     assert "screener_rows" not in STOCK
     assert 'st.session_state.analysis_target' in STOCK
 
-    # 4. Slider takes a prefix of the universe, not top-N by score.
-    assert "selected = tickers[:max_tickers]" in SCREENER
-
-    # 8. Refresh nukes every Streamlit data cache, not just screener rows.
-    assert "st.cache_data.clear()" in SCREENER
+    # 4. The slider no longer slices the raw file order (audit item 17) — it caps
+    # a prioritised ordering instead.
+    assert "selected = tickers[:max_tickers]" not in SCREENER
+    assert "selected = _ordered[:max_tickers]" in SCREENER
 
     # 9. Guided empty-state helper exists but this page never calls it.
     assert "guided_empty_state" not in SCREENER
     es = guided_empty_state("screener")
     assert es["title"]
-    assert "Refresh Analysis" in es["demo_hint"]
-
-    # 16. Second-source call is universe-level and passes reconciliation=None.
-    assert "second_source_quality_signal(" in SCREENER
-    assert "reconciliation" not in SCREENER.split("second_source_quality_signal", 1)[1][:200]
+    assert "Actualizar análisis" in es["demo_hint"]
 
     # 17. Company names are hard-truncated in the row builder.
     assert "fund.company_name[:25]" in SHARED
 
-    # 22. Headwind badge still leaks English.
+    # 22. Tailwind badge is Spanish now (audit item 25).
     from dashboard.shared import tailwind_badge
 
-    assert "Headwind" in tailwind_badge("Headwind", -3.0)
-    assert "frente" not in tailwind_badge("Headwind", -3.0).lower()
+    assert "Headwind" not in tailwind_badge("Headwind", -3.0)
+    assert "En contra" in tailwind_badge("Headwind", -3.0)
+
+
+def test_cached_full_analysis_keys_on_engine_version():
+    """A scoring rewrite must miss the 1h Streamlit cache of a long-lived process."""
+    import inspect
+
+    from config import ENGINE_VERSION
+    from dashboard.shared import cached_full_analysis
+
+    params = inspect.signature(cached_full_analysis).parameters
+    assert "engine_version" in params
+    assert params["engine_version"].default == ENGINE_VERSION
+    assert "engine_version: str = ENGINE_VERSION" in SHARED
+
+
+def test_refresh_clears_only_the_screener_analyses():
+    """Audit item 14 — 'Refresh Analysis' must not wipe every cache in the app."""
+    refresh_block = SCREENER[SCREENER.index("if refresh:") : SCREENER.index("# Show the last run")]
+    code = [ln.strip() for ln in refresh_block.splitlines() if not ln.strip().startswith("#")]
+    assert "cached_full_analysis.clear()" in code
+    # The global blast survives only as the fallback for older Streamlit builds,
+    # i.e. inside the except branch — never on the happy path.
+    assert code.index("cached_full_analysis.clear()") < code.index("st.cache_data.clear()")
+    assert any(ln.startswith("except Exception") for ln in code)
 
 
 def test_screener_table_column_order_buries_datos():
     """Banner tells the user to check Datos; Datos is last in the displayed cols."""
-    start = SCREENER.index('df[[')
-    end = SCREENER.index("].rename", start)
+    start = SCREENER.index("_all_cols = [")
+    end = SCREENER.index("]", SCREENER.index('"Datos",', start))
     cols_block = SCREENER[start:end]
     assert '"Datos"' in cols_block
     assert cols_block.rindex('"Datos"') > cols_block.index('"Ticker"')
@@ -95,23 +115,67 @@ def test_screener_table_column_order_buries_datos():
     assert cols_block.index('"Datos"') > cols_block.index('"P/E"')
 
 
-def test_second_source_caption_as_the_page_calls_it_ignores_per_row_datos():
-    """1_Screener.py synthesizes dq from custom-count, not from the Datos column."""
-    # No customs → page passes level=good even if some rows are 🟡.
-    good = second_source_quality_signal(
-        None,
-        data_quality={"level": "good", "stale": False},
-    )
-    assert good["status"] == "single_source"
-    assert "good" in good["message"]
-    assert good["n_conflicts"] == 0
+def test_second_source_caption_now_derives_its_level_from_the_rows():
+    """Audit item 03 — the headline and the per-row column can no longer disagree."""
+    # The page must not synthesize a level from the custom-ticker count any more.
+    assert '"partial" if _n_custom else "good"' not in SCREENER
+    assert "universe_quality_summary(" in SCREENER
 
-    fake_partial = second_source_quality_signal(
-        None,
-        data_quality={"level": "partial", "stale": False},
+    # The universe measured on 2026-08-17: 15 good / 63 partial / 7 poor.
+    rollup = universe_quality_summary(
+        [{"level": "good", "stale": False}] * 15
+        + [{"level": "partial", "stale": False}] * 63
+        + [{"level": "poor", "stale": False}] * 7
     )
-    assert fake_partial["status"] == "single_source"
-    assert "partial" in fake_partial["message"]
+    assert rollup["level"] == "partial"       # not "good", which is what shipped
+    assert rollup["n_total"] == 85
+    assert rollup["n_partial"] == 63
+    assert rollup["n_poor"] == 7
+    assert rollup["degraded_pct"] > 80
+
+    sig = second_source_quality_signal(None, data_quality={"level": rollup["level"]})
+    assert sig["status"] == "single_source"
+    assert "partial" in sig["message"]
+    assert "good" not in sig["message"]
+
+
+def test_universe_quality_summary_levels_and_empty_case():
+    from config import DataQualityConfig
+
+    cfg = DataQualityConfig()
+
+    # Clean universe stays good.
+    clean = universe_quality_summary([{"level": "good"}] * 20, config=cfg)
+    assert clean["level"] == "good"
+    assert clean["degraded_pct"] == 0.0
+
+    # Enough 🔴 on its own tips the whole run to poor.
+    poor = universe_quality_summary(
+        [{"level": "good"}] * 8 + [{"level": "poor"}] * 2, config=cfg
+    )
+    assert poor["level"] == "poor"
+
+    # Rows with no dq dict count as not-evaluated, never as good.
+    unknown = universe_quality_summary([None] * 5 + [{"level": "good"}] * 5, config=cfg)
+    assert unknown["n_unknown"] == 5
+    assert unknown["level"] == "partial"
+
+    empty = universe_quality_summary([])
+    assert empty["level"] == "unknown"
+    assert empty["n_total"] == 0
+    assert universe_quality_summary(None)["level"] == "unknown"
+
+
+def test_universe_quality_summary_accepts_a_pandas_series():
+    """The Screener passes df["_dq"] directly — truthiness on a Series raises."""
+    import pandas as pd
+
+    series = pd.Series([{"level": "good"}, {"level": "poor"}, None])
+    out = universe_quality_summary(series)
+    assert out["n_total"] == 3
+    assert out["n_good"] == 1
+    assert out["n_poor"] == 1
+    assert out["n_unknown"] == 1
 
 
 # --------------------------------------------------------------------------- #
@@ -177,12 +241,14 @@ def test_analyse_universe_parallel_builds_shipped_row_and_truncates_name(monkeyp
 
     monkeypatch.setattr(shared_mod, "cached_full_analysis", fake_analysis)
     status = _FakeStatus()
-    rows = shared_mod._analyse_universe_parallel(
+    rows, failures, elapsed = shared_mod._analyse_universe_parallel(
         ["KO"],
         SimpleNamespace(provider="x", model="y", enabled=False, api_key=""),
         _FakeBar(),
         status,
     )
+    assert failures == []
+    assert elapsed >= 0.0
     assert len(rows) == 1
     row = rows[0]
     assert row["Ticker"] == "KO"
@@ -192,11 +258,15 @@ def test_analyse_universe_parallel_builds_shipped_row_and_truncates_name(monkeyp
     assert row["Technical"] == "NEUTRAL"
     assert "Datos" in row
     assert "Viento" in row
+    assert row["Clase"] == "equity"
+    assert row["_dq"] == {"level": "partial", "stale": False}
+    # Item 16 needs to know when each row was measured.
+    assert row["_measured_at"]
     assert any("Analizando…" in t and "1/1" in t for t in status.texts)
 
 
-def test_analyse_universe_parallel_silently_drops_failed_tickers(monkeypatch):
-    """Failed symbols vanish: no row, no warning payload — audit item #6."""
+def test_analyse_universe_parallel_reports_failed_tickers(monkeypatch):
+    """Audit item 05 — a failed symbol must leave a named, typed trace."""
     from dashboard import shared as shared_mod
 
     decision = Decision(symbol="OK", action="BUY", confidence="HIGH")
@@ -207,15 +277,52 @@ def test_analyse_universe_parallel_silently_drops_failed_tickers(monkeypatch):
         return _fund(company_name="Ok Inc"), _tech("BULLISH"), decision
 
     monkeypatch.setattr(shared_mod, "cached_full_analysis", fake_analysis)
-    rows = shared_mod._analyse_universe_parallel(
+    rows, failures, _ = shared_mod._analyse_universe_parallel(
         ["OK", "FAIL"],
         SimpleNamespace(provider="x", model="y", enabled=False, api_key=""),
         _FakeBar(),
         _FakeStatus(),
     )
     assert [r["Ticker"] for r in rows] == ["OK"]
-    # The builder returns only successes; the page then does len(df) as Stocks screened.
-    assert len(rows) == 1
+    assert len(failures) == 1
+    assert failures[0]["Ticker"] == "FAIL"
+    assert failures[0]["Tipo"] == "RuntimeError"
+    assert "yfinance exploded" in failures[0]["Error"]
+    # Asked for 2, measured 1 — the page can now say so instead of showing "1".
+    assert len(rows) + len(failures) == 2
+
+
+def test_screener_page_surfaces_failures_and_offers_retry():
+    """The failure payload has to reach the page, not just the log."""
+    assert "screener_failures" in SCREENER
+    assert "no se pudieron analizar" in SCREENER
+    assert "screener_retry" in SCREENER
+    # Failed tickers are excluded from the counters, and the page says so.
+    assert "no se midieron" in SCREENER
+
+
+def test_analyse_universe_parallel_tags_funds_and_crypto(monkeypatch):
+    """Audit item 01 — the row carries the asset class the page segments on."""
+    from dashboard import shared as shared_mod
+
+    decision = Decision(symbol="SPY", action="SELL", confidence="LOW")
+
+    def fake_analysis(sym, *_a, **_k):
+        return (
+            _fund(company_name="SPDR S&P 500", sector="Index", asset_class="fund",
+                  adjusted_score=23.0),
+            _tech("BULLISH"),
+            decision,
+        )
+
+    monkeypatch.setattr(shared_mod, "cached_full_analysis", fake_analysis)
+    rows, _, _ = shared_mod._analyse_universe_parallel(
+        ["SPY"],
+        SimpleNamespace(provider="x", model="y", enabled=False, api_key=""),
+        _FakeBar(),
+        _FakeStatus(),
+    )
+    assert rows[0]["Clase"] == "fund"
 
 
 def test_score_bar_and_custom_fuente_match_table_cells():
@@ -224,8 +331,8 @@ def test_score_bar_and_custom_fuente_match_table_cells():
     bar = score_bar(82)
     assert "82/100" in bar
     assert "█" in bar
-    # Without a Streamlit session the custom set is empty → Default (English).
-    assert custom_source_badge("AAPL") == "Default"
+    # Without a Streamlit session the custom set is empty → curated (audit item 25).
+    assert custom_source_badge("AAPL") == "Curado"
 
 
 def test_buy_metric_counts_signal_text_not_score():
