@@ -311,3 +311,41 @@ class TestDataQualityAndCryptoVol:
             d = eng.decide(fund, tech)
         assert d.action == "HOLD"
         assert any("volatilidad" in r.lower() for r in d.rationale)
+
+
+class TestPayoutRiskUsesEffectiveBasis:
+    """U2-6: the decision risk must judge the same payout the scorer judged.
+
+    ``_score_dividends`` grades REITs on FFO and persists that as
+    ``payout_ratio_effective``. Reading ``payout_ratio > 80`` instead flagged 12
+    of 13 cached REITs as about to cut a dividend the dividend dimension had
+    just called healthy.
+    """
+
+    def _risks(self, **attrs):
+        fund = _fund()
+        for key, value in attrs.items():
+            setattr(fund, key, value)
+        decision = Decision(symbol="O", action="HOLD", confidence="MEDIUM")
+        RetirementStrategy()._build_rationale(decision, fund, _tech())
+        return decision.risks
+
+    def test_healthy_ffo_payout_does_not_flag_accounting_ratio(self):
+        risks = self._risks(
+            payout_ratio=236.0,
+            ffo_payout_pct=70.0,
+            payout_ratio_effective=70.0,
+            payout_basis="ffo",
+        )
+        assert not any("may cut dividend" in r for r in risks)
+
+    def test_high_ffo_payout_flags_naming_the_basis(self):
+        from config import THRESHOLDS as T
+
+        risks = self._risks(
+            payout_ratio=50.0,
+            ffo_payout_pct=T.max_payout_ratio + 10,
+            payout_ratio_effective=T.max_payout_ratio + 10,
+            payout_basis="ffo",
+        )
+        assert any("may cut dividend" in r and "FFO" in r for r in risks)
