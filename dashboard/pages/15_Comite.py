@@ -7,7 +7,13 @@ from pathlib import Path
 import streamlit as st
 from loguru import logger
 
-from dashboard.shared import AI_BADGE, CALC_BADGE, _get_ai_config, cached_full_analysis, render_ai_badge
+from dashboard.shared import (
+    AI_BADGE,
+    CALC_BADGE,
+    _get_ai_config,
+    cached_full_analysis,
+    render_ai_badge,
+)
 from data.product_ux import guided_empty_state
 
 st.title("🏛️ Comité de Inversión")

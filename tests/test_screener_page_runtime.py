@@ -16,7 +16,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from streamlit.testing.v1 import AppTest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -444,7 +443,8 @@ def test_stored_run_loads_without_re_analysing(monkeypatch, tmp_path):
 
 def test_stale_rows_offer_a_partial_refresh(monkeypatch, tmp_path):
     """Audit item 16 — refresh the few that aged out, not all of them."""
-    from datetime import datetime as _dt, timedelta as _td
+    from datetime import datetime as _dt
+    from datetime import timedelta as _td
 
     from dashboard import shared as shared_mod
 

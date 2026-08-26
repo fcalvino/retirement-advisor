@@ -23,7 +23,7 @@ never from the production helpers.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 from unittest.mock import patch
 
 import pandas as pd
@@ -36,7 +36,6 @@ from analysis.fundamental import (
     compute_ffo_payout_pct,
 )
 from config import THRESHOLDS as T
-
 
 # --------------------------------------------------------------------------- #
 #  Oracles                                                                    #

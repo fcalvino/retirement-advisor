@@ -9,6 +9,18 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from analysis.asset_class import EQUITY, asset_class_label, is_fundamentally_scorable
+from analysis.ranking import (
+    FilterCriteria,
+    apply_filters,
+    attach_percentiles,
+    build_shortlist,
+    filter_preset,
+    preset_gap,
+    strip_badge,
+)
+from config import DATA_QUALITY, SCREENER, STRATEGY
+
 # NOTE: dashboard.shared must be imported first — it seeds the repo root onto
 # sys.path (via bootstrap) so the first-party imports below resolve when this
 # page is executed standalone rather than through dashboard/app.py.
@@ -22,19 +34,8 @@ from dashboard.shared import (
     render_row_actions,
     screener_column_config,
 )
-from analysis.asset_class import EQUITY, asset_class_label, is_fundamentally_scorable
-from analysis.ranking import (
-    FilterCriteria,
-    apply_filters,
-    attach_percentiles,
-    build_shortlist,
-    filter_preset,
-    preset_gap,
-    strip_badge,
-)
-from config import SCREENER, STRATEGY
-from config import DATA_QUALITY
 from data.preferences import UserPreferences
+from data.product_ux import second_source_quality_signal, universe_quality_summary
 from data.screener_store import (
     ScreenerRun,
     filter_to_selected,
@@ -45,7 +46,6 @@ from data.screener_store import (
     screener_run_store,
     uncovered_selected,
 )
-from data.product_ux import second_source_quality_signal, universe_quality_summary
 
 # Letters, digits, dot and dash — covers BRK-B, BTC-USD, MELI.
 _WATCH_RE = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,9}$")

@@ -12,7 +12,446 @@ No network. Fully unit-testable.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
+
+# --------------------------------------------------------------------------- #
+#  Canonical labels for the two models that produce a "return" (U1-1, U1-2)   #
+# --------------------------------------------------------------------------- #
+#  The optimizer's ``expected_return_pct`` is a proxy built from score +
+#  dividend + moat (a Black-Litterman *view*), and its ``sharpe_ratio`` divides
+#  that proxy by historical volatility. The Monte Carlo projects wealth from the
+#  price history instead. The two do not share a return model, so every surface
+#  names which one it is showing. Locked by ``tests/test_return_label_contract``.
+
+PROXY_RETURN_LABEL = "Atractivo estimado (proxy)"
+PROXY_RETURN_SHORT = "Atractivo est."
+PROXY_RETURN_HELP = (
+    "Proxy anual construido con score + dividendo + moat, no un pronóstico. "
+    "Sirve para ordenar y comparar carteras entre sí; la proyección de patrimonio "
+    "la da el Monte Carlo, que parte de la historia real de precios."
+)
+
+PROXY_RATIO_LABEL = "Ratio atractivo/vol"
+PROXY_RATIO_HELP = (
+    "No es un Sharpe: el numerador es el atractivo estimado (proxy de score) menos "
+    "la tasa libre de riesgo, y el denominador es la volatilidad histórica. Sirve "
+    "para comparar carteras de este modelo entre sí, no contra el Sharpe realizado "
+    "de un índice."
+)
+
+MC_RETURN_LABEL = "retorno histórico"
+
+
+# --------------------------------------------------------------------------- #
+#  Canonical labels for the weekly moving averages (U1-3)                     #
+# --------------------------------------------------------------------------- #
+#  ``TechnicalAnalyzer`` reads 10 years of **weekly** bars and then takes
+#  ``price.rolling(200).mean()``, so the "SMA200" of the code is 200 weeks —
+#  ~3,8 years — and not the classic 200 days (~9,5 months) a reader assumes on
+#  sight. The 100- and 50-bar weekly averages carry the same gap.
+#
+#  The window is deliberate: a ~3,8-year trend filter is the right length for a
+#  5–30 year retirement horizon. U1-3 therefore fixed the **name** and left the
+#  math untouched — no window, threshold or signal moved. The remaining half of
+#  the finding (a short history makes the average NaN, which today reads as
+#  "below trend" instead of "unknown") is U3-1 and is deliberately NOT here.
+#
+#  Locked by ``tests/test_trend_label_contract.py``.
+
+TREND_MA_LABEL = "SMA de 200 semanas (~3,8 años)"
+TREND_MA_SHORT = "SMA 200 sem."
+TREND_MA_LABEL_EN = "200-week SMA"
+TREND_MA_HELP = (
+    "Promedio de las últimas 200 barras **semanales** (~3,8 años), no la SMA "
+    "clásica de 200 días (~9,5 meses): el análisis técnico corre sobre 10 años "
+    "de barras semanales. Es el filtro de tendencia de largo plazo del producto."
+)
+
+MID_MA_LABEL = "SMA de 100 semanas (~1,9 años)"
+MID_MA_SHORT = "SMA 100 sem."
+
+FAST_MA_LABEL = "SMA de 50 semanas (~1 año)"
+FAST_MA_SHORT = "SMA 50 sem."
+FAST_MA_LABEL_EN = "50-week SMA"
+
+
+# --------------------------------------------------------------------------- #
+#  Canonical label for the cost-of-capital hurdle of the moat (U1-4)          #
+# --------------------------------------------------------------------------- #
+#  ``MoatAnalyzer._wacc_proxy()`` returns ``risk_free_proxy_pct + ERP`` of the
+#  sector — 4,0 % + 4,0…6,0 pp. That is a **cost of equity**: a CAPM without
+#  beta, with a flat sector ERP standing in for ``β × ERP``. There is no debt in
+#  it, no D/(D+E) weight and no tax shield, so it is not a WACC, and the U1-4
+#  ``no_hacer`` forbids inventing a capital structure to make the old name true.
+#  The fix is therefore the name: the hurdle is a **costo de equity proxy**.
+#
+#  ``roic_sustained`` scores the **spread** of the multi-year average ROIC over
+#  that hurdle (``MOAT.roic_spread_*``), not the absolute ROIC. The absolute
+#  bands only run with ``MOAT.use_roic_wacc_spread=False`` — the identifiers
+#  keep "wacc" for backward compatibility, the value they hold does not.
+#
+#  Locked by ``tests/test_cost_of_equity_label_contract.py``: no number, band or
+#  formula moved here, and the cuts named below are checked against ``MOAT``.
+
+COST_OF_EQUITY_LABEL = "costo de equity proxy"
+COST_OF_EQUITY_HELP = (
+    "El umbral es la tasa libre de riesgo (4 %) + la prima de riesgo de acciones "
+    "del sector (4–6 pp). **No es un WACC**: no pondera deuda ni escudo fiscal. "
+    "Tampoco es CAPM con beta: la prima es sectorial y plana."
+)
+
+ROIC_SPREAD_LABEL = f"spread ROIC − {COST_OF_EQUITY_LABEL}"
+ROIC_SPREAD_HELP = (
+    f"ROIC promedio multi-año menos el {COST_OF_EQUITY_LABEL}: "
+    "≥10pp=2, ≥4pp=1, ≥0pp=0.5. Un ROIC alto no suma si el sector exige tanto o "
+    "más — lo que marca el moat es el exceso.\n\n"
+    + COST_OF_EQUITY_HELP
+)
+
+#: The opt-out (``MOAT.use_roic_wacc_spread=False``): sector-blind bands on the
+#: absolute ROIC. It compares against nothing, so it must not borrow the
+#: cost-of-equity wording — that is the whole point of the two texts.
+ROIC_ABSOLUTE_LABEL = "ROIC promedio (bandas absolutas)"
+ROIC_ABSOLUTE_HELP = (
+    "ROIC promedio multi-año contra bandas fijas: ≥20 %=2, ≥12 %=1, ≥8 %=0.5. "
+    "Modo legacy: no mira el sector, así que no compara el ROIC contra ningún "
+    "costo de capital."
+)
+
+
+def roic_sustained_help(config=None) -> str:
+    """Help for the ``roic_sustained`` dimension, for the mode actually running.
+
+    Both texts quote thresholds, and the engine applies only one set of them:
+    ``_score_roic_sustained`` scores the spread over the hurdle when
+    ``MOAT.use_roic_wacc_spread`` is on and the legacy absolute bands when it is
+    off. Picking the text from the flag is what keeps U1-4 from re-creating, with
+    the polarity flipped, the very defect it removed — a tooltip describing a
+    rule that is not running.
+    """
+    if config is None:
+        from config import MOAT as config  # noqa: N811 — singleton default
+    return ROIC_SPREAD_HELP if getattr(config, "use_roic_wacc_spread", True) else ROIC_ABSOLUTE_HELP
+
+
+# --------------------------------------------------------------------------- #
+#  Canonical wording for the dividend-growth streak (U1-5)                    #
+# --------------------------------------------------------------------------- #
+#  ``_score_dividends`` walks ``annual_dividend_totals`` — closed calendar years
+#  of payments as reported by the feed (yfinance) — and pays 3 points at
+#  ``streak >= 10``. The note it wrote called that company a "Dividend
+#  Aristocrat", which is not a description: it is the **S&P Dividend
+#  Aristocrats** index, and membership needs 25 consecutive years of increases
+#  *plus* S&P 500 membership (and the index's size/liquidity screens). The engine
+#  checks neither, so the badge promised a status the data cannot support.
+#
+#  The fix is the wording: say what was actually counted — a streak of N closed
+#  years, from the feed. **No cut moved**: 10/5/2 still pay 3/2/1 points.
+#
+#  Locked by ``tests/test_dividend_label_contract.py``.
+
+#: Years of increases the S&P index requires — quoted in the help so the reader
+#: can see the gap between the two claims, never used as a threshold.
+SP_ARISTOCRAT_YEARS = 25
+
+DIVIDEND_STREAK_LABEL = "racha de dividendo creciente"
+DIVIDEND_STREAK_HELP = (
+    "Años calendario **cerrados** consecutivos en los que el dividendo total "
+    "creció, contados sobre el historial de pagos del feed. **No es el índice "
+    f"S&P Dividend Aristocrats**, que exige {SP_ARISTOCRAT_YEARS} años de "
+    "aumentos y pertenencia al S&P 500: acá el corte que puntúa son 10 años y no "
+    "se verifica ningún índice."
+)
+
+
+def dividend_streak_note(streak: int) -> str:
+    """The note the engine attaches to a long streak — says what it counted.
+
+    A single formatter so the number in the sentence and the number the scorer
+    measured cannot drift apart, and so the wording lives with the rest of the
+    canonical vocabulary instead of inside ``_score_dividends``.
+    """
+    return (
+        f"Racha de {int(streak)} años consecutivos de dividendo creciente "
+        "(años calendario cerrados del feed)"
+    )
+
+
+# --------------------------------------------------------------------------- #
+#  Canonical wording for the guardrails withdrawal strategy (U1-6)            #
+# --------------------------------------------------------------------------- #
+#  ``apply_withdrawal_strategy`` implements **two** of the four Guyton-Klinger
+#  decision rules: capital preservation (the withdrawal rate rises past the
+#  ceiling band → cut spending) and prosperity (it falls below the floor band →
+#  raise spending). Three pieces of the canonical method are not there:
+#
+#    * the **inflation rule** — GK freezes the inflation raise after a year with
+#      a negative portfolio return; the engine applies it every year
+#      (``spend *= (1 + inflation_rate)``, unconditional);
+#    * the **portfolio management rule** — which sleeve funds the withdrawal;
+#      the engine sells the portfolio pro rata;
+#    * the **time bound on the cut** — GK suspends capital preservation in the
+#      last 15 years of the plan; the engine applies it at every horizon year.
+#
+#  The U1-6 ``no_hacer`` forbids re-implementing canonical GK, so the fix is the
+#  copy: the strategy is named "simplificado" and every surface that invokes the
+#  Guyton-Klinger name carries the one-line list of what is missing.
+#
+#  Locked by ``tests/test_guardrails_label_contract.py``.
+
+GUARDRAILS_LABEL = "Guardrails (simplificado)"
+GUARDRAILS_LABEL_LONG = "Guardrails (Guyton-Klinger simplificado)"
+#: Always rendered right after one of the labels above, which already carry the
+#: word "simplificado" — so this sentence starts with the substance instead of
+#: repeating the qualifier.
+GUARDRAILS_OMISSIONS = (
+    "Implementa 2 de las 4 reglas de Guyton-Klinger — preservación de capital "
+    "(recorte) y prosperidad (aumento). No implementa la regla de "
+    "inflación (GK congela el ajuste después de un año negativo; acá se aplica "
+    "siempre), la regla de manejo de cartera (de qué activo sale el retiro; acá "
+    "se vende a prorrata) ni el límite temporal del recorte (GK lo suspende en "
+    "los últimos 15 años del plan)."
+)
+
+
+def guardrails_help(config=None) -> str:
+    """Help for the guardrails strategy: the bands that run + what is missing.
+
+    The bands are read from ``config.WITHDRAWAL`` rather than typed, the same way
+    ``roic_sustained_help`` reads ``MOAT`` — a tooltip that quotes a number the
+    engine is not using is the defect this wave exists to remove.
+    """
+    if config is None:
+        from config import WITHDRAWAL as config  # noqa: N811 — singleton default
+    return (
+        f"Tasa base sobre el valor inicial. Si la tasa efectiva sube "
+        f"{config.guardrail_ceiling_band * 100:.0f}% por encima → recorta el gasto "
+        f"{config.guardrail_cut_pct * 100:.0f}%; si baja "
+        f"{config.guardrail_floor_band * 100:.0f}% por debajo → lo sube "
+        f"{config.guardrail_raise_pct * 100:.0f}%.\n\n" + GUARDRAILS_OMISSIONS
+    )
+
+
+# --------------------------------------------------------------------------- #
+#  Canonical wording for the optimizer's drawdown estimate (U1-10)            #
+# --------------------------------------------------------------------------- #
+#  ``OptimizationResult.max_drawdown_estimate_pct`` is ``-volatility × 1.5``: a
+#  rule of thumb, not a modelled figure. Nothing is simulated, no path is drawn
+#  and this portfolio's own history is never read — the number is a linear
+#  function of the annual volatility and of nothing else. The U1-10 ``no_hacer``
+#  is "presentarlo como dato de modelo", so every surface says where it comes
+#  from and the multiple moved to ``OptimizerConfig.max_dd_vol_multiple``.
+#
+#  The simulated drawdown does exist elsewhere: ``MonteCarloResult`` computes it
+#  over market paths (``median_max_drawdown_pct``). The two must not be confused,
+#  which is why the help points at it.
+#
+#  Locked by ``tests/test_drawdown_label_contract.py``.
+
+MAX_DD_ESTIMATE_LABEL = "Max Drawdown est. (regla empírica)"
+MAX_DD_ESTIMATE_SHORT = "Max DD est. (regla)"
+
+
+def max_dd_estimate_help(config=None) -> str:
+    """Help for the drawdown estimate, quoting the multiple actually applied."""
+    if config is None:
+        from config import OPTIMIZER as config  # noqa: N811 — singleton default
+    return (
+        f"Regla empírica, no un modelo: −{config.max_dd_vol_multiple:.1f}× la "
+        "volatilidad anual de la cartera, a 1 año. No sale de simular caminos ni "
+        "de la historia de esta cartera — el drawdown simulado se calcula sobre "
+        "los paths del Monte Carlo, en Simulaciones."
+    )
+
+
+# --------------------------------------------------------------------------- #
+#  Canonical wording for the Monte Carlo's annualised pot growth (U1-7)       #
+# --------------------------------------------------------------------------- #
+#  ``MonteCarloResult.median_cagr_pct`` is ``(terminal / initial) ** (1/n) - 1``.
+#  That is a **return** only while no money crosses the boundary of the
+#  portfolio. With cash flows it stops being one, in both directions:
+#
+#    * **contributions** land in ``terminal`` but never in ``initial``, so the
+#      figure inflates far above anything the portfolio earned (measured: 6,3 %
+#      published for a market that returned −0,2 % over the same 20 years);
+#    * **withdrawals** leave ``terminal`` without ever leaving ``initial``, so it
+#      deflates below the return (−5,0 % on that same market).
+#
+#  Eleven points of spread on one portfolio, driven by the payment calendar
+#  alone. A third distortion rides along with withdrawals: the engine computes
+#  the per-path figure as ``where(terminal > 0, terminal, nan)`` + ``nanmedian``,
+#  so ruined paths are dropped and what gets published describes the survivors.
+#
+#  The honest number here is money-weighted (a TIR/IRR), and the U1-7 ``no_hacer``
+#  is exactly "IRR completo" — so this wave names the quantity instead of
+#  building it. Below the flag, the vocabulary picks itself.
+#
+#  ``mc_has_cash_flows`` lives here rather than on ``MonteCarloResult`` on
+#  purpose: U1-7 adds nothing whatsoever to ``portfolio/monte_carlo.py``.
+#
+#  Locked by ``tests/test_pot_growth_label_contract.py``.
+
+POT_GROWTH_LABEL = "Crecimiento del pozo"
+POT_GROWTH_SHORT = "Crec. del pozo"
+#: Only for a projection with zero cash flows, where the growth of the pot and
+#: the return of the portfolio are the same number.
+POT_CAGR_LABEL = "CAGR"
+
+
+def mc_has_cash_flows(mc_result) -> bool:
+    """True when money crossed the portfolio boundary during the projection.
+
+    Accepts a ``MonteCarloResult``, a persisted ``mc_summary`` mapping or None,
+    so the one predicate serves the live pages, the PDF and the saved bundle.
+    A contribution is a negative ``annual_withdrawal`` (that is how
+    ``GoalPlanner`` models ``Goal.annual_contribution``), hence ``!= 0``.
+    """
+    if mc_result is None:
+        return False
+    if isinstance(mc_result, Mapping):
+        withdrawal = mc_result.get("annual_withdrawal") or 0.0
+        strategy = mc_result.get("withdrawal_strategy_applied")
+    else:
+        withdrawal = getattr(mc_result, "annual_withdrawal", 0.0) or 0.0
+        strategy = getattr(mc_result, "withdrawal_strategy_applied", None)
+    return bool(float(withdrawal) != 0.0 or strategy)
+
+
+def pot_growth_pct(terminal: float, initial: float, years: float) -> Optional[float]:
+    """Annualised growth of the pot, in percent — the single implementation.
+
+    Returns None where the rate is undefined: a pot that ran dry has no growth
+    rate, and neither does a zero-length horizon. Callers must render that as
+    "—", never as 0 %, which would read as "flat" instead of "ruined".
+    """
+    try:
+        terminal = float(terminal)
+        initial = float(initial)
+        years = float(years)
+    except (TypeError, ValueError):
+        return None
+    if terminal <= 0 or initial <= 0 or years <= 0:
+        return None
+    return ((terminal / initial) ** (1.0 / years) - 1.0) * 100.0
+
+
+def pot_growth_delta(pct: float, has_cash_flows: bool) -> str:
+    """The one-line subtitle under a projected value (``st.metric`` delta).
+
+    When *every* simulated path ran dry the engine's ``nanmedian`` has nothing
+    left to take a median of and the field is NaN. Printing "nan%/año" states a
+    rate where there is none — say so instead.
+    """
+    try:
+        pct = float(pct)
+    except (TypeError, ValueError):
+        pct = float("nan")
+    if pct != pct or pct in (float("inf"), float("-inf")):
+        return "sin tasa: todos los caminos se quedan sin dinero"
+    if has_cash_flows:
+        return f"{pct:.1f}%/año de {POT_GROWTH_LABEL.lower()}"
+    return f"{pct:.1f}%/año ({POT_CAGR_LABEL})"
+
+
+def pot_growth_column_label(has_cash_flows: bool) -> str:
+    """Header for a table column holding the figure."""
+    if has_cash_flows:
+        return f"{POT_GROWTH_SHORT} %/año"
+    return f"{POT_CAGR_LABEL} %/año"
+
+
+def pot_growth_help(has_cash_flows: bool) -> str:
+    """Tooltip: what the figure is, and — when it matters — what it is not."""
+    if not has_cash_flows:
+        return (
+            "Crecimiento anual compuesto del pozo. Sin aportes ni retiros en la "
+            f"proyección, coincide con el retorno de la cartera, así que acá "
+            f"sí es un {POT_CAGR_LABEL}."
+        )
+    return (
+        "Cuánto crece el pozo por año, **no es un retorno**: el capital que "
+        "aportás entra en el valor final sin estar en el inicial (infla la "
+        "cifra) y lo que retirás sale del final sin salir del inicial (la "
+        "hunde). El número que sí sería un retorno con flujos es money-weighted "
+        "(TIR), y este proyecto todavía no lo calcula.\n\n"
+        "Si hay caminos que se quedan sin dinero, la cifra describe solo los "
+        "que sobrevivieron."
+    )
+
+
+# --------------------------------------------------------------------------- #
+#  Canonical wording for the backtest's return gap vs the benchmark (U1-8)    #
+# --------------------------------------------------------------------------- #
+#  ``BacktestResult.excess_return_pct`` and ``TickerPerformance`` are plain
+#  arithmetic: ``CAGR_own − CAGR_benchmark``. Alpha is what is left of that gap
+#  *after* discounting the part explained by market exposure — it needs a beta,
+#  and the backtest never estimates one. A portfolio holding a 1.4-beta basket
+#  in a rising market shows a positive gap with no alpha whatsoever, and the
+#  ``α`` glyph the page used to print promised exactly the adjustment that was
+#  missing. The U1-8 ``no_hacer`` forbids introducing beta in this pass, so the
+#  fix is the name: the number is an excess return and says so.
+#
+#  The other half of U1-8 was not a label. The per-ticker row measured the
+#  ticker over ``ticker ∩ benchmark`` and subtracted a benchmark CAGR measured
+#  over ``portfolio ∩ benchmark`` — so a ticker with two years of history was
+#  being scored against the benchmark's five-year rate. Both legs now come from
+#  the same aligned window; see ``BacktestEngine.run``.
+#
+#  Locked by ``tests/test_excess_return_label_contract.py`` (copy) and
+#  ``tests/test_backtesting.py`` (the window oracle).
+
+EXCESS_RETURN_LABEL = "Exceso vs benchmark"
+EXCESS_RETURN_SHORT = "Exceso vs bench"
+EXCESS_RETURN_HELP = (
+    "CAGR propio menos el CAGR del benchmark, medidos sobre la **misma ventana** "
+    "de fechas. **No es alpha**: no se descuenta la parte del exceso que explica "
+    "la exposición al mercado, porque el backtest no estima beta. Una cartera más "
+    "volátil puede mostrar exceso positivo sin haber agregado nada."
+)
+
+
+def excess_return_column_label(benchmark: str = "") -> str:
+    """Header for the per-ticker column, naming the benchmark it compares against."""
+    if benchmark:
+        return f"Exceso vs {benchmark} %"
+    return f"{EXCESS_RETURN_SHORT} %"
+
+
+# --------------------------------------------------------------------------- #
+#  Canonical wording for the downside-volatility ratio (U1-9)                 #
+# --------------------------------------------------------------------------- #
+#  Two engines publish a number called "Sortino" and neither one is a Sortino
+#  ratio. ``analysis/backtesting.py`` and ``portfolio/tracker.py`` both compute
+#  the denominator as ``returns[returns < 0].std()``: the standard deviation of
+#  the losing weeks **around their own mean**. The Sortino denominator is the
+#  downside deviation ``√E[mín(r − MAR, 0)²]``, taken over *every* return with
+#  the gains entering as zeros and the deviations measured from the MAR, not
+#  from the mean of the losses.
+#
+#  They are not the same quantity and the difference is not a rounding
+#  artefact: dropping the winning weeks shrinks the sample, and centring on the
+#  mean of the losses instead of on the MAR removes the level of the losses
+#  entirely. A run of uniformly bad weeks has a small spread around its own
+#  mean, so the current denominator goes *down* exactly when the portfolio is
+#  losing steadily — and the published ratio goes up.
+#
+#  The U1-9 ``no_hacer`` is "relabel + recálculo juntos": moving the formula
+#  changes every ratio on two surfaces at once and belongs to its own wave
+#  (oleada 5). This pass only stops the number from claiming a name it has not
+#  earned — no value moves.
+#
+#  Locked by ``tests/test_downside_ratio_label_contract.py``.
+
+DOWNSIDE_RATIO_LABEL = "Ratio retorno/vol bajista"
+DOWNSIDE_RATIO_SHORT = "Ret./vol bajista"
+DOWNSIDE_RATIO_HELP = (
+    "Retorno anualizado menos la tasa libre de riesgo, dividido por el desvío de "
+    "las semanas negativas. **No es el ratio de Sortino**: el denominador de "
+    "Sortino es √E[mín(r − MAR, 0)²] sobre *todos* los retornos, medido contra el "
+    "MAR; acá se mide el desvío de las semanas perdedoras alrededor de su propia "
+    "media. Sirve para ordenar activos entre sí dentro de esta pantalla, no para "
+    "compararlo contra un Sortino publicado afuera."
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -484,9 +923,9 @@ def _plan_field_map(snap: Any) -> Dict[str, Any]:
 _COMPARE_LABELS = {
     "profile": "Perfil de riesgo",
     "n_positions": "Posiciones",
-    "expected_return_pct": "Retorno esperado %",
+    "expected_return_pct": f"{PROXY_RETURN_LABEL} %",
     "volatility_pct": "Volatilidad %",
-    "sharpe_ratio": "Sharpe",
+    "sharpe_ratio": PROXY_RATIO_LABEL,
     "dividend_yield_pct": "Div. yield %",
     "adjusted_score_avg": "Score promedio",
     "median_terminal": "Mediana final ($)",
@@ -649,6 +1088,50 @@ def coach_should_fire_on_drop(
 # --------------------------------------------------------------------------- #
 #  10 — Argentina dual-currency presentation                                  #
 # --------------------------------------------------------------------------- #
+#
+# Audit U2-5 (oleada 2 · P0 · negocio) — "Mediana 20-30y a ARS al FX spot".
+#
+# The Monte Carlo terminal is USD *nominal at year N*: the paths bootstrap
+# nominal weekly returns and the drag layer models fees/taxes/rebalancing, never
+# inflation. Multiplying that by today's USD/ARS printed a peso figure whose two
+# halves live 30 years apart — the number was neither today's money nor year-30
+# money, and it was the biggest number on the screen.
+#
+# The fix converts only a *present value*: deflate to today's USD first, then
+# apply today's spot. That is an exact change of unit and needs no forecast.
+#
+# The rejected alternative was projecting the exchange rate to year N. It needs
+# an ARS-vs-USD inflation differential that this project has from no source, so
+# it would replace one invented number with a bigger one — the very defect the
+# rate_source guard below exists to prevent.
+
+#: Basis of an amount handed to :func:`ar_dual_amounts`.
+AR_BASIS_TODAY = "usd_hoy"           # already in today's dollars → spot is exact
+AR_BASIS_PRESENT_VALUE = "valor_presente"   # nominal future, deflated to today
+
+
+def present_value_usd(
+    nominal_usd: float,
+    *,
+    annual_inflation_pct: float,
+    years: float,
+) -> float:
+    """Deflate a nominal future USD amount to today's purchasing power.
+
+    The single implementation of ``nominal / (1 + i) ** n`` for the product
+    surface — the Simulaciones page used to spell it inline while the ARS block
+    right below it ignored it entirely.
+    """
+    n = max(float(years), 0.0)
+    i = float(annual_inflation_pct) / 100.0
+    if n <= 0 or i == 0:
+        return float(nominal_usd)
+    if i <= -1.0:
+        raise ValueError("annual_inflation_pct must be > -100")
+    # Deflation (i < 0) is handled by the same formula, which makes the present
+    # value *larger* — short-circuiting on ``i < 0`` would quietly understate it.
+    return float(nominal_usd) / ((1.0 + i) ** n)
+
 
 def ar_dual_amounts(
     usd_amount: float,
@@ -656,40 +1139,175 @@ def ar_dual_amounts(
     usd_ars_oficial: float,
     usd_ars_parallel: Optional[float] = None,
     label: str = "monto",
+    horizon_years: float = 0.0,
+    usd_inflation_pct: Optional[float] = None,
+    rate_source: str = "explicit",
 ) -> dict:
     """Present a USD amount in ARS with official + optional parallel (brecha).
 
     Product context only — not a tax or compliance engine.
-    ``usd_ars_*`` = pesos per 1 USD.
+    ``usd_ars_*`` = pesos per 1 USD, i.e. **today's** rate.
+
+    ``horizon_years`` is how far away ``usd_amount`` sits:
+
+    * ``<= 0`` — the amount is already in today's dollars and today's spot is an
+      exact unit change.
+    * ``> 0`` — the amount is nominal at that horizon and ``usd_inflation_pct``
+      is **required**: without it there is no honest way to reach today's money,
+      and converting anyway is the U2-5 defect. A missing rate raises rather than
+      guessing, so the mistake cannot be made in silence.
+
+    ``rate_source`` comes from :class:`config.ArFxConfig`. When it is
+    ``"placeholder"`` the brecha is withheld: the gap between two invented
+    numbers describes nothing about the market.
     """
-    usd = float(usd_amount)
     oficial = float(usd_ars_oficial)
     if oficial <= 0:
         raise ValueError("usd_ars_oficial must be > 0")
+
+    nominal = float(usd_amount)
+    years = max(float(horizon_years), 0.0)
+    if years > 0:
+        if usd_inflation_pct is None:
+            raise ValueError(
+                f"{label}: a nominal amount {years:g} years out cannot be converted at "
+                "today's spot — pass usd_inflation_pct so it can be deflated to "
+                "today's dollars first (audit U2-5)"
+            )
+        usd = present_value_usd(
+            nominal, annual_inflation_pct=float(usd_inflation_pct), years=years
+        )
+        basis = AR_BASIS_PRESENT_VALUE
+    else:
+        usd = nominal
+        basis = AR_BASIS_TODAY
+
     parallel = float(usd_ars_parallel) if usd_ars_parallel is not None else None
     out = {
         "label": label,
         "usd": round(usd, 2),
+        "usd_nominal": round(nominal, 2),
+        "basis": basis,
+        "horizon_years": years,
+        "usd_inflation_pct": (
+            float(usd_inflation_pct) if (years > 0 and usd_inflation_pct is not None) else None
+        ),
         "ars_oficial": round(usd * oficial, 0),
         "rate_oficial": oficial,
         "ars_parallel": None,
         "rate_parallel": parallel,
+        "rate_source": rate_source,
         "brecha_pct": None,
+        "brecha_omitted_reason": None,
     }
     if parallel is not None and parallel > 0:
         out["ars_parallel"] = round(usd * parallel, 0)
-        out["brecha_pct"] = round((parallel / oficial - 1.0) * 100.0, 1)
+        if rate_source == "placeholder":
+            out["brecha_omitted_reason"] = (
+                "las tasas son valores por defecto, no una cotización: su brecha no "
+                "dice nada del mercado"
+            )
+        else:
+            out["brecha_pct"] = round((parallel / oficial - 1.0) * 100.0, 1)
     return out
 
 
 def format_ar_dual_line(dual: Mapping[str, Any]) -> str:
-    """One human-readable line for UI captions."""
-    parts = [f"USD ${float(dual['usd']):,.0f}", f"ARS oficial ${float(dual['ars_oficial']):,.0f}"]
+    """One human-readable line for UI captions.
+
+    Always states the basis and the rate used: a peso figure on its own reads as
+    a quote, which is exactly what these numbers are not.
+    """
+    is_pv = dual.get("basis") == AR_BASIS_PRESENT_VALUE
+    usd_note = "en dólares de hoy" if is_pv else "USD"
+    parts = [f"{usd_note} ${float(dual['usd']):,.0f}"]
+
+    rate_of = float(dual["rate_oficial"])
+    parts.append(f"ARS oficial ${float(dual['ars_oficial']):,.0f} (a ${rate_of:,.0f}/USD)")
     if dual.get("ars_parallel") is not None:
-        parts.append(f"ARS paralelo ${float(dual['ars_parallel']):,.0f}")
+        rate_par = float(dual.get("rate_parallel") or 0.0)
+        parts.append(f"ARS paralelo ${float(dual['ars_parallel']):,.0f} (a ${rate_par:,.0f}/USD)")
         if dual.get("brecha_pct") is not None:
             parts.append(f"brecha {float(dual['brecha_pct']):+.1f}%")
-    return " · ".join(parts)
+
+    line = " · ".join(parts)
+    if is_pv:
+        line = (
+            f"{line} — pesos de hoy: se descontó la inflación "
+            f"({float(dual['usd_inflation_pct']):.1f}%/año × {float(dual['horizon_years']):g} años) "
+            f"antes de convertir"
+        )
+    if dual.get("rate_source") == "placeholder":
+        line = f"⚠️ tasa de referencia (no es cotización) · {line}"
+    return line
+
+
+def ar_dual_context(
+    usd_amount: Optional[float],
+    *,
+    fx_config: Any,
+    label: str = "monto",
+    horizon_years: Optional[float] = 0.0,
+    usd_inflation_pct: Optional[float] = None,
+) -> dict:
+    """Page-facing wrapper: everything a UI needs to render — or to explain why not.
+
+    Returns ``{"available", "reason", "dual", "line"}``. The expected "we cannot
+    say this honestly" cases come back as ``available=False`` with a reason to
+    show the user, instead of an exception the page has to swallow:
+
+    * the feature is off, or there is no amount;
+    * ``horizon_years is None`` — the basis of the amount is **unknown**, which
+      is not the same as zero. Plans saved before Simulaciones ran carry no
+      horizon in ``mc_summary``, and reading that as "today's money" would
+      convert a nominal terminal at spot again, in silence;
+    * a far-away amount with no inflation assumption to deflate it.
+
+    ``horizon_years=0`` still means "already today's money", and
+    ``usd_inflation_pct=0`` is a real assumption (the user chose 0 %/yr), not a
+    missing one.
+    """
+    out: Dict[str, Any] = {"available": False, "reason": "", "dual": None, "line": ""}
+
+    if not getattr(fx_config, "enabled", True):
+        out["reason"] = "La vista dual USD/ARS está desactivada en la configuración."
+        return out
+    if not usd_amount:
+        out["reason"] = "No hay un monto para convertir."
+        return out
+
+    if horizon_years is None:
+        out["reason"] = (
+            "Este plan no guardó el horizonte de la proyección, así que no se sabe a "
+            "qué año pertenecen esos dólares. Volvé a correr la simulación y guardá "
+            "el plan para poder expresarlo en pesos."
+        )
+        return out
+
+    years = max(float(horizon_years), 0.0)
+    if years > 0 and usd_inflation_pct is None:
+        out["reason"] = (
+            f"Este monto es nominal a {years:g} años y no hay supuesto de inflación "
+            "guardado, así que no se puede expresar en pesos de hoy. Volvé a correr "
+            "la simulación para que quede registrado."
+        )
+        return out
+
+    dual = ar_dual_amounts(
+        float(usd_amount),
+        usd_ars_oficial=float(getattr(fx_config, "usd_ars_oficial")),
+        usd_ars_parallel=(
+            float(p) if (p := getattr(fx_config, "usd_ars_parallel", None)) else None
+        ),
+        label=label,
+        horizon_years=years,
+        usd_inflation_pct=usd_inflation_pct,
+        rate_source=str(getattr(fx_config, "rate_source", "explicit") or "explicit"),
+    )
+    out["available"] = True
+    out["dual"] = dual
+    out["line"] = format_ar_dual_line(dual)
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -714,6 +1332,215 @@ def decision_provenance_labels(*, has_ai: bool, has_calc: bool = True) -> List[d
             "detail": "Opinión del modelo sobre los números; no reemplaza el cálculo.",
         })
     return labels
+
+
+# --------------------------------------------------------------------------- #
+#  Why a decision says what it says (audit item 04)                            #
+# --------------------------------------------------------------------------- #
+
+
+def decision_explanation(decision: Any, *, max_headline: int = 90) -> dict:
+    """The "why" behind an action, shaped for a table cell plus a detail panel.
+
+    Audit item 04. The Screener showed a score and an action side by side and let
+    them contradict each other in silence — ADBE at 95.7/100 marked HOLD, with no
+    hint that the technical uptrend was unconfirmed. The engine writes the
+    reconciling sentence on every decision and the row builder threw it away.
+
+    ``headline`` is the short cell text: the engine's ``decisive_reason`` when the
+    action was blocked or downgraded, otherwise the first rationale line, otherwise
+    a phrase derived from the action itself — never empty, because an empty cell
+    reads as "no reason" rather than "reason follows from the score".
+    """
+    action = str(getattr(decision, "action", "") or "").upper()
+    decisive = str(getattr(decision, "decisive_reason", "") or "").strip()
+    rationale = [str(r).strip() for r in (getattr(decision, "rationale", None) or []) if str(r).strip()]
+    risks = [str(r).strip() for r in (getattr(decision, "risks", None) or []) if str(r).strip()]
+
+    # When nothing overrode the score, the honest answer is that the action IS the
+    # score band — not a nice fact from `rationale`. Quoting one produced cells
+    # like "HOLD — ROE de 30,3 % y moat Wide sustentan rentabilidad", which is the
+    # same contradiction this item exists to remove, just with more words.
+    score = _safe_float(getattr(decision, "fundamental_score", None))
+    band = f"Score {score:.0f}/100" if score else "El score"
+    headline = decisive or {
+        "STRONG BUY": f"{band} en zona de compra fuerte, sin objeciones técnicas",
+        "BUY": f"{band} en zona de compra, el técnico no lo contradice",
+        "HOLD": f"{band}: no alcanza para comprar ni cae a zona de venta",
+        "REDUCE": f"{band} en deterioro — reducir exposición",
+        "SELL": f"{band} en zona de venta",
+        "AVOID": "Bloqueado por una regla de seguridad",
+    }.get(action, f"{band} fundamental, sin ajustes")
+
+    truncated = headline
+    if len(truncated) > max_headline:
+        truncated = truncated[: max_headline - 1].rstrip() + "…"
+
+    return {
+        "headline": truncated,
+        "full_headline": headline,
+        "is_downgrade": bool(decisive),
+        "why": rationale,
+        "risks": risks,
+        "confidence": str(getattr(decision, "confidence", "") or ""),
+        "blocked": bool(getattr(decision, "blocked", False)),
+    }
+
+
+# --------------------------------------------------------------------------- #
+#  Screener column presentation (audit items 08 + 18)                          #
+# --------------------------------------------------------------------------- #
+#
+# The Screener rendered 22 columns with no `column_config` at all, which caused
+# two distinct defects:
+#
+#   (08) The column the table is *sorted by* was not in the table. `Adj. Score`
+#        was hidden and `Score Bar` — an ASCII string like "████████░░  82/100" —
+#        stood in for it. Clicking that header sorts the *text*, so the ordering
+#        it produces is plausible and wrong. A number column plus Streamlit's own
+#        ProgressColumn gives both the bar and a header that sorts numerically.
+#
+#   (18) Nothing was formatted: P/E and ROE printed raw floats, Price had no
+#        currency, and no column carried a tooltip explaining what it measures.
+#
+# These specs are plain data so the labels, units and help text are testable
+# without a Streamlit session; `dashboard.shared.screener_column_config` turns
+# them into `st.column_config` objects.
+
+#: kind → "number" | "progress" | "text". `format` follows printf conventions
+#: as Streamlit expects; `%%` renders a literal percent sign.
+SCREENER_COLUMN_SPECS: Dict[str, Dict[str, Any]] = {
+    "⭐":           {"kind": "text",     "help": "Está en tu watchlist. Se edita desde la barra lateral."},
+    "Ticker":      {"kind": "text",     "help": "Símbolo. Tocá la fila para analizarlo."},
+    "Company":     {"kind": "text",     "help": "Nombre (truncado a 25 caracteres)."},
+    "Sector":      {"kind": "text",     "help": "Sector según el proveedor de datos."},
+    "Fuente":      {"kind": "text",     "help": "Curado = viene del universo · ⚠️ Propio = lo agregaste vos, tratalo como experimental."},
+    "Signal":      {"kind": "text",     "help": "Decisión final: combina score, señal técnica, margen de seguridad y la política de calidad de datos."},
+    "Motivo":      {"kind": "text",     "help": "Por qué la señal es esa. Cuando el motor bloquea o baja la acción (por técnico, margen de seguridad o calidad de datos), acá aparece la razón. Tocá la fila para el detalle completo."},
+    "Conf.":       {"kind": "text",     "help": "Confianza de la decisión: HIGH / MEDIUM / LOW. La política de calidad de datos la limita cuando faltan métricas."},
+    "Percentil":   {"kind": "number",   "format": "%.0f", "help": "Posición dentro de las acciones analizadas en ESTA corrida. Cambia si cambiás el universo."},
+    "Adj. Score":  {"kind": "progress", "format": "%.1f", "min": 0, "max": 100,
+                    "help": "Score ajustado (base + consistencia + Piotroski + moat + viento), topeado en 100."},
+    "Score bruto": {"kind": "number",   "format": "%.1f", "help": "El mismo score sin el tope de 100 — separa a los que empatan arriba. Ordená por acá."},
+    "Consist./15": {"kind": "progress", "format": "%.1f", "min": 0, "max": 15,
+                    "help": "Estabilidad histórica de ROE y márgenes (0–15)."},
+    "Piotroski/9": {"kind": "progress", "format": "%d",   "min": 0, "max": 9,
+                    "help": "F-Score de Piotroski: 9 chequeos de salud contable (0–9)."},
+    "Moat/20":     {"kind": "progress", "format": "%.1f", "min": 0, "max": 20,
+                    "help": "Ventaja competitiva: cuantitativa (0–12) + IA (0–8)."},
+    "Moat":        {"kind": "text",     "help": "Clasificación del foso: Wide / Narrow / Minimal / None."},
+    "Viento":      {"kind": "text",     "help": "Cola de viento estructural sector-país (dato curado, no garantía)."},
+    "Technical":   {"kind": "text",     "help": "Señal técnica de precio: BULLISH / NEUTRAL / BEARISH."},
+    "P/E":         {"kind": "number",   "format": "%.1f",  "help": "Precio sobre ganancias (trailing). En REITs no es el múltiplo relevante — la depreciación no es salida de caja y el score usa P/FFO; mirá el detalle en Stock Analysis."},
+    "ROE %":       {"kind": "number",   "format": "%.1f %%", "help": "Retorno sobre patrimonio."},
+    "Rev CAGR %":  {"kind": "number",   "format": "%.1f %%", "help": "Crecimiento anual compuesto de ingresos sobre la ventana disponible."},
+    "CAGR años":   {"kind": "number",   "format": "%d a",  "help": "Años que cubre el CAGR. yfinance entrega 4 estados anuales, así que suele ser 3."},
+    "Div Yield %": {"kind": "number",   "format": "%.2f %%", "help": "Dividendo anual sobre precio."},
+    "MoS %":       {"kind": "number",   "format": "%.1f %%", "help": "Margen de seguridad vs el valor intrínseco de Graham."},
+    "Price":       {"kind": "number",   "format": "$%.2f", "help": "Último precio de mercado conocido."},
+    "Datos":       {"kind": "text",     "help": "Completitud y frescura: 🟢 OK · 🟡 Parcial · 🔴 Pobre · ⏳ cache viejo."},
+    "Clase":       {"kind": "text",     "help": "Acción, fondo/ETF o cripto. Solo las acciones se puntúan."},
+}
+
+
+def screener_column_spec(column: str) -> Optional[Dict[str, Any]]:
+    """Spec for one displayed column, or ``None`` when it has no styling."""
+    spec = SCREENER_COLUMN_SPECS.get(column)
+    return dict(spec) if spec else None
+
+
+def universe_quality_summary(
+    per_ticker: Optional[Iterable[Optional[Mapping[str, Any]]]] = None,
+    *,
+    config=None,
+) -> dict:
+    """Roll per-ticker ``data_quality`` dicts up into one honest universe verdict.
+
+    Audit item 03. The Screener used to hand ``second_source_quality_signal`` a
+    synthesized level — ``"partial" if any_custom_ticker else "good"`` — so it
+    printed "calidad good" while its own warning two lines below reported 7 poor
+    and 63 partial tickers in the same run. This computes the level from the rows
+    that are actually on screen, so the headline and the detail can no longer
+    disagree.
+
+    Thresholds live in ``DataQualityConfig`` (``universe_poor_pct`` /
+    ``universe_partial_pct``), not here.
+
+    Returns counts plus a ``level`` usable as the ``data_quality`` argument of
+    ``second_source_quality_signal``.
+    """
+    if config is None:
+        from config import DATA_QUALITY as config  # noqa: N811 — singleton default
+
+    n_good = n_partial = n_poor = n_stale = n_unknown = 0
+    # Iterate explicitly: `per_ticker or []` raises on a pandas Series, and the
+    # Screener passes one straight off the dataframe.
+    for dq in ([] if per_ticker is None else per_ticker):
+        if not isinstance(dq, Mapping):
+            n_unknown += 1
+            continue
+        level = str(dq.get("level") or "")
+        if dq.get("stale"):
+            n_stale += 1
+        if level == "good":
+            n_good += 1
+        elif level == "partial":
+            n_partial += 1
+        elif level == "poor":
+            n_poor += 1
+        else:
+            n_unknown += 1
+
+    n_total = n_good + n_partial + n_poor + n_unknown
+    if n_total == 0:
+        return {
+            "level": "unknown",
+            "n_total": 0,
+            "n_good": 0,
+            "n_partial": 0,
+            "n_poor": 0,
+            "n_stale": 0,
+            "n_unknown": 0,
+            "degraded_pct": 0.0,
+            "message": "Sin datos analizados todavía.",
+        }
+
+    poor_pct = n_poor / n_total * 100.0
+    degraded_pct = (n_poor + n_partial + n_unknown) / n_total * 100.0
+
+    if poor_pct >= float(config.universe_poor_pct):
+        level = "poor"
+    elif degraded_pct >= float(config.universe_partial_pct):
+        level = "partial"
+    else:
+        level = "good"
+
+    parts = [f"🟢 {n_good} completos"]
+    if n_partial:
+        parts.append(f"🟡 {n_partial} parciales")
+    if n_poor:
+        parts.append(f"🔴 {n_poor} pobres")
+    if n_unknown:
+        parts.append(f"⚪ {n_unknown} sin evaluar")
+    if n_stale:
+        parts.append(f"⏳ {n_stale} con cache viejo")
+
+    message = (
+        f"Calidad del universo: **{level}** — {' · '.join(parts)} "
+        f"sobre {n_total} tickers ({degraded_pct:.0f}% con datos incompletos)."
+    )
+
+    return {
+        "level": level,
+        "n_total": n_total,
+        "n_good": n_good,
+        "n_partial": n_partial,
+        "n_poor": n_poor,
+        "n_stale": n_stale,
+        "n_unknown": n_unknown,
+        "degraded_pct": round(degraded_pct, 1),
+        "message": message,
+    }
 
 
 def second_source_quality_signal(
@@ -861,7 +1688,7 @@ def guided_empty_state(
         "screener": {
             "title": "Aún no corriste el screener",
             "body": "Analizá el universo para ver ranking, señales y calidad de datos.",
-            "demo_hint": "Tocá Refresh Analysis (o dejá que cargue con el universo actual).",
+            "demo_hint": "Tocá Actualizar análisis (o dejá que cargue con el universo actual).",
             "demo_ticker": "AAPL",
         },
         "simulaciones": {
@@ -1039,6 +1866,63 @@ def assemble_plan_pdf_mc_params(
     return enrich_pdf_mc_params(base, prefs=prefs, personal=personal)
 
 
+def plan_load_session_updates(
+    plan_snapshot: Any,
+    *,
+    horizon_years: int,
+    profile_key: str = "",
+) -> Dict[str, Any]:
+    """session_state keys to seed when loading a saved plan ("what-if" hand-off).
+
+    Mirrors ``dashboard/pages/12_Plan.py::_render_load_plan``. Returns **only**
+    the keys that carry a real value from the plan: a key the plan cannot answer
+    is left out so the user's current widget value survives.
+
+    That omission rule is the whole point. The page used to set
+    ``target_value`` unconditionally, so loading a plan saved without a Monte
+    Carlo run (``mc_summary is None`` — a supported path) reset the retirement
+    goal to $0, while ``inflation_rate`` right next to it was correctly guarded.
+    Concentrating the decision here removes the "one guard yes, the neighbour
+    no" class of bug.
+
+    ``horizon_years`` comes in already snapped to the Simulaciones selectbox
+    options (``dashboard.shared._snap_sim_horizon``, which imports Streamlit).
+    """
+    mc = getattr(plan_snapshot, "mc_summary", None) or {}
+    personal = getattr(plan_snapshot, "personal", None) or {}
+
+    capital = int(
+        _safe_float(personal.get("current_capital"), 0.0)
+        or _safe_float(mc.get("initial_value"), 0.0)
+        or 100_000
+    )
+
+    updates: Dict[str, Any] = {
+        "optimizer_total_capital": capital,
+        "horizon_years": int(horizon_years),
+        "initial_value": min(max(capital, 1_000), 10_000_000),
+    }
+
+    if profile_key:
+        updates["_preset_profile_key"] = profile_key
+
+    target = _safe_float(mc.get("target_value"), 0.0) or 0.0
+    if target > 0:
+        updates["target_value"] = int(target)
+
+    inflation = mc.get("inflation_rate")
+    if inflation is not None:
+        _inf = _safe_float(inflation)
+        if _inf is not None:
+            updates["inflation_rate"] = _inf
+
+    goals = getattr(plan_snapshot, "goals", None) or []
+    if goals:
+        updates["goals_list"] = list(goals)
+
+    return updates
+
+
 def shareable_report_narrative_blocks(
     *,
     plan_name: str,
@@ -1080,7 +1964,7 @@ def shareable_report_narrative_blocks(
             "heading": "Cómo leer los números",
             "body": (
                 "Las proyecciones usan un sesgo conservador a propósito (más volatilidad, "
-                "menor retorno esperado). Cuando veas «realista vs conservador», planificá "
+                "menor retorno histórico). Cuando veas «realista vs conservador», planificá "
                 "con el conservador. Los sellos 📊 son cálculos; 🤖 es interpretación de IA."
             ),
         },

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from data.product_ux import (
+    _fv_lump_and_annuity,
     ar_dual_amounts,
     build_annual_action_list,
     build_home_plan_hub,
@@ -21,9 +22,7 @@ from data.product_ux import (
     second_source_quality_signal,
     shareable_report_narrative_blocks,
     track_record_one_liner,
-    _fv_lump_and_annuity,
 )
-
 
 # --------------------------------------------------------------------------- #
 #  Gap levers                                                                 #
@@ -407,7 +406,6 @@ def test_ar_fx_config_is_single_dataclass():
     # Instantiating a fresh copy proves the class is a healthy dataclass
     fresh = cfg.ArFxConfig(usd_ars_oficial=1100, usd_ars_parallel=1400)
     assert fresh.usd_ars_oficial == 1100
-    src = inspect.getsource(cfg.ArFxConfig)
     # Exactly one @dataclass immediately above the class is enforced by import;
     # double decoration would still "work" but we assert single decorator in source file.
     config_src = inspect.getsource(cfg)

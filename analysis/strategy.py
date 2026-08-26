@@ -25,7 +25,8 @@ from loguru import logger
 
 from analysis.fundamental import FundamentalResult
 from analysis.technical import TechnicalResult
-from config import DATA_QUALITY, STRATEGY as CFG
+from config import DATA_QUALITY
+from config import STRATEGY as CFG
 
 _CONFIDENCE_RANK = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
 

@@ -28,6 +28,7 @@ import streamlit as st
 from loguru import logger
 
 from analysis.strategy import full_analysis
+from config import ENGINE_VERSION, AIConfig
 from data.product_ux import (
     GUARDRAILS_LABEL,
     GUARDRAILS_OMISSIONS,
@@ -35,7 +36,6 @@ from data.product_ux import (
     guardrails_help,
 )
 from data.screener_store import format_eta
-from config import AIConfig, ENGINE_VERSION
 
 # ------------------------------------------------------------------ #
 #  .env helpers                                                        #
