@@ -77,6 +77,19 @@ class FundamentalThresholds:
     ev_ebitda_good: float = 15.0
     ev_ebitda_acceptable: float = 20.0
 
+    # --- REIT valuation (auditoría por industria, 2026-08-22) ---
+    # A REIT is valued on price over funds from operations, not over accounting
+    # profit: depreciation is the largest charge on its income statement and is not
+    # a cash outflow, so the P/E bands above measure something else entirely (DLR
+    # showed 244.7×, O 45.7×). Own bands rather than reusing pe_* because a P/FFO of
+    # 15 is the sector median — calling it "excellent" would repeat the category
+    # error this fix exists to remove. Measured range on the universe: 11.8 to 53.5.
+    # These are a calibration choice, not an empirical finding; see StrategyConfig
+    # on where the evidence to settle them would come from.
+    p_ffo_excellent: float = 13.0
+    p_ffo_good: float = 18.0
+    p_ffo_acceptable: float = 23.0
+
     pb_excellent: float = 1.5
     pb_good: float = 3.0
     pb_acceptable: float = 5.0
@@ -84,6 +97,17 @@ class FundamentalThresholds:
     # --- Graham intrinsic value (D14) ---
     # Y in V = EPS × (8.5 + 2g) × 4.4 / Y  (AAA corporate bond yield proxy %)
     graham_aaa_yield_pct: float = 4.5
+
+    # Ceiling on `g` inside the Graham formula (audit 2026-08-22, P1-1). `g` is
+    # meant to be the sustainable 7-10 year growth rate; the engine was feeding it
+    # yfinance's `earningsGrowth`, a **quarterly year-over-year** figure that hits
+    # triple digits off a depressed base (VLO 453%, LMT 444%, GOOGL 294% on the
+    # cached universe). `8.5 + 2g` is linear in g, so those produced intrinsic
+    # values in the thousands and a margin of safety above 80% for 40 of 149
+    # companies — which is what unlocks STRONG BUY via `require_margin_of_safety`.
+    # Graham himself did not project high rates that far out. The cap applies only
+    # inside the formula: the growth rate reported to the UI is never truncated.
+    graham_max_growth_pct: float = 15.0
 
     # --- Growth (20 pts total) ---
     revenue_cagr_excellent: float = 15.0   # % 5Y CAGR
@@ -100,7 +124,30 @@ class FundamentalThresholds:
     # --- Dividend Quality (10 pts total) ---
     div_yield_sweet_spot_low: float = 1.5   # % — below = growth stock
     div_yield_sweet_spot_high: float = 4.0  # % — above = potentially risky
-    max_payout_ratio: float = 75.0          # % — sustainable payout
+    # Growth CAGR window. `cagr_target_years` is the window we'd prefer;
+    # `cagr_min_years` is the shortest one still worth scoring. yfinance ships 4
+    # annual statements, so in practice the revenue/earnings CAGR is measured over
+    # 3 years — asking for a fixed 5 made the metric None for 78/78 companies and
+    # silently killed the 7 revenue-growth points. See compute_cagr_available().
+    cagr_target_years: int = 5
+    cagr_min_years: int = 3
+    # Sanity ceiling for a *normalized* dividend yield, in percent. Nothing real
+    # sustains this; a value above it means the feed field was read in the wrong
+    # unit (yfinance mixes fractions and percents across its dividend fields —
+    # SCHD once scored on a "313%" yield). See normalize_dividend_yield_pct().
+    max_plausible_dividend_yield_pct: float = 30.0
+    # % — sustainable payout. **The single cut**: the dividend dimension grades against
+    # it (`_score_dividends`) and the decision engine reads the same number for the
+    # "may cut dividend" risk (`_build_rationale`). They used to disagree — the risk
+    # compared a literal 80 against the *accounting* payout — so a REIT could be scored
+    # as paying comfortably and warned about cutting in the same breath (U2-6).
+    # What it is measured against is `payout_basis`: FFO for a REIT, earnings otherwise
+    # (see effective_payout_pct). REIT-specific bands are U5-4's call, not this one's.
+    max_payout_ratio: float = 75.0
+    # % — top payout band (3 pts). A literal 40 used to live in `_score_dividends`;
+    # the cut belongs here with the other dividend thresholds. Missing payout is
+    # not this band (it scores 0); a reported 0 % still is.
+    payout_excellent: float = 40.0
 
 
 @dataclass
