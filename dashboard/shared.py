@@ -28,7 +28,14 @@ import streamlit as st
 from loguru import logger
 
 from analysis.strategy import full_analysis
-from config import AIConfig
+from data.product_ux import (
+    GUARDRAILS_LABEL,
+    GUARDRAILS_OMISSIONS,
+    decision_explanation,
+    guardrails_help,
+)
+from data.screener_store import format_eta
+from config import AIConfig, ENGINE_VERSION
 
 # ------------------------------------------------------------------ #
 #  .env helpers                                                        #
@@ -142,9 +149,56 @@ _MOAT_DESCRIPTION: dict[str, str] = {
 #  Formatting helpers                                                  #
 # ------------------------------------------------------------------ #
 
+def escape_dollars(text: str) -> str:
+    """Escape ``$`` so Streamlit's markdown does not read amounts as LaTeX.
+
+    Streamlit turns ``$100 ... $200`` into a KaTeX span (CONTEXT.md §8). Any
+    string built elsewhere and rendered with `st.markdown` has to come through
+    here — an f-string cannot hold the backslash on Python 3.11.
+    """
+    return str(text).replace("$", "\\$")
+
+
 def score_bar(score: float) -> str:
+    """ASCII score bar. Superseded on the Screener by `st.column_config.ProgressColumn`.
+
+    Kept for callers that need a plain string (PDF, plain-text contexts). Do not
+    put it in a dataframe: sorting on the header sorts the *text*, which produces
+    a plausible and wrong ordering (audit item 08).
+    """
     filled = int(score / 10)
     return "█" * filled + "░" * (10 - filled) + f"  {score:.0f}/100"
+
+
+def screener_column_config(columns) -> dict:
+    """Build `st.column_config` for the Screener tables (audit items 08 + 18).
+
+    Reads the plain-data specs in ``data.product_ux.SCREENER_COLUMN_SPECS`` and
+    returns only the entries for columns actually displayed, so the same helper
+    serves the shortlist and the full table without either carrying config for
+    columns it does not show.
+    """
+    from data.product_ux import screener_column_spec
+
+    config: dict = {}
+    for col in columns:
+        spec = screener_column_spec(col)
+        if not spec:
+            continue
+        kind = spec.get("kind", "text")
+        help_text = spec.get("help")
+        if kind == "progress":
+            config[col] = st.column_config.ProgressColumn(
+                col, help=help_text, format=spec.get("format", "%.1f"),
+                min_value=spec.get("min", 0), max_value=spec.get("max", 100),
+            )
+        elif kind == "number":
+            config[col] = st.column_config.NumberColumn(
+                col, help=help_text, format=spec.get("format"),
+            )
+        else:
+            config[col] = st.column_config.TextColumn(col, help=help_text)
+    return config
 
 
 _DQ_EMOJI = {"good": "🟢", "partial": "🟡", "poor": "🔴"}
@@ -169,7 +223,7 @@ _TAILWIND_LABEL_ES: dict[str, str] = {
     "Strong":   "Fuerte",
     "Moderate": "Moderada",
     "Neutral":  "—",
-    "Headwind": "Headwind",
+    "Headwind": "En contra",
 }
 
 
@@ -331,23 +385,48 @@ def plan_price_lookup(symbol: str):
 def compute_plan_health(snap, *, core_only: bool = False) -> dict:
     """Compute a saved plan's market delta / health vs today (Fase C).
 
-    Thin wrapper over ``data.plan_context.compute_plan_vs_reality`` that injects
-    the cached price lookup. Run behind an explicit "Refrescar" button so the
-    (controlled) price fetch is user-initiated, not automatic on page load.
+    Thin wrapper injecting the cached price lookup. Run behind an explicit
+    "Refrescar" button so the (controlled) price fetch is user-initiated, not
+    automatic on page load.
+
+    The full refresh goes through ``refresh_plan_against_market``, which also
+    seals ``refreshed_metrics`` / ``last_refreshed_at`` onto the snapshot and
+    persists it — otherwise the result would die with the session and every
+    consumer of those two fields stays blind. ``core_only`` stays on the pure
+    path: it prices only the core holdings, which carry no ``price_at_save``
+    baseline, so it must never overwrite a full refresh.
     """
-    from data.plan_context import compute_plan_vs_reality
-    return compute_plan_vs_reality(snap, plan_price_lookup, core_only=core_only)
+    if core_only:
+        from data.plan_context import compute_plan_vs_reality
+        return compute_plan_vs_reality(snap, plan_price_lookup, core_only=True)
+
+    from data.plan_context import refresh_plan_against_market
+    return refresh_plan_against_market(snap, plan_price_lookup)
 
 
-def record_plan_health_now(snap, *, source: str = "manual", refreshed: dict | None = None):
+def record_plan_health_now(
+    snap,
+    *,
+    source: str = "manual",
+    refreshed: dict | None = None,
+    min_days_between: int | None = None,
+):
     """Record a longitudinal health snapshot for a plan (Fase H.2).
 
     Thin wrapper over ``data.plan_context.record_plan_health`` injecting the
     cached price lookup. ``refreshed`` reuses an existing plan-vs-reality result
     to avoid a second price fetch. Returns the new record (or None if deduped).
+
+    ``min_days_between=None`` lets ``record_plan_health`` resolve the window from
+    ``HEALTH.min_days_between_records``, the same value the scheduler passes.
+    This wrapper used to omit the argument entirely, which meant the UI button
+    ran with no dedup at all.
     """
     from data.plan_context import record_plan_health
-    return record_plan_health(snap, plan_price_lookup, source=source, refreshed=refreshed)
+    return record_plan_health(
+        snap, plan_price_lookup, source=source, refreshed=refreshed,
+        min_days_between=min_days_between,
+    )
 
 
 def plan_health_history(plan_id: str):
@@ -699,8 +778,111 @@ def is_custom_ticker(symbol: str) -> bool:
 
 
 def custom_source_badge(symbol: str) -> str:
-    """Table-cell badge marking a ticker's source: Custom (⚠️ partial) vs Default."""
-    return "⚠️ Custom" if is_custom_ticker(symbol) else "Default"
+    """Table-cell badge marking a ticker's source: user-added vs curated universe."""
+    return "⚠️ Propio" if is_custom_ticker(symbol) else "Curado"
+
+
+# ------------------------------------------------------------------ #
+#  Row selection → next action (audit item 10)                        #
+# ------------------------------------------------------------------ #
+
+
+def selected_ticker(df, event, *, column: str = "Ticker") -> str | None:
+    """Resolve the ticker behind a ``st.dataframe(on_select=...)`` event.
+
+    Pure lookup: takes the selected positional row index and reads ``column``
+    off the same dataframe that was rendered. ``None`` when nothing is selected
+    or the index no longer exists (the table can be re-sorted between reruns).
+    """
+    try:
+        rows = list(getattr(event, "selection", {}).get("rows", []))
+    except Exception:
+        rows = []
+    if not rows:
+        return None
+    idx = rows[0]
+    if idx < 0 or idx >= len(df):
+        return None
+    value = df.iloc[idx].get(column)
+    return str(value) if value is not None else None
+
+
+def render_decision_detail(df, event) -> None:
+    """Full reasoning behind the selected row's signal (audit item 04).
+
+    The table cell carries one line; a decision usually has more, plus its risks.
+    Both already exist on every ``Decision`` and were discarded by the row builder,
+    so this is surfacing work, not new analysis.
+    """
+    try:
+        rows = list(getattr(event, "selection", {}).get("rows", []))
+    except Exception:
+        rows = []
+    if not rows or rows[0] >= len(df):
+        return
+    row = df.iloc[rows[0]]
+
+    headline = str(row.get("_why_headline") or row.get("Motivo") or "").strip()
+    why = list(row.get("_why") or [])
+    risks = list(row.get("_risks") or [])
+    if not (headline or why or risks):
+        return
+
+    with st.container(border=True):
+        if headline:
+            st.markdown(f"**Por qué {row.get('Ticker', '')} es {row.get('Signal', '')}** — {headline}")
+        _d1, _d2 = st.columns(2)
+        if why:
+            _d1.caption("Razonamiento")
+            for line in why[:6]:
+                _d1.markdown(f"- {line}")
+        if risks:
+            _d2.caption("Riesgos anotados")
+            for line in risks[:6]:
+                _d2.markdown(f"- {line}")
+        render_calc_badge("sale del motor de decisión — reglas, no IA (salvo que la actives)")
+
+
+def render_row_actions(df, event, *, prefix: str = "row") -> str | None:
+    """Turn a table selection into the actions the page promised.
+
+    Audit item 10: the Screener's footer told the user to "click any ticker and
+    then open Stock Analysis", but the table had no selection API and the click
+    did nothing — the caption described a feature that was never wired. This is
+    the wiring: pick a row, get the handoff.
+
+    ``analysis_target`` is the key Stock Analysis already reads, so the deep link
+    needs no change on the receiving side.
+    """
+    symbol = selected_ticker(df, event)
+    if not symbol:
+        st.caption("👆 Tocá una fila para analizar ese ticker, seguirlo o llevarlo al comité.")
+        return None
+
+    render_decision_detail(df, event)
+
+    st.markdown(f"**{symbol}** seleccionado — ¿qué querés hacer?")
+    c1, c2, c3 = st.columns(3)
+
+    if c1.button(f"🔍 Analizar {symbol}", key=f"{prefix}_analyze", type="primary",
+                 width="stretch"):
+        st.session_state.analysis_target = symbol
+        st.switch_page(str(Path(__file__).parent / "pages" / "2_Stock_Analysis.py"))
+
+    if c2.button(f"📋 Seguir {symbol}", key=f"{prefix}_watch", width="stretch"):
+        prefs = get_user_prefs()
+        if prefs.watch(symbol):
+            st.session_state.user_prefs = prefs
+            st.success(f"✓ {symbol} agregado a la watchlist")
+        else:
+            st.info(f"{symbol} ya estaba en la watchlist")
+
+    # `comite_last_symbol` is the key that page already seeds its input from.
+    if c3.button(f"🏛️ Comité sobre {symbol}", key=f"{prefix}_committee", width="stretch"):
+        st.session_state["comite_last_symbol"] = symbol
+        st.switch_page(str(Path(__file__).parent / "pages" / "15_Comite.py"))
+
+    return symbol
 
 
 # ------------------------------------------------------------------ #
@@ -771,7 +953,7 @@ def format_drags_badge(drags: dict | None) -> str:
 ASSUMPTIONS_TEXT = (
     "**Qué modela esta herramienta y qué no.** Las proyecciones (Optimizer, "
     "Monte Carlo, Plan) parten de historia de precios **pura** de yfinance, con "
-    "ajustes conservadores (+10% volatilidad, −20% retorno esperado). Salvo que "
+    "ajustes conservadores (+10% volatilidad, −20% retorno histórico). Salvo que "
     "actives la capa de *drags económicos*, los números asumen **0% de fees, 0% "
     "de impuestos sobre dividendos, 0% de costo de rebalanceo** y **no** modelan "
     "fricciones locales argentinas (cepo, brecha cambiaria, diferencial de "
@@ -859,7 +1041,7 @@ _WITHDRAWAL_LABELS = {
     "none":         "Acumulación (sin retiros)",
     "fixed_real":   "Retiro fijo real (regla del 4%)",
     "constant_pct": "% constante del valor actual",
-    "guardrails":   "Guardrails (Guyton-Klinger)",
+    "guardrails":   GUARDRAILS_LABEL,
 }
 
 
@@ -910,7 +1092,7 @@ def get_withdrawal_strategy(initial_value: float | None = None) -> dict | None:
             "guardrail_floor_band": WITHDRAWAL.guardrail_floor_band,
             "guardrail_cut_pct": WITHDRAWAL.guardrail_cut_pct,
             "guardrail_raise_pct": WITHDRAWAL.guardrail_raise_pct,
-            "label": f"Guardrails {base * 100:.1f}%",
+            "label": f"Guardrails simplificado {base * 100:.1f}%",
         }
     return None
 
@@ -944,8 +1126,11 @@ def format_withdrawal_badge(strategy: dict | None) -> str:
         return (f"🏖️ **% constante**: {strategy.get('pct', 0) * 100:.1f}% del valor *actual* "
                 "cada año (el ingreso varía con el mercado, nunca se agota del todo).")
     if kind == "guardrails":
-        return (f"🏖️ **Guardrails**: tasa base {strategy.get('pct', 0) * 100:.1f}%, recorta el "
-                "gasto en caídas y lo sube en mercados buenos (Guyton-Klinger).")
+        # U1-6: the badge names the two rules that run and the three that do not,
+        # so the simplified method never borrows the name of the full one.
+        return (f"🏖️ **{GUARDRAILS_LABEL}**: tasa base {strategy.get('pct', 0) * 100:.1f}%, "
+                "recorta el gasto en caídas y lo sube en mercados buenos. "
+                + GUARDRAILS_OMISSIONS)
     return "🟢 Modo acumulación."
 
 
@@ -1002,9 +1187,7 @@ def render_withdrawal_controls(*, key_prefix: str = "", initial_value: float = 1
                 min_value=0.5, max_value=12.0,
                 value=float(st.session_state.get("withdrawal_base_pct", WITHDRAWAL.base_withdrawal_pct)),
                 step=0.25, format="%.2f", key=f"{key_prefix}wd_base_pct",
-                help=(f"Punto de partida. Si la tasa efectiva sube {WITHDRAWAL.guardrail_ceiling_band*100:.0f}% "
-                      f"por encima → recorta gasto {WITHDRAWAL.guardrail_cut_pct*100:.0f}%; si baja "
-                      f"{WITHDRAWAL.guardrail_floor_band*100:.0f}% → lo sube {WITHDRAWAL.guardrail_raise_pct*100:.0f}%."),
+                help=guardrails_help(WITHDRAWAL),
             )
             st.session_state["withdrawal_base_pct"] = base
 
@@ -1051,7 +1234,12 @@ def cached_full_analysis(
     ai_model: str = "",
     ai_enabled: bool = False,
     ai_api_key: str = "",
+    engine_version: str = ENGINE_VERSION,
 ):
+    # `engine_version` is part of the cache key so a scoring rewrite (U2-2,
+    # missing-metric, FFO, yield units) cannot keep serving the previous
+    # FundamentalResult for the remaining TTL of a long-lived process.
+    _ = engine_version
     ai_cfg = AIConfig(
         provider=ai_provider,
         model=ai_model,
@@ -1239,7 +1427,7 @@ def cached_goal_savings_target(
     """
     import numpy as np
 
-    from portfolio.goals import Goal, monthly_savings_for_probability, GoalPlanner
+    from portfolio.goals import Goal, GoalPlanner, monthly_savings_for_probability
 
     w_np = np.array(weights_tuple) if weights_tuple else None
     planner = GoalPlanner(list(symbols), w_np, seed=seed)
@@ -1433,35 +1621,144 @@ def render_committee_verdict(verdict, *, footer_facts: str = "") -> None:
         render_calc_badge("base del dictamen · " + footer_facts)
 
 
+def _track_payload(fund, decision) -> dict:
+    """Flatten what the track record needs from one analysed ticker.
+
+    Plain JSON-serializable primitives, so it survives being persisted with the run
+    and can be logged later from the page instead of from inside the thread pool.
+    """
+    from analysis.track_record import snapshot_calibration_inputs
+
+    return {
+        "symbol": getattr(fund, "symbol", ""),
+        "action": getattr(decision, "action", ""),
+        "confidence": getattr(decision, "confidence", "MEDIUM"),
+        "fundamental_score": float(getattr(decision, "fundamental_score", 0.0) or 0.0),
+        "technical_signal": getattr(decision, "technical_signal", "") or "",
+        "rationale": list(getattr(decision, "rationale", []) or [])[:4],
+        "price_at_rec": getattr(fund, "current_price", None) or None,
+        "asset_class": getattr(fund, "asset_class", "equity") or "equity",
+        "inputs": snapshot_calibration_inputs(fund),
+    }
+
+
+def log_screener_run(rows: list) -> int:
+    """Record a finished screener run as recommendations. Returns rows written.
+
+    Why the Screener logs at all: capture used to happen only when a person opened a
+    ticker, ran the committee, or an alert fired — 57 recommendations over two months
+    across **15 of 149 tickers**, with 36 BUY, 12 STRONG BUY, 1 REDUCE and **zero
+    SELL**. You cannot calibrate where to draw a line when one side of it has no
+    observations. A full run is the unbiased sample: every ticker, every verdict,
+    including the ones nobody would have clicked on.
+
+    These carry ``source="screener"`` so they never masquerade as recommendations the
+    user actually saw — the Track Record page filters on it.
+
+    Non-scorable assets are skipped: an ETF's "SELL" is an artifact of scoring it with
+    machinery built for companies, which is exactly what ``asset_class.py`` settled.
+
+    Best-effort throughout: the store already guarantees a logging failure cannot
+    break its caller, and same-day duplicates are deduped there by symbol and action.
+    """
+    from types import SimpleNamespace
+
+    from analysis.asset_class import is_fundamentally_scorable
+    from analysis.track_record import track_record_store
+
+    written = 0
+    for row in rows or []:
+        payload = row.get("_track") if isinstance(row, dict) else None
+        if not payload or not payload.get("action"):
+            continue
+        if not is_fundamentally_scorable(payload.get("asset_class", "equity")):
+            continue
+        try:
+            decision = SimpleNamespace(
+                symbol=payload.get("symbol", ""),
+                action=payload.get("action", ""),
+                confidence=payload.get("confidence", "MEDIUM"),
+                fundamental_score=payload.get("fundamental_score", 0.0),
+                technical_signal=payload.get("technical_signal", ""),
+                rationale=payload.get("rationale", []),
+            )
+            rec_id = track_record_store.log_recommendation(
+                decision,
+                source="screener",
+                price_at_rec=payload.get("price_at_rec"),
+                fundamental=SimpleNamespace(**(payload.get("inputs") or {})),
+            )
+            if rec_id:
+                written += 1
+        except Exception as exc:  # never let capture break the page
+            logger.debug(f"screener track-record log skipped for {payload.get('symbol')} — {exc}")
+    if written:
+        logger.info(f"track_record: logged {written} screener recommendations")
+    return written
+
+
 def _analyse_universe_parallel(
     symbols: list[str],
     ai_cfg: AIConfig,
     progress_bar,
     status_text,
-) -> list[dict]:
+    eta_per_ticker: float | None = None,
+) -> tuple[list[dict], list[dict], float]:
     """
     Run cached_full_analysis for each symbol in a thread pool.
     Workers capped at min(6, cpu_count) to stay within macOS FD limits.
     A per-ticker exception never aborts the whole run.
+
+    Returns ``(rows, failures, elapsed_seconds)``. Failures used to be swallowed —
+    the ticker simply never appeared and "Stocks screened" counted the survivors,
+    so a run that lost three symbols to a yfinance hiccup was indistinguishable
+    from a complete one (audit item 05). Each failure is
+    ``{"Ticker", "Error", "Tipo"}`` so the page can name what is missing and offer
+    a retry.
+
+    ``eta_per_ticker`` (seconds, measured on a previous run) turns the progress
+    line into a countdown instead of a bare fraction. The elapsed time comes back
+    so the caller can store it and give the *next* run an honest estimate —
+    audit item 13, where a caption promised "~15s" for a five-minute job.
     """
+    import time
+    from datetime import datetime as _dt
+
+    started = time.monotonic()
     max_workers = min(6, os.cpu_count() or 4)
     total = len(symbols)
     completed = 0
     rows: list[dict] = []
+    failures: list[dict] = []
 
-    def _analyse_one(sym: str) -> dict | None:
+    def _analyse_one(sym: str) -> tuple[dict | None, dict | None]:
         try:
             fund, tech, decision = cached_full_analysis(
                 sym, ai_cfg.provider, ai_cfg.model, ai_cfg.enabled, ai_cfg.api_key
             )
+            asset_class = getattr(fund, "asset_class", "equity") or "equity"
+            _why = decision_explanation(decision)
             return {
                 "Ticker": sym,
                 "Company": fund.company_name[:25],
                 "Sector": ("🪙 Crypto" if fund.sector == "Crypto" else fund.sector),
+                # Audit item 01 — funds/crypto have no statements, so the equity
+                # score and its signal do not apply to them. Carried per row so
+                # the page can segment instead of ranking them against companies.
+                "Clase": asset_class,
                 "Signal": f"{decision.action_emoji} {decision.action}",
+                # Audit item 04 — the engine writes the sentence that reconciles a
+                # high score with a cautious action; this used to be discarded.
+                "Motivo": _why["headline"],
+                "Conf.": _why["confidence"],
+                "_why": _why["why"],
+                "_risks": _why["risks"],
+                "_why_headline": _why["full_headline"],
                 "Adj. Score": fund.adjusted_score,
+                # Uncapped twin (audit item 11) — breaks the ties the [0,100] clamp
+                # creates at the top of the ranking. Used for sorting, not judging.
+                "Score bruto": getattr(fund, "raw_adjusted_score", None) or fund.adjusted_score,
                 "Base Score": fund.total_score,
-                "Score Bar": score_bar(fund.adjusted_score),
                 "Consistency": fund.consistency_score,
                 "Piotroski": fund.piotroski_score,
                 "Moat Score": getattr(fund, "moat_score", 0.0),
@@ -1476,28 +1773,55 @@ def _analyse_universe_parallel(
                 "Technical": tech.signal,
                 "P/E": fund.pe_ratio,
                 "ROE %": fund.roe,
-                "Rev CAGR 5Y": fund.revenue_cagr_5y,
+                # Window is whatever the statements supported (typically 3y —
+                # yfinance ships 4 annual periods). Never label this "5Y".
+                "Rev CAGR %": fund.revenue_cagr_5y,
+                "CAGR años": getattr(fund, "revenue_cagr_years", 0) or None,
                 "Div Yield %": fund.dividend_yield,
                 "MoS %": fund.margin_of_safety_pct,
                 "Price": fund.current_price,
                 "Datos": data_quality_badge(getattr(fund, "data_quality", None)),
-            }
+                # When this row was measured — what makes "refresh only the
+                # stale ones" possible instead of redoing all 85 (item 16).
+                "_measured_at": _dt.now().isoformat(timespec="seconds"),
+                # Raw quality dict — the page rolls these up instead of parsing
+                # the emoji badge above (audit item 03).
+                "_dq": getattr(fund, "data_quality", None),
+                # Everything the track record needs, flattened here because this is
+                # the only place with `fund` and `decision` in hand — and writing to
+                # SQLite from inside the thread pool is a problem nobody needs. The
+                # page logs these sequentially once the run finishes.
+                "_track": _track_payload(fund, decision),
+            }, None
         except Exception as exc:
             logger.error(f"Screener: {sym} failed — {exc}")
-            return None
+            return None, {
+                "Ticker": sym,
+                "Tipo": type(exc).__name__,
+                "Error": str(exc)[:160] or "sin detalle",
+            }
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(_analyse_one, sym): sym for sym in symbols}
         for future in as_completed(futures):
             completed += 1
             sym = futures[future]
-            status_text.text(f"Analizando… {completed}/{total} listos (último: {sym})")
+            elapsed = time.monotonic() - started
+            # Prefer the throughput we are actually seeing; fall back to the
+            # previous run's measurement until we have a couple of samples.
+            rate = (elapsed / completed) if completed >= 3 else (eta_per_ticker or 0.0)
+            remaining = rate * (total - completed)
+            eta = f" · quedan {format_eta(remaining)}" if rate > 0 and completed < total else ""
+            status_text.text(f"Analizando… {completed}/{total} listos (último: {sym}){eta}")
             progress_bar.progress(completed / total)
-            result = future.result()
+            result, failure = future.result()
             if result is not None:
                 rows.append(result)
+            if failure is not None:
+                failures.append(failure)
 
-    return rows
+    failures.sort(key=lambda f: f["Ticker"])
+    return rows, failures, time.monotonic() - started
 
 
 def _fetch_universe_parallel(
