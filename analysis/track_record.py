@@ -78,6 +78,50 @@ class RecommendationOutcome(_Base):
     scored_at             = Column(DateTime, default=datetime.utcnow)
 
 
+#: Metrics worth keeping per company type, as ``(attribute, key)``. Deliberately
+#: small: these are the numbers the open calibration questions turn on, not a dump
+#: of the whole result. Absent attributes are skipped, so an object that does not
+#: carry them (a crypto result, a duck-typed stub) simply contributes nothing.
+_INDUSTRY_METRICS = (
+    ("debt_equity", "debt_equity"),
+    ("p_ffo", "p_ffo"),
+    ("ffo_payout_pct", "ffo_payout_pct"),
+    ("roe", "roe"),
+    ("roic", "roic"),
+    ("moat_score", "moat_score"),
+    ("negative_equity", "negative_equity"),
+)
+
+
+#: Every attribute ``snapshot_calibration_inputs`` reads. Exported so a caller
+#: that cannot keep the object around — the Screener, which builds rows inside a
+#: thread pool — can snapshot the raw values and rebuild an equivalent stand-in.
+CALIBRATION_ATTRS = (
+    "sector", "industry",
+    "profitability_score", "health_score", "valuation_score",
+    "growth_score", "dividend_score",
+    "equity_to_assets_pct",
+) + tuple(attr for attr, _ in _INDUSTRY_METRICS)
+
+
+def snapshot_calibration_inputs(fundamental: Any) -> dict:
+    """Raw values of the attributes the track-record payload stores as ``inputs``.
+
+    Pure and defensive: a missing attribute is skipped. Used by
+    ``dashboard.shared._track_payload`` so a FundamentalResult-like object can
+    be flattened after the thread pool without redesigning the store.
+    """
+    out = {}
+    for attr in CALIBRATION_ATTRS:
+        try:
+            value = getattr(fundamental, attr, None)
+        except Exception:
+            continue
+        if value is not None:
+            out[attr] = value
+    return out
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
