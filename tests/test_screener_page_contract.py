@@ -90,6 +90,22 @@ def test_cached_full_analysis_keys_on_engine_version():
     assert "engine_version: str = ENGINE_VERSION" in SHARED
 
 
+def test_cached_personal_book_analysis_keys_on_engine_version():
+    """A scoring rewrite must miss the 30m Streamlit cache of the personal book."""
+    import inspect
+
+    from config import ENGINE_VERSION
+    from dashboard.shared import cached_personal_book_analysis
+
+    params = inspect.signature(cached_personal_book_analysis).parameters
+    assert "engine_version" in params
+    assert params["engine_version"].default == ENGINE_VERSION
+    src = SHARED[SHARED.index("def cached_personal_book_analysis") :]
+    src = src[: src.index("\ndef ")]
+    assert "engine_version: str = ENGINE_VERSION" in src
+    assert "_ = engine_version" in src
+
+
 def test_refresh_clears_only_the_screener_analyses():
     """Audit item 14 — 'Refresh Analysis' must not wipe every cache in the app."""
     refresh_block = SCREENER[SCREENER.index("if refresh:") : SCREENER.index("# Show the last run")]
