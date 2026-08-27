@@ -9,8 +9,9 @@ from datetime import datetime
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from loguru import logger
 
-from config import GOAL_CARD, MONTE_CARLO, SECTOR_MAP
+from config import AR_FX, GOAL_CARD, MONTE_CARLO, SECTOR_MAP
 from dashboard.shared import (
     _get_ai_config,
     cached_goal_optimization,
@@ -19,6 +20,7 @@ from dashboard.shared import (
     cached_monte_carlo,
     cached_stress_test,
     drags_to_tuple,
+    escape_dollars,
     format_drags_badge,
     format_withdrawal_badge,
     get_economic_drags,
@@ -36,6 +38,7 @@ from data.product_ux import (
     PROXY_RATIO_LABEL,
     PROXY_RETURN_HELP,
     PROXY_RETURN_LABEL,
+    ar_dual_context,
     mc_has_cash_flows,
     pot_growth_column_label,
     pot_growth_delta,
@@ -475,33 +478,55 @@ def _tab_mc_content():
         )
 
     # AR dual-currency context (backlog 10) — product presentation, not tax advice.
-    try:
-        from config import AR_FX
-        from data.product_ux import ar_dual_amounts, format_ar_dual_line
-
-        if getattr(AR_FX, "enabled", True) and mc.median_terminal:
-            with st.expander("🇦🇷 Vista dual USD / ARS (contexto)", expanded=False):
+    #
+    # Audit U2-5: the median terminal is USD *nominal at the horizon*, and so is
+    # the target — the sidebar defines it as "valor objetivo del portafolio al
+    # final del horizonte" and the engine scores it against the nominal
+    # terminals (`prob_achieve_target_pct`). Both used to be multiplied by
+    # today's spot rate; both are now deflated on the same basis, so the two
+    # lines stay comparable with each other and with the probability above.
+    #
+    # `inflation_rate` is always an answer, 0 % included — the slider starts
+    # there — so it is passed through as the assumption it is.
+    if mc.median_terminal:
+        try:
+            _fx_median = ar_dual_context(
+                float(mc.median_terminal),
+                fx_config=AR_FX,
+                label="mediana final",
+                horizon_years=horizon_years,
+                usd_inflation_pct=float(inflation_rate),
+            )
+            _fx_target = (
+                ar_dual_context(
+                    float(target_value),
+                    fx_config=AR_FX,
+                    label="meta",
+                    horizon_years=horizon_years,
+                    usd_inflation_pct=float(inflation_rate),
+                )
+                if target_value > 0
+                else None
+            )
+            with st.expander("🇦🇷 Equivalente en pesos de hoy (supuesto, no cotización)", expanded=False):
                 st.caption(
-                    "Misma plata en pesos (oficial + paralelo). Tasas configurables "
-                    "(`AR_FX` / env USD_ARS_*). No es cotización en vivo ni asesoramiento cambiario."
+                    f"Tasas de referencia — origen: **{AR_FX.rate_source}**"
+                    + (f" · al {AR_FX.rate_asof}" if AR_FX.rate_asof else "")
+                    + ". Configurables (`AR_FX` / env `USD_ARS_*`). No es cotización en "
+                    "vivo ni asesoramiento cambiario."
                 )
-                _dual_m = ar_dual_amounts(
-                    float(mc.median_terminal),
-                    usd_ars_oficial=float(AR_FX.usd_ars_oficial),
-                    usd_ars_parallel=float(AR_FX.usd_ars_parallel),
-                    label="mediana final",
-                )
-                st.markdown(f"**Mediana proyectada:** {format_ar_dual_line(_dual_m)}")
-                if target_value > 0:
-                    _dual_t = ar_dual_amounts(
-                        float(target_value),
-                        usd_ars_oficial=float(AR_FX.usd_ars_oficial),
-                        usd_ars_parallel=float(AR_FX.usd_ars_parallel),
-                        label="meta",
-                    )
-                    st.markdown(f"**Tu meta:** {format_ar_dual_line(_dual_t)}")
-    except Exception:
-        pass
+                if _fx_median["available"]:
+                    st.markdown(f"**Mediana proyectada:** {escape_dollars(_fx_median['line'])}")
+                else:
+                    st.info(_fx_median["reason"], icon="ℹ️")
+                if _fx_target is not None:
+                    if _fx_target["available"]:
+                        st.markdown(f"**Tu meta:** {escape_dollars(_fx_target['line'])}")
+                    else:
+                        st.info(_fx_target["reason"], icon="ℹ️")
+        except Exception as exc:  # the FX block only — logged, never swallowed (U2-5)
+            logger.warning("AR dual-currency block failed to render: {}", exc)
+            st.caption("⚠️ La vista en pesos no se pudo mostrar.")
 
     # ---- Fase H.1: decumulation / retirement-income metrics ----
     _wd = getattr(mc, "withdrawal_strategy_applied", None)
@@ -1869,14 +1894,16 @@ with tab_goals:
                             delta=f"peor momento: años {mc.p25_year_of_max_dd:.0f}–{mc.p75_year_of_max_dd:.0f}",
                             delta_color="off",
                             delta_arrow="off",
-                            help="Caída pico-a-valle mediana durante todo el horizonte. "
+                            help="Caída pico-a-valle mediana **del mercado** durante todo el "
+                                 "horizonte: no incluye aportes ni retiros. "
                                  "El rango marca dónde cae el 50% central de los peores drawdowns: "
                                  "si es ancho, el momento del golpe es esencialmente impredecible.",
                         )
                         ds2.metric(
                             "Riesgo SORR (5a)",
                             f"{mc.sorr_early_drawdown_pct:.1f}%",
-                            help="% de simulaciones con caída >30% en los **primeros 5 años**. "
+                            help="% de simulaciones con caída de **mercado** >30% en los "
+                                 "**primeros 5 años** (sin contar aportes ni retiros). "
                                  + (
                                      "En una meta de acumulación, aportar caro justo antes de la "
                                      "caída deja capital que tarda años en recuperarse."
@@ -1895,7 +1922,10 @@ with tab_goals:
                         ds4.metric(
                             "Mínimo P10 intra-horizonte",
                             f"${mc.p10_intra_min:,.0f}",
-                            help="En el peor 10% de simulaciones, el portafolio llega a este valor mínimo en algún momento del horizonte.",
+                            help="En el peor 10% de simulaciones, el portafolio llega a este valor "
+                                 "mínimo en algún momento del horizonte. A diferencia de las métricas "
+                                 "de drawdown, éste **sí** descuenta retiros y costos: es el piso real "
+                                 "de tu plata.",
                         )
 
                     # Mini fan chart with P5-P10 highlight + vertical line of max drawdown year

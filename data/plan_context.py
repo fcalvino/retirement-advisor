@@ -389,6 +389,70 @@ def compute_longitudinal_drift(history: List[dict]) -> dict:
 
 
 # ------------------------------------------------------------------ #
+#  Canonical drift math (U2-3)                                         #
+# ------------------------------------------------------------------ #
+
+def drift_breakdown(
+    target_weights: Dict[str, float],
+    actual_weights: Dict[str, float],
+) -> dict:
+    """Canonical plan-vs-reality drift math — the only implementation (U2-3).
+
+    Three surfaces report drift: the alert detector
+    (``alerts/portfolio_alerts.py``), the suggested alignment trades
+    (``compute_alignment_trades`` below) and the Portfolio page. Each used to
+    re-derive the arithmetic, and the detector iterated **only the target**, so
+    a position held outside the plan contributed ``0`` to the aggregate: the UI
+    said "rebalance" while the alert never fired. Everything now goes through
+    here so they cannot disagree again.
+
+    Parameters
+    ----------
+    target_weights : dict
+        ``{symbol: target_weight_pct (0-100)}`` — what the plan asks for.
+    actual_weights : dict
+        ``{symbol: actual_weight_pct (0-100)}`` — what the tracker holds.
+        Symbols priced as *unknown* must be left out entirely; a missing price
+        is not a 0 % weight (that is the caller's job — see the detector).
+
+    Returns
+    -------
+    dict with:
+        symbols : sorted union of both sides
+        rows    : [{symbol, target_pct, actual_pct, drift_pct}] — ``drift_pct``
+                  is signed (``actual - target``): positive = over the target.
+        total_drift_pct : aggregate drift, **unrounded** so callers keep their
+                  own rounding. Each deviation is counted twice (one symbol
+                  over, another under), hence the halving.
+        n_evaluated : ``len(symbols)``
+    """
+    target = target_weights or {}
+    actual = actual_weights or {}
+    symbols = sorted(set(target) | set(actual))
+
+    rows: List[dict] = []
+    total_abs_drift = 0.0
+    for sym in symbols:
+        t = float(target.get(sym, 0.0) or 0.0)
+        a = float(actual.get(sym, 0.0) or 0.0)
+        d = a - t
+        total_abs_drift += abs(d)
+        rows.append({
+            "symbol": sym,
+            "target_pct": t,
+            "actual_pct": a,
+            "drift_pct": d,
+        })
+
+    return {
+        "symbols": symbols,
+        "rows": rows,
+        "total_drift_pct": total_abs_drift / 2.0,
+        "n_evaluated": len(symbols),
+    }
+
+
+# ------------------------------------------------------------------ #
 #  Suggested alignment trades (Fase E)                                 #
 # ------------------------------------------------------------------ #
 
@@ -446,17 +510,16 @@ def compute_alignment_trades(
 
     target = snap.target_weights()
     core_symbols = {c.get("symbol", "") for c in snap.core_holdings if c.get("symbol")}
-    symbols = sorted(set(target) | set(current_weights))
+    breakdown = drift_breakdown(target, current_weights)
 
     candidates: List[dict] = []
-    total_abs_drift = 0.0
     n_skipped_small = 0
 
-    for sym in symbols:
-        t = float(target.get(sym, 0.0))
-        a = float(current_weights.get(sym, 0.0))
-        drift = a - t
-        total_abs_drift += abs(drift)
+    for row in breakdown["rows"]:
+        sym = row["symbol"]
+        t = row["target_pct"]
+        a = row["actual_pct"]
+        drift = row["drift_pct"]
 
         if abs(drift) < drift_threshold_pct:
             continue
@@ -493,10 +556,10 @@ def compute_alignment_trades(
     return {
         "trades": trades,
         "summary": {
-            # Same convention as the Portfolio alignment view: each deviation
-            # is counted twice (over + under), so divide by 2.
-            "total_drift_pct": round(total_abs_drift / 2.0, 1),
-            "n_evaluated": len(symbols),
+            # Canonical drift math lives in drift_breakdown() (U2-3): union of
+            # target and actual, each deviation counted twice (over + under).
+            "total_drift_pct": round(breakdown["total_drift_pct"], 1),
+            "n_evaluated": breakdown["n_evaluated"],
             "n_suggested": len(trades),
             "n_skipped_small": n_skipped_small,
             "buy_usd": round(sum(t["amount_usd"] for t in trades if t["action"] == "comprar")),

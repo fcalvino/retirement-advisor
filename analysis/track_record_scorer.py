@@ -62,20 +62,26 @@ def _price_on_or_before(symbol: str, when: datetime) -> Optional[float]:
 #  Hit logic (pure)                                                           #
 # --------------------------------------------------------------------------- #
 
-def compute_hit(action: str, return_pct: float, excess_return_pct: float) -> bool:
-    """Directional correctness of a recommendation.
+def compute_hit(action: str, return_pct: float, excess_return_pct: Optional[float]) -> Optional[bool]:
+    """Directional correctness of a recommendation, or None when it is ungradable.
 
     - Bullish actions (BUY/STRONG BUY): hit when we beat the benchmark.
     - Bearish actions (REDUCE/SELL/AVOID): hit when we underperform it
       (i.e. avoiding/trimming was right).
     - HOLD (and anything else): hit when the absolute move stayed within the
       configured band — holding meant we neither missed nor avoided a big move.
+
+    ``excess_return_pct`` is None when the benchmark could not be priced (U2-4).
+    The first two rules grade a call *against the market*, so with the market
+    unknown there is no answer and this returns None — a recommendation nobody
+    could grade must not be filed as a win. The HOLD rule is measured against an
+    absolute band with no market term in it, so it stays gradable.
     """
     a = (action or "").upper()
     if a in tuple(x.upper() for x in TRACK_RECORD.bullish_actions):
-        return excess_return_pct > 0
+        return None if excess_return_pct is None else excess_return_pct > 0
     if a in tuple(x.upper() for x in TRACK_RECORD.bearish_actions):
-        return excess_return_pct < 0
+        return None if excess_return_pct is None else excess_return_pct < 0
     return abs(return_pct) <= TRACK_RECORD.hold_band_pct
 
 
@@ -95,7 +101,10 @@ def score_due_recommendations(
     unique constraint + ``get_pending_scoring`` filter. Re-running is safe.
 
     ``price_lookup`` is injectable for tests; defaults to the yfinance-backed one.
-    Returns a small summary: {"scored": n, "skipped": m}.
+    Returns a small summary with three disjoint counts:
+    ``{"scored": n, "partial": p, "skipped": m}`` — fully scored, persisted
+    without a benchmark (U2-4, retried on the next run), and not persisted at all
+    because the ticker itself could not be priced.
     """
     store = store or track_record_store
     now = now or datetime.utcnow()
@@ -103,6 +112,7 @@ def score_due_recommendations(
     benchmark = TRACK_RECORD.benchmark
 
     scored = 0
+    partial = 0
     skipped = 0
 
     for horizon in TRACK_RECORD.horizons_days:
@@ -118,14 +128,25 @@ def score_due_recommendations(
 
             return_pct = (price_now / price_then - 1.0) * 100.0
 
+            # U2-4: a benchmark that could not be priced is *unknown*, not flat.
+            # Defaulting it to 0.0 made ``excess`` equal ``return_pct``, so a BUY
+            # that rose 10 % while the market rose 12 % — a loss — was persisted as
+            # a ten-point win, permanently and indistinguishably from a real one.
             bench_then = price_lookup(benchmark, rec.created_at)
             bench_now = price_lookup(benchmark, horizon_date)
-            if bench_then and bench_now:
-                benchmark_return_pct = (bench_now / bench_then - 1.0) * 100.0
+            benchmark_missing = not (bench_then and bench_now)
+            if benchmark_missing:
+                benchmark_return_pct = None
+                excess = None
+                logger.warning(
+                    f"track_record_scorer: no benchmark ({benchmark}) for {rec.symbol} "
+                    f"@{horizon}d ({rec.created_at:%Y-%m-%d} → {horizon_date:%Y-%m-%d}) "
+                    "— outcome saved without excess/hit, will retry"
+                )
             else:
-                benchmark_return_pct = 0.0
+                benchmark_return_pct = (bench_now / bench_then - 1.0) * 100.0
+                excess = return_pct - benchmark_return_pct
 
-            excess = return_pct - benchmark_return_pct
             hit = compute_hit(rec.action, return_pct, excess)
 
             store.save_outcome(
@@ -133,19 +154,44 @@ def score_due_recommendations(
                 horizon_days=horizon,
                 price_at_horizon=round(price_now, 4),
                 return_pct=round(return_pct, 4),
-                benchmark_return_pct=round(benchmark_return_pct, 4),
-                excess_return_pct=round(excess, 4),
+                benchmark_return_pct=(None if benchmark_return_pct is None else round(benchmark_return_pct, 4)),
+                excess_return_pct=(None if excess is None else round(excess, 4)),
                 hit=hit,
+                benchmark_missing=benchmark_missing,
             )
-            scored += 1
+            if benchmark_missing:
+                partial += 1
+            else:
+                scored += 1
 
-    logger.info(f"track_record_scorer: scored={scored} skipped={skipped}")
-    return {"scored": scored, "skipped": skipped}
+    logger.info(f"track_record_scorer: scored={scored} partial={partial} skipped={skipped}")
+    return {"scored": scored, "partial": partial, "skipped": skipped}
 
 
 # --------------------------------------------------------------------------- #
 #  Aggregate metrics (pure functions over scored rows)                        #
 # --------------------------------------------------------------------------- #
+
+def _known_excesses(rows: List[dict]) -> List[float]:
+    """The excess returns that exist, in order.
+
+    U2-4: every aggregate here used to read ``float(r.get("excess_return_pct") or 0.0)``,
+    which averages "the market's move is unknown" as "the market moved exactly as
+    much as we did". A row without a benchmark has no excess to contribute — it is
+    absent from the sample, not a zero in it. Kept in one place so the three callers
+    cannot drift on what counts.
+    """
+    return [
+        float(r["excess_return_pct"])
+        for r in rows
+        if r.get("excess_return_pct") is not None
+    ]
+
+
+def _gradable(rows: List[dict]) -> List[dict]:
+    """Rows carrying an actual verdict. ``hit is None`` means nobody could grade it."""
+    return [r for r in rows if r.get("hit") is not None]
+
 
 def calibration_by_confidence(rows: List[dict]) -> Dict[str, dict]:
     """For each confidence level: hit rate, n, mean excess return.
@@ -153,34 +199,52 @@ def calibration_by_confidence(rows: List[dict]) -> Dict[str, dict]:
     ``rows`` are dicts as produced by ``TrackRecordStore.get_scored_rows``.
     A well-calibrated model hits more often when it says HIGH than when it
     says LOW.
+
+    ``n`` counts gradable calls and ``n_excess`` counts the ones with a known
+    excess; they differ whenever a benchmark lookup failed (U2-4), so the two
+    numbers are reported separately rather than papered over.
     """
     out: Dict[str, dict] = {}
     for level in TRACK_RECORD.min_confidence_for_calibration:
-        subset = [r for r in rows if (r.get("confidence") or "").upper() == level.upper() and r.get("hit") is not None]
+        at_level = [r for r in rows if (r.get("confidence") or "").upper() == level.upper()]
+        subset = _gradable(at_level)
         n = len(subset)
-        if n == 0:
-            out[level] = {"n": 0, "hit_rate": None, "mean_excess_pct": None}
+        excesses = _known_excesses(at_level)
+        if n == 0 and not excesses:
+            out[level] = {"n": 0, "n_excess": 0, "hit_rate": None, "mean_excess_pct": None}
             continue
         hits = sum(1 for r in subset if r["hit"])
-        mean_excess = sum(float(r.get("excess_return_pct") or 0.0) for r in subset) / n
         out[level] = {
             "n": n,
-            "hit_rate": round(hits / n, 4),
-            "mean_excess_pct": round(mean_excess, 4),
+            "n_excess": len(excesses),
+            "hit_rate": (round(hits / n, 4) if n else None),
+            "mean_excess_pct": (round(sum(excesses) / len(excesses), 4) if excesses else None),
         }
     return out
 
 
 def hit_rate_by_action(rows: List[dict]) -> Dict[str, dict]:
-    """Hit rate and mean excess return grouped by recommendation action."""
+    """Hit rate and mean excess return grouped by recommendation action.
+
+    U2-4: a recommendation whose benchmark could not be priced is ungradable, so it
+    moves neither the numerator nor the denominator of the hit rate, and its
+    non-existent excess stays out of the average. ``n_excess`` says how many rows
+    the average actually rests on.
+    """
     out: Dict[str, dict] = {}
     actions = sorted({(r.get("action") or "").upper() for r in rows if r.get("hit") is not None})
     for action in actions:
-        subset = [r for r in rows if (r.get("action") or "").upper() == action and r.get("hit") is not None]
+        at_action = [r for r in rows if (r.get("action") or "").upper() == action]
+        subset = _gradable(at_action)
         n = len(subset)
         hits = sum(1 for r in subset if r["hit"])
-        mean_excess = sum(float(r.get("excess_return_pct") or 0.0) for r in subset) / n
-        out[action] = {"n": n, "hit_rate": round(hits / n, 4), "mean_excess_pct": round(mean_excess, 4)}
+        excesses = _known_excesses(at_action)
+        out[action] = {
+            "n": n,
+            "n_excess": len(excesses),
+            "hit_rate": round(hits / n, 4),
+            "mean_excess_pct": (round(sum(excesses) / len(excesses), 4) if excesses else None),
+        }
     return out
 
 
@@ -203,12 +267,19 @@ def equity_curve(rows: List[dict]) -> pd.DataFrame:
     treated as an independent position whose return is its ``return_pct``. We
     chain them chronologically into a simple compounded equity curve and do the
     same with the matching benchmark returns for an apples-to-apples line.
+
+    A stretch whose benchmark could not be priced (U2-4) is dropped from *both*
+    lines: the chart's claim is "the model against the benchmark over the same
+    stretches", and a stretch with no benchmark has no counterpart to race. Keeping
+    it — as ``benchmark_return_pct or 0.0`` did — let the model compound while its
+    opponent stood still. A genuine 0.0 % benchmark is a measurement and stays.
     """
     bullish = {x.upper() for x in TRACK_RECORD.bullish_actions}
     invested = [
         r for r in rows
         if (r.get("action") or "").upper() in bullish
         and r.get("return_pct") is not None
+        and r.get("benchmark_return_pct") is not None
         and r.get("created_at") is not None
     ]
     invested.sort(key=lambda r: r["created_at"])
@@ -220,7 +291,7 @@ def equity_curve(rows: List[dict]) -> pd.DataFrame:
     records = []
     for r in invested:
         model_eq *= 1.0 + float(r["return_pct"]) / 100.0
-        bench_eq *= 1.0 + float(r.get("benchmark_return_pct") or 0.0) / 100.0
+        bench_eq *= 1.0 + float(r["benchmark_return_pct"]) / 100.0
         records.append(
             {
                 "created_at": r["created_at"],
@@ -232,15 +303,23 @@ def equity_curve(rows: List[dict]) -> pd.DataFrame:
 
 
 def summary_stats(rows: List[dict]) -> dict:
-    """Headline numbers for the page header."""
-    scored = [r for r in rows if r.get("hit") is not None]
+    """Headline numbers for the page header.
+
+    Three counts, because after U2-4 they are genuinely three different things:
+    ``n`` gradable calls, ``n_excess`` of them with a measured excess, and
+    ``n_benchmark_missing`` rows whose benchmark could not be priced. When nothing
+    has a benchmark, ``mean_excess_pct`` is None — the honest answer is "—", not
+    "+0.0 % vs the market".
+    """
+    scored = _gradable(rows)
     n = len(scored)
-    if n == 0:
-        return {"n": 0, "overall_hit_rate": None, "mean_excess_pct": None}
+    excesses = _known_excesses(rows)
+    missing = sum(1 for r in rows if r.get("benchmark_missing"))
     hits = sum(1 for r in scored if r["hit"])
-    mean_excess = sum(float(r.get("excess_return_pct") or 0.0) for r in scored) / n
     return {
         "n": n,
-        "overall_hit_rate": round(hits / n, 4),
-        "mean_excess_pct": round(mean_excess, 4),
+        "n_excess": len(excesses),
+        "n_benchmark_missing": missing,
+        "overall_hit_rate": (round(hits / n, 4) if n else None),
+        "mean_excess_pct": (round(sum(excesses) / len(excesses), 4) if excesses else None),
     }

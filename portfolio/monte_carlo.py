@@ -76,16 +76,24 @@ class MonteCarloResult:
     median_cagr_pct: float = 0.0
     p10_cagr_pct: float = 0.0
 
-    # Sequence of Returns Risk (SORR) and intra-horizon drawdown metrics
-    # % of paths with >30% peak-to-trough drawdown in first 5 years
+    # Sequence of Returns Risk (SORR) and intra-horizon drawdown metrics.
+    # U2-2: every percentage below is measured on the MARKET series — the
+    # bootstrap path before economic drags and before any withdrawal or
+    # contribution. They answer "how badly can the market fall", NOT "how much
+    # does my pot shrink" (planned spending is not a crash). The shrinking of
+    # the actual pot is prob_ruin_pct / p10_intra_min / prob_sustain_real_pct /
+    # expected_depletion_year.
+    # % of paths with >30% peak-to-trough market drawdown in first 5 years
     sorr_early_drawdown_pct: float = 0.0
-    # Median peak-to-trough drawdown across all paths (full horizon)
+    # Median peak-to-trough market drawdown across all paths (full horizon)
     median_max_drawdown_pct: float = 0.0
-    # % of paths that hit a drawdown ≥50% at any point
+    # % of paths whose market path hits a drawdown ≥50% at any point
     pct_paths_severe_drawdown: float = 0.0
-    # P10 intra-horizon minimum value (worst path 10th pct)
+    # P10 intra-horizon minimum value (worst path 10th pct). The exception to
+    # the note above: a USD floor of the REAL pot, so it does include drags and
+    # cash flows — it is what tells the retiree how low the money actually gets.
     p10_intra_min: float = 0.0
-    # Median year in which the maximum drawdown typically occurs.
+    # Median year in which the maximum market drawdown typically occurs.
     # WARNING: near-uniform distribution ⇒ this tends to horizon/2 for any
     # portfolio. Never present it alone as "the dangerous year"; use the
     # P25–P75 band below, which states the real (usually large) uncertainty.
@@ -286,6 +294,26 @@ class MonteCarloSimulator:
         n_horizon_weeks = horizon_years * 52
         paths = self._simulate_paths(port_hist_adj, n_sims, n_horizon_weeks)
 
+        # 3a — U2-2 (P2): SORR and drawdown are measured on the MARKET series —
+        # the bootstrap path before drags and before ANY cash flow. Measuring
+        # them on the post-withdrawal wealth path turned planned spending into a
+        # crash: on a market that never moves, a 4 % annual withdrawal reported
+        # a 100 % "drawdown" (fixed_real takes 4 % of the INITIAL capital every
+        # year, so the pot falls linearly and hits zero in year 25) ⇒ 🔴 badge
+        # and a CRITICAL SORR_HIGH e-mail with zero volatility. Cash-flow
+        # depletion is already reported by prob_ruin_pct / p10_intra_min /
+        # prob_sustain_real_pct / expected_depletion_year.
+        #
+        # Drags are excluded on purpose: a deterministic bleed has no *sequence*,
+        # and 1.5 %/yr over 30 years would re-create the same mechanical decline
+        # through the other door. Their effect is shown by the base_* metrics.
+        #
+        # Computed HERE, not later: the legacy withdrawal kernel
+        # (_apply_withdrawals → withdraw_at_week) mutates `paths` in place, so
+        # holding a reference and measuring it after step 4 would read the
+        # already-contaminated series.
+        market_dd = self._compute_drawdown_metrics(paths, horizon_years)
+
         # 3b — Economic drags (Item 1). total_drag_frac == 0 → base behavior,
         # paths untouched, base_* reference metrics left at 0 (byte-identical
         # to the pre-feature engine). When drags apply, we keep a "base" copy
@@ -382,12 +410,15 @@ class MonteCarloSimulator:
         _ruin_eps = max(initial_value, 1.0) * 1e-9
         result.prob_ruin_pct = float((paths_usd.min(axis=1) <= _ruin_eps).mean() * 100)
 
-        # SORR and intra-horizon drawdown metrics
+        # SORR and drawdown metrics — computed in step 3a on the market series.
         (result.sorr_early_drawdown_pct, result.median_max_drawdown_pct,
-         result.pct_paths_severe_drawdown, result.p10_intra_min,
+         result.pct_paths_severe_drawdown,
          result.median_year_of_max_dd, result.p25_year_of_max_dd,
-         result.p75_year_of_max_dd) = \
-            self._compute_drawdown_metrics(paths_usd, horizon_years)
+         result.p75_year_of_max_dd) = market_dd
+
+        # The dollar floor, in contrast, IS a property of the real pot: it must
+        # keep seeing drags and withdrawals (U2-2 moves the % metrics, not this).
+        result.p10_intra_min = float(np.percentile(paths_usd.min(axis=1), 10))
 
         # CAGR per simulation
         terminal_positive = np.where(terminal > 0, terminal, np.nan)
@@ -631,15 +662,21 @@ class MonteCarloSimulator:
 
     @staticmethod
     def _compute_drawdown_metrics(
-        paths_usd: np.ndarray,
+        paths: np.ndarray,
         horizon_years: int,
     ) -> tuple:
         """
-        Compute SORR and drawdown statistics from USD paths.
+        Compute SORR and drawdown statistics from the MARKET series.
+
+        ``paths`` must be the bootstrap series BEFORE drags and BEFORE any cash
+        flow (U2-2). Peak-to-trough is scale-invariant, so relative paths
+        (start = 1.0) and USD paths give the same percentages — what matters is
+        that no withdrawal or contribution has bent the series, otherwise
+        planned spending is counted as a market crash. See step 3a of ``run``.
 
         Returns
         -------
-        (sorr_early_pct, median_max_dd_pct, pct_severe_pct, p10_intra_min,
+        (sorr_early_pct, median_max_dd_pct, pct_severe_pct,
          median_year_of_max_dd, p25_year_of_max_dd, p75_year_of_max_dd)
 
         Note on the *year* of the max drawdown: the distribution of
@@ -650,12 +687,12 @@ class MonteCarloSimulator:
         band = the timing of the worst drawdown is essentially unpredictable)
         instead of a single misleadingly precise year.
         """
-        n_sims, n_weeks_plus1 = paths_usd.shape
+        n_sims, n_weeks_plus1 = paths.shape
 
         # Running peak (cummax across time axis)
-        running_peak = np.maximum.accumulate(paths_usd, axis=1)
+        running_peak = np.maximum.accumulate(paths, axis=1)
         # Drawdown at each step: (peak - value) / peak
-        drawdown = np.where(running_peak > 0, (running_peak - paths_usd) / running_peak, 0.0)
+        drawdown = np.where(running_peak > 0, (running_peak - paths) / running_peak, 0.0)
 
         # Max drawdown per path (full horizon)
         max_dd_per_path = drawdown.max(axis=1)  # shape (n_sims,)
@@ -674,10 +711,7 @@ class MonteCarloSimulator:
         early_dd = drawdown[:, :early_weeks].max(axis=1)
         sorr_early = float((early_dd >= 0.30).mean() * 100)
 
-        # P10 intra-horizon minimum value
-        p10_min = float(np.percentile(paths_usd.min(axis=1), 10))
-
-        return (sorr_early, median_max_dd, pct_severe, p10_min,
+        return (sorr_early, median_max_dd, pct_severe,
                 median_year_max_dd, p25_year_max_dd, p75_year_max_dd)
 
     def _fan_paths(

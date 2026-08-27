@@ -18,12 +18,15 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from loguru import logger
 
+from config import AR_FX
 from dashboard.onboarding import render_profile_summary
 from dashboard.shared import (
     _get_ai_config,
     _snap_sim_horizon,
     compute_plan_health,
+    escape_dollars,
     export_plan_bundle,
     format_withdrawal_badge,
     get_economic_drags,
@@ -969,7 +972,7 @@ else:
             icon="🎯",
         )
         # Backlog 8 — qué hacer este año
-        from data.product_ux import ar_dual_amounts, build_annual_action_list, format_ar_dual_line
+        from data.product_ux import ar_dual_context, build_annual_action_list
 
         _active_snap = next(p for p in _plans if p.id == _active_plan_id)
         _port = st.session_state.get("portfolio")
@@ -994,24 +997,46 @@ else:
                     f"  {_a.get('detail', '')}"
                 )
 
-        # Backlog 10 — AR dual on plan capital/median
-        try:
-            from config import AR_FX
-
-            if getattr(AR_FX, "enabled", True):
-                _mc = getattr(_active_snap, "mc_summary", None) or {}
-                _med = _mc.get("median_terminal")
-                if _med:
-                    with st.expander("🇦🇷 Vista dual USD / ARS", expanded=False):
-                        _d = ar_dual_amounts(
-                            float(_med),
-                            usd_ars_oficial=float(AR_FX.usd_ars_oficial),
-                            usd_ars_parallel=float(AR_FX.usd_ars_parallel),
-                        )
-                        st.markdown(format_ar_dual_line(_d))
-                        st.caption("Tasas de config/env — contexto de producto, no cotización en vivo.")
-        except Exception:
-            pass
+        # Backlog 10 — AR dual on plan capital/median.
+        #
+        # Audit U2-5: `median_terminal` is USD nominal at the plan's horizon, so
+        # it needs the plan's own inflation assumption before it can be spoken
+        # about in pesos. Snapshots saved without one (or without a horizon)
+        # cannot be converted honestly and say so instead.
+        _mc = getattr(_active_snap, "mc_summary", None) or {}
+        _med = _mc.get("median_terminal")
+        if _med:
+            try:
+                _fx_plan = ar_dual_context(
+                    float(_med),
+                    fx_config=AR_FX,
+                    label="mediana del plan",
+                    # None, not 0: a plan saved without a horizon has an
+                    # *unknown* basis, and reading that as "today's money"
+                    # would convert the nominal terminal at spot all over again.
+                    horizon_years=(
+                        float(_mc["horizon_years"])
+                        if _mc.get("horizon_years") not in (None, "")
+                        else None
+                    ),
+                    usd_inflation_pct=(
+                        float(_mc["inflation_rate"])
+                        if _mc.get("inflation_rate") not in (None, "")
+                        else None
+                    ),
+                )
+                with st.expander("🇦🇷 Equivalente en pesos de hoy (supuesto, no cotización)", expanded=False):
+                    if _fx_plan["available"]:
+                        st.markdown(escape_dollars(_fx_plan["line"]))
+                    else:
+                        st.info(_fx_plan["reason"], icon="ℹ️")
+                    st.caption(
+                        f"Tasas de config/env — origen: **{AR_FX.rate_source}**. "
+                        "Contexto de producto, no cotización en vivo."
+                    )
+            except Exception as exc:  # the FX block only — logged, never swallowed (U2-5)
+                logger.warning("AR dual-currency block failed to render: {}", exc)
+                st.caption("⚠️ La vista en pesos no se pudo mostrar.")
 
     for p in _plans:
         _is_active = p.id == _active_plan_id

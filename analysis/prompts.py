@@ -119,6 +119,29 @@ def _macro_factors_output_spec(for_moat: bool = False, for_portfolio: bool = Fal
     return shape
 
 
+def _payout_block(fund) -> str:
+    """The payout line, measured against what actually funds the dividend.
+
+    For a REIT the accounting payout is above 100 % by construction (O 236 %, MAA
+    178 %) because depreciation — its largest charge — is not a cash outflow. Handing
+    the model that number alone is handing it the conclusion "may cut dividend": the
+    rule-based path stopped drawing it (U2-6) and the LLM path must not reintroduce it.
+    Both figures go in, with the sustainable one named.
+    """
+    from analysis.fundamental import effective_payout_pct
+
+    payout, basis = effective_payout_pct(fund)
+    reported = getattr(fund, "payout_ratio", None)
+    if basis != "ffo":
+        return f"Payout={reported:.1f}%" if reported is not None else "Payout=N/A"
+
+    contable = f"{reported:.1f}%" if reported is not None else "N/A"
+    return (
+        f"Payout s/ganancias={contable} | Payout s/FFO={payout:.1f}% "
+        f"(el sostenible para un REIT — reparte >90% de su renta imponible por ley)"
+    )
+
+
 def _tailwind_context_block(fund) -> str:
     """Inject the computed sector-country structural tailwind (Idea 2) as INPUT data.
 
@@ -394,7 +417,7 @@ Crecimiento ({fund.growth_score:.0f}/20):
   Revenue CAGR 5Y={fmt(fund.revenue_cagr_5y, "%")} | EPS CAGR={fmt(fund.eps_cagr_5y, "%")} | FCF Yield={fmt(fund.fcf_yield, "%")}
 
 Dividendos ({fund.dividend_score:.0f}/10):
-  Yield={fmt(fund.dividend_yield, "%")} | Payout={fmt(fund.payout_ratio, "%")}
+  Yield={fmt(fund.dividend_yield, "%")} | {_payout_block(fund)}
 
 Graham Value: ${fmt(fund.graham_value, decimals=2)} | Margen de Seguridad: {fmt(fund.margin_of_safety_pct, "%")}
 Score rule-based: {fund.total_score:.1f}/100 | Score ajustado: {fund.adjusted_score:.1f}/100

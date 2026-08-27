@@ -18,7 +18,7 @@ from dashboard.shared import (
     run_holdings_committee,
 )
 from data.personal_book_convictions import get_convictions, remove_conviction, set_all
-from data.plan_context import compute_alignment_trades, get_active_plan
+from data.plan_context import compute_alignment_trades, drift_breakdown, get_active_plan
 from data.product_ux import DOWNSIDE_RATIO_HELP, DOWNSIDE_RATIO_LABEL
 from portfolio.tracker import Portfolio
 
@@ -107,21 +107,19 @@ if _active_plan is not None:
         st.divider()
         st.subheader(f"🎯 Alineación con tu Plan: {_active_plan.name}")
 
-        _symbols = sorted(set(_target) | set(_actual))
-        _rows = []
-        _total_drift = 0.0
-        for sym in _symbols:
-            _t = float(_target.get(sym, 0.0))
-            _a = float(_actual.get(sym, 0.0))
-            _d = _a - _t
-            _total_drift += abs(_d)
-            _rows.append({
-                "Ticker": sym,
-                "Objetivo %": round(_t, 1),
-                "Actual %": round(_a, 1),
-                "Drift %": round(_d, 1),
-            })
-        _avg_drift = _total_drift / 2  # each deviation counted twice (over + under)
+        # Canonical drift math (U2-3) — same helper the alert detector and the
+        # suggested trades use, so screen and mail cannot diverge.
+        _bd = drift_breakdown(_target, _actual)
+        _rows = [
+            {
+                "Ticker": r["symbol"],
+                "Objetivo %": round(r["target_pct"], 1),
+                "Actual %": round(r["actual_pct"], 1),
+                "Drift %": round(r["drift_pct"], 1),
+            }
+            for r in _bd["rows"]
+        ]
+        _avg_drift = _bd["total_drift_pct"]
 
         _mc1, _mc2 = st.columns([1, 3])
         with _mc1:
