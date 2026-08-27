@@ -10,6 +10,7 @@ from data.plan_context import (
     compute_alignment_trades,
     compute_plan_vs_reality,
     deactivate_plan,
+    drift_breakdown,
     get_active_plan,
     is_active,
 )
@@ -148,6 +149,49 @@ def test_compute_plan_vs_reality_core_only():
     snap.core_holdings = [{"symbol": "AAPL", "suggested_weight_pct": 100.0, "why": ""}]
     health = compute_plan_vs_reality(snap, lambda s: 100.0, core_only=True)
     assert [r["symbol"] for r in health["rows"]] == ["AAPL"]
+
+
+# ------------------------------------------------------------------ #
+#  drift_breakdown — canonical drift math (U2-3)                      #
+# ------------------------------------------------------------------ #
+
+def test_drift_breakdown_spans_the_union_not_just_the_target():
+    """A holding outside the plan is still a way of being off-plan."""
+    bd = drift_breakdown({"AAPL": 100.0}, {"AAPL": 80.0, "DOGE": 20.0})
+    assert bd["symbols"] == ["AAPL", "DOGE"]
+    assert bd["n_evaluated"] == 2
+    assert bd["total_drift_pct"] == pytest.approx(20.0)
+
+
+def test_drift_breakdown_counts_a_plan_symbol_never_bought():
+    bd = drift_breakdown({"AAPL": 70.0, "KO": 30.0}, {"AAPL": 100.0})
+    by_sym = {r["symbol"]: r for r in bd["rows"]}
+    assert by_sym["KO"]["actual_pct"] == 0.0
+    assert by_sym["KO"]["drift_pct"] == pytest.approx(-30.0)
+    assert bd["total_drift_pct"] == pytest.approx(30.0)
+
+
+def test_drift_breakdown_halves_because_deviations_pair_up():
+    """20 pp over on one name is 20 pp under on another — one move, not two."""
+    bd = drift_breakdown({"AAPL": 50.0, "KO": 50.0}, {"AAPL": 70.0, "KO": 30.0})
+    assert bd["total_drift_pct"] == pytest.approx(20.0)
+
+
+def test_drift_breakdown_is_unrounded_so_callers_keep_their_precision():
+    bd = drift_breakdown({"AAPL": 100.0}, {"AAPL": 66.66666})
+    assert bd["total_drift_pct"] == pytest.approx(16.66667, abs=1e-5)
+
+
+def test_drift_breakdown_tolerates_empty_and_none_sides():
+    assert drift_breakdown({}, {})["total_drift_pct"] == 0.0
+    assert drift_breakdown({}, {})["symbols"] == []
+    assert drift_breakdown(None, {"AAPL": 100.0})["total_drift_pct"] == pytest.approx(50.0)
+    assert drift_breakdown({"AAPL": 100.0}, None)["total_drift_pct"] == pytest.approx(50.0)
+
+
+def test_drift_breakdown_treats_none_weights_as_zero():
+    bd = drift_breakdown({"AAPL": 100.0, "KO": None}, {"AAPL": None, "KO": 100.0})
+    assert bd["total_drift_pct"] == pytest.approx(100.0)
 
 
 # ------------------------------------------------------------------ #

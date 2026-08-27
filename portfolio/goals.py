@@ -166,12 +166,20 @@ class GoalResult:
 
     @property
     def sorr_risk_pct(self) -> float:
-        """Sequence-of-returns risk: % of paths with >30% drawdown in first 5 years."""
+        """Sequence-of-returns risk: % of paths with >30% drawdown in first 5 years.
+
+        Measured on the market series: contributions and withdrawals are
+        excluded, so planned cash flows never read as a crash (U2-2).
+        """
         return self.mc_result.sorr_early_drawdown_pct
 
     @property
     def max_drawdown_pct(self) -> float:
-        """Median peak-to-trough drawdown across all simulation paths."""
+        """Median peak-to-trough drawdown across all simulation paths.
+
+        Measured on the market series: contributions and withdrawals are
+        excluded, so planned cash flows never read as a crash (U2-2).
+        """
         return self.mc_result.median_max_drawdown_pct
 
 
@@ -547,10 +555,22 @@ def sorr_badge_tooltip(is_accumulation: bool = True) -> str:
         "Si la mala secuencia coincide con retiros, el daño se multiplica: "
         "vender abajo consume unidades que ya no vuelven a componer."
     )
+    # U2-2: el drawdown se mide sobre la serie de mercado. Se nombra solo el
+    # flujo que la meta realmente tiene — a una meta de acumulación no se le
+    # habla de retiros que no existen.
+    scope = (
+        "Mide **solo el mercado**: tus aportes no entran en el cálculo, así que "
+        "el plan de ahorro nunca se confunde con una caída."
+        if is_accumulation else
+        "Mide **solo el mercado**: el gasto planificado no entra en el cálculo, "
+        "así que sacar plata no se confunde con una caída. Cuánto dura el "
+        "capital se lee en la probabilidad de ruina y en el mínimo P10."
+    )
     return (
         "Sequence of Returns Risk: riesgo de que una mala secuencia de retornos "
         "al inicio del horizonte destruya el plan aunque el CAGR promedio sea "
         f"positivo. {consequence}\n\n"
+        f"{scope}\n\n"
         f"🟢 Bajo (<{GOAL_CARD.low_sorr_pct:.0f}% SORR y <{GOAL_CARD.low_dd_pct:.0f}% drawdown) · "
         f"🟡 Medio · "
         f"🔴 Alto (≥{GOAL_CARD.high_sorr_pct:.0f}% SORR o ≥{GOAL_CARD.high_dd_pct:.0f}% drawdown)."

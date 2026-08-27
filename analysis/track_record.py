@@ -76,6 +76,14 @@ class RecommendationOutcome(_Base):
     excess_return_pct     = Column(Float, nullable=True)
     hit                   = Column(Boolean, nullable=True)
     scored_at             = Column(DateTime, default=datetime.utcnow)
+    # --- U2-4 (2026-08-24) --------------------------------------------------
+    # True when the benchmark could not be priced at one or both ends of the
+    # horizon. Such a row is *incomplete*, not neutral: ``benchmark_return_pct``
+    # and ``excess_return_pct`` are NULL (the market's move is unknown, which is
+    # not the same number as zero) and ``hit`` is NULL for any call graded against
+    # the market. It stays pending — ``get_pending_scoring`` keeps returning it so
+    # a later run can fill the benchmark in.
+    benchmark_missing     = Column(Boolean, default=False)
 
 
 #: Metrics worth keeping per company type, as ``(attribute, key)``. Deliberately
@@ -139,7 +147,28 @@ class TrackRecordStore:
         url = "sqlite:///:memory:" if path == ":memory:" else f"sqlite:///{path}"
         self._engine = create_engine(url, echo=False)
         _Base.metadata.create_all(self._engine)
+        self._migrate(self._engine)
         self._Session = sessionmaker(bind=self._engine)
+
+    def _migrate(self, engine) -> None:
+        """Add new columns to an existing table without dropping data (SQLite safe).
+
+        ``create_all`` creates *missing tables*; it does not touch a table that
+        already exists, so U2-4's ``benchmark_missing`` would not appear on any
+        database created before it. Same shape as ``alerts/store.py:_migrate``.
+        """
+        with engine.connect() as conn:
+            from sqlalchemy import text
+
+            try:
+                conn.execute(text(
+                    "ALTER TABLE recommendation_outcome "
+                    "ADD COLUMN benchmark_missing BOOLEAN DEFAULT 0"
+                ))
+                conn.commit()
+                logger.info("track_record migration: added recommendation_outcome.benchmark_missing")
+            except Exception:
+                pass  # column already exists
 
     # ------------------------------------------------------------------ #
     #  Capture                                                            #
@@ -236,7 +265,14 @@ class TrackRecordStore:
             return list(q.all())
 
     def get_pending_scoring(self, horizon_days: int, now: Optional[datetime] = None) -> List[RecommendationLog]:
-        """Recommendations old enough for ``horizon_days`` that lack an outcome at it."""
+        """Recommendations old enough for ``horizon_days`` that lack a *complete* outcome.
+
+        An outcome written without its benchmark (U2-4) is not done — it carries a
+        real return but no excess and, for a directional call, no hit. A failed
+        benchmark lookup is usually transient, so those rows stay pending and a
+        later run completes them in place (``save_outcome`` upserts). The cost is
+        one cached lookup of the benchmark per run.
+        """
         now = now or _utcnow()
         from datetime import timedelta
 
@@ -245,7 +281,10 @@ class TrackRecordStore:
             scored_ids = {
                 r[0]
                 for r in s.query(RecommendationOutcome.rec_id)
-                .filter(RecommendationOutcome.horizon_days == horizon_days)
+                .filter(
+                    RecommendationOutcome.horizon_days == horizon_days,
+                    RecommendationOutcome.benchmark_missing.isnot(True),
+                )
                 .all()
             }
             q = (
@@ -265,8 +304,14 @@ class TrackRecordStore:
         benchmark_return_pct: Optional[float],
         excess_return_pct: Optional[float],
         hit: Optional[bool],
+        benchmark_missing: bool = False,
     ) -> None:
-        """Upsert an outcome (idempotent on the (rec_id, horizon_days) pair)."""
+        """Upsert an outcome (idempotent on the (rec_id, horizon_days) pair).
+
+        ``benchmark_missing`` defaults to False so existing call sites keep their
+        exact behaviour; the scorer passes True when the benchmark could not be
+        priced, which also keeps the row in ``get_pending_scoring`` for a retry.
+        """
         with self._Session() as s:
             existing = (
                 s.query(RecommendationOutcome)
@@ -282,6 +327,7 @@ class TrackRecordStore:
                 existing.benchmark_return_pct = benchmark_return_pct
                 existing.excess_return_pct = excess_return_pct
                 existing.hit = hit
+                existing.benchmark_missing = bool(benchmark_missing)
                 existing.scored_at = _utcnow()
             else:
                 s.add(
@@ -293,6 +339,7 @@ class TrackRecordStore:
                         benchmark_return_pct=benchmark_return_pct,
                         excess_return_pct=excess_return_pct,
                         hit=hit,
+                        benchmark_missing=bool(benchmark_missing),
                         scored_at=_utcnow(),
                     )
                 )
@@ -327,6 +374,9 @@ class TrackRecordStore:
                         "benchmark_return_pct": o.benchmark_return_pct,
                         "excess_return_pct": o.excess_return_pct,
                         "hit": o.hit,
+                        # NULL on rows written before U2-4 — those were all scored
+                        # with a benchmark, so False is the truthful reading.
+                        "benchmark_missing": bool(o.benchmark_missing),
                     }
                 )
             return rows

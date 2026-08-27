@@ -3,8 +3,17 @@ Portfolio-specific alert detectors (Phase 6).
 
 Detects:
   PORTFOLIO_LOSS      — position P&L < -threshold% vs avg_cost
-  PORTFOLIO_DRIFT     — individual position weight deviates > threshold from optimizer target
+  PORTFOLIO_DRIFT     — a symbol's weight deviates > threshold from the target
   PORTFOLIO_REBALANCE — aggregate portfolio drift > threshold (global rebalance signal)
+
+Drift is measured over the **union** of the target and what is actually held
+(U2-3), through the canonical ``data.plan_context.drift_breakdown`` — the same
+arithmetic the Portfolio page and ``compute_alignment_trades`` use, so the mail
+and the screen can no longer disagree. It is independent of ``avg_cost`` (a
+position with no cost basis loaded still drifts) and it refuses to run at all
+when any tracked position has no usable price: an unpriced position is
+*unknown*, not 0 %, and treating it as 0 deflates the total and inflates every
+other weight.
 
 Usage:
     from alerts.portfolio_alerts import PortfolioAlertDetector
@@ -23,6 +32,19 @@ from alerts.store import AlertSeverity, AlertType
 from config import ALERTS
 
 
+def _as_float(value) -> float:
+    """Best-effort float — missing / malformed inputs collapse to 0.0.
+
+    Callers upstream are inconsistent: the scheduler may omit a quote entirely,
+    a stored position may carry ``None`` shares. Both must read as "no usable
+    number" without raising.
+    """
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 @dataclass
 class PortfolioAlertCandidate:
     symbol: str
@@ -35,7 +57,7 @@ class PortfolioAlertCandidate:
 class PortfolioAlertDetector:
     """
     Stateless detector — compares current portfolio positions against cost basis
-    and optimizer target weights. State management (cooldowns, mutes) is handled
+    and target weights. State management (cooldowns, mutes) is handled
     by AlertEngine after receiving the candidates.
     """
 
@@ -53,7 +75,8 @@ class PortfolioAlertDetector:
         positions : dict
             {symbol: {"shares": float, "avg_cost": float, "sector": str}}
         current_prices : dict
-            {symbol: current_market_price}
+            {symbol: current_market_price}. A missing key or a non-positive
+            price means *unknown*, never zero — see the coverage gate below.
         target_weights : dict | None
             {symbol: target_weight_pct (0–100)} the portfolio should track —
             e.g. the user's active retirement plan allocation. If None, drift
@@ -75,20 +98,29 @@ class PortfolioAlertDetector:
 
         candidates: List[PortfolioAlertCandidate] = []
 
-        # --- Compute portfolio total value ---
+        # --- Value the book, honestly (U2-3) ---------------------------- #
+        # A position we cannot price is set aside, not valued at 0: a zero
+        # would shrink total_value and inflate every other position's weight,
+        # then fire drift alerts about weights nobody can actually know.
+        priced_values: Dict[str, float] = {}
+        unpriced: List[str] = []
         total_value = 0.0
-        position_values: Dict[str, float] = {}
         for sym, pos in positions.items():
-            price = current_prices.get(sym, 0.0)
-            val = pos.get("shares", 0) * price
-            position_values[sym] = val
-            total_value += val
+            shares = _as_float(pos.get("shares"))
+            price = _as_float(current_prices.get(sym))
+            if shares <= 0:
+                continue  # nothing held — not a coverage gap
+            if price <= 0:
+                unpriced.append(sym)
+                continue
+            priced_values[sym] = shares * price
+            total_value += priced_values[sym]
 
-        # --- Individual position checks ---
+        # --- PORTFOLIO_LOSS (per position, needs a cost basis) ---------- #
         for sym, pos in positions.items():
-            avg_cost = float(pos.get("avg_cost", 0) or 0)
-            shares = float(pos.get("shares", 0) or 0)
-            current_price = current_prices.get(sym, 0.0)
+            avg_cost = _as_float(pos.get("avg_cost"))
+            shares = _as_float(pos.get("shares"))
+            current_price = _as_float(current_prices.get(sym))
             sector = pos.get("sector", "Unknown")
 
             if avg_cost <= 0 or shares <= 0 or current_price <= 0:
@@ -96,7 +128,6 @@ class PortfolioAlertDetector:
 
             pnl_pct = (current_price - avg_cost) / avg_cost * 100
 
-            # PORTFOLIO_LOSS
             if pnl_pct < -ALERTS.portfolio_loss_threshold_pct:
                 severity = (
                     AlertSeverity.CRITICAL if pnl_pct < -(ALERTS.portfolio_loss_threshold_pct * 1.5)
@@ -120,45 +151,64 @@ class PortfolioAlertDetector:
                     },
                 ))
 
-            # PORTFOLIO_DRIFT (only if target weights are available)
-            if weights and total_value > 0:
-                target_pct = weights.get(sym, 0.0)
-                current_pct = (position_values.get(sym, 0.0) / total_value * 100) if total_value > 0 else 0.0
-                drift = abs(current_pct - target_pct)
+        # --- Drift: PORTFOLIO_DRIFT + PORTFOLIO_REBALANCE (U2-3) -------- #
+        # Its own block, no longer nested under the P&L loop: drift is a
+        # statement about weights and must not require avg_cost.
+        if unpriced and weights:
+            logger.warning(
+                f"PortfolioAlertDetector: sin precio para {', '.join(sorted(unpriced))} — "
+                "los pesos reales son desconocidos; se omiten PORTFOLIO_DRIFT y "
+                "PORTFOLIO_REBALANCE en esta corrida"
+            )
 
-                if drift > ALERTS.portfolio_drift_threshold_pct:
+        if weights and total_value > 0 and not unpriced:
+            from data.plan_context import drift_breakdown
+
+            actual = {s: v / total_value * 100.0 for s, v in priced_values.items()}
+            breakdown = drift_breakdown(weights, actual)
+
+            for row in breakdown["rows"]:
+                sym = row["symbol"]
+                target_pct = row["target_pct"]
+                current_pct = row["actual_pct"]
+                drift = abs(row["drift_pct"])
+
+                if drift <= ALERTS.portfolio_drift_threshold_pct:
+                    continue
+
+                sector = (positions.get(sym) or {}).get("sector", "Unknown")
+                if sym not in priced_values:
+                    # In the plan, not held at all — reachable only since U2-3,
+                    # because the loop used to iterate `positions`.
+                    msg = (
+                        f"⚖️ {sym}: no tenés posición; {target_label} pide "
+                        f"**{target_pct:.1f}%** (drift: {drift:.1f}%)"
+                    )
+                else:
                     direction = "excede" if current_pct > target_pct else "está por debajo de"
                     msg = (
                         f"⚖️ {sym}: peso actual **{current_pct:.1f}%** {direction} "
                         f"{target_label} **{target_pct:.1f}%** "
                         f"(drift: {drift:.1f}%)"
                     )
-                    candidates.append(PortfolioAlertCandidate(
-                        symbol=sym,
-                        alert_type=AlertType.PORTFOLIO_DRIFT,
-                        message=msg,
-                        severity=AlertSeverity.WARNING,
-                        context={
-                            "current_weight_pct": f"{current_pct:.1f}%",
-                            "target_weight_pct": f"{target_pct:.1f}%",
-                            "drift_pct": f"{drift:.1f}%",
-                            "sector": sector,
-                        },
-                    ))
+                candidates.append(PortfolioAlertCandidate(
+                    symbol=sym,
+                    alert_type=AlertType.PORTFOLIO_DRIFT,
+                    message=msg,
+                    severity=AlertSeverity.WARNING,
+                    context={
+                        "current_weight_pct": f"{current_pct:.1f}%",
+                        "target_weight_pct": f"{target_pct:.1f}%",
+                        "drift_pct": f"{drift:.1f}%",
+                        "sector": sector,
+                    },
+                ))
 
-        # --- Aggregate drift: PORTFOLIO_REBALANCE ---
-        if weights and total_value > 0:
-            total_drift = 0.0
-            for sym, target_pct in weights.items():
-                current_pct = (position_values.get(sym, 0.0) / total_value * 100) if total_value > 0 else 0.0
-                total_drift += abs(current_pct - target_pct)
-            # Halve because each deviation is counted twice (over + under)
-            avg_drift = total_drift / 2
-
-            if avg_drift > ALERTS.portfolio_rebalance_threshold_pct:
+            total_drift = breakdown["total_drift_pct"]
+            if total_drift > ALERTS.portfolio_rebalance_threshold_pct:
                 msg = (
-                    f"🔄 Portafolio: deriva total **{avg_drift:.1f}%** de {target_label}. "
-                    f"Considerá rebalancear ({len(positions)} posiciones analizadas)."
+                    f"🔄 Portafolio: deriva total **{total_drift:.1f}%** de {target_label}. "
+                    f"Considerá rebalancear ({breakdown['n_evaluated']} símbolos analizados)."
                 )
                 candidates.append(PortfolioAlertCandidate(
                     symbol="PORTFOLIO",
@@ -166,14 +216,15 @@ class PortfolioAlertDetector:
                     message=msg,
                     severity=AlertSeverity.WARNING,
                     context={
-                        "total_drift_pct": f"{avg_drift:.1f}%",
-                        "positions_count": len(positions),
+                        "total_drift_pct": f"{total_drift:.1f}%",
+                        "positions_count": len(priced_values),
+                        "n_evaluated": breakdown["n_evaluated"],
                         "threshold_pct": f"{ALERTS.portfolio_rebalance_threshold_pct:.1f}%",
                     },
                 ))
 
         logger.debug(
-            f"PortfolioAlertDetector: {len(positions)} positions → "
-            f"{len(candidates)} candidates"
+            f"PortfolioAlertDetector: {len(positions)} positions "
+            f"({len(unpriced)} sin precio) → {len(candidates)} candidates"
         )
         return candidates
