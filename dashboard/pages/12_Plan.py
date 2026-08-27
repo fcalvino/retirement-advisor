@@ -39,6 +39,14 @@ from dashboard.shared import (
 from data.env_provenance import format_drift
 from data.plan_context import activate_plan, compute_alignment_trades, deactivate_plan
 from data.plan_store import PlanSnapshot, _slugify, plan_store
+from data.product_ux import (
+    MAX_DD_ESTIMATE_SHORT,
+    PROXY_RATIO_HELP,
+    PROXY_RATIO_LABEL,
+    PROXY_RETURN_HELP,
+    PROXY_RETURN_SHORT,
+    max_dd_estimate_help,
+)
 from data.universe_loader import UNIVERSE_META
 
 # Map a saved plan's profile name back to an optimizer profile key (for "load plan").
@@ -110,12 +118,15 @@ def _session_mc_params() -> dict:
 
 def _metrics_row(metrics: dict) -> None:
     c = st.columns(6)
-    c[0].metric("Retorno esp.", f"{metrics.get('expected_return_pct', 0):.1f}%")
+    c[0].metric(PROXY_RETURN_SHORT, f"{metrics.get('expected_return_pct', 0):.1f}%",
+                help=PROXY_RETURN_HELP)
     c[1].metric("Volatilidad", f"{metrics.get('volatility_pct', 0):.1f}%")
-    c[2].metric("Sharpe", f"{metrics.get('sharpe_ratio', 0):.2f}")
+    c[2].metric(PROXY_RATIO_LABEL, f"{metrics.get('sharpe_ratio', 0):.2f}",
+                help=PROXY_RATIO_HELP)
     c[3].metric("Div. Yield", f"{metrics.get('dividend_yield_pct', 0):.2f}%")
     c[4].metric("Score prom.", f"{metrics.get('adjusted_score_avg', 0):.0f}/100")
-    c[5].metric("Max DD est.", f"{metrics.get('max_drawdown_estimate_pct', 0):.1f}%")
+    c[5].metric(MAX_DD_ESTIMATE_SHORT, f"{metrics.get('max_drawdown_estimate_pct', 0):.1f}%",
+                help=max_dd_estimate_help())
 
 
 def _core_table(core_holdings: list, from_ai: bool) -> None:
@@ -1010,8 +1021,8 @@ else:
                 st.markdown(f"**🗺️ {p.name}**" + ("  🎯 _Activo_" if _is_active else ""))
                 st.caption(
                     f"{p.profile_name or '—'} · {p.n_positions} pos · "
-                    f"Ret {p.metrics.get('expected_return_pct', 0):.1f}% · "
-                    f"Sharpe {p.metrics.get('sharpe_ratio', 0):.2f} · "
+                    f"Atractivo {p.metrics.get('expected_return_pct', 0):.1f}% · "
+                    f"Ratio {p.metrics.get('sharpe_ratio', 0):.2f} · "
                     f"{p.updated_at[:10]}"
                 )
             with _c2:

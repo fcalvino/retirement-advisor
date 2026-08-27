@@ -31,6 +31,7 @@ from loguru import logger
 
 from config import ENGINE_VERSION
 from data.env_provenance import env_drift, numeric_env
+from data.product_ux import mc_has_cash_flows
 
 _PLANS_PATH = Path(__file__).parent / "retirement_plans.json"
 
@@ -246,6 +247,12 @@ class PlanSnapshot:
                 "prob_target_pct":  round(float(getattr(mc_result, "prob_achieve_target_pct", 0.0)), 1),
                 "prob_ruin_pct":    round(float(getattr(mc_result, "prob_ruin_pct", 0.0)), 1),
                 "median_cagr_pct":  round(float(getattr(mc_result, "median_cagr_pct", 0.0)), 2),
+                # U1-7: el bundle se exporta, así que la cifra viaja con el dato
+                # que decide qué es. Con flujos `median_cagr_pct` no es un
+                # retorno (el capital aportado/retirado mueve el terminal sin
+                # mover el inicial). Clave **aditiva**: los planes ya guardados
+                # siguen cargando sin ella.
+                "mc_has_cash_flows": mc_has_cash_flows(mc_result),
                 "sorr_early_drawdown_pct": round(
                     float(getattr(mc_result, "sorr_early_drawdown_pct", 0.0)), 1
                 ),

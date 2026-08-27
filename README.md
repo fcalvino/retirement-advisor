@@ -18,7 +18,7 @@ Retirement Advisor es el **sistema operativo de un plan de retiro**, no solo un 
 **Plan vivo**
 - **Onboarding de perfil** (edad, capital, ahorro, tolerancia) que siembra defaults en Optimizer y Simulaciones
 - **🗺️ Mi Plan**: guardar / activar / cargar escenarios, salud vs mercado, trades de alineación, evolución longitudinal, PDF para compartir y respaldo JSON
-- **Simulaciones Monte Carlo** con decumulación (fixed real / % constante / guardrails), drags económicos opt-in y caja **realista vs conservador** siempre visible
+- **Simulaciones Monte Carlo** con decumulación (fixed real / % constante / guardrails simplificados), drags económicos opt-in y caja **realista vs conservador** siempre visible
 - **💬 Hablá con tu plan** — chat con herramientas reales del motor (atajo en lenguaje natural; necesita API key)
 - **Comité de inversión** por ticker y sobre el portfolio actual (interpreta, no recalcula; opt-in con IA)
 - **Track Record** honesto de señales (hit rate, no marketing)
@@ -30,7 +30,7 @@ Retirement Advisor es el **sistema operativo de un plan de retiro**, no solo un 
 - **Análisis fundamental** en 5 dimensiones (rentabilidad, salud financiera, valuación, crecimiento, dividendos)
 - **Consistency Score + Piotroski F-Score** para calidad contable
 - **Economic Moat** cuantitativo + evaluación cualitativa por AI
-- **Análisis técnico** (SMA200, RSI, MACD, ADX, Bollinger) sobre barras semanales de 10 años — cálculo local con NumPy/Pandas, sin librería de indicadores
+- **Análisis técnico** (SMA de 200 semanas ~3,8 años — no la clásica de 200 días —, RSI, MACD, ADX, Bollinger) sobre barras semanales de 10 años — cálculo local con NumPy/Pandas, sin librería de indicadores
 - **Decisión AI** con razonamiento en lenguaje natural (Claude, GPT-4o, Grok o Nous)
 - **Optimizador Mean-Variance** con 3 perfiles, glide path por edad y núcleo determinístico
 - **Stress testing** en 6 crisis históricas
@@ -80,8 +80,8 @@ No es un SaaS multiusuario, no modela doble moneda AR como eje de producto, no c
 ┌─────────────────────────────────────────────────────────────────────┐
 │  📈 Portfolio Optimizer                   Perfil: Moderado  ▼       │
 │                                                                     │
-│  Retorno esp.  │  Volatilidad  │  Sharpe  │  Div. Yield             │
-│     14.2%      │     15.8%     │   0.90   │    2.3%                 │
+│ Atractivo est. │  Volatilidad  │ Ratio atr./vol │  Div. Yield       │
+│     14.2%      │     15.8%     │      0.90      │    2.3%           │
 │                                                                     │
 │  Efficient Frontier                                                  │
 │  10% ┤                                          ★ (óptimo)         │
@@ -322,7 +322,7 @@ Bloqueos automáticos (override): D/E > 3, patrimonio negativo, RSI semanal > 80
 
 ### Portfolio Optimizer (Mean-Variance)
 
-Scipy SLSQP minimizando Sharpe negativo sujeto a constraints por posición, sector, volatilidad y dividend yield:
+Scipy SLSQP minimizando el **ratio atractivo/vol** negativo — `(atractivo estimado − Rf) / σ histórica`, que no es un Sharpe — sujeto a constraints por posición, sector, volatilidad y dividend yield:
 
 | Perfil | Max Vol | Min Div | Max Pos | Max Crypto |
 |--------|---------|---------|---------|------------|
@@ -336,7 +336,7 @@ Los límites de crypto se aplican **por ticker** (BTC, ETH, etc.) independientem
 
 Block-bootstrap sobre retornos semanales históricos de 10 años:
 - Bloques de 4 semanas → preserva autocorrelación y fat tails (sin asunción gaussiana)
-- Ajuste conservador: +10% volatilidad, −20% retorno esperado
+- Ajuste conservador: +10% volatilidad, −20% retorno histórico
 - **Referencia realista** (opt-in, default en la UI): mismos paths **sin** haircut, para comparar apples-to-apples. La caja muestra **mediana + p10** (no p90: inflar vol puede ensanchar el techo)
 - 10 000 simulaciones en < 2 segundos (vectorizado con NumPy)
 - Fan chart con percentiles 5/10/25/50/75/90/95
@@ -349,7 +349,9 @@ Tres estrategias de retiro, opt-in (sin estrategia el MC de acumulación queda b
 |------------|----------|
 | `fixed_real` | Retiro anual constante en poder de compra |
 | `constant_pct` | % fijo del capital remanente |
-| `guardrails` | % base con techo/piso y recortes/aumentos |
+| `guardrails` | % base con techo/piso y recortes/aumentos — **Guyton-Klinger simplificado** |
+
+`guardrails` implementa 2 de las 4 reglas de Guyton-Klinger — preservación de capital (recorte cuando la tasa efectiva se va 20% arriba de la base) y prosperidad (aumento cuando se va 20% abajo). **No** implementa la regla de inflación (GK congela el ajuste después de un año negativo; acá se aplica siempre), la de manejo de cartera (de qué activo sale el retiro; acá se vende a prorrata) ni el límite temporal del recorte (GK lo suspende en los últimos 15 años).
 
 El retiro reduce **unidades** (el capital sacado deja de componer). Ruina absorbente: si un path llega a 0, se queda en 0.
 
@@ -488,7 +490,7 @@ Para modificar el universo: editar `DEFAULT_TICKERS` en `config.py` o usar **⚙
 Todos los datos provienen de **Yahoo Finance** vía `yfinance` (gratuito, sin API key):
 
 - **Fundamentals**: `yf.Ticker().info`, `.financials`, `.balance_sheet`, `.cashflow`, `.dividends`
-- **Técnicos**: precios semanales históricos de 10 años + cálculo local con NumPy/Pandas (SMA200, EMA200, RSI, MACD — sin librería de indicadores)
+- **Técnicos**: precios semanales históricos de 10 años + cálculo local con NumPy/Pandas (SMA de 200 semanas ~3,8 años, RSI, MACD — sin librería de indicadores)
 - **Cache**: SQLite local con TTL configurable (default 24h)
 - **Calidad**: badge por ticker (completitud + frescura). Partial capea STRONG BUY; poor no entra al optimizer. Podés exportar un snapshot del universo desde ⚙️ Settings.
 

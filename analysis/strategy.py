@@ -28,6 +28,7 @@ from analysis.technical import TechnicalResult
 from config import DATA_QUALITY
 from config import STRATEGY as CFG
 from config import THRESHOLDS as T
+from data.product_ux import TREND_MA_LABEL_EN
 
 _CONFIDENCE_RANK = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
 
@@ -374,13 +375,13 @@ class RetirementStrategy:
 
         # Technical context
         if t.above_sma200:
-            decision.rationale.append("Price above SMA200 — long-term uptrend intact")
+            decision.rationale.append(f"Price above the {TREND_MA_LABEL_EN} (~3.8y) — long-term uptrend intact")
         if t.golden_cross:
             decision.rationale.append("Golden Cross — momentum confirming")
         if t.rsi_weekly is not None and t.rsi_weekly < 40:
             decision.rationale.append(f"RSI {t.rsi_weekly:.0f} — pullback offers entry opportunity")
         if t.sma200_slope_pct > 3:
-            decision.rationale.append(f"SMA200 trending up +{t.sma200_slope_pct:.1f}% — secular uptrend")
+            decision.rationale.append(f"{TREND_MA_LABEL_EN} trending up +{t.sma200_slope_pct:.1f}% — secular uptrend")
 
         # Risks
         for w in fundamental.warnings:
@@ -397,7 +398,7 @@ class RetirementStrategy:
                 f"High dividend payout ratio ({payout:.0f}% of {basis_label}) — may cut dividend"
             )
         if not t.above_sma200:
-            decision.risks.append("Price below SMA200 — long-term downtrend caution")
+            decision.risks.append(f"Price below the {TREND_MA_LABEL_EN} (~3.8y) — long-term downtrend caution")
 
 
 def full_analysis(

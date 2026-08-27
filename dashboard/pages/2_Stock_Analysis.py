@@ -19,6 +19,13 @@ from dashboard.shared import (
 )
 from data.fetcher import get_history
 from data.preferences import UserPreferences
+from data.product_ux import (
+    FAST_MA_SHORT,
+    MID_MA_SHORT,
+    TREND_MA_HELP,
+    TREND_MA_SHORT,
+    roic_sustained_help,
+)
 from data.universe_loader import load_universe
 from portfolio.tracker import Portfolio
 
@@ -408,7 +415,7 @@ if symbol:
                 ("Gross Margin estabilidad", _moat_detail.gross_margin_stability,
                  "Desviación estándar del GM en 4Y (≤3pp=2, ≤8pp=1) — estabilidad del poder de precios"),
                 ("ROIC sostenido",           _moat_detail.roic_sustained,
-                 "ROIC promedio histórico (≥20%=2, ≥12%=1) — retorno sobre capital invertido"),
+                 roic_sustained_help()),
                 ("Revenue defensividad",     _moat_detail.revenue_defensiveness,
                  "Años con caída de ingresos (0 años=2, 1 año=1) — resiliencia ante recesiones"),
                 ("FCF Conversion",           _moat_detail.fcf_conversion,
@@ -646,13 +653,13 @@ if symbol:
         col3.metric("ADX (Trend Power)",f"{tech.adx:.1f}" if tech.adx else "N/A")
 
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Above SMA200", "✅" if tech.above_sma200 else "❌")
-        col2.metric("Above SMA100", "✅" if tech.above_sma100 else "❌")
+        col1.metric(f"Sobre {TREND_MA_SHORT}", "✅" if tech.above_sma200 else "❌", help=TREND_MA_HELP)
+        col2.metric(f"Sobre {MID_MA_SHORT}", "✅" if tech.above_sma100 else "❌")
         col3.metric("MACD Bullish",  "✅" if tech.macd_bullish  else "❌")
         col4.metric("RSI (weekly)", f"{tech.rsi_weekly:.1f}" if tech.rsi_weekly else "N/A")
 
         col1, col2 = st.columns(2)
-        col1.metric("SMA200 Slope (26w)", f"{tech.sma200_slope_pct:+.1f}%")
+        col1.metric(f"Pendiente {TREND_MA_SHORT} (26 sem.)", f"{tech.sma200_slope_pct:+.1f}%", help=TREND_MA_HELP)
         col2.metric("vs 52w High",        f"{tech.price_vs_52w_high_pct:+.1f}%")
 
         if tech.notes:
@@ -669,8 +676,8 @@ if symbol:
 
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=hist.index, y=price,  name="Price",   line=dict(color="#2196F3", width=2)))
-            fig.add_trace(go.Scatter(x=hist.index, y=sma50,  name="SMA 50",  line=dict(color="#FF9800", width=1.5, dash="dot")))
-            fig.add_trace(go.Scatter(x=hist.index, y=sma200, name="SMA 200", line=dict(color="#F44336", width=2)))
+            fig.add_trace(go.Scatter(x=hist.index, y=sma50,  name=FAST_MA_SHORT,  line=dict(color="#FF9800", width=1.5, dash="dot")))
+            fig.add_trace(go.Scatter(x=hist.index, y=sma200, name=TREND_MA_SHORT, line=dict(color="#F44336", width=2)))
             fig.update_layout(
                 title=f"{symbol} — 10 Year Weekly Chart",
                 yaxis_title="Price (USD)",

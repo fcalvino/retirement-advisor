@@ -24,10 +24,31 @@ Calculado automáticamente a partir de estados financieros (yfinance). **Sin lla
 |---|---|---|---|
 | Gross Margin nivel | 0–2 | Pricing power actual | ≥50%=2, ≥35%=1, ≥20%=0.5 |
 | Gross Margin estabilidad | 0–2 | Durabilidad del pricing power | std ≤3pp=2, ≤8pp=1, ≤15pp=0.5 |
-| ROIC sostenido | 0–2 | Capital allocation moat | avg ≥20%=2, ≥12%=1, ≥8%=0.5 |
+| ROIC sostenido | 0–2 | Capital allocation moat | spread vs costo de equity proxy: ≥10pp=2, ≥4pp=1, ≥0pp=0.5 |
 | Revenue defensividad | 0–2 | Resiliencia ante recesiones | 0 años negativos=2, 1 año=1, ≤2=0.5 |
 | FCF Conversion | 0–2 | Calidad de ganancias | OCF/NI ≥1.2=2, ≥0.9=1, ≥0.6=0.5 |
 | FCF Margin | 0–2 | Escalabilidad del modelo | FCF/Rev ≥20%=2, ≥10%=1, ≥5%=0.5 |
+
+#### El umbral del ROIC: costo de equity proxy (no es un WACC)
+
+`roic_sustained` no puntúa el ROIC absoluto sino el **exceso sobre el costo de
+capital**: un ROIC de 12 % es excelente en Utilities y mediocre en Energy, y lo
+que marca el moat es el spread, no el nivel. El umbral se arma así:
+
+```
+costo de equity proxy (%) = risk_free_proxy_pct (4,0) + ERP del sector (4,0–6,0)
+spread (pp)               = ROIC promedio multi-año − costo de equity proxy
+```
+
+**Es un costo de _equity_, no un WACC.** No pondera deuda, no tiene D/(D+E) ni
+escudo fiscal; tampoco es CAPM, porque la prima sectorial reemplaza plana a
+`β × ERP`. Se lo nombra así en toda superficie de usuario (constantes en
+`data/product_ux.py`); los identificadores del código conservan `wacc` por
+compatibilidad. Armar un WACC real exigiría estructura de capital por empresa
+—dato que el motor no tiene— y está deliberadamente fuera de alcance.
+
+Poner `MOAT.use_roic_wacc_spread = False` vuelve a las bandas absolutas legacy
+(≥20 %=2, ≥12 %=1, ≥8 %=0.5), que ignoran el sector.
 
 **Empresas de referencia — Cuantitativo:**
 - MSFT: 12/12 (perfecto — software con márgenes 65%+, ROIC >30%, sin caídas de revenue)
@@ -127,6 +148,15 @@ class MoatConfig:
     minimal_threshold: float = 4.0
     max_bonus: float = 10.0         # subir para dar más peso al moat en el score final
     ai_cache_ttl_hours: int = 168   # reducir para re-evaluar más frecuentemente
+
+    # Umbral del ROIC — costo de equity proxy (ver sección arriba)
+    use_roic_wacc_spread: bool = True    # False → bandas absolutas legacy
+    risk_free_proxy_pct: float = 4.0     # tasa libre de riesgo del umbral
+    default_sector_erp_pct: float = 5.0  # prima usada si el sector no está mapeado
+    sector_erp_pct: dict = ...           # override por sector (Utilities 4,0 … Energy 6,0)
+    roic_spread_excellent: float = 10.0  # spread ≥ → 2.0 pts
+    roic_spread_good: float = 4.0        # spread ≥ → 1.0 pts
+    roic_spread_min: float = 0.0         # spread ≥ → 0.5 pts
 ```
 
 ---
@@ -139,4 +169,4 @@ class MoatConfig:
 
 3. **LLM sin datos en tiempo real:** el análisis AI se basa en el entrenamiento del modelo + la descripción de yfinance. Para noticias recientes (adquisiciones, cambios regulatorios), el análisis puede quedar desactualizado. Invalidar el cache manualmente desde Settings si hay eventos materiales.
 
-4. **Sector-agnostic thresholds:** los umbrales cuantitativos son los mismos para software y energía. Una empresa energética "excelente" con GM=30% puntuaría menos que una SaaS promedio con GM=65%, lo cual es correcto desde una perspectiva de moat comparativo.
+4. **Umbrales sector-agnósticos (salvo el ROIC):** los cortes de margen, revenue y FCF son los mismos para software y energía. Una empresa energética "excelente" con GM=30% puntuaría menos que una SaaS promedio con GM=65%, lo cual es correcto desde una perspectiva de moat comparativo. La única dimensión que mira el sector es `roic_sustained`, vía la prima de riesgo del costo de equity proxy.

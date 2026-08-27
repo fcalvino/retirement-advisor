@@ -11,7 +11,7 @@ This module evaluates moat in two independent layers:
     Six dimensions, 0–2 pts each:
       gross_margin_level       — pricing power proxy (high GM = can charge premium)
       gross_margin_stability   — durability of pricing power (low std = structural, not cyclical)
-      roic_sustained           — capital efficiency above cost of capital over multiple years
+      roic_sustained           — capital efficiency above the cost-of-equity proxy, multi-year
       revenue_defensiveness    — how many years had negative revenue growth (0 = defensive)
       fcf_conversion           — OCF / Net Income > 1 means earnings backed by real cash
       fcf_margin               — FCF / Revenue: scalability of the business model
@@ -368,8 +368,10 @@ class MoatAnalyzer:
             elif gm_std <= 15:
                 d.gross_margin_stability = 0.5
 
-        # 3. ROIC Sustained — returns above cost of capital signal a moat
-        #    P2 D5: default scores by ROIC − WACC spread (Buffett/Morningstar).
+        # 3. ROIC Sustained — returns above the cost of capital signal a moat
+        #    P2 D5: default scores by the spread of ROIC over the hurdle
+        #    (Buffett/Morningstar). U1-4: that hurdle is a cost-of-equity proxy,
+        #    not a WACC — see _wacc_proxy below.
         #    Legacy absolute ROIC bands remain when use_roic_wacc_spread is False.
         roic_avg = self._avg_roic(income_stmt, balance_sheet)
         if roic_avg is not None:
@@ -529,14 +531,22 @@ class MoatAnalyzer:
         return min(round(total * 0.5, 1), self.cfg.max_bonus)
 
     def _wacc_proxy(self, sector: str = "") -> float:
-        """Simple WACC proxy (%) = risk-free + sector equity risk premium."""
+        """Cost-of-equity proxy (%) = risk-free + sector equity risk premium.
+
+        U1-4: despite the method name (kept for backward compatibility), this is
+        **not** a WACC — there is no debt in it, no D/(D+E) weight and no tax
+        shield. It is not CAPM either: the sector ERP stands in flat for β × ERP.
+        User-facing copy calls it "costo de equity proxy" (``data/product_ux.py``);
+        building a real WACC would need a capital structure and is out of scope.
+        """
         cfg = self.cfg
         erp_map = getattr(cfg, "sector_erp_pct", None) or {}
         erp = float(erp_map.get(sector, getattr(cfg, "default_sector_erp_pct", 5.0)))
         return float(getattr(cfg, "risk_free_proxy_pct", 4.0)) + erp
 
     def _score_roic_sustained(self, roic_avg: float, sector: str = "") -> float:
-        """Map average ROIC (%) to 0–2 pts (spread vs WACC or absolute bands)."""
+        """Map average ROIC (%) to 0–2 pts (spread vs the cost-of-equity proxy,
+        or the legacy absolute bands when use_roic_wacc_spread is False)."""
         cfg = self.cfg
         if getattr(cfg, "use_roic_wacc_spread", True):
             spread = float(roic_avg) - self._wacc_proxy(sector)

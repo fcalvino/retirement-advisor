@@ -36,9 +36,25 @@ Strategies
 ----------
 fixed_real   : constant inflation-adjusted dollar amount (4%-rule style).
 constant_pct : withdraw a fixed % of the *current* portfolio value each year.
-guardrails   : modified Guyton-Klinger — start at a base rate, then cut
+guardrails   : **simplified** Guyton-Klinger — start at a base rate, then cut
                spending when the withdrawal rate breaches the upper guardrail
                (portfolio fell) and raise it below the lower guardrail.
+
+               Two of the four GK decision rules run here: capital preservation
+               (the cut) and prosperity (the raise). Three do not, and no surface
+               may imply otherwise (U1-6, ``data/product_ux.GUARDRAILS_OMISSIONS``):
+
+                 * the **inflation rule** — canonical GK freezes the inflation
+                   raise after a year with a negative portfolio return; below,
+                   ``spend *= (1 + inflation_rate)`` runs unconditionally;
+                 * the **portfolio management rule** — which sleeve funds the
+                   withdrawal; ``withdraw_at_week`` sells the portfolio pro rata;
+                 * the **time bound on the cut** — GK suspends capital
+                   preservation in the last 15 years of the plan; here it applies
+                   at every horizon year.
+
+               Implementing them is out of scope for U1-6 (``no_hacer``:
+               "Reimplementar GK canonico"); the copy says what runs.
 """
 
 from __future__ import annotations
@@ -112,7 +128,7 @@ class WithdrawalStrategy:
             guardrail_floor_band=WITHDRAWAL.guardrail_floor_band if floor_band is None else float(floor_band),
             guardrail_cut_pct=WITHDRAWAL.guardrail_cut_pct if cut_pct is None else float(cut_pct),
             guardrail_raise_pct=WITHDRAWAL.guardrail_raise_pct if raise_pct is None else float(raise_pct),
-            label=label or f"Guardrails {base_pct * 100:.1f}%",
+            label=label or f"Guardrails simplificado {base_pct * 100:.1f}%",
         )
 
     @classmethod

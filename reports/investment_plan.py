@@ -47,6 +47,14 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from data.product_ux import (
+    GUARDRAILS_LABEL_LONG,
+    GUARDRAILS_OMISSIONS,
+    POT_CAGR_LABEL,
+    POT_GROWTH_LABEL,
+    PROXY_RATIO_LABEL,
+    mc_has_cash_flows,
+)
 from reports.pdf_utils import chart_to_image as _chart_to_image
 from reports.pdf_utils import make_header_footer
 
@@ -447,7 +455,7 @@ class InvestmentPlanReport:
         if opt_result:
             rows.append(["Atractivo estimado (proxy)", f"{opt_result.expected_return_pct:.1f}%"])
             rows.append(["Volatilidad estimada",       f"{opt_result.volatility_pct:.1f}%"])
-            rows.append(["Sharpe ratio",               f"{opt_result.sharpe_ratio:.2f}"])
+            rows.append([PROXY_RATIO_LABEL,            f"{opt_result.sharpe_ratio:.2f}"])
             rows.append(["Dividend yield",             f"{opt_result.dividend_yield_pct:.1f}%"])
         if mc_result:
             rows.append(["Proyección mediana (P50)", f"${mc_result.median_terminal:,.0f}"])
@@ -623,7 +631,7 @@ class InvestmentPlanReport:
 
         # Portfolio stats KPI bar
         kpi_rows = [
-            ["Atractivo (proxy)", "Volatilidad", "Sharpe", "Div. Yield", "Moat Avg", "Tickers"],
+            ["Atractivo (proxy)", "Volatilidad", "Ratio atr./vol", "Div. Yield", "Moat Avg", "Tickers"],
             [
                 f"{opt_result.expected_return_pct:.1f}%",
                 f"{opt_result.volatility_pct:.1f}%",
@@ -737,20 +745,31 @@ class InvestmentPlanReport:
         ]
 
         # Risk metrics table
+        # U1-7: con aportes o retiros la tasa anualizada del pozo no es un
+        # retorno — el flujo mueve el terminal sin mover el inicial. El PDF es
+        # un export, así que el rótulo y la interpretación salen del vocabulario
+        # canónico en vez de prometer "rendimiento compuesto" en los dos casos.
+        _pdf_flows = mc_has_cash_flows(mc_result)
+        _pdf_growth = POT_GROWTH_LABEL if _pdf_flows else POT_CAGR_LABEL
+        _pdf_growth_note = (
+            "Mezcla retorno y flujos: no es un retorno"
+            if _pdf_flows else
+            "Rendimiento anual compuesto típico"
+        )
         risk_rows = [["Métrica de riesgo", "Valor", "Interpretación"]]
         risk_data = [
             ("Prob. de ruina (terminal ≤ $0)",
              f"{mc_result.prob_ruin_pct:.1f}%",
              "< 5% es aceptable para retiro"),
-            ("CAGR mediano",
+            (f"{_pdf_growth} mediano",
              f"{mc_result.median_cagr_pct:.1f}%",
-             "Rendimiento anual compuesto típico"),
-            ("CAGR pesimista (P10)",
+             _pdf_growth_note),
+            (f"{_pdf_growth} pesimista (P10)",
              f"{mc_result.p10_cagr_pct:.1f}%",
              "En el 10% de peores escenarios"),
             ("Max Drawdown mediano",
              f"{mc_result.median_max_drawdown_pct:.0f}%",
-             "Caída pico-a-valle típica"),
+             "Caída pico-a-valle típica del mercado (no incluye retiros)"),
             ("Riesgo SORR (caída >30% en primeros 5 años)",
              f"{mc_result.sorr_early_drawdown_pct:.0f}%",
              "< 20% es manejable con glide path"),
@@ -805,7 +824,9 @@ class InvestmentPlanReport:
             _desc = {
                 "fixed_real": f"Retiro fijo real de ${_wd.get('annual_amount', 0):,.0f}/año (ajustado por inflación, estilo regla del 4%).",
                 "constant_pct": f"Retiro de {float(_wd.get('pct', 0)) * 100:.1f}% del valor actual cada año (ingreso variable, no se agota del todo).",
-                "guardrails": f"Guardrails (Guyton-Klinger) con tasa base {float(_wd.get('pct', 0)) * 100:.1f}%: recorta el gasto en caídas y lo sube en mercados buenos.",
+                "guardrails": (f"{GUARDRAILS_LABEL_LONG} con tasa base "
+                               f"{float(_wd.get('pct', 0)) * 100:.1f}%: recorta el gasto en caídas "
+                               f"y lo sube en mercados buenos. {GUARDRAILS_OMISSIONS}"),
             }.get(kind, f"Estrategia: {kind}.")
 
             elements.append(Spacer(1, 0.3 * cm))
@@ -942,7 +963,7 @@ class InvestmentPlanReport:
                 f"<i>drags económicos</i> de aproximadamente {_drag_total:.2f}% anual "
                 f"(fees, impuesto a dividendos, costo de rebalanceo y/o buffer AR) sobre "
                 f"el crecimiento, además de los ajustes conservadores del motor (+10% "
-                f"volatilidad, −20% retorno esperado). Los datos provienen de historia de "
+                f"volatilidad, −20% retorno histórico). Los datos provienen de historia de "
                 f"precios pura (yfinance). No se modelan tax lots ni inflación estocástica."
             )
         else:
@@ -951,7 +972,7 @@ class InvestmentPlanReport:
                 "asumen <b>0% de fees, 0% de impuestos sobre dividendos y 0% de costo de "
                 "rebalanceo</b>, y no modelan fricciones locales argentinas (cepo, brecha, "
                 "diferencial de inflación). Parten de historia de precios pura (yfinance) con "
-                "ajustes conservadores (+10% volatilidad, −20% retorno esperado). Los números "
+                "ajustes conservadores (+10% volatilidad, −20% retorno histórico). Los números "
                 "reales tras costos serán menores."
             )
         return [

@@ -3,7 +3,7 @@ Portfolio tracker — records positions and computes performance metrics.
 
 Metrics computed:
   - Total return, annualized return (IRR/XIRR)
-  - Sharpe Ratio, Sortino Ratio
+  - Sharpe Ratio, ratio retorno/vol bajista (no es Sortino — U1-9)
   - Max Drawdown
   - Portfolio Beta (vs SPY)
   - Sector weights
@@ -48,7 +48,9 @@ class PortfolioMetrics:
     total_pnl_pct: float = 0.0
     annualized_return_pct: float = 0.0
     sharpe_ratio: float = 0.0
-    sortino_ratio: float = 0.0
+    #: (retorno anualizado − Rf) / desvío de las semanas negativas. **Not a
+    #: Sortino ratio** — see ``data.product_ux.DOWNSIDE_RATIO_HELP`` (U1-9).
+    downside_vol_ratio: float = 0.0
     max_drawdown_pct: float = 0.0
     beta: float = 1.0
     dividend_income_ytd: float = 0.0
@@ -203,7 +205,7 @@ class Portfolio:
                     (metrics.total_value / metrics.total_cost) ** (1 / years) - 1
                 ) * 100
 
-        # Sharpe / Sortino / Drawdown from portfolio equity curve
+        # Sharpe / downside-vol ratio / Drawdown from portfolio equity curve
         equity_curve = self._build_equity_curve()
         if equity_curve is not None and len(equity_curve) > 10:
             returns = equity_curve.pct_change().dropna()
@@ -214,9 +216,16 @@ class Portfolio:
 
             metrics.sharpe_ratio = round((mean_ret - rf) / std_ret, 2) if std_ret > 0 else 0
 
+            # Not a Sortino ratio (U1-9): this is the spread of the losing
+            # weeks around their own mean, where Sortino needs
+            # √E[mín(r − MAR, 0)²] over every return, measured from the MAR.
+            # The formula stays as it is on purpose — relabelling and
+            # recomputing in one pass is the U1-9 ``no_hacer``.
             downside = returns[returns < 0]
             downside_std = downside.std() * np.sqrt(annual_factor) if len(downside) > 0 else 0
-            metrics.sortino_ratio = round((mean_ret - rf) / downside_std, 2) if downside_std > 0 else 0
+            metrics.downside_vol_ratio = (
+                round((mean_ret - rf) / downside_std, 2) if downside_std > 0 else 0
+            )
 
             rolling_max = equity_curve.cummax()
             drawdown = (equity_curve - rolling_max) / rolling_max

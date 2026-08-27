@@ -240,7 +240,7 @@ decía que el capital se había agotado y la otra que quedaba herencia. Ahora, c
 llega a cero, se queda en cero — y la probabilidad de ruina mide todo el horizonte, no sólo el
 valor final.
 
-**3. El retorno esperado dependía de tu perfil de riesgo.**
+**3. El atractivo estimado (entonces llamado "retorno esperado") dependía de tu perfil de riesgo.**
 El mismo activo "rendía" 5,1% para un perfil conservador y 7,7% para uno agresivo, porque los
 pesos del perfil se usaban a la vez como preferencia y como estimador de retorno. Un activo no
 rinde más porque el inversor sea agresivo. Ahora el perfil actúa donde corresponde —las
@@ -251,6 +251,15 @@ Ese número se construye con score + dividendo + moat: sirve para **ordenar y co
 no es un pronóstico de rendimiento. La proyección de patrimonio la hace el Monte Carlo, que parte
 de la historia real de precios. Mientras las dos cosas no compartan un mismo modelo de retorno,
 llamarlas igual sería engañoso.
+
+**Y por qué el ratio de esa cartera ya no se llama "Sharpe".**
+Un Sharpe divide un retorno **realizado** por la volatilidad de ese mismo retorno. Acá el numerador
+es el atractivo estimado —un proxy de score, no un rendimiento— y el denominador es la volatilidad
+histórica: dos mundos distintos en la misma división. Sirve para ordenar carteras de este modelo
+entre sí, no para medirlas contra el de un índice; por eso la pantalla dice **"ratio atractivo/vol"**
+y la tabla "vs Benchmarks" titula esa columna "Sharpe hist. / ratio proxy" — la fila de tu cartera
+y las de SPY / 60-40 / BND no miden lo mismo. El Sharpe **realizado** de Portfolio y Backtesting sí
+es un Sharpe, sale de la curva de equity real, y no cambió.
 
 **Si estabas en fase de acumulación (sin retiros), tus números no cambiaron:** la corrección sólo
 actúa cuando hay retiros en la proyección.
@@ -362,7 +371,7 @@ st.markdown("""
 | **💼 Mi Portfolio** | Posiciones abiertas, P&L, gráficos de pesos por sector |
 | **📊 Allocation** | Regla conservadora acciones/bonos/cash según edad |
 | **📈 Optimizer** | Mean-Variance SLSQP + 3 perfiles + 4 presets + combinación de universos |
-| **📉 Backtesting** | Curva de equity histórica, Sharpe, Sortino, Calmar, scatter Score↔CAGR |
+| **📉 Backtesting** | Curva de equity histórica, Sharpe, ratio retorno/vol bajista (no es un Sortino), Calmar, scatter Score↔CAGR |
 | **🎲 Simulaciones** | Monte Carlo 10k sims (block-bootstrap) + Stress Test 6 crisis históricas |
 | **🔔 Alertas** | Motor inteligente con debounce SQLite + email/Telegram + PDF mensual |
 | **📋 Watchlist** | Tickers favoritos con alertas de precio en tiempo real |

@@ -31,6 +31,17 @@ from dashboard.shared import (
     seed_session_defaults_from_profile,
     withdrawal_to_tuple,
 )
+from data.product_ux import (
+    PROXY_RATIO_HELP,
+    PROXY_RATIO_LABEL,
+    PROXY_RETURN_HELP,
+    PROXY_RETURN_LABEL,
+    mc_has_cash_flows,
+    pot_growth_column_label,
+    pot_growth_delta,
+    pot_growth_help,
+    pot_growth_pct,
+)
 from portfolio.goals import (
     GOAL_TYPE_ICONS,
     GOAL_TYPE_LABELS,
@@ -348,24 +359,32 @@ def _tab_mc_content():
     k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("Capital inicial", f"${initial_value:,.0f}")
 
+    # U1-7: con retiros (o aportes) la tasa anualizada del pozo deja de ser un
+    # retorno — el capital que entra/sale mueve el terminal sin mover el
+    # inicial. El vocabulario lo decide el flag, no la página.
+    _mc_flows = mc_has_cash_flows(mc)
+    _growth_help = pot_growth_help(_mc_flows)
+
     k2.metric(
         "Valor más probable (mediana)",
         f"${mc.median_terminal:,.0f}",
-        delta=f"{mc.median_cagr_pct:.1f}% CAGR promedio",
+        delta=pot_growth_delta(mc.median_cagr_pct, _mc_flows),
         delta_color="off",
         delta_arrow="off",
-        help="En la mitad de las simulaciones terminás por encima de este número, y en la mitad por debajo.",
+        help="En la mitad de las simulaciones terminás por encima de este número, "
+             "y en la mitad por debajo.\n\n" + _growth_help,
     )
 
     k3.metric(
         "⚠️ Escenario pesimista (peor 10%)",
         f"${mc.p10_terminal:,.0f}",
-        delta=f"{mc.p10_cagr_pct:.1f}% CAGR",
-        # "off", no "inverse": teñir de rojo un CAGR positivo confunde. Lo malo
+        delta=pot_growth_delta(mc.p10_cagr_pct, _mc_flows),
+        # "off", no "inverse": teñir de rojo una tasa positiva confunde. Lo malo
         # acá es el escenario, y eso ya lo dice la etiqueta "pesimista".
         delta_color="off",
         delta_arrow="off",
-        help="En 1 de cada 10 simulaciones terminás con este valor o menos. Este es el caso 'malo' que debés estar dispuesto a aceptar.",
+        help="En 1 de cada 10 simulaciones terminás con este valor o menos. Este es "
+             "el caso 'malo' que debés estar dispuesto a aceptar.\n\n" + _growth_help,
     )
 
     k4.metric(
@@ -413,7 +432,14 @@ def _tab_mc_content():
         _ann_contrib = float(st.session_state.get("annual_contribution") or 0.0)
         if _ann_contrib <= 0:
             _ann_contrib = float(getattr(_prefs_sim, "annual_savings", 0) or 0)
-        _er = float(getattr(mc, "median_cagr_pct", 0) or 0) / 100.0
+        # U1-7: `median_cagr_pct` NO puede alimentar `annual_return` cuando la
+        # simulación tuvo flujos. `compute_gap_to_goal_levers` capitaliza los
+        # aportes por su cuenta, así que pasarle una tasa que ya los contiene
+        # los cuenta dos veces; con retiros pasa lo inverso y la palanca
+        # subestima el faltante. Sin flujos la tasa sí es un retorno y se usa.
+        _er = 0.0 if mc_has_cash_flows(mc) else (
+            float(getattr(mc, "median_cagr_pct", 0) or 0) / 100.0
+        )
         if _er <= 0:
             _er = 0.05
         _levers = compute_gap_to_goal_levers(
@@ -547,7 +573,7 @@ def _tab_mc_content():
 Aunque el escenario pesimista nominal (\\${mc.p10_terminal:,.0f}) parece "ganar", tené en cuenta:
 
 - En **poder de compra real** (después de inflación), en el peor 10% de los casos solo terminás con **\\${real_p10:,.0f}** de los dólares de hoy. Eso es un crecimiento real bastante modesto en {horizon_years} años.
-- El modelo ya está siendo conservador (le saca 20% al retorno esperado histórico). Aun así, el período que usamos como base fue bueno. El futuro puede ser peor.
+- El modelo ya está siendo conservador (le saca 20% al retorno histórico). Aun así, el período que usamos como base fue bueno. El futuro puede ser peor.
 - Estos son solo valores **al final** de los {horizon_years} años. Durante el camino podés haber tenido caídas del 50% o más. Si en ese momento sacás plata o te asustás y vendés, el resultado final puede ser mucho peor que el P10 que ves acá.
 - Si en algún momento empezás a retirar plata (aunque sea poco), el riesgo de que el "caso malo" sea realmente malo sube mucho (riesgo de secuencia de retornos).
 
@@ -555,7 +581,7 @@ En resumen: el modelo no está diciendo "siempre vas a ganar mucho". Está dicie
 """)
         else:
             st.markdown(f"""
-- El modelo ya está siendo conservador (le saca 20% al retorno esperado histórico). Aun así, el futuro puede ser peor que el pasado reciente.
+- El modelo ya está siendo conservador (le saca 20% al retorno histórico). Aun así, el futuro puede ser peor que el pasado reciente.
 - Estos son solo valores **al final** de los {horizon_years} años. Durante el camino podés haber tenido caídas del 50% o más.
 - Si en algún momento empezás a retirar plata, el riesgo de que el "caso malo" sea realmente malo sube mucho (riesgo de secuencia de retornos).
 """)
@@ -710,7 +736,7 @@ En resumen: el modelo no está diciendo "siempre vas a ganar mucho". Está dicie
             "Las bandas muestran el rango de resultados posibles según la historia real de los mercados. "
             "Azul = caso más probable | Rojo = mal caso (1 de cada 10) | Verde = muy buen caso (1 de cada 10). "
             + _real_note
-            + " Los números usan un ajuste conservador (+10% volatilidad y −20% retorno esperado respecto al pasado)."
+            + " Los números usan un ajuste conservador (+10% volatilidad y −20% retorno histórico respecto al pasado)."
         )
 
     # ---- Histogram of terminal values ----
@@ -756,14 +782,19 @@ En resumen: el modelo no está diciendo "siempre vas a ganar mucho". Está dicie
 
     # ---- Terminal distribution table ----
     if mc.fan_paths:
+        # U1-7: una sola implementación de (terminal/inicial)^(1/años)−1, y el
+        # rótulo lo elige el flag de flujos. `pot_growth_pct` devuelve None para
+        # un pozo agotado — se muestra vacío, no 0 %, que se leería "plano".
+        _growth_col = pot_growth_column_label(_mc_flows)
         pct_rows = []
         for p in [5, 10, 25, 50, 75, 90, 95]:
             v = mc.fan_paths[horizon_years][p]
             real_v = v / (1 + inflation_rate / 100) ** horizon_years if inflation_rate > 0 else None
+            _g = pot_growth_pct(v, initial_value, horizon_years)
             row = {
                 "Percentil": f"P{p}",
                 "Valor nominal": v,
-                "CAGR %": round(((v / initial_value) ** (1 / horizon_years) - 1) * 100, 1) if v > 0 else 0,
+                _growth_col: round(_g, 1) if _g is not None else None,
             }
             if real_v is not None:
                 row["Valor real"] = round(real_v)
@@ -772,7 +803,9 @@ En resumen: el modelo no está diciendo "siempre vas a ganar mucho". Está dicie
         df_terminal = pd.DataFrame(pct_rows)
         _col_cfg = {
             "Valor nominal": st.column_config.NumberColumn("Valor nominal", format="$%,.0f"),
-            "CAGR %":        st.column_config.NumberColumn("CAGR %",        format="%.1f%%"),
+            _growth_col:     st.column_config.NumberColumn(
+                _growth_col, format="%.1f%%", help=_growth_help
+            ),
         }
         if inflation_rate > 0:
             _col_cfg["Valor real"] = st.column_config.NumberColumn(
@@ -800,7 +833,7 @@ No asume distribución normal — captura fat tails y autocorrelación de corto 
 
 **Ajuste conservador aplicado:**
 - Volatilidad histórica × **{MONTE_CARLO.vol_adjustment:.0%}** (+10%)
-- Retorno esperado × **{MONTE_CARLO.mean_haircut:.0%}** (−20%)
+- Retorno histórico × **{MONTE_CARLO.mean_haircut:.0%}** (−20%)
 
 **Por qué ser conservador:** Los retornos de 2010-2024 fueron excepcionales.
 La prima de riesgo histórica del S&P 500 (~7% real) probablemente no se repita a la misma tasa.
@@ -1119,7 +1152,7 @@ def _tab_compare_content():
     st.caption(
         "Compara Conservador / Moderado / Agresivo usando los **mismos activos** "
         "pero con distintos supuestos de retorno y volatilidad. "
-        "Conservador = más haircut al retorno esperado y más volatilidad simulada; "
+        "Conservador = más haircut al retorno histórico y más volatilidad simulada; "
         "Agresivo = menos penalización."
     )
 
@@ -1166,6 +1199,10 @@ def _tab_compare_content():
         )
 
     # ---- KPI comparison table ----
+    # U1-7: los tres perfiles comparten el mismo esquema de flujos (sale del
+    # mismo sidebar), así que la columna tiene un solo rótulo para las 3 filas.
+    _cmp_flows = any(mc_has_cash_flows(_mc) for _mc in compare_mc.values())
+    _cmp_growth_col = f"{pot_growth_column_label(_cmp_flows)} (P50)"
     cmp_rows = []
     for _pk, _mc in compare_mc.items():
         _pname = _PROFILE_NAMES_MC[_pk]
@@ -1174,7 +1211,7 @@ def _tab_compare_content():
             "P10 (USD)":  _mc.p10_terminal,
             "P50 (USD)":  _mc.median_terminal,
             "P90 (USD)":  _mc.p90_terminal,
-            "CAGR P50 %": _mc.median_cagr_pct,
+            _cmp_growth_col: _mc.median_cagr_pct,
             "Prob. ruina %": _mc.prob_ruin_pct,
             "Prob. meta %":  _mc.prob_achieve_target_pct if target_value > 0 else None,
         })
@@ -1183,7 +1220,9 @@ def _tab_compare_content():
         "P10 (USD)":     st.column_config.NumberColumn("P10 (USD)",     format="$%,.0f"),
         "P50 (USD)":     st.column_config.NumberColumn("P50 (USD)",     format="$%,.0f"),
         "P90 (USD)":     st.column_config.NumberColumn("P90 (USD)",     format="$%,.0f"),
-        "CAGR P50 %":    st.column_config.NumberColumn("CAGR P50 %",   format="%.1f%%"),
+        _cmp_growth_col: st.column_config.NumberColumn(
+            _cmp_growth_col, format="%.1f%%", help=pot_growth_help(_cmp_flows)
+        ),
         "Prob. ruina %": st.column_config.NumberColumn("Prob. ruina %", format="%.1f%%"),
     }
     if target_value > 0:
@@ -1530,14 +1569,16 @@ with tab_goals:
                 delta_color="inverse",
             )
             _mc2.metric(
-                "Retorno esperado",
+                PROXY_RETURN_LABEL,
                 f"{_goal_res.expected_return_pct:.1f}%",
                 delta=f"{_goal_res.expected_return_pct - _base_res.expected_return_pct:+.1f}% vs base" if _base_res else None,
+                help=PROXY_RETURN_HELP,
             )
             _mc3.metric(
-                "Sharpe",
+                PROXY_RATIO_LABEL,
                 f"{_goal_res.sharpe_ratio:.2f}",
                 delta=f"{_goal_res.sharpe_ratio - _base_res.sharpe_ratio:+.2f} vs base" if _base_res else None,
+                help=PROXY_RATIO_HELP,
             )
             _mc4.metric(
                 "Div Yield",
@@ -1760,16 +1801,15 @@ with tab_goals:
                         delta=(
                             f"incl. ${_total_aportado:,.0f} aportados"
                             if _con_aportes else
-                            f"CAGR {mc.median_cagr_pct:.1f}%"
+                            pot_growth_delta(mc.median_cagr_pct, False)
                         ),
                         delta_color="off",
                         delta_arrow="off",
                         help=(
                             "Aportás "
-                            f"${_aporte_mensual:,.0f}/mes durante {goal.horizon_years} años. "
-                            "El crecimiento del pozo mezcla retorno y capital aportado, "
-                            "así que no se muestra como CAGR."
-                        ) if _con_aportes else None,
+                            f"${_aporte_mensual:,.0f}/mes durante {goal.horizon_years} años.\n\n"
+                            + pot_growth_help(True)
+                        ) if _con_aportes else pot_growth_help(False),
                     )
                     m5.metric(
                         "Pesimista (P10)",
@@ -1777,7 +1817,7 @@ with tab_goals:
                         delta=(
                             "peor 10% de las simulaciones"
                             if _con_aportes else
-                            f"CAGR {mc.p10_cagr_pct:.1f}%"
+                            pot_growth_delta(mc.p10_cagr_pct, False)
                         ),
                         delta_color="off",
                         delta_arrow="off",
@@ -2065,6 +2105,19 @@ with tab_goals:
             # ---------------------------------------------------------------- #
             #  Summary table + export                                           #
             # ---------------------------------------------------------------- #
+            # U1-7: esta tabla se exporta a CSV. Una meta con aportes publica un
+            # crecimiento del pozo, no un retorno; una sin aportes sí publica un
+            # CAGR. Con las dos clases en la misma columna manda el rótulo
+            # prudente y el tooltip explica las dos lecturas — mismo criterio que
+            # las columnas mixtas de "vs Benchmarks" (U1-1/U1-2/U1-10).
+            _goals_flows = any(
+                mc_has_cash_flows(_gr.mc_result) for _gr in plan_result.goal_results
+            )
+            _goals_growth_col = pot_growth_column_label(_goals_flows)
+            _goals_growth_help = pot_growth_help(_goals_flows) + (
+                "\n\nLas metas sin aportes de esta tabla sí son un CAGR."
+                if _goals_flows else ""
+            )
             summary_rows = []
             for gr in plan_result.goal_results:
                 mc = gr.mc_result
@@ -2079,7 +2132,7 @@ with tab_goals:
                     "Prob. éxito (%)": round(gr.prob_success_pct, 1),
                     "P10 (USD)": mc.p10_terminal,
                     "P90 (USD)": mc.p90_terminal,
-                    "CAGR mediana (%)": round(mc.median_cagr_pct, 1),
+                    _goals_growth_col: round(mc.median_cagr_pct, 1),
                     "Drawdown máx. med. (%)": round(mc.median_max_drawdown_pct, 1),
                     "Riesgo SORR (%)": round(mc.sorr_early_drawdown_pct, 1),
                 })
@@ -2097,7 +2150,9 @@ with tab_goals:
                     "Prob. éxito (%)":          st.column_config.NumberColumn(format="%.1f%%"),
                     "P10 (USD)":                st.column_config.NumberColumn(format="$%,.0f"),
                     "P90 (USD)":                st.column_config.NumberColumn(format="$%,.0f"),
-                    "CAGR mediana (%)":         st.column_config.NumberColumn(format="%.1f%%"),
+                    _goals_growth_col:          st.column_config.NumberColumn(
+                        _goals_growth_col, format="%.1f%%", help=_goals_growth_help
+                    ),
                     "Drawdown máx. med. (%)":   st.column_config.NumberColumn(format="%.1f%%"),
                     "Riesgo SORR (%)":          st.column_config.NumberColumn(format="%.1f%%"),
                 },

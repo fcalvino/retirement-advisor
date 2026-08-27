@@ -24,6 +24,14 @@ hard numbers are injected as context so agents anchor to data, never invent it.
 
 from __future__ import annotations
 
+from data.product_ux import (
+    DOWNSIDE_RATIO_LABEL,
+    POT_CAGR_LABEL,
+    POT_GROWTH_LABEL,
+    PROXY_RATIO_LABEL,
+    PROXY_RETURN_LABEL,
+)
+
 AGENT_JSON_SCHEMA = (
     "Respondé EXCLUSIVAMENTE con un objeto JSON válido, sin texto antes ni después, "
     "con exactamente estas claves:\n"
@@ -189,19 +197,37 @@ def portfolio_committee_context_block(ctx: dict) -> str:
             "--- Riesgo/retorno REALIZADO (histórico de tus tenencias) ---",
             f"Retorno anualizado: {_fmt_pct(rz.get('annualized_return_pct'))} · "
             f"P&L total: {_fmt_pct(rz.get('total_pnl_pct'))}",
-            f"Sharpe: {_num(rz.get('sharpe_ratio'))} · Sortino: {_num(rz.get('sortino_ratio'))} · "
+            f"Sharpe: {_num(rz.get('sharpe_ratio'))} · "
+            f"{DOWNSIDE_RATIO_LABEL} (no es Sortino): "
+            f"{_num(rz.get('downside_vol_ratio'))} · "
             f"Beta vs SPY: {_num(rz.get('beta'))} · Max drawdown: {_fmt_pct(rz.get('max_drawdown_pct'))}",
         ]
 
     # Forward projection (only when present — e.g. a proposed/optimized plan).
     if g("expected_return_pct") is not None or g("prob_target_pct") is not None:
+        # U1-7: la tasa anualizada del Monte Carlo solo es un retorno si no hubo
+        # flujos. Con aportes o retiros el modelo tiene que leer "crecimiento del
+        # pozo" — si lee "CAGR" razona sobre un retorno que nadie calculó.
+        # Un ctx sin el flag es *desconocido*, no "sin flujos": ahí manda la
+        # etiqueta prudente, porque el default barato es el que miente.
+        _mc_flows = bool(ctx.get("mc_has_cash_flows", True))
+        _growth_label = POT_GROWTH_LABEL if _mc_flows else POT_CAGR_LABEL
+        _growth_caveat = (
+            " — crecimiento del pozo con aportes/retiros incluidos, NO un "
+            "retorno de la cartera (el retorno money-weighted no se calcula)."
+            if _mc_flows else ""
+        )
         lines += [
             "",
-            "--- Riesgo/retorno esperados / proyección ---",
-            f"Retorno esperado: {_fmt_pct(g('expected_return_pct'))} anual · "
-            f"Volatilidad: {_fmt_pct(g('volatility_pct'))} · Sharpe: {_num(g('sharpe_ratio'))}",
+            "--- Riesgo/retorno del MODELO (proyección de un plan propuesto) ---",
+            f"{PROXY_RETURN_LABEL}: {_fmt_pct(g('expected_return_pct'))} anual — proxy de "
+            "score + dividendo + moat, no un pronóstico de retorno.",
+            f"Volatilidad: {_fmt_pct(g('volatility_pct'))} · {PROXY_RATIO_LABEL}: "
+            f"{_num(g('sharpe_ratio'))} — (atractivo − tasa libre de riesgo) / volatilidad "
+            "histórica, no es un Sharpe.",
             f"Probabilidad de alcanzar la meta: {_fmt_pct(g('prob_target_pct'))} · "
-            f"Pesimista (p10): ${_num(g('p10_terminal'))} · CAGR mediano: {_fmt_pct(g('median_cagr_pct'))}",
+            f"Pesimista (p10): ${_num(g('p10_terminal'))} · {_growth_label} mediano: "
+            f"{_fmt_pct(g('median_cagr_pct'))}{_growth_caveat}",
         ]
 
     sw = ctx.get("sector_weights") or {}
@@ -317,8 +343,10 @@ def risk_manager_portfolio_prompt(ctx: dict) -> str:
     return _portfolio_role_prompt(
         "Gestor de Riesgo",
         "Evaluá el RIESGO de la cartera tal como está hoy: concentración (posición máxima, top-3, "
-        "posiciones efectivas), riesgo REALIZADO (Sharpe, Sortino, beta vs SPY, max drawdown "
-        "histórico) y caída esperada en una crisis (stress test). Penalizá la concentración "
+        "posiciones efectivas), riesgo REALIZADO (Sharpe, ratio retorno/vol bajista, beta vs "
+        "SPY, max drawdown histórico) y caída esperada en una crisis (stress test). El ratio "
+        "retorno/vol bajista no es un Sortino — no lo compares contra un Sortino publicado. "
+        "Penalizá la concentración "
         "excesiva, un beta alto y la fragilidad ante crisis. Tu stance refleja qué tan resistente "
         "es la cartera a un mal escenario; tus concerns son los riesgos concretos.",
         ctx,

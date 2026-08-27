@@ -1,7 +1,7 @@
 # Project Context — Retirement Advisor
 
 > **Obligatorio:** Este archivo debe leerse completo antes de planear o codificar cualquier cambio.
-> Última actualización: 2026-08-14 (Auditoría 2026-08 **Tier 1 cerrado**: D4 oráculos + cobertura, D5 lockfile + sellado de entorno, D6 PII fuera del repo)
+> Última actualización: 2026-08-25 (U1-8/U1-9: dos números del Backtesting dejaron de usar el nombre de otra métrica — la diferencia contra el benchmark se llama **«Exceso vs benchmark»** porque no es alpha (no hay beta en ningún lado), y el ratio bajista dice que **no es un Sortino** porque el denominador descarta las semanas ganadoras. U1-8 además alineó la ventana: la pata del benchmark de cada ticker se mide sobre las mismas fechas que el ticker, lo único que mueve números en este pase. La fórmula del ratio bajista no se tocó — es oleada 5, ver §8. Antes: U1-5/U1-6/U1-10: tres etiquetas dejaron de prometer más de lo que el motor calcula — la racha de dividendos ya no se llama **Dividend Aristocrat**, los guardrails se llaman **simplificados** y dicen qué 3 reglas de Guyton-Klinger no corren, y el `max_drawdown_estimate_pct` del optimizer se presenta como **regla empírica** (−1,5 × vol, ahora en config). Ningún número se movió, ver §8. Antes: U1-4: el umbral que el ROIC tiene que superar en el moat es un **costo de equity proxy** (rf + ERP sectorial), no un WACC — se relabeló la copy y no se armó estructura de capital, ver §8. Antes: U1-3: la media de tendencia son 200 barras **semanales** (~3,8 años) y ahora se llama así en toda superficie — la ventana no se movió, ver §8. Antes: U1-1/U1-2: vocabulario canónico de retorno — el μ del optimizer se llama **«Atractivo estimado (proxy)»** y su ratio **«Ratio atractivo/vol»** en toda superficie de usuario; el retorno del Monte Carlo se llama **«retorno histórico»**. Ninguna etiqueta se comparte entre los dos modelos — ver §5.)
 
 ---
 
@@ -11,7 +11,7 @@
 
 **Filosofía del proyecto:**
 - No es un broker ni da órdenes de compra/venta automáticas — da recomendaciones accionables
-- Conservador por defecto: ajuste de volatilidad +10%, haircut de retorno esperado −20% en MC
+- Conservador por defecto: ajuste de volatilidad +10%, haircut de retorno histórico −20% en MC
 - Multi-proveedor AI (Claude / Grok / OpenAI / Nous): el usuario elige desde el dashboard
 - Todo configurable sin tocar código: thresholds, perfiles, universo de tickers → `config.py`
 - UI en Streamlit; no hay backend web, no hay base de datos externa (solo SQLite local)
