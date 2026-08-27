@@ -1258,6 +1258,7 @@ def cached_personal_book_analysis(
     ai_model: str = "",
     ai_enabled: bool = False,
     ai_api_key: str = "",
+    engine_version: str = ENGINE_VERSION,
 ):
     """
     Wrapper cacheado del motor de sizing del Libro Personal.
@@ -1272,6 +1273,9 @@ def cached_personal_book_analysis(
     La acción de sizing es 100% rule-based; el AIConfig sólo afecta el análisis
     fundamental subyacente (no la decisión de tamaño).
     """
+    # Same key as `cached_full_analysis`: a scoring rewrite must not keep
+    # serving a stale personal-book result for the remaining 30m TTL.
+    _ = engine_version
     from portfolio.personal_sizer import analyze_personal_book
 
     positions = {
