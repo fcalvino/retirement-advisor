@@ -19,6 +19,7 @@ from dashboard.shared import (
 )
 from data.personal_book_convictions import get_convictions, remove_conviction, set_all
 from data.plan_context import compute_alignment_trades, get_active_plan
+from data.product_ux import DOWNSIDE_RATIO_HELP, DOWNSIDE_RATIO_LABEL
 from portfolio.tracker import Portfolio
 
 # ------------------------------------------------------------------ #
@@ -58,7 +59,8 @@ col4.metric("Sharpe Ratio",    f"{metrics.sharpe_ratio:.2f}")
 col5.metric("Max Drawdown",    f"{metrics.max_drawdown_pct:.1f}%")
 
 col1, col2, col3 = st.columns(3)
-col1.metric("Sortino Ratio",   f"{metrics.sortino_ratio:.2f}")
+col1.metric(DOWNSIDE_RATIO_LABEL, f"{metrics.downside_vol_ratio:.2f}",
+            help=DOWNSIDE_RATIO_HELP)
 col2.metric("Beta del portfolio", f"{metrics.beta:.2f}")
 col3.metric("Posiciones",      metrics.num_positions)
 

@@ -48,12 +48,16 @@ class TickerPerformance:
     score: float            # adjusted_score used for ranking
     cagr_pct: float
     sharpe: float
-    sortino: float          # downside-risk adjusted return
+    #: (CAGR − Rf) / std of the losing weeks. NOT a Sortino ratio — U1-9; the
+    #: canonical wording lives in ``data.product_ux.DOWNSIDE_RATIO_HELP``.
+    downside_vol_ratio: float
     max_drawdown_pct: float
     volatility_pct: float
     win_rate_pct: float     # % of weeks beating benchmark
     total_return_pct: float
-    alpha_pct: float        # cagr − benchmark cagr
+    #: cagr − benchmark cagr over the *same* window. Not alpha: no beta
+    #: adjustment is made anywhere in this engine (U1-8).
+    excess_return_pct: float
 
 
 @dataclass
@@ -71,7 +75,7 @@ class BacktestResult:
     # Portfolio-level metrics
     portfolio_cagr_pct: float = 0.0
     portfolio_sharpe: float = 0.0
-    portfolio_sortino: float = 0.0
+    portfolio_downside_vol_ratio: float = 0.0   # NOT a Sortino ratio — U1-9
     portfolio_max_drawdown_pct: float = 0.0
     portfolio_volatility_pct: float = 0.0
     portfolio_total_return_pct: float = 0.0
@@ -80,7 +84,8 @@ class BacktestResult:
 
     benchmark_cagr_pct: float = 0.0
     benchmark_total_return_pct: float = 0.0
-    alpha_pct: float = 0.0          # portfolio CAGR − benchmark CAGR
+    #: portfolio CAGR − benchmark CAGR, same window. Not alpha — U1-8.
+    excess_return_pct: float = 0.0
 
     # Equity curves: ISO date string → normalized value (base = 100)
     portfolio_curve: Dict[str, float] = field(default_factory=dict)
@@ -94,6 +99,31 @@ class BacktestResult:
     score_vs_return: List[Dict] = field(default_factory=list)
 
     notes: List[str] = field(default_factory=list)
+
+
+#: Fields renamed by U1-8 (``alpha_pct`` was never an alpha) and U1-9 (the
+#: ratio was never a Sortino). Backtests saved before the rename are still on
+#: disk and still loadable — ``BacktestEngine.load`` maps the old keys forward
+#: rather than rewriting the files, so a historical run keeps its own numbers.
+LEGACY_FIELD_NAMES = {
+    "alpha_pct": "excess_return_pct",
+    "sortino": "downside_vol_ratio",
+    "portfolio_sortino": "portfolio_downside_vol_ratio",
+}
+
+
+def _migrate_legacy_names(data: Dict) -> Dict:
+    """Rename pre-U1-8/U1-9 keys in a persisted payload. Values are untouched.
+
+    A payload that already carries the new key wins: the legacy one is dropped
+    rather than allowed to overwrite it, so a half-migrated file cannot make the
+    result go backwards.
+    """
+    for old, new in LEGACY_FIELD_NAMES.items():
+        if old in data:
+            value = data.pop(old)
+            data.setdefault(new, value)
+    return data
 
 
 # ------------------------------------------------------------------ #
@@ -206,7 +236,7 @@ class BacktestEngine:
         pm = self._metrics(port_curve, bench_curve)
         result.portfolio_cagr_pct = pm["cagr"]
         result.portfolio_sharpe = pm["sharpe"]
-        result.portfolio_sortino = pm["sortino"]
+        result.portfolio_downside_vol_ratio = pm["downside_vol_ratio"]
         result.portfolio_max_drawdown_pct = pm["max_drawdown"]
         result.portfolio_volatility_pct = pm["volatility"]
         result.portfolio_total_return_pct = pm["total_return"]
@@ -216,7 +246,9 @@ class BacktestEngine:
         bm = self._metrics(bench_curve)
         result.benchmark_cagr_pct = bm["cagr"]
         result.benchmark_total_return_pct = bm["total_return"]
-        result.alpha_pct = round(result.portfolio_cagr_pct - result.benchmark_cagr_pct, 2)
+        result.excess_return_pct = round(
+            result.portfolio_cagr_pct - result.benchmark_cagr_pct, 2
+        )
 
         # Drawdown curve
         rolling_max = port_norm.cummax()
@@ -236,17 +268,23 @@ class BacktestEngine:
             if len(s_aligned) < 10:
                 continue
             tm = self._metrics(s_aligned, b_aligned)
+            # U1-8: the benchmark leg has to be measured over the window this
+            # ticker actually has. ``bm`` was computed over the *portfolio's*
+            # overlap, so a ticker with two years of history was being scored
+            # against the benchmark's five-year rate. ``b_aligned`` is the same
+            # benchmark restricted to the same dates as ``s_aligned``.
+            bm_same_window = self._metrics(b_aligned)
             result.ticker_results.append(TickerPerformance(
                 symbol=sym,
                 score=fund_result.adjusted_score,
                 cagr_pct=tm["cagr"],
                 sharpe=tm["sharpe"],
-                sortino=tm["sortino"],
+                downside_vol_ratio=tm["downside_vol_ratio"],
                 max_drawdown_pct=tm["max_drawdown"],
                 volatility_pct=tm["volatility"],
                 win_rate_pct=tm["win_rate"],
                 total_return_pct=tm["total_return"],
-                alpha_pct=round(tm["cagr"] - bm["cagr"], 2),
+                excess_return_pct=round(tm["cagr"] - bm_same_window["cagr"], 2),
             ))
             result.score_vs_return.append({
                 "symbol": sym,
@@ -272,8 +310,11 @@ class BacktestEngine:
 
     @staticmethod
     def load(path: Path) -> BacktestResult:
-        data = json.loads(path.read_text())
-        tickers = [TickerPerformance(**t) for t in data.pop("ticker_results", [])]
+        data = _migrate_legacy_names(json.loads(path.read_text()))
+        tickers = [
+            TickerPerformance(**_migrate_legacy_names(t))
+            for t in data.pop("ticker_results", [])
+        ]
         result = BacktestResult(**data)
         result.ticker_results = tickers
         return result
@@ -410,7 +451,7 @@ class BacktestEngine:
     ) -> dict:
         """Compute standard performance metrics from a weekly price series."""
         empty = {
-            "cagr": 0.0, "sharpe": 0.0, "sortino": 0.0, "max_drawdown": 0.0,
+            "cagr": 0.0, "sharpe": 0.0, "downside_vol_ratio": 0.0, "max_drawdown": 0.0,
             "volatility": 0.0, "total_return": 0.0, "win_rate": 0.0, "calmar": 0.0,
         }
         if prices is None or len(prices) < 4:
@@ -431,10 +472,14 @@ class BacktestEngine:
         excess = cagr / 100 - self.rf
         sharpe = round(excess / (vol / 100), 2) if vol > 0 else 0.0
 
-        # Sortino: penalizes only downside volatility
+        # Return over downside volatility. **Not a Sortino ratio** (U1-9): the
+        # denominator is the spread of the losing weeks around their own mean,
+        # while Sortino uses √E[mín(r − MAR, 0)²] over every return, measured
+        # from the MAR. The formula is deliberately left alone here — relabel
+        # and recompute in the same pass is the U1-9 ``no_hacer``.
         downside = returns[returns < 0]
         downside_vol = downside.std() * np.sqrt(annual_factor) if len(downside) > 1 else 0.0
-        sortino = round(excess / downside_vol, 2) if downside_vol > 0 else 0.0
+        downside_vol_ratio = round(excess / downside_vol, 2) if downside_vol > 0 else 0.0
 
         rolling_max = prices.cummax()
         drawdown = (prices - rolling_max) / rolling_max
@@ -452,7 +497,7 @@ class BacktestEngine:
         return {
             "cagr": round(cagr, 2),
             "sharpe": sharpe,
-            "sortino": sortino,
+            "downside_vol_ratio": downside_vol_ratio,
             "max_drawdown": round(max_dd, 2),
             "volatility": round(vol, 2),
             "total_return": round(total_return, 2),

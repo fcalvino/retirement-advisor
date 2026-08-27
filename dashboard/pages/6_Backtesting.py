@@ -10,6 +10,14 @@ import streamlit as st
 from analysis.backtesting import BacktestEngine, BacktestResult
 from config import BACKTEST
 from dashboard.shared import _fetch_universe_parallel, _get_ai_config
+from data.product_ux import (
+    DOWNSIDE_RATIO_HELP,
+    DOWNSIDE_RATIO_LABEL,
+    DOWNSIDE_RATIO_SHORT,
+    EXCESS_RETURN_HELP,
+    EXCESS_RETURN_LABEL,
+    excess_return_column_label,
+)
 
 # ------------------------------------------------------------------ #
 #  Page                                                                #
@@ -144,7 +152,7 @@ if bt_result is None:
 st.divider()
 st.subheader("📈 Performance Summary")
 
-alpha_color = "normal" if bt_result.alpha_pct >= 0 else "inverse"
+excess_color = "normal" if bt_result.excess_return_pct >= 0 else "inverse"
 rebal_label = bt_result.rebalance_freq.replace("_", " ").title()
 st.caption(
     f"Rebalanceo: **{rebal_label}** · Top-{bt_result.top_n} "
@@ -155,8 +163,9 @@ col1, col2, col3, col4 = st.columns(4)
 col1.metric(
     "Portfolio CAGR",
     f"{bt_result.portfolio_cagr_pct:+.1f}%",
-    f"α {bt_result.alpha_pct:+.1f}% vs {bt_result.benchmark}",
-    delta_color=alpha_color,
+    f"{bt_result.excess_return_pct:+.1f}% vs {bt_result.benchmark}",
+    delta_color=excess_color,
+    help=f"**{EXCESS_RETURN_LABEL}.** {EXCESS_RETURN_HELP}",
 )
 col2.metric("Benchmark CAGR",         f"{bt_result.benchmark_cagr_pct:+.1f}%")
 col3.metric("Total Return Portfolio",  f"{bt_result.portfolio_total_return_pct:+.1f}%")
@@ -165,8 +174,9 @@ col4.metric("Total Return Benchmark",  f"{bt_result.benchmark_total_return_pct:+
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Sharpe Ratio",    f"{bt_result.portfolio_sharpe:.2f}",
             help="(CAGR − Rf) / Vol total")
-col2.metric("Sortino Ratio",   f"{getattr(bt_result, 'portfolio_sortino', 0):.2f}",
-            help="(CAGR − Rf) / Vol bajista — penaliza solo pérdidas")
+col2.metric(DOWNSIDE_RATIO_LABEL,
+            f"{getattr(bt_result, 'portfolio_downside_vol_ratio', 0):.2f}",
+            help=DOWNSIDE_RATIO_HELP)
 col3.metric("Max Drawdown",    f"{bt_result.portfolio_max_drawdown_pct:.1f}%")
 col4.metric("Win Rate vs Bench", f"{bt_result.portfolio_win_rate_pct:.0f}%")
 col5.metric("Calmar Ratio",    f"{bt_result.calmar_ratio:.2f}",
@@ -261,14 +271,17 @@ with tab_scatter:
 
 with tab_tickers:
     if bt_result.ticker_results:
+        # Names the benchmark in the header, so the column cannot be read as a
+        # standalone edge, divorced from whatever it was measured against.
+        _EXCESS_COL = excess_return_column_label(bt_result.benchmark)
         rows = [
             {
                 "Ticker":        t.symbol,
                 "Score":         t.score,
                 "CAGR %":        t.cagr_pct,
-                "Alpha %":       t.alpha_pct,
+                _EXCESS_COL:     t.excess_return_pct,
                 "Sharpe":        t.sharpe,
-                "Sortino":       getattr(t, "sortino", 0),
+                DOWNSIDE_RATIO_SHORT: getattr(t, "downside_vol_ratio", 0),
                 "Max DD %":      t.max_drawdown_pct,
                 "Volatilidad %": t.volatility_pct,
                 "Win Rate %":    t.win_rate_pct,
@@ -286,9 +299,13 @@ with tab_tickers:
             hide_index=True,
             column_config={
                 "CAGR %":    st.column_config.NumberColumn(format="%.1f%%"),
-                "Alpha %":   st.column_config.NumberColumn(format="%.1f%%"),
+                _EXCESS_COL: st.column_config.NumberColumn(
+                    format="%.1f%%", help=EXCESS_RETURN_HELP,
+                ),
                 "Sharpe":    st.column_config.NumberColumn(format="%.2f"),
-                "Sortino":   st.column_config.NumberColumn(format="%.2f"),
+                DOWNSIDE_RATIO_SHORT: st.column_config.NumberColumn(
+                    format="%.2f", help=DOWNSIDE_RATIO_HELP,
+                ),
                 "Max DD %":  st.column_config.NumberColumn(format="%.1f%%"),
                 "Win Rate %": st.column_config.NumberColumn(format="%.0f%%"),
             },

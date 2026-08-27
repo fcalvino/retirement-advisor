@@ -119,7 +119,7 @@ def _factor_specs(cfg) -> list[dict]:
         },
         {
             "key": "real_return",
-            "label": "Retorno esperado",
+            "label": "Retorno histórico",
             "param": "return_scale",
             "delta": cfg.real_return_delta,
             "low_label": f"−{cfg.real_return_delta * 100:.0f}%",

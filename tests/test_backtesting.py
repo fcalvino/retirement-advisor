@@ -2,17 +2,19 @@
 
 The backtest is what tells the user "the scoring model would have beaten SPY".
 It had no coverage at all, so nothing checked that the portfolio it builds is
-the portfolio it claims to build, or that alpha is measured against the same
-window as the return it is subtracted from.
+the portfolio it claims to build, or that the gap against the benchmark is
+measured over the same window as the return it is subtracted from — the U1-8
+defect, whose oracle is ``TestExcessReturnWindow`` below.
 
 Price history is stubbed; the maths is checked in
 ``tests/test_engine_oracles.py`` against independent references. This file
-covers the orchestration: ranking, alignment, alpha, persistence and the
-failure paths that must degrade rather than crash.
+covers the orchestration: ranking, alignment, excess return, persistence and
+the failure paths that must degrade rather than crash.
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 import numpy as np
@@ -93,15 +95,15 @@ class TestReportedMetrics:
         result = BacktestEngine().run([_Scored("AAA", 90.0)], period_years=5, top_n=1)
         assert result.benchmark_cagr_pct == pytest.approx(8.0, abs=0.3)
 
-    def test_alpha_is_portfolio_minus_benchmark(self, stub_history):
+    def test_excess_return_is_portfolio_minus_benchmark(self, stub_history):
         result = BacktestEngine().run([_Scored("AAA", 90.0)], period_years=5, top_n=1)
-        assert result.alpha_pct == pytest.approx(
+        assert result.excess_return_pct == pytest.approx(
             round(result.portfolio_cagr_pct - result.benchmark_cagr_pct, 2)
         )
 
-    def test_a_laggard_produces_negative_alpha(self, stub_history):
+    def test_a_laggard_produces_a_negative_excess_return(self, stub_history):
         result = BacktestEngine().run([_Scored("CCC", 90.0)], period_years=5, top_n=1)
-        assert result.alpha_pct < 0
+        assert result.excess_return_pct < 0
 
     def test_curves_are_normalised_to_100(self, stub_history):
         result = BacktestEngine().run([_Scored("AAA", 90.0)], top_n=1)
@@ -190,7 +192,7 @@ class TestPersistence:
             run_date="2026-08-14T10:00:00", period_years=5,
             start_date="2021-08-14", end_date="2026-08-14",
             benchmark="SPY", top_n=2, universe_size=10,
-            portfolio_cagr_pct=12.5, alpha_pct=4.5,
+            portfolio_cagr_pct=12.5, excess_return_pct=4.5,
         )
         result.ticker_results = [
             TickerPerformance("AAA", 90.0, 15.0, 1.1, 1.4, -12.0, 18.0, 55.0, 110.0, 7.0)
@@ -199,7 +201,7 @@ class TestPersistence:
         loaded = BacktestEngine.load(path)
 
         assert loaded.portfolio_cagr_pct == 12.5
-        assert loaded.alpha_pct == 4.5
+        assert loaded.excess_return_pct == 4.5
         assert loaded.ticker_results[0].symbol == "AAA"
         assert loaded.ticker_results[0].cagr_pct == 15.0
 
@@ -209,6 +211,180 @@ class TestPersistence:
             (tmp_path / name).write_text("{}")
         found = [p.name for p in BacktestEngine.list_saved()]
         assert found == ["backtest_b.json", "backtest_a.json"]
+
+
+# ------------------------------------------------------------------ #
+#  U1-8: the two legs of the excess return share one window           #
+# ------------------------------------------------------------------ #
+
+#: Bars of the stub that the late-listing ticker exists for (~2 years).
+TAIL_BARS = 105
+#: Annualised rate the benchmark runs at inside those last bars.
+TAIL_RATE = 0.20
+
+
+def _piecewise_bench(n_bars: int = 320, tail_bars: int = TAIL_BARS) -> pd.DataFrame:
+    """Benchmark that is flat for years and then rallies at ``TAIL_RATE``.
+
+    The point of the shape: the benchmark's CAGR over the whole window and over
+    its last two years are different numbers, so a comparison that mixes the two
+    windows cannot accidentally come out right.
+    """
+    idx = pd.date_range(end=pd.Timestamp.now().normalize(), periods=n_bars, freq="W")
+    tail_weekly = (1.0 + TAIL_RATE) ** (1.0 / 52.0)
+    values = [100.0]
+    for i in range(1, n_bars):
+        values.append(values[-1] * (tail_weekly if i >= n_bars - tail_bars else 1.0))
+    return pd.DataFrame({"close": values}, index=idx)
+
+
+def oracle_cagr_between(prices: pd.Series, start, end) -> float:
+    """CAGR of ``prices`` between two dates, straight from the definition.
+
+    Written from "the rate that compounds the first value into the last over the
+    elapsed time", not from ``BacktestEngine._metrics`` — the engine is what is
+    on trial here.
+    """
+    window = prices[(prices.index >= start) & (prices.index <= end)]
+    years = (len(window) - 1) / 52.0
+    return ((window.iloc[-1] / window.iloc[0]) ** (1.0 / years) - 1.0) * 100.0
+
+
+@pytest.fixture
+def stub_uneven_history(monkeypatch):
+    """A benchmark and a full-history holding, plus two late-listing tickers.
+
+    ``SHORT`` runs at exactly the benchmark's tail rate, so its honest excess
+    return is zero; ``FAST`` runs 10 points above it.
+    """
+    frames = {
+        "BENCH": _piecewise_bench(),
+        "LONG":  _price_frame(100.0, 0.10),
+        "SHORT": _price_frame(100.0, TAIL_RATE, n_bars=TAIL_BARS),
+        "FAST":  _price_frame(100.0, TAIL_RATE + 0.10, n_bars=TAIL_BARS),
+    }
+
+    def _get_history(symbol, period="5y", interval="1wk"):
+        return frames.get(symbol, pd.DataFrame()).copy()
+
+    monkeypatch.setattr(bt_mod, "get_history", _get_history)
+    return frames
+
+
+class TestExcessReturnWindow:
+    """U1-8: a ticker's excess return is measured against the benchmark *it* saw.
+
+    The per-ticker row used to subtract the benchmark CAGR computed over the
+    *portfolio's* overlap, so a ticker listed two years ago was scored against a
+    five-year benchmark rate.
+    """
+
+    @staticmethod
+    def _run(stub):
+        return BacktestEngine().run(
+            [_Scored("LONG", 90.0), _Scored("SHORT", 50.0), _Scored("FAST", 40.0)],
+            period_years=5, top_n=1, benchmark="BENCH",
+        )
+
+    @staticmethod
+    def _row(result, symbol):
+        return next(t for t in result.ticker_results if t.symbol == symbol)
+
+    def test_the_two_windows_really_do_disagree(self, stub_uneven_history):
+        """Guard on the fixture: without this gap the test proves nothing."""
+        result = self._run(stub_uneven_history)
+        short_cagr = self._row(result, "SHORT").cagr_pct
+        assert short_cagr == pytest.approx(TAIL_RATE * 100, abs=0.3)
+        assert abs(result.benchmark_cagr_pct - short_cagr) > 5.0
+
+    def test_a_late_listing_matching_the_benchmark_shows_no_excess(
+        self, stub_uneven_history
+    ):
+        result = self._run(stub_uneven_history)
+        assert self._row(result, "SHORT").excess_return_pct == pytest.approx(0.0, abs=0.5)
+
+    def test_a_late_listing_beating_the_benchmark_keeps_only_its_own_edge(
+        self, stub_uneven_history
+    ):
+        result = self._run(stub_uneven_history)
+        row = self._row(result, "FAST")
+        assert row.excess_return_pct == pytest.approx(10.0, abs=0.6)
+
+    def test_excess_matches_a_benchmark_cagr_derived_over_the_same_dates(
+        self, stub_uneven_history
+    ):
+        """The oracle: recompute the benchmark leg from the definition."""
+        result = self._run(stub_uneven_history)
+        bench = stub_uneven_history["BENCH"]["close"]
+
+        # The engine also clips everything at ``start_date``; the shared window
+        # is the latest of the three starts.
+        cutoff = pd.Timestamp(result.start_date)
+        for symbol in ("LONG", "SHORT", "FAST"):
+            row = self._row(result, symbol)
+            own = stub_uneven_history[symbol]["close"]
+            start = max(own.index[0], bench.index[0], cutoff)
+            expected = row.cagr_pct - oracle_cagr_between(bench, start, own.index[-1])
+            assert row.excess_return_pct == pytest.approx(expected, abs=0.3), symbol
+
+    def test_a_full_history_holding_is_unaffected_by_the_fix(self, stub_uneven_history):
+        """The window fix must not move a ticker that already shared the window."""
+        result = self._run(stub_uneven_history)
+        row = self._row(result, "LONG")
+        assert row.excess_return_pct == pytest.approx(
+            round(row.cagr_pct - result.benchmark_cagr_pct, 2), abs=0.3
+        )
+
+
+# ------------------------------------------------------------------ #
+#  U1-8 / U1-9: results saved under the old field names still load    #
+# ------------------------------------------------------------------ #
+
+class TestLegacyFieldNames:
+    def test_a_pre_rename_backtest_loads_under_the_new_names(self, tmp_path, monkeypatch):
+        """``data/db/backtests/`` holds runs saved before the rename."""
+        monkeypatch.setattr(bt_mod, "RESULTS_DIR", tmp_path)
+        legacy = {
+            "run_date": "2026-05-24T13:18:05", "period_years": 5,
+            "start_date": "2021-05-24", "end_date": "2026-05-24",
+            "benchmark": "SPY", "top_n": 10, "universe_size": 78,
+            "portfolio_cagr_pct": 18.0, "alpha_pct": 4.5, "portfolio_sortino": 1.91,
+            "ticker_results": [{
+                "symbol": "AAA", "score": 90.0, "cagr_pct": 15.0, "sharpe": 1.1,
+                "sortino": 1.4, "max_drawdown_pct": -12.0, "volatility_pct": 18.0,
+                "win_rate_pct": 55.0, "total_return_pct": 110.0, "alpha_pct": 7.0,
+            }],
+        }
+        path = tmp_path / "backtest_legacy.json"
+        path.write_text(json.dumps(legacy))
+
+        loaded = BacktestEngine.load(path)
+
+        assert loaded.excess_return_pct == 4.5
+        assert loaded.portfolio_downside_vol_ratio == 1.91
+        assert loaded.ticker_results[0].excess_return_pct == 7.0
+        assert loaded.ticker_results[0].downside_vol_ratio == 1.4
+
+    def test_migration_never_moves_a_number(self, tmp_path, monkeypatch):
+        """Renaming a historical run must not restate what it reported."""
+        monkeypatch.setattr(bt_mod, "RESULTS_DIR", tmp_path)
+        path = tmp_path / "backtest_x.json"
+        path.write_text(json.dumps({
+            "run_date": "2026-05-24T13:18:05", "period_years": 5,
+            "start_date": "2021-05-24", "end_date": "2026-05-24",
+            "benchmark": "SPY", "top_n": 10, "universe_size": 78,
+            "alpha_pct": -3.25,
+        }))
+        assert BacktestEngine.load(path).excess_return_pct == -3.25
+
+    def test_the_shipped_saved_backtest_still_loads(self):
+        """The real file in the repo, not a fixture."""
+        saved = sorted(bt_mod.RESULTS_DIR.glob("backtest_*.json"))
+        if not saved:
+            pytest.skip("no saved backtest in data/db/backtests/")
+        result = BacktestEngine.load(saved[0])
+        assert isinstance(result.excess_return_pct, float)
+        assert isinstance(result.portfolio_downside_vol_ratio, float)
 
 
 if __name__ == "__main__":

@@ -10,7 +10,9 @@ El Portfolio Optimizer construye una cartera óptima para retiro combinando tres
 2. **Dividend Yield** — ingreso recurrente en USD
 3. **Moat Score** — ventaja competitiva duradera (0–20)
 
-La optimización usa **Mean-Variance (SLSQP)** de scipy para maximizar el Sharpe Ratio sujeto a restricciones duras de riesgo, con fallback a asignación proporcional por score cuando SLSQP no converge.
+La optimización usa **Mean-Variance (SLSQP)** de scipy para maximizar el **ratio atractivo/vol** sujeto a restricciones duras de riesgo, con fallback a asignación proporcional por score cuando SLSQP no converge.
+
+> Ese ratio es `(atractivo estimado − Rf) / σ histórica` y **no es un Sharpe**: el numerador es un proxy de score (no un retorno realizado) y el denominador es historia real de precios. Sirve para ordenar carteras de este modelo entre sí, no para compararlas contra el Sharpe de un índice.
 
 ---
 
@@ -29,10 +31,10 @@ scored_tickers (de Screener/Stock Analysis)
 3. Construir matriz de precios semanales (2 años, yfinance)
         │
         ▼
-4. Calcular retorno esperado proxy + matriz de covarianza anualizada
+4. Calcular atractivo estimado (proxy) + covarianza anualizada
         │
         ▼
-5. SLSQP: minimizar −Sharpe sujeto a restricciones del perfil
+5. SLSQP: minimizar −(ratio atractivo/vol) del perfil
         │         (2 intentos: dividend-biased y equal-weight start)
         ▼
 6. Fallback score-weighted si SLSQP no converge
@@ -49,9 +51,9 @@ scored_tickers (de Screener/Stock Analysis)
 
 ---
 
-## Retorno esperado proxy
+## Atractivo estimado (proxy)
 
-El retorno esperado de cada ticker es una combinación ponderada de tres componentes:
+El atractivo estimado (proxy) de cada ticker es una combinación ponderada de tres componentes:
 
 ```
 μ_i = score_weight × (score/100 × 0.18)
@@ -153,10 +155,10 @@ Se generan 300 carteras aleatorias con restricciones de peso máximo por ticker:
 
 ```python
 w ~ Dirichlet(1) → clip a max_pos → renormalizar
-retorno, volatilidad, Sharpe → graficar scatter
+atractivo, volatilidad, ratio atractivo/vol → graficar scatter
 ```
 
-La estrella azul marca la cartera óptima (máximo Sharpe dentro de las restricciones). La línea roja vertical marca el techo de volatilidad del perfil.
+La estrella azul marca la cartera óptima (máximo ratio atractivo/vol dentro de las restricciones). La línea roja vertical marca el techo de volatilidad del perfil.
 
 ---
 
@@ -203,7 +205,7 @@ CONSERVATIVE_PROFILE = ProfileConfig(
 
 ## Limitaciones conocidas
 
-1. **Retornos esperados son proxies, no predicciones.** El score y el moat capturan calidad histórica, no retornos futuros garantizados. La optimización maximiza Sharpe en el espacio de proxies, no sobre retornos reales.
+1. **Retornos esperados son proxies, no predicciones.** El score y el moat capturan calidad histórica, no retornos futuros garantizados. La optimización maximiza el ratio atractivo/vol, no un Sharpe: el numerador nunca sale de un retorno realizado.
 
 2. **Covarianza histórica = correlaciones pasadas.** Las correlaciones pueden cambiar drásticamente en crisis (flight-to-quality, correlation breakdown). El portfolio resultante puede concentrarse más de lo esperado durante eventos de cola.
 

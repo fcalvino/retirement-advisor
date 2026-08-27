@@ -20,6 +20,14 @@ from dashboard.shared import (
     tailwind_badge,
 )
 from data.preferences import UserPreferences
+from data.product_ux import (
+    MAX_DD_ESTIMATE_LABEL,
+    PROXY_RATIO_HELP,
+    PROXY_RATIO_LABEL,
+    PROXY_RETURN_HELP,
+    PROXY_RETURN_LABEL,
+    max_dd_estimate_help,
+)
 from data.universe_loader import UNIVERSE_META, list_universes, load_universe
 from portfolio.optimizer import PortfolioOptimizer
 from portfolio.tracker import Portfolio
@@ -299,7 +307,7 @@ with st.expander(
     pc4.metric("Sector máx.",     f"{prof.max_sector_pct:.0f}%")
     pc5.metric("Min. posiciones", prof.min_positions)
     st.caption(
-        f"Preferencias del perfil (ranking y filtros, no retorno esperado) — "
+        f"Preferencias del perfil (ranking y filtros, no el atractivo estimado) — "
         f"Score: {prof.score_weight:.0%} "
         f"· Dividendo: {prof.dividend_weight:.0%} "
         f"· Moat: {prof.moat_weight:.0%}"
@@ -495,7 +503,7 @@ if run_now or not has_valid_result:
     else:
         scored = st.session_state.optimizer_scored
 
-    with st.spinner(f"⚙️ Generando portafolio {prof.name} · Maximizando Sharpe Ratio…"):
+    with st.spinner(f"⚙️ Generando portafolio {prof.name} · Maximizando el ratio atractivo/vol…"):
         opt = PortfolioOptimizer(profile=profile_key)
         try:
             current_weights = portfolio.get_position_weights()
@@ -540,9 +548,9 @@ if run_now and "optimizer_prev_result" in st.session_state:
 
         st.markdown(
             f"**Cambio de perfil:** {prev_name} → **{prof.name}** &nbsp;|&nbsp; "
-            f"Retorno {_delta_str(d_ret)} &nbsp; "
+            f"Atractivo {_delta_str(d_ret)} &nbsp; "
             f"Volatilidad {_delta_str(d_vol, positive_good=False)} &nbsp; "
-            f"Sharpe {_delta_str(d_sh)} &nbsp; "
+            f"Ratio atractivo/vol {_delta_str(d_sh)} &nbsp; "
             f"Div Yield {_delta_str(d_div)}",
             unsafe_allow_html=True,
         )
@@ -704,12 +712,10 @@ mc1.metric(
     help="Promedio ponderado del Score Ajustado (fundamentals + moat + dividendo) de todos los activos.",
 )
 mc2.metric(
-    "Atractivo estimado", f"{result.expected_return_pct:.1f}%",
+    PROXY_RETURN_LABEL, f"{result.expected_return_pct:.1f}%",
     help=(
-        "Proxy anual construido con score + dividendo + moat, no un pronóstico de retorno. "
-        "Sirve para ordenar y comparar carteras entre sí; la proyección de patrimonio la da "
-        "el Monte Carlo, que usa la historia real de precios. Desde agosto 2026 este número "
-        "ya no depende del perfil de riesgo elegido."
+        PROXY_RETURN_HELP
+        + " Desde agosto 2026 este número ya no depende del perfil de riesgo elegido."
     ),
 )
 mc3.metric(
@@ -723,12 +729,12 @@ mc4.metric(
     help="Volatilidad anual estimada de la cartera (desviación estándar de retornos).",
 )
 mc5.metric(
-    "Sharpe Ratio", f"{result.sharpe_ratio:.2f}",
-    help="Retorno ajustado por riesgo (rf = 4.5%). > 0.5 es bueno, > 1.0 es excelente.",
+    PROXY_RATIO_LABEL, f"{result.sharpe_ratio:.2f}",
+    help=PROXY_RATIO_HELP,
 )
 mc6.metric(
-    "Max Drawdown est.", f"{result.max_drawdown_estimate_pct:.1f}%",
-    help="Estimación del peor escenario en 1 año: ≈ 1.5× volatilidad (regla empírica conservadora).",
+    MAX_DD_ESTIMATE_LABEL, f"{result.max_drawdown_estimate_pct:.1f}%",
+    help=max_dd_estimate_help(),
     delta_color="off",
 )
 
@@ -904,7 +910,7 @@ with tab_cart:
             )
             st.caption(
                 f"🌬️ **Colas de viento estructurales sector-país (curadas):** {_tw_txt}. "
-                "El factor ya está incluido en los scores y en el retorno esperado "
+                "El factor ya está incluido en los scores y en el atractivo estimado "
                 "(tilt configurable) — outlook a la fecha de curaduría, no garantía."
             )
 
@@ -981,8 +987,8 @@ with tab_front:
             color_continuous_scale="RdYlGn",
             labels={
                 "x": "Volatilidad % (anual)",
-                "y": "Retorno Esperado % (anual)",
-                "color": "Sharpe",
+                "y": "Atractivo estimado % (anual)",
+                "color": "Ratio atractivo/vol",
             },
             title=f"Frontera Eficiente — Monte Carlo ({OPTIMIZER.frontier_points} carteras)",
         )
@@ -1039,14 +1045,17 @@ with tab_metrics:
 | Universo | **{_display_universe}** |
 | Atractivo estimado (proxy) | **{result.expected_return_pct:.1f}%** anual |
 | Volatilidad | **{result.volatility_pct:.1f}%** anual |
-| Sharpe Ratio | **{result.sharpe_ratio:.2f}** |
-| Max Drawdown est. | **{_dd_str}** (1 año) |
+| Ratio atractivo/vol | **{result.sharpe_ratio:.2f}** |
+| {MAX_DD_ESTIMATE_LABEL} | **{_dd_str}** (1 año) |
 | Dividend Yield | **{result.dividend_yield_pct:.2f}%** |
 | Score promedio | **{result.adjusted_score_avg:.0f}**/100 |
 | Moat promedio | **{result.moat_score_avg:.1f}**/20 |
 | Posiciones | **{len(result.tickers)}** |
 | Método | {result.method} |
 """)
+        # A markdown table cannot carry a tooltip, so the rule of thumb behind
+        # the drawdown row is spelled out underneath it (U1-10).
+        st.caption(f"ℹ️ {MAX_DD_ESTIMATE_LABEL}: {max_dd_estimate_help()}")
 
         st.subheader("Compliance de restricciones")
         _checks = [
@@ -1104,26 +1113,37 @@ with tab_metrics:
         "Referencia histórica anualizada 2014–2024. ⚠️ La fila de tu cartera **no es comparable "
         "cabeza a cabeza**: los benchmarks muestran retorno histórico realizado, mientras que tu "
         "cartera muestra el atractivo estimado por el modelo (proxy de score + dividendo + moat). "
+        "Lo mismo vale para el drawdown: los benchmarks traen el máximo realizado y tu cartera, "
+        "una regla empírica sobre su volatilidad. "
         "Para proyectar patrimonio usá Simulaciones, que sí parte de la historia de precios."
     )
+
+    # The row for the user's portfolio and the benchmark rows are not the same
+    # measurement, so the mixed columns carry both names (U1-1 / U1-2 / U1-10).
+    # The drawdown column is the third of them: the benchmarks hold *realized*
+    # historical drawdowns (the constants in `_BENCHMARKS`) while the portfolio
+    # row holds the rule of thumb −multiple × vol.
+    _BENCH_RET_COL = "Retorno hist. / atractivo %"
+    _BENCH_RATIO_COL = "Sharpe hist. / ratio proxy"
+    _BENCH_DD_COL = "Max DD hist. / regla %"
 
     _bench_rows = [
         {
             "Portafolio / Benchmark": f"🧺 Tu Cartera ({prof.name})",
-            "Retorno %":     result.expected_return_pct,
+            _BENCH_RET_COL:   result.expected_return_pct,
             "Vol %":         result.volatility_pct,
-            "Sharpe":        result.sharpe_ratio,
+            _BENCH_RATIO_COL: result.sharpe_ratio,
             "Div Yield %":   result.dividend_yield_pct,
-            "Max DD %":      result.max_drawdown_estimate_pct,
+            _BENCH_DD_COL:   result.max_drawdown_estimate_pct,
         }
     ] + [
         {
             "Portafolio / Benchmark": f"📈 {name}",
-            "Retorno %":   bd["return"],
+            _BENCH_RET_COL:   bd["return"],
             "Vol %":       bd["vol"],
-            "Sharpe":      bd["sharpe"],
+            _BENCH_RATIO_COL: bd["sharpe"],
             "Div Yield %": bd["div"],
-            "Max DD %":    bd["max_dd"],
+            _BENCH_DD_COL: bd["max_dd"],
         }
         for name, bd in _BENCHMARKS.items()
     ]
@@ -1134,16 +1154,16 @@ with tab_metrics:
         hide_index=True,
         column_config={
             "Portafolio / Benchmark": st.column_config.TextColumn("Portafolio / Benchmark"),
-            "Retorno %":  st.column_config.NumberColumn("Retorno %",  format="%.1f%%"),
+            _BENCH_RET_COL:   st.column_config.NumberColumn(_BENCH_RET_COL,   format="%.1f%%"),
             "Vol %":      st.column_config.NumberColumn("Vol %",      format="%.1f%%"),
-            "Sharpe":     st.column_config.NumberColumn("Sharpe",     format="%.2f"),
+            _BENCH_RATIO_COL: st.column_config.NumberColumn(_BENCH_RATIO_COL, format="%.2f"),
             "Div Yield %":st.column_config.NumberColumn("Div Yield %",format="%.2f%%"),
-            "Max DD %":   st.column_config.NumberColumn("Max DD %",   format="%.1f%%"),
+            _BENCH_DD_COL: st.column_config.NumberColumn(_BENCH_DD_COL, format="%.1f%%"),
         },
     )
 
-    # Grouped bar: Retorno vs Sharpe vs Div Yield
-    _metrics_to_plot = ["Retorno %", "Sharpe", "Div Yield %"]
+    # Grouped bar — same two-animals caveat as the table above.
+    _metrics_to_plot = [_BENCH_RET_COL, _BENCH_RATIO_COL, "Div Yield %"]
     _fig_bench = go.Figure()
     for _, row in _bench_df.iterrows():
         _fig_bench.add_trace(go.Bar(
@@ -1155,7 +1175,7 @@ with tab_metrics:
         ))
     _fig_bench.update_layout(
         barmode="group",
-        title="Tu cartera vs. Benchmarks — Retorno · Sharpe · Div Yield",
+        title="Tu cartera vs. Benchmarks (histórico realizado vs. proxy del modelo)",
         height=380,
         yaxis_title="Valor",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
@@ -1345,7 +1365,7 @@ with tab_compare:
                 "Posiciones":    len(_ures.tickers),
                 "Atractivo %":   round(_ures.expected_return_pct, 1),
                 "Volatilidad %": round(_ures.volatility_pct, 1),
-                "Sharpe":        round(_ures.sharpe_ratio, 2),
+                PROXY_RATIO_LABEL: round(_ures.sharpe_ratio, 2),
                 "Div Yield %":   round(_ures.dividend_yield_pct, 2),
                 "Score Avg":     round(_ures.adjusted_score_avg, 0),
                 "Método":        _ures.method,
@@ -1360,7 +1380,7 @@ with tab_compare:
                 column_config={
                     "Atractivo %":   st.column_config.NumberColumn("Atractivo %", format="%.1f%%"),
                     "Volatilidad %": st.column_config.NumberColumn("Vol %",      format="%.1f%%"),
-                    "Sharpe":        st.column_config.NumberColumn("Sharpe",     format="%.2f"),
+                    PROXY_RATIO_LABEL: st.column_config.NumberColumn(PROXY_RATIO_LABEL, format="%.2f"),
                     "Div Yield %":   st.column_config.NumberColumn("Div %",      format="%.2f%%"),
                     "Score Avg":     st.column_config.NumberColumn("Score",      format="%.0f"),
                 },
@@ -1377,7 +1397,7 @@ with tab_compare:
                 ))
             _fig_comp.update_layout(
                 barmode="group",
-                title=f"Retorno · Volatilidad · Div Yield — perfil {prof.name} (top {_COMPARE_CAP} tickers)",
+                title=f"Atractivo · Volatilidad · Div Yield — perfil {prof.name} (top {_COMPARE_CAP} tickers)",
                 height=420,
                 yaxis_title="%",
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
@@ -1385,11 +1405,11 @@ with tab_compare:
             st.plotly_chart(_fig_comp, width="stretch")
 
             _fig_sharpe = px.bar(
-                _comp_df.sort_values("Sharpe"),
-                x="Sharpe", y="Universo", orientation="h",
-                color="Sharpe", color_continuous_scale="RdYlGn",
-                text="Sharpe",
-                title=f"Sharpe Ratio por universo — perfil {prof.name}",
+                _comp_df.sort_values(PROXY_RATIO_LABEL),
+                x=PROXY_RATIO_LABEL, y="Universo", orientation="h",
+                color=PROXY_RATIO_LABEL, color_continuous_scale="RdYlGn",
+                text=PROXY_RATIO_LABEL,
+                title=f"{PROXY_RATIO_LABEL} por universo — perfil {prof.name}",
             )
             _fig_sharpe.update_traces(texttemplate="%{text:.2f}", textposition="inside")
             _fig_sharpe.update_layout(height=300, coloraxis_showscale=False)

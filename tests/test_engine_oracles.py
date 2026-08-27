@@ -567,7 +567,7 @@ class TestBacktestMetricsOracle:
     def test_too_short_a_series_returns_zeros_not_garbage(self):
         m = BacktestEngine()._metrics(self._series([100.0, 110.0]))
         assert m == {
-            "cagr": 0.0, "sharpe": 0.0, "sortino": 0.0, "max_drawdown": 0.0,
+            "cagr": 0.0, "sharpe": 0.0, "downside_vol_ratio": 0.0, "max_drawdown": 0.0,
             "volatility": 0.0, "total_return": 0.0, "win_rate": 0.0, "calmar": 0.0,
         }
 

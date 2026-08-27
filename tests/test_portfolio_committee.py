@@ -193,7 +193,7 @@ def test_portfolio_action_labels_mapping():
 def _metrics():
     return SimpleNamespace(
         num_positions=4, total_value=120_000.0, annualized_return_pct=9.2,
-        total_pnl_pct=18.0, sharpe_ratio=0.6, sortino_ratio=0.8,
+        total_pnl_pct=18.0, sharpe_ratio=0.6, downside_vol_ratio=0.8,
         max_drawdown_pct=-22.0, beta=1.1,
     )
 

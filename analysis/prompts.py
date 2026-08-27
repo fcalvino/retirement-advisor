@@ -26,6 +26,15 @@ Prompts:
 
 from typing import Optional
 
+from data.product_ux import (
+    GUARDRAILS_OMISSIONS,
+    MAX_DD_ESTIMATE_SHORT,
+    PROXY_RATIO_LABEL,
+    PROXY_RETURN_LABEL,
+    TREND_MA_LABEL,
+    max_dd_estimate_help,
+)
+
 # Argentine ADR tickers — used by equity_decision_prompt (and helpers) for country context
 ARGENTINA_ADRS = {
     "YPF", "PAM", "CEPU", "LOMA", "MELI", "GLOB", "DESP",
@@ -394,7 +403,7 @@ Alertas: {", ".join(fund.warnings) if fund.warnings else "ninguna"}
 
 --- ANÁLISIS TÉCNICO (barras semanales) ---
 Señal: {tech.signal} (fuerza: {tech.signal_strength:+d}/100)
-Tendencia: precio {"ENCIMA" if tech.above_sma200 else "DEBAJO"} de SMA200 | Slope 26w: {tech.sma200_slope_pct:+.1f}%
+Tendencia: precio {"ENCIMA" if tech.above_sma200 else "DEBAJO"} de la {TREND_MA_LABEL} | Pendiente 26 semanas: {tech.sma200_slope_pct:+.1f}%
 Momentum: RSI={fmt(tech.rsi_weekly)} | MACD={"alcista" if tech.macd_bullish else "bajista"} | ADX={fmt(tech.adx)}
 Contexto: {tech.price_vs_52w_high_pct:+.1f}% desde 52w high | {tech.price_vs_52w_low_pct:+.1f}% desde 52w low
 Alertas técnicas: {", ".join(tech.warnings) if tech.warnings else "ninguna"}
@@ -632,7 +641,7 @@ Alertas: {warnings_str}
 {moat_section}
 --- ANÁLISIS TÉCNICO (barras semanales) ---
 Señal: {tech.signal} (fuerza: {tech.signal_strength:+d}/100)
-Tendencia: precio {"ENCIMA" if tech.above_sma200 else "DEBAJO"} de SMA200 | Slope 26w: {tech.sma200_slope_pct:+.1f}%
+Tendencia: precio {"ENCIMA" if tech.above_sma200 else "DEBAJO"} de la {TREND_MA_LABEL} | Pendiente 26 semanas: {tech.sma200_slope_pct:+.1f}%
 Momentum: RSI={fmt(tech.rsi_weekly)} | MACD={"alcista" if tech.macd_bullish else "bajista"} | ADX={fmt(tech.adx)}
 Contexto: {tech.price_vs_52w_high_pct:+.1f}% desde 52w high | {tech.price_vs_52w_low_pct:+.1f}% desde 52w low
 
@@ -792,7 +801,7 @@ IDIOMA OBLIGATORIO: Responde SIEMPRE en español. Toda la narrativa, explicacion
 
 **PORTAFOLIO ACTUAL (perfil {profile_name})**
 Activos: {holdings_str}
-Retorno esperado (proxy): {expected_return:.1f}% | Volatilidad: {volatility:.1f}% | Sharpe: {sharpe:.2f}
+{PROXY_RETURN_LABEL}: {expected_return:.1f}% | Volatilidad: {volatility:.1f}% | {PROXY_RATIO_LABEL}: {sharpe:.2f}
 Dividend Yield: {dividend_yield:.1f}%
 
 **PARÁMETROS DE LA SIMULACIÓN MONTE CARLO (block bootstrap 10 años historia real + ajustes conservadores)**
@@ -924,9 +933,9 @@ Rebalance rationale (actual): {rebalance_rationale or "N/D"}
 Alertas/warnings: {warn_str}
 
 **MÉTRICAS DE LA CARTERA OPTIMIZADA (matemática completa)**
-Retorno esperado: {expected_return_pct:.1f}%
+{PROXY_RETURN_LABEL}: {expected_return_pct:.1f}% — proxy de score + dividendo + moat, no un pronóstico de retorno
 Volatilidad: {volatility_pct:.1f}%
-Sharpe: {sharpe:.2f}
+{PROXY_RATIO_LABEL}: {sharpe:.2f} — (atractivo − tasa libre de riesgo) / volatilidad histórica, no es un Sharpe
 Div Yield: {dividend_yield_pct:.2f}%
 Moat promedio: {moat_avg:.1f}
 Pesos por sector: {sector_str}
@@ -948,13 +957,13 @@ Usá EXACTAMENTE el formato de salida para macro que se detalla abajo.
 ---
 
 **TAREA (con tu voz propia de Grok):**
-Incluso si el total de la optimización matemática es 27 (o 30-40), un humano normal que no trabaja de esto se beneficia enormemente de un **núcleo enfocado** de posiciones de alta convicción que capturan la mayor parte del valor (Sharpe, yield, moat, retorno). El costo cognitivo de seguir 27+ posiciones pequeñas sigue siendo alto.
+Incluso si el total de la optimización matemática es 27 (o 30-40), un humano normal que no trabaja de esto se beneficia enormemente de un **núcleo enfocado** de posiciones de alta convicción que capturan la mayor parte del valor (ratio atractivo/vol, yield, moat, atractivo estimado). El costo cognitivo de seguir 27+ posiciones pequeñas sigue siendo alto.
 
 1. Explicá la cartera optimizada completa con tu voz característica: directo, basado en los números que te pasamos, conectando con el contexto macro que corresponda, señalando fortalezas reales y riesgos reales (incluyendo el costo cognitivo de la dispersión). No seas genérico.
 
 2. Recomendá un número pertinente de posiciones para el núcleo humano (típicamente 7-15 según la concentración de convicción/moat/scores que ves; Grok decide el número exacto para este caso, no hardcodees). Esto aplica aunque el total sea 27 o más.
 
-3. Propone una "cartera núcleo" (core holdings) más manejable: selecciona el subconjunto de tickers que aportan la mayor parte del beneficio (Sharpe, yield, moat, retorno esperado). Para cada uno da un peso sugerido (ajustado, que sume cerca de 100%) y un "why" corto y concreto de por qué lo mantuviste o ajustaste.
+3. Propone una "cartera núcleo" (core holdings) más manejable: selecciona el subconjunto de tickers que aportan la mayor parte del beneficio (ratio atractivo/vol, yield, moat, atractivo estimado). Para cada uno da un peso sugerido (ajustado, que sume cerca de 100%) y un "why" corto y concreto de por qué lo mantuviste o ajustaste.
 
 4. Lista breve de los que "dropearías" de la versión humana y por qué (para que el usuario entienda el trade-off de concentración vs. diversificación completa).
 
@@ -1126,9 +1135,10 @@ def plan_level_narrative_prompt(
             )
         elif _wk == "guardrails":
             _strat_desc = (
-                f"GUARDRAILS (Guyton-Klinger): tasa base {float(withdrawal_strategy.get('pct', 0) or 0) * 100:.1f}%, "
+                f"GUARDRAILS (Guyton-Klinger SIMPLIFICADO): tasa base "
+                f"{float(withdrawal_strategy.get('pct', 0) or 0) * 100:.1f}%, "
                 "recorta el gasto cuando la cartera cae y lo sube cuando crece. Reduce el riesgo de ruina "
-                "a costa de cierta variabilidad del ingreso."
+                f"a costa de cierta variabilidad del ingreso. {GUARDRAILS_OMISSIONS}"
             )
         else:
             _strat_desc = f"Estrategia de retiro: {_wk}."
@@ -1185,8 +1195,8 @@ Estás explicando un **plan de retiro guardado** llamado «{plan_name}» (perfil
 Sectores: {sect_str}
 
 **MÉTRICAS DEL PLAN**
-Retorno esperado {float(metrics.get('expected_return_pct', 0)):.1f}% | Volatilidad {float(metrics.get('volatility_pct', 0)):.1f}% | Sharpe {float(metrics.get('sharpe_ratio', 0)):.2f}
-Dividend yield {float(metrics.get('dividend_yield_pct', 0)):.2f}% | Score prom. {float(metrics.get('adjusted_score_avg', 0)):.0f}/100 | Max DD est. {float(metrics.get('max_drawdown_estimate_pct', 0)):.1f}%
+{PROXY_RETURN_LABEL} {float(metrics.get('expected_return_pct', 0)):.1f}% | Volatilidad {float(metrics.get('volatility_pct', 0)):.1f}% | {PROXY_RATIO_LABEL} {float(metrics.get('sharpe_ratio', 0)):.2f}
+Dividend yield {float(metrics.get('dividend_yield_pct', 0)):.2f}% | Score prom. {float(metrics.get('adjusted_score_avg', 0)):.0f}/100 | {MAX_DD_ESTIMATE_SHORT} {float(metrics.get('max_drawdown_estimate_pct', 0)):.1f}% ({max_dd_estimate_help()})
 
 **COLAS DE VIENTO ESTRUCTURALES SECTOR-PAÍS (curadas)**
 {tailwinds_str}

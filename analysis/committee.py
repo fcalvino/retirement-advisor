@@ -324,7 +324,7 @@ def build_holdings_committee_context(
             "annualized_return_pct": getattr(metrics, "annualized_return_pct", None),
             "total_pnl_pct": getattr(metrics, "total_pnl_pct", None),
             "sharpe_ratio": getattr(metrics, "sharpe_ratio", None),
-            "sortino_ratio": getattr(metrics, "sortino_ratio", None),
+            "downside_vol_ratio": getattr(metrics, "downside_vol_ratio", None),
             "max_drawdown_pct": getattr(metrics, "max_drawdown_pct", None),
             "beta": getattr(metrics, "beta", None),
         }
@@ -429,12 +429,18 @@ def build_portfolio_committee_context(
     }
 
     if mc_result is not None:
+        from data.product_ux import mc_has_cash_flows
+
         ctx.update({
             "prob_target_pct": getattr(mc_result, "prob_achieve_target_pct", None),
             "median_terminal": getattr(mc_result, "median_terminal", None),
             "p10_terminal": getattr(mc_result, "p10_terminal", None),
             "p90_terminal": getattr(mc_result, "p90_terminal", None),
             "median_cagr_pct": getattr(mc_result, "median_cagr_pct", None),
+            # U1-7: sin este flag el prompt no puede decir si esa cifra es un
+            # retorno o el crecimiento de un pozo alimentado por aportes. El
+            # modelo razona sobre lo que la etiqueta nombra (lección de U1-3).
+            "mc_has_cash_flows": mc_has_cash_flows(mc_result),
             "sorr_early_drawdown_pct": getattr(mc_result, "sorr_early_drawdown_pct", None),
             "pct_paths_severe_drawdown": getattr(mc_result, "pct_paths_severe_drawdown", None),
         })

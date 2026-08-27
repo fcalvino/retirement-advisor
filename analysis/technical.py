@@ -2,7 +2,7 @@
 Technical analysis module — long-term perspective.
 
 For retirement investing we focus on:
-  - Long-term trend integrity (SMA 200, EMA 200)
+  - Long-term trend integrity (200-week SMA, ~3.8y — not the classic 200-day)
   - Momentum sustainability (RSI monthly, MACD weekly)
   - Avoidance of parabolic / bubble conditions
   - Volume confirmation
@@ -19,6 +19,7 @@ import pandas as pd
 from loguru import logger
 
 from data.fetcher import get_history
+from data.product_ux import FAST_MA_LABEL_EN, TREND_MA_LABEL_EN
 
 
 @dataclass
@@ -32,8 +33,8 @@ class TechnicalResult:
     above_sma50: bool = False
     above_sma100: bool = False
     above_sma200: bool = False
-    sma200_slope_pct: float = 0.0     # % change of SMA200 over last 26 weeks
-    golden_cross: bool = False        # SMA50 > SMA200 and recently crossed
+    sma200_slope_pct: float = 0.0     # % change of the 200-week SMA over last 26 weeks
+    golden_cross: bool = False        # 50-week SMA > 200-week SMA, recently crossed
     death_cross: bool = False
 
     # Momentum
@@ -110,23 +111,23 @@ class TechnicalAnalyzer:
         result.above_sma100 = last > float(sma100.iloc[-1]) if not pd.isna(sma100.iloc[-1]) else False
         result.above_sma200 = last > float(sma200.iloc[-1]) if not pd.isna(sma200.iloc[-1]) else False
 
-        # SMA200 slope — is the long-term trend rising?
+        # 200-week SMA slope — is the long-term trend rising?
         if not pd.isna(sma200.iloc[-1]) and not pd.isna(sma200.iloc[-26]):
             slope = (float(sma200.iloc[-1]) - float(sma200.iloc[-26])) / float(sma200.iloc[-26]) * 100
             result.sma200_slope_pct = round(slope, 2)
             if slope > 2:
-                result.notes.append(f"SMA200 rising +{slope:.1f}% — long-term uptrend confirmed")
+                result.notes.append(f"{TREND_MA_LABEL_EN} rising +{slope:.1f}% — long-term uptrend confirmed")
             elif slope < -2:
-                result.warnings.append(f"SMA200 declining {slope:.1f}% — long-term downtrend")
+                result.warnings.append(f"{TREND_MA_LABEL_EN} declining {slope:.1f}% — long-term downtrend")
 
-        # Golden / Death cross (SMA50 vs SMA200)
+        # Golden / Death cross (50-week vs 200-week SMA)
         if not pd.isna(sma50.iloc[-1]) and not pd.isna(sma200.iloc[-1]):
             current_cross = sma50.iloc[-1] > sma200.iloc[-1]
             prev_cross = sma50.iloc[-5] > sma200.iloc[-5] if len(sma50) > 5 else current_cross
             result.golden_cross = current_cross and not prev_cross
             result.death_cross = not current_cross and prev_cross
             if result.golden_cross:
-                result.notes.append("Golden Cross detected (SMA50 > SMA200) — bullish")
+                result.notes.append(f"Golden Cross detected ({FAST_MA_LABEL_EN} > {TREND_MA_LABEL_EN}) — bullish")
             if result.death_cross:
                 result.warnings.append("Death Cross detected — bearish")
 

@@ -96,11 +96,11 @@ Dos componentes independientes:
 
 #### `moat.py`
 `MoatAnalyzer` en dos fases:
-1. **Cuantitativo (0–12)**: Calcula 4 dimensiones (ROIC vs WACC, márgenes vs sector, revenue growth, eficiencia de capital)
+1. **Cuantitativo (0–12)**: Calcula 6 dimensiones de 0–2 pts (nivel y estabilidad del margen bruto, ROIC sostenido vs **costo de equity proxy**, defensividad de ingresos, FCF conversion, FCF margin)
 2. **AI cualitativo (0–8)**: Llama al LLM con contexto financiero, pide evaluación de 4 dimensiones, parsea JSON. Resultado cacheado 7 días en SQLite.
 
 #### `technical.py`
-Descarga barras semanales de 10 años y calcula los indicadores **a mano con NumPy/Pandas** (SMA200 + su pendiente, EMA200, golden/death cross, RSI 14, MACD 12/26/9). Retorna un `TechnicalResult` con todos los indicadores y una señal técnica (BULLISH/NEUTRAL/BEARISH). No usa librería de análisis técnico: `pandas_ta` se eliminó como código muerto (ver `docs/DEAD_CODE_AUDIT.md`).
+Descarga barras semanales de 10 años y calcula los indicadores **a mano con NumPy/Pandas** (SMA de **200 semanas** ~3,8 años —no la clásica de 200 días— + su pendiente, golden/death cross de 50 vs 200 semanas, RSI 14, MACD 12/26/9). Retorna un `TechnicalResult` con todos los indicadores y una señal técnica (BULLISH/NEUTRAL/BEARISH). No usa librería de análisis técnico: `pandas_ta` se eliminó como código muerto (ver `docs/DEAD_CODE_AUDIT.md`).
 
 #### `strategy.py`
 `full_analysis(symbol, ai_config=None)` — orquestador:
@@ -121,9 +121,9 @@ Pipeline de 9 pasos:
 1. Filtrar elegibles (excluir ETFs, score < mínimo)
 2. Aplicar ARS risk discount (0.85× en conservador/moderado)
 3. Construir price matrix (2 años semanales)
-4. Calcular expected returns (composite formula)
+4. Calcular atractivo estimado (proxy: score + dividendo + moat)
 5. Calcular covariance matrix (anualizada, regularización 1e-6)
-6. SLSQP Mean-Variance (minimizar Sharpe negativo)
+6. SLSQP Mean-Variance (minimizar el ratio atractivo/vol negativo)
 7. Fallback score-weighted si SLSQP infeasible
 8. Efficient Frontier (300 Monte Carlo portfolios)
 9. Rebalancing suggestions (target vs. current)

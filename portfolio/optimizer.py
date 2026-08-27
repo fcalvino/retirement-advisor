@@ -12,7 +12,8 @@ Optimization flow:
   2. Apply ARS risk discount for Argentine ADRs in conservative/moderate profiles
   3. Build 2Y weekly price matrix → covariance matrix
   4. Compute expected return proxy per ticker
-  5. SLSQP Mean-Variance (minimize negative Sharpe) with hard constraints
+  5. SLSQP Mean-Variance (minimize the negative attractiveness/vol ratio)
+     with hard constraints
   6. Fallback: score-weighted allocation if SLSQP infeasible or insufficient data
   7. Generate Efficient Frontier (Monte Carlo, N=frontier_points)
   8. Compare vs current portfolio for rebalancing suggestions
@@ -184,7 +185,10 @@ class OptimizationResult:
     rebalance_frequency: str = ""       # e.g. "Anual", "Semestral", "Trimestral"
     rebalance_rationale: str = ""       # one-line explanation
 
-    # Max drawdown estimate (1-year horizon, approximated as 1.5× annualised vol)
+    # Rule-of-thumb drawdown, 1-year horizon: −OPTIMIZER.max_dd_vol_multiple ×
+    # annualised vol. Not a model — nothing is simulated and this portfolio's own
+    # history is never read (U1-10). The simulated drawdown is
+    # MonteCarloResult.median_max_drawdown_pct, a different figure.
     max_drawdown_estimate_pct: float = 0.0
 
     # ------------------------------------------------------------------
@@ -219,7 +223,9 @@ class PortfolioOptimizer:
     """
     Conservative portfolio optimizer for retirement planning.
 
-    Uses scipy SLSQP to minimize negative Sharpe ratio subject to:
+    Uses scipy SLSQP to minimize the negative attractiveness/vol ratio
+    — (mu_proxy − Rf) / sigma_hist, a proxy numerator over a historical
+    denominator, not a Sharpe — subject to:
       - Weights sum to 1
       - Per-ticker upper bound (max_position_pct)
       - Per-sector upper bound (max_sector_pct)
@@ -802,7 +808,7 @@ class PortfolioOptimizer:
                     w[w < lb * 0.5] = 0
                     if w.sum() > 0:
                         w /= w.sum()
-                logger.info(f"SLSQP converged — Sharpe {-res.fun:.3f}")
+                logger.info(f"SLSQP converged — proxy/vol ratio {-res.fun:.3f}")
                 return w
             return None
 
@@ -975,8 +981,12 @@ class PortfolioOptimizer:
             result.volatility_pct = round(port_vol * 100, 1)
             if port_vol > 0:
                 result.sharpe_ratio = round((port_ret - rf) / port_vol, 2)
-                # 1-year max drawdown estimate: empirical rule MaxDD ≈ 1.5 × annual vol
-                result.max_drawdown_estimate_pct = round(-result.volatility_pct * 1.5, 1)
+                # 1-year max drawdown estimate: empirical rule
+                # MaxDD ≈ −multiple × annual vol. The multiple is config (U1-10);
+                # the value did not move.
+                result.max_drawdown_estimate_pct = round(
+                    -result.volatility_pct * self.opt.max_dd_vol_multiple, 1
+                )
 
         divs = np.array([self._clean_div_yield(float(t.get("dividend_yield", 0) or 0)) / 100 for t in tickers])
         result.dividend_yield_pct = round(float(divs @ w_arr) * 100, 2)
