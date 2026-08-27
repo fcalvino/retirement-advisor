@@ -369,3 +369,35 @@ def test_reported_zero_net_margin_still_warns():
     assert result.net_margin == pytest.approx(0.0)
     assert any("Thin net margin: 0.0%" in w for w in result.warnings)
     assert "Net margin" not in result.notes.get("profitability_missing", "")
+
+
+def test_omitted_roic_does_not_warn_low_zero():
+    with_roic, _ = _score_profitability(_info(returnOnAssets=0.20))
+    without, result = _score_profitability(_info())
+    assert result.roic is None
+    assert not any("Low ROIC" in w for w in result.warnings)
+    assert "ROIC" in result.notes.get("profitability_missing", "")
+    assert with_roic - without == 7.0
+
+
+def test_reported_zero_roic_still_warns():
+    _, result = _score_profitability(_info(returnOnAssets=0.0))
+    assert result.roic == pytest.approx(0.0)
+    assert any("Low ROIC: 0.0%" in w for w in result.warnings)
+    assert "ROIC" not in result.notes.get("profitability_missing", "")
+
+
+def test_omitted_gross_margin_does_not_warn_thin_zero():
+    with_gm, _ = _score_profitability(_info(grossMargins=0.55))
+    without, result = _score_profitability(_info())
+    assert result.gross_margin is None
+    assert not any("Thin gross margin" in w for w in result.warnings)
+    assert "Gross margin" in result.notes.get("profitability_missing", "")
+    assert with_gm - without == 5.0
+
+
+def test_reported_zero_gross_margin_still_warns():
+    _, result = _score_profitability(_info(grossMargins=0.0))
+    assert result.gross_margin == pytest.approx(0.0)
+    assert any("Thin gross margin: 0.0%" in w for w in result.warnings)
+    assert "Gross margin" not in result.notes.get("profitability_missing", "")

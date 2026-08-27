@@ -805,20 +805,32 @@ class FundamentalAnalyzer:
             else:
                 result.warnings.append(f"Low ROE: {roe:.1f}%")
 
-        # ROIC (7 pts) — approximated if not directly available
-        roic_raw = _safe_float(info.get("returnOnAssets")) * 100
-        # Improve with ROIC proxy = NOPAT / Invested Capital
-        roic = self._compute_roic(income_stmt, balance_sheet) or roic_raw
-        result.roic = roic if roic != 0 else None
-        if roic >= T.roic_excellent:
-            score += 7
-            result.notes["roic"] = f"Excellent ROIC {roic:.1f}%"
-        elif roic >= T.roic_good:
-            score += 4
-            result.notes["roic"] = f"Good ROIC {roic:.1f}%"
-        elif roic >= T.roic_min:
-            score += 2
-            result.notes["roic"] = f"Acceptable ROIC {roic:.1f}%"
+        # ROIC (7 pts). Same omitted-vs-zero split as ROE. Computed NOPAT /
+        # invested capital wins when the statements exist; otherwise ROA is
+        # the feed proxy. `_safe_float(None) * 100` plus `if roic != 0 else None`
+        # collapsed an omitted field and a reported zero into the same None.
+        computed = self._compute_roic(income_stmt, balance_sheet)
+        if computed is not None:
+            roic = computed
+        else:
+            roa_reported = reported_metric(info, "returnOnAssets")
+            roic = roa_reported * 100 if roa_reported is not None else None
+        if roic is None:
+            result.roic = None
+            missing.append("ROIC")
+        else:
+            result.roic = roic
+            if roic >= T.roic_excellent:
+                score += 7
+                result.notes["roic"] = f"Excellent ROIC {roic:.1f}%"
+            elif roic >= T.roic_good:
+                score += 4
+                result.notes["roic"] = f"Good ROIC {roic:.1f}%"
+            elif roic >= T.roic_min:
+                score += 2
+                result.notes["roic"] = f"Acceptable ROIC {roic:.1f}%"
+            else:
+                result.warnings.append(f"Low ROIC: {roic:.1f}%")
 
         # Net Margin (5 pts). Same omitted-vs-zero split as ROE.
         nm_reported = reported_metric(info, "profitMargins")
@@ -837,15 +849,22 @@ class FundamentalAnalyzer:
             else:
                 result.warnings.append(f"Thin net margin: {nm:.1f}%")
 
-        # Gross Margin (5 pts)
-        gm = _safe_float(info.get("grossMargins")) * 100
-        result.gross_margin = gm if gm != 0 else None
-        if gm >= T.gross_margin_excellent:
-            score += 5
-        elif gm >= T.gross_margin_good:
-            score += 3
-        elif gm > 0:
-            score += 1
+        # Gross Margin (5 pts). Same omitted-vs-zero split as net margin.
+        gm_reported = reported_metric(info, "grossMargins")
+        if gm_reported is None:
+            result.gross_margin = None
+            missing.append("Gross margin")
+        else:
+            gm = gm_reported * 100
+            result.gross_margin = gm
+            if gm >= T.gross_margin_excellent:
+                score += 5
+            elif gm >= T.gross_margin_good:
+                score += 3
+            elif gm > 0:
+                score += 1
+            else:
+                result.warnings.append(f"Thin gross margin: {gm:.1f}%")
 
         if missing:
             result.notes["profitability_missing"] = (
