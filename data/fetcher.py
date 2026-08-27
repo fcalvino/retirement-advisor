@@ -1,7 +1,7 @@
 """yfinance wrapper with caching, retries and robust error handling."""
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import pandas as pd
 import yfinance as yf
@@ -61,12 +61,64 @@ def get_info(symbol: str) -> Dict[str, Any]:
     return {}
 
 
+_DATE_COLUMNS = ("date", "datetime", "index", "level_0")
+
+
+def _restore_date_index(df: pd.DataFrame) -> pd.DataFrame:
+    """Put a cached price frame back into the shape a fresh fetch returns.
+
+    The cache stores ``df.reset_index().to_dict(orient="records")``, which turns the
+    ``DatetimeIndex`` into a plain ``"Date"`` column and leaves a ``RangeIndex``
+    behind. So ``get_history`` returned **two different shapes** depending on cache
+    state — a bug that only appears once something is cached, which is exactly when
+    nobody is looking.
+
+    What it cost: ``track_record_scorer._price_on_or_before`` guards with
+    ``if "date" in df.columns`` (lower case) against a column named ``"Date"``, so on
+    a warm cache it never reindexes, compares integers to a ``Timestamp``, raises
+    ``TypeError`` — and the surrounding ``except`` swallows it into "cannot score
+    yet / skip". That is the scorer that fills ``recommendation_outcome``, the only
+    empirical evidence this project has for calibrating anything. The Stock Analysis
+    price chart plots ``x=hist.index`` and silently drew bar numbers instead of dates
+    on the same warm cache.
+
+    Restoring on *read* rather than changing the write format is deliberate: entries
+    already on disk are in the records format, and a new format would make them
+    unreadable without a word.
+    """
+    if df.empty:
+        return df
+
+    for candidate in df.columns:
+        if str(candidate).strip().lower() not in _DATE_COLUMNS:
+            continue
+        try:
+            index = pd.to_datetime(df[candidate])
+        except (TypeError, ValueError):
+            continue
+        if index.isna().any():
+            # Some pandas versions coerce unparseable values to NaT instead of
+            # raising. A NaT in the index is worse than leaving the frame alone.
+            continue
+        df = df.drop(columns=[candidate])
+        df.index = index
+        df.index.name = "Date"
+        return df.sort_index()
+
+    return df
+
+
 def get_history(symbol: str, period: str = "10y", interval: str = "1wk") -> pd.DataFrame:
-    """Return OHLCV DataFrame. Weekly bars, 10 years by default for long-term context."""
+    """Return OHLCV DataFrame. Weekly bars, 10 years by default for long-term context.
+
+    The frame is identical whether it came from the network or the cache: a
+    ``DatetimeIndex`` named ``Date`` with lower-case OHLCV columns. See
+    ``_restore_date_index`` for why that needs saying.
+    """
     key = f"history:{symbol}:{period}:{interval}"
     cached = cache.get(key)
     if cached:
-        return pd.DataFrame(cached)
+        return _restore_date_index(pd.DataFrame(cached))
 
     def _fetch():
         ticker = yf.Ticker(symbol)
@@ -159,6 +211,9 @@ def compute_cagr(series: pd.Series, years: int) -> Optional[float]:
     """
     Compute CAGR from an annual time series (most recent value first).
     Returns None if insufficient data.
+
+    Fixed window: needs ``years + 1`` points or it gives up. Callers that would
+    rather measure the window they have should use ``compute_cagr_available``.
     """
     series = series.dropna()
     if len(series) < years + 1:
@@ -168,3 +223,41 @@ def compute_cagr(series: pd.Series, years: int) -> Optional[float]:
     if start_val <= 0 or end_val <= 0:
         return None
     return (end_val / start_val) ** (1 / years) - 1
+
+
+def compute_cagr_available(
+    series: pd.Series,
+    *,
+    target_years: int,
+    min_years: int,
+) -> Tuple[Optional[float], int]:
+    """CAGR over the longest window the data supports, with the window returned.
+
+    Returns ``(cagr, years_used)``; ``(None, 0)`` when even ``min_years`` is not
+    covered, or when the start value is non-positive (no meaningful rate off a
+    zero or negative base).
+
+    Why this exists: ``compute_cagr(series, years=5)`` needs six annual points and
+    yfinance's statements carry **four**, so every `years=5` call in the scoring
+    engine returned ``None`` for every company — measured 78/78 on the US Quality
+    universe, 2026-08-17. The revenue data was there and fine (MSFT's four periods
+    give 16.1%/yr over three years); only the demand for a six-point window was
+    unmeetable. Nothing free supplies six years, so the fix is to compute over the
+    window that exists and report which one it was, rather than silently drop the
+    metric and the 7 score points that depend on it.
+
+    The window is capped at ``target_years`` so tickers with deeper history stay
+    comparable to the rest instead of being measured over a longer, gentler span.
+    """
+    series = series.dropna()
+    n_points = len(series)
+    if n_points < min_years + 1:
+        return None, 0
+
+    years = min(target_years, n_points - 1)
+    end_val = series.iloc[0]
+    start_val = series.iloc[years]
+    if start_val <= 0 or end_val <= 0:
+        return None, 0
+
+    return (end_val / start_val) ** (1 / years) - 1, years

@@ -195,8 +195,8 @@ def _home_page() -> None:
                     type="primary",
                     key="home_hub_sample",
                 ):
-                    from data.plan_context import activate_plan, list_sample_plans
                     from dashboard.shared import load_sample_plan_into_store
+                    from data.plan_context import activate_plan, list_sample_plans
 
                     try:
                         _samples = list_sample_plans()

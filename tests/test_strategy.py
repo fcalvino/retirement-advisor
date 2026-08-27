@@ -170,35 +170,42 @@ class TestMaxDebtEquity:
 
 
 class TestAdjustedScoreForDecision:
+    # Derived from the ladder rather than literals: 66 used to sit above buy=60
+    # and now sits below buy=68, so a hardcoded fixture silently became HOLD.
+    ADJ_IN_BUY_BAND = STRATEGY.buy_score + 5      # comfortably a BUY
+    BASE_BELOW_HOLD = STRATEGY.hold_score - 10    # comfortably not a BUY
+
     def test_adjusted_score_drives_buy_when_flag_true(self):
         """MELI-like: weak base score, strong adjusted → BUY (P0 D2)."""
         eng = RetirementStrategy()
-        fund = _fund(total_score=41.0, adjusted_score=66.0, mos=15.0)
+        fund = _fund(total_score=self.BASE_BELOW_HOLD,
+                     adjusted_score=self.ADJ_IN_BUY_BAND, mos=15.0)
         tech = _tech(signal="BULLISH", above_sma200=True)
         with patch.object(STRATEGY, "use_adjusted_score_for_decision", True):
             with patch.object(STRATEGY, "require_technical_uptrend", True):
                 d = eng.decide(fund, tech)
         assert d.action == "BUY"
-        assert d.fundamental_score == 66.0
+        assert d.fundamental_score == self.ADJ_IN_BUY_BAND
 
     def test_legacy_total_score_when_flag_false(self):
         eng = RetirementStrategy()
-        fund = _fund(total_score=41.0, adjusted_score=66.0, mos=15.0)
+        fund = _fund(total_score=self.BASE_BELOW_HOLD,
+                     adjusted_score=self.ADJ_IN_BUY_BAND, mos=15.0)
         tech = _tech(signal="BULLISH", above_sma200=True)
         with patch.object(STRATEGY, "use_adjusted_score_for_decision", False):
             with patch.object(STRATEGY, "require_technical_uptrend", True):
                 d = eng.decide(fund, tech)
-        # 41 < hold_score 45 → REDUCE (or SELL path); not BUY
         assert d.action in ("REDUCE", "SELL", "HOLD")
         assert d.action not in ("BUY", "STRONG BUY")
-        assert d.fundamental_score == 41.0
+        assert d.fundamental_score == self.BASE_BELOW_HOLD
 
     def test_effective_decision_score_helper(self):
-        fund = _fund(total_score=41.0, adjusted_score=66.0)
+        fund = _fund(total_score=self.BASE_BELOW_HOLD,
+                     adjusted_score=self.ADJ_IN_BUY_BAND)
         with patch.object(STRATEGY, "use_adjusted_score_for_decision", True):
-            assert effective_decision_score(fund) == 66.0
+            assert effective_decision_score(fund) == self.ADJ_IN_BUY_BAND
         with patch.object(STRATEGY, "use_adjusted_score_for_decision", False):
-            assert effective_decision_score(fund) == 41.0
+            assert effective_decision_score(fund) == self.BASE_BELOW_HOLD
 
 
 class TestSafetyOverlay:
@@ -304,3 +311,41 @@ class TestDataQualityAndCryptoVol:
             d = eng.decide(fund, tech)
         assert d.action == "HOLD"
         assert any("volatilidad" in r.lower() for r in d.rationale)
+
+
+class TestPayoutRiskUsesEffectiveBasis:
+    """U2-6: the decision risk must judge the same payout the scorer judged.
+
+    ``_score_dividends`` grades REITs on FFO and persists that as
+    ``payout_ratio_effective``. Reading ``payout_ratio > 80`` instead flagged 12
+    of 13 cached REITs as about to cut a dividend the dividend dimension had
+    just called healthy.
+    """
+
+    def _risks(self, **attrs):
+        fund = _fund()
+        for key, value in attrs.items():
+            setattr(fund, key, value)
+        decision = Decision(symbol="O", action="HOLD", confidence="MEDIUM")
+        RetirementStrategy()._build_rationale(decision, fund, _tech())
+        return decision.risks
+
+    def test_healthy_ffo_payout_does_not_flag_accounting_ratio(self):
+        risks = self._risks(
+            payout_ratio=236.0,
+            ffo_payout_pct=70.0,
+            payout_ratio_effective=70.0,
+            payout_basis="ffo",
+        )
+        assert not any("may cut dividend" in r for r in risks)
+
+    def test_high_ffo_payout_flags_naming_the_basis(self):
+        from config import THRESHOLDS as T
+
+        risks = self._risks(
+            payout_ratio=50.0,
+            ffo_payout_pct=T.max_payout_ratio + 10,
+            payout_ratio_effective=T.max_payout_ratio + 10,
+            payout_basis="ffo",
+        )
+        assert any("may cut dividend" in r and "FFO" in r for r in risks)

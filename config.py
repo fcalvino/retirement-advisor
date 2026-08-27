@@ -3,7 +3,7 @@
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 from dotenv import load_dotenv
 
@@ -23,7 +23,13 @@ DB_PATH = DB_DIR / "retirement_advisor.db"
 #                   constant nominal level), ruin is absorbing, and the
 #                   optimizer's μ no longer depends on the risk profile.
 #                   See docs/AUDITORIA_2026-08.md.
-ENGINE_VERSION = "2026.08-tier0"
+#   2026.08-tier1 — U2-2: drawdown/SORR (sorr_early_drawdown_pct,
+#                   median_max_drawdown_pct, pct_paths_severe_drawdown,
+#                   *_year_of_max_dd) are measured on the market series —
+#                   the bootstrap path before drags and before cash flows.
+#                   Plans saved under tier0 counted planned withdrawals as a
+#                   crash and persist inflated SORR figures.
+ENGINE_VERSION = "2026.08-tier1"
 
 
 @dataclass
@@ -71,6 +77,19 @@ class FundamentalThresholds:
     ev_ebitda_good: float = 15.0
     ev_ebitda_acceptable: float = 20.0
 
+    # --- REIT valuation (auditoría por industria, 2026-08-22) ---
+    # A REIT is valued on price over funds from operations, not over accounting
+    # profit: depreciation is the largest charge on its income statement and is not
+    # a cash outflow, so the P/E bands above measure something else entirely (DLR
+    # showed 244.7×, O 45.7×). Own bands rather than reusing pe_* because a P/FFO of
+    # 15 is the sector median — calling it "excellent" would repeat the category
+    # error this fix exists to remove. Measured range on the universe: 11.8 to 53.5.
+    # These are a calibration choice, not an empirical finding; see StrategyConfig
+    # on where the evidence to settle them would come from.
+    p_ffo_excellent: float = 13.0
+    p_ffo_good: float = 18.0
+    p_ffo_acceptable: float = 23.0
+
     pb_excellent: float = 1.5
     pb_good: float = 3.0
     pb_acceptable: float = 5.0
@@ -78,6 +97,17 @@ class FundamentalThresholds:
     # --- Graham intrinsic value (D14) ---
     # Y in V = EPS × (8.5 + 2g) × 4.4 / Y  (AAA corporate bond yield proxy %)
     graham_aaa_yield_pct: float = 4.5
+
+    # Ceiling on `g` inside the Graham formula (audit 2026-08-22, P1-1). `g` is
+    # meant to be the sustainable 7-10 year growth rate; the engine was feeding it
+    # yfinance's `earningsGrowth`, a **quarterly year-over-year** figure that hits
+    # triple digits off a depressed base (VLO 453%, LMT 444%, GOOGL 294% on the
+    # cached universe). `8.5 + 2g` is linear in g, so those produced intrinsic
+    # values in the thousands and a margin of safety above 80% for 40 of 149
+    # companies — which is what unlocks STRONG BUY via `require_margin_of_safety`.
+    # Graham himself did not project high rates that far out. The cap applies only
+    # inside the formula: the growth rate reported to the UI is never truncated.
+    graham_max_growth_pct: float = 15.0
 
     # --- Growth (20 pts total) ---
     revenue_cagr_excellent: float = 15.0   # % 5Y CAGR
@@ -94,17 +124,79 @@ class FundamentalThresholds:
     # --- Dividend Quality (10 pts total) ---
     div_yield_sweet_spot_low: float = 1.5   # % — below = growth stock
     div_yield_sweet_spot_high: float = 4.0  # % — above = potentially risky
-    max_payout_ratio: float = 75.0          # % — sustainable payout
+    # Growth CAGR window. `cagr_target_years` is the window we'd prefer;
+    # `cagr_min_years` is the shortest one still worth scoring. yfinance ships 4
+    # annual statements, so in practice the revenue/earnings CAGR is measured over
+    # 3 years — asking for a fixed 5 made the metric None for 78/78 companies and
+    # silently killed the 7 revenue-growth points. See compute_cagr_available().
+    cagr_target_years: int = 5
+    cagr_min_years: int = 3
+    # Sanity ceiling for a *normalized* dividend yield, in percent. Nothing real
+    # sustains this; a value above it means the feed field was read in the wrong
+    # unit (yfinance mixes fractions and percents across its dividend fields —
+    # SCHD once scored on a "313%" yield). See normalize_dividend_yield_pct().
+    max_plausible_dividend_yield_pct: float = 30.0
+    # % — sustainable payout. **The single cut**: the dividend dimension grades against
+    # it (`_score_dividends`) and the decision engine reads the same number for the
+    # "may cut dividend" risk (`_build_rationale`). They used to disagree — the risk
+    # compared a literal 80 against the *accounting* payout — so a REIT could be scored
+    # as paying comfortably and warned about cutting in the same breath (U2-6).
+    # What it is measured against is `payout_basis`: FFO for a REIT, earnings otherwise
+    # (see effective_payout_pct). REIT-specific bands are U5-4's call, not this one's.
+    max_payout_ratio: float = 75.0
+    # % — top payout band (3 pts). A literal 40 used to live in `_score_dividends`;
+    # the cut belongs here with the other dividend thresholds. Missing payout is
+    # not this band (it scores 0); a reported 0 % still is.
+    payout_excellent: float = 40.0
 
 
 @dataclass
 class StrategyConfig:
-    """Decision engine thresholds."""
+    """Decision engine thresholds.
 
-    strong_buy_score: float = 75.0
-    buy_score: float = 60.0
-    hold_score: float = 45.0
-    # Below hold_score → SELL signal
+    The score ladder (re-anchored 2026-08-22). These cut ``adjusted_score``, not
+    ``total_score``, and that distinction is the whole reason the numbers moved.
+
+    ``75/60/45`` were calibrated for ``total_score`` — the 0–100 sum of the five
+    fundamental dimensions — as the module docstring of ``analysis/strategy.py``
+    still describes. But ``use_adjusted_score_for_decision`` (below, default True)
+    feeds the ladder ``adjusted_score``, which adds consistency (0–15), the
+    Piotroski bonus, moat (up to +10) and tailwind on top. Measured over the 149
+    cached equities that is **+20.3 points on average**: the marks never moved, the
+    ruler underneath them grew. What each cut actually selected:
+
+        cut               on total_score      on adjusted_score (what runs)
+        75  STRONG BUY          4 %                  33 %
+        60  BUY                16 %                  76 %
+        45  HOLD               63 %                  98 %
+
+    Three quarters of an already-curated quality universe carrying a buy signal is
+    the same defect ``analysis/ranking.py`` documents for the Screener (item 06):
+    an absolute cut calibrated against the whole market cannot discriminate inside
+    a pre-filtered list. And ``hold=45`` left 3 of 149 names below it, so REDUCE
+    and SELL were dead letters.
+
+    The values below restore roughly the intended severity (STRONG BUY ≈ top
+    quintile, ~15 % in REDUCE/SELL) while keeping the ladder's shape — the gaps
+    were 15/15/10 and are now 14/13/10. They deliberately do **not** claw back the
+    full +20.3: the bonuses are real quality signals, and a wide-moat compounder
+    with a Piotroski of 8 *should* reach top conviction more easily. What was never
+    intended is a third of the universe being STRONG BUY.
+
+    **This is percentile anchoring, not calibration.** The empirical answer — do
+    STRONG BUYs actually outperform BUYs? — lives in ``recommendation_outcome``,
+    which has zero rows because ``scripts/score_track_record.py`` has never run.
+    Until it does, these are a statement about how demanding the tool should be.
+    """
+
+    strong_buy_score: float = 82.0
+    buy_score: float = 68.0
+    hold_score: float = 55.0
+    # Below hold_score → REDUCE, and below reduce_score → SELL. This last rung was
+    # a bare `35` inside decide() until 2026-08-22 — the only step of the ladder
+    # that did not live here, against the "never hardcode numbers in analysis code"
+    # standard of docs/CONTEXT.md §5.
+    reduce_score: float = 45.0
 
     # Technical confirmation required for BUY
     require_technical_uptrend: bool = True
@@ -120,6 +212,14 @@ class StrategyConfig:
 
     # P0 audit D3: hard-block leverage threshold (was magic 3.0 in strategy.py)
     max_debt_equity: float = 3.0
+
+    # Audit 2026-08-22 (P1-3): companies with negative shareholders' equity have no
+    # defined D/E, so `max_debt_equity` above never fires for them and neither does
+    # the negative-book guard (yfinance omits priceToBook rather than reporting it
+    # negative). MCD, SBUX, ABBV, YUM and LOW passed both. Negative equity is not
+    # insolvency — in those names it comes from buybacks — so this caps the action
+    # at HOLD and states the reason instead of blocking outright.
+    negative_equity_caps_action: bool = True
 
     # Portfolio risk limits
     max_position_pct: float = 8.0     # max % of portfolio per stock
@@ -250,7 +350,9 @@ SECTOR_MAP: Dict[str, List[str]] = {
     "Industrials": ["CAT", "HON", "LOMA"],
     "Telecom / REIT": ["T", "O", "TEO"],
     "Utilities": ["EDN"],
-    "ETF": ["SPY", "QQQ", "VTI", "BND"],
+    # Fallback only — analysis/asset_class.py resolves by quoteType first. Kept in
+    # sync so a feed without quoteType still classifies the shipped universes.
+    "ETF": ["SPY", "QQQ", "VTI", "BND", "VGT", "SCHD", "VOO", "VXUS", "AGG"],
     "Crypto": ["BTC-USD", "ETH-USD"],
 }
 
@@ -365,18 +467,26 @@ class MoatConfig:
     ai_cache_ttl_hours: how long AI qualitative results are cached per ticker.
       Default 168h (7 days) — moat is structural and doesn't change week-to-week.
 
-    P2 audit D5 — ROIC vs WACC proxy (Buffett/Morningstar alignment):
-      use_roic_wacc_spread — score roic_sustained by ROIC − WACC, not absolute ROIC
-      risk_free_proxy_pct / default_sector_erp_pct — simple WACC = rf + ERP
+    P2 audit D5 — ROIC vs cost-of-equity proxy (Buffett/Morningstar alignment):
+      use_roic_wacc_spread — score roic_sustained by the ROIC *spread* over the
+        hurdle, not by absolute ROIC
+      risk_free_proxy_pct / default_sector_erp_pct — the hurdle is rf + ERP
       sector_erp_pct — optional per-sector ERP overrides (empty → default)
       roic_spread_* — spread thresholds (percentage points) for 2.0 / 1.0 / 0.5 pts
+
+    U1-4 — the hurdle is a **cost of equity**, not a WACC: rf + a flat sector ERP
+      carries no debt, no D/(D+E) weight and no tax shield (and it is not CAPM
+      either — there is no beta). The ``*_wacc_*`` identifiers below keep their
+      names for backward compatibility; the value they hold is Ke. Building a
+      real WACC would need a capital structure and is deliberately out of scope.
+      User-facing copy says "costo de equity proxy" (``data/product_ux.py``).
     """
     wide_threshold: float = 14.0
     narrow_threshold: float = 8.0
     minimal_threshold: float = 4.0
     max_bonus: float = 10.0
     ai_cache_ttl_hours: int = 168
-    # ROIC − WACC spread scoring (D5)
+    # ROIC − cost-of-equity-proxy spread scoring (D5; name kept per U1-4)
     use_roic_wacc_spread: bool = True
     risk_free_proxy_pct: float = 4.0
     default_sector_erp_pct: float = 5.0
@@ -548,7 +658,9 @@ class OptimizerConfig:
     Global settings for the portfolio optimizer (profile-independent).
 
     default_profile       — profile key used when no selection is made
-    risk_free_rate        — annual Rf for Sharpe calculation (mirrors BacktestConfig)
+    risk_free_rate        — annual Rf subtracted in the attractiveness/vol ratio
+                            (the same rate feeds the historical Sharpe of
+                            BacktestConfig, which is a real one)
     price_history_years   — years of weekly prices for covariance estimation
     frontier_points       — Monte Carlo portfolios rendered on the Efficient Frontier
     min_weight_pct        — minimum per-ticker allocation (avoids dust positions)
@@ -567,6 +679,16 @@ class OptimizerConfig:
                               proxy now tops out at 13%, so this ceiling no longer
                               binds. It is kept as a guardrail in case the view
                               weights or component scales are widened later.
+    max_dd_vol_multiple     — U1-10: the **rule of thumb** behind
+                              ``max_drawdown_estimate_pct`` (1-year horizon):
+                              MaxDD ≈ −multiple × annual volatility. It is not a
+                              model — nothing is simulated and this portfolio's
+                              own price history is never read — so every surface
+                              that shows the number says so
+                              (``data/product_ux.max_dd_estimate_help``). The
+                              simulated drawdown is a different figure and lives
+                              in ``MonteCarloResult.median_max_drawdown_pct``
+                              (measured on the market series, see U2-2).
     """
     default_profile: str = "conservative"
     risk_free_rate: float = 0.045
@@ -578,6 +700,7 @@ class OptimizerConfig:
     max_ai_screener_tickers: int = 40
     price_fetch_max_workers: int = 6
     er_absolute_cap: float = 0.14
+    max_dd_vol_multiple: float = 1.5
 
 
 @dataclass
@@ -651,6 +774,11 @@ class DataQualityConfig:
       exclude_poor_from_optimizer — drop poor tickers from SLSQP eligible set
       partial_optimizer_score_haircut — multiply adjusted_score for partial
                                candidates (1.0 = no haircut; default mild 0.95)
+
+    Universe-level rollup (audit item 03 — the Screener used to print a literal
+    "calidad good" that contradicted its own per-row column two lines below):
+      universe_poor_pct    — share of 🔴 rows at or above which the whole run is "poor"
+      universe_partial_pct — share of degraded rows (🔴+🟡) at or above which it is "partial"
     """
     stale_warning_hours: float = 48.0
     partial_missing_fields: int = 3
@@ -659,6 +787,125 @@ class DataQualityConfig:
     partial_max_confidence: str = "MEDIUM"
     exclude_poor_from_optimizer: bool = True
     partial_optimizer_score_haircut: float = 0.95
+    universe_poor_pct: float = 10.0
+    universe_partial_pct: float = 20.0
+
+
+@dataclass
+class ScreenerConfig:
+    """
+    The Opportunity Screener's shortlist funnel (audit item 06).
+
+    Measured on US Quality (78 companies, 2026-08-17): 67 of them — 86 % — carried
+    a buy signal, and the median adjusted score was 74.8, i.e. the "Strong Buy ≥75"
+    line sat on the median of the universe. That is what absolute thresholds do to
+    an already-curated quality list: ``STRATEGY.strong_buy_score`` / ``buy_score``
+    were calibrated against the whole market, so applied to a pre-filtered
+    population they must approve nearly all of it.
+
+    These knobs add the missing *relative* dimension without touching the engine's
+    absolute verdict, which is still the right answer to "is this a good company?".
+
+    Update (2026-08-22): the absolute thresholds were re-anchored to 82/68/55 once
+    it turned out they were cutting ``adjusted_score`` while calibrated for
+    ``total_score`` — see ``StrategyConfig``. That narrows the funnel's "buy
+    signal" step considerably, but it does not replace this layer: a re-anchored
+    absolute cut still cannot answer "how does this name rank against the others in
+    *this* run", which is what ``shortlist_percentile`` is for.
+
+    Fields:
+      shortlist_percentile      — minimum percentile within the analyzed run
+      shortlist_max_names       — hard cap on the shortlist (0 = no cap)
+      shortlist_exclude_poor_data — drop 🔴 tickers before ranking
+      shortlist_require_buy_signal — keep only STRONG BUY / BUY
+      concentration_warn_pct    — warn when one sector exceeds this share of the
+                                  shortlist (audit item 07 — the top-15 measured
+                                  12/15 Technology with no warning at all)
+    """
+
+    shortlist_percentile: float = 75.0
+    shortlist_max_names: int = 10
+    shortlist_exclude_poor_data: bool = True
+    shortlist_require_buy_signal: bool = True
+    concentration_warn_pct: float = 50.0
+    # How many names the ranking chart draws. Drawing one bar per company turned
+    # into a ~1.700px wall that repeated the table above it (audit item 19).
+    chart_top_n: int = 15
+
+    # Run cost and persistence (audit items 13/15/16/17).
+    #   default_max_tickers  — where the "how many to analyse" slider starts. The
+    #                          old default was the whole universe, i.e. the slowest
+    #                          possible first run (~5 min measured on 85 tickers).
+    #   persist_runs         — keep the last run on disk so reopening the app is
+    #                          not another cold run.
+    #   run_max_age_hours    — a stored run older than this is offered for refresh.
+    #   fallback_seconds_per_ticker — ETA seed before any run has been measured.
+    default_max_tickers: int = 25
+    persist_runs: bool = True
+    run_max_age_hours: float = 12.0
+    fallback_seconds_per_ticker: float = 3.5
+
+    # Named filter presets for the full table (audit item 09). Keys must match
+    # ``analysis.ranking.FilterCriteria`` fields; values are plain data so the
+    # presets can be edited here without touching the page.
+    filter_presets: Dict[str, Dict[str, Any]] = field(
+        default_factory=lambda: {
+            "Compras con datos completos": {
+                "signals": ("STRONG BUY", "BUY"),
+                "quality_levels": ("good",),
+            },
+            "Foso ancho": {"moats": ("Wide",)},
+            "Paga dividendo y es barata": {
+                "signals": ("STRONG BUY", "BUY"),
+                "min_percentile": 50.0,
+            },
+            "Lo que descarté": {"signals": ("HOLD", "REDUCE", "SELL", "AVOID")},
+            "Solo mi watchlist": {"only_watchlist": True},
+        }
+    )
+
+
+@dataclass
+class AssetClassConfig:
+    """
+    Which assets the fundamental scorer is allowed to judge (audit item 01).
+
+    An index ETF, a bond fund and a coin have no ROE, no Piotroski F-Score and no
+    economic moat *by construction* — they have no financial statements at all.
+    Running them through the equity scorer does not produce a weak score, it
+    produces a **meaningless** one: measured on the US Quality universe, SPY /
+    QQQ / VTI / BND / SCHD / VGT all landed at 22–25 and were the six worst of
+    85, each with a SELL signal. For a retirement product those are precisely the
+    canonical core holdings.
+
+    The classification is resolved from yfinance's ``quoteType`` first (so a new
+    ETF added to any universe is recognised without editing a list), and only
+    falls back to the curated ``SECTOR_MAP`` / sector names when the feed gives
+    nothing. That fallback order is the fix for the drift we measured: VGT and
+    SCHD are ETFs that were missing from ``SECTOR_MAP["ETF"]`` and so resolved to
+    sector "Unknown" and were scored as if they were companies.
+
+    Fields:
+      fund_quote_types    — quoteType values that mean "pooled vehicle"
+      crypto_quote_types  — quoteType values that mean "cryptocurrency"
+      fund_sectors        — sector strings that imply a fund when quoteType is absent
+      crypto_sectors      — sector strings that imply crypto when quoteType is absent
+      scorable_classes    — classes the fundamental score/signal is valid for
+      labels              — UI label per class (Spanish, table-cell sized)
+    """
+
+    fund_quote_types: tuple = ("ETF", "MUTUALFUND", "INDEX", "CLOSEDENDFUND", "MONEYMARKET")
+    crypto_quote_types: tuple = ("CRYPTOCURRENCY",)
+    fund_sectors: tuple = ("ETF", "Index", "Fund")
+    crypto_sectors: tuple = ("Crypto", "Crypto / Digital Asset")
+    scorable_classes: tuple = ("equity",)
+    labels: Dict[str, str] = field(
+        default_factory=lambda: {
+            "equity": "Acción",
+            "fund": "Fondo / ETF",
+            "crypto": "Cripto",
+        }
+    )
 
 
 @dataclass
@@ -770,11 +1017,17 @@ class WithdrawalConfig:
                        style). Highest ruin risk but most predictable income.
       "constant_pct" — withdraw a fixed % of the *current* portfolio value
                        each year. Never fully depletes, but income varies.
-      "guardrails"   — modified Guyton-Klinger: start at ``base_withdrawal_pct``
-                       of the initial value, then cut spending when the current
-                       withdrawal rate breaches the upper guardrail (portfolio
-                       fell) and raise it when it falls below the lower guardrail
-                       (portfolio grew). Balances stability and longevity.
+      "guardrails"   — **simplified** Guyton-Klinger: start at
+                       ``base_withdrawal_pct`` of the initial value, then cut
+                       spending when the current withdrawal rate breaches the
+                       upper guardrail (portfolio fell) and raise it when it
+                       falls below the lower guardrail (portfolio grew).
+                       Balances stability and longevity.
+                       Two of the four GK rules run (capital preservation and
+                       prosperity); the inflation rule, the portfolio-management
+                       rule and the time bound on the cut do not — see
+                       ``portfolio/decumulation`` and U1-6. The bands below are
+                       the whole method: nothing else about GK is implemented.
 
     All percentages are human-scale (4.0 == 4% per year). Bands and step
     sizes are fractions (0.20 == 20%). ``enabled`` is a UI default; the engine
@@ -786,7 +1039,7 @@ class WithdrawalConfig:
     default_strategy: str = "fixed_real"
     base_withdrawal_pct: float = 4.0          # initial annual withdrawal rate
     constant_pct: float = 4.0                 # % of current value for "constant_pct"
-    # Guardrails (Guyton-Klinger style), as fractions of the initial rate:
+    # Guardrails (simplified Guyton-Klinger), as fractions of the initial rate:
     guardrail_ceiling_band: float = 0.20      # WR this much ABOVE initial → cut spending
     guardrail_floor_band: float = 0.20        # WR this much BELOW initial → raise spending
     guardrail_cut_pct: float = 0.10           # spending cut when upper guardrail hit
@@ -1218,6 +1471,28 @@ class MultiSourceConfig:
       attach_in_pipeline   — when True (and enabled), FundamentalAnalyzer.analyze
                             best-effort attaches cross-source quality to the
                             badge. UI Calidad de Datos works regardless.
+                            Was briefly OFF on 2026-08-18: the cross-check
+                            compared periods that did not match (yfinance TTM vs
+                            SEC's last closed FY, plus dead us-gaap tags serving
+                            FY2010 figures), downgrading 22 of 25 tickers that had
+                            **zero** missing metrics and demoting 16 STRONG BUY to
+                            BUY. Back ON now that ``reconcile()`` refuses to
+                            compare mismatched periods: re-measured on the same 24
+                            companies, 0 conflicts (was 38) and 0 false
+                            downgrades.
+                            **Know what this buys you.** Once periods align, every
+                            comparable field agrees to Δ=0.00% — yfinance's annual
+                            statements are derived from the same SEC filings, so
+                            this is a *provenance* check (does the number the score
+                            used trace to the current 10-K?), not independent
+                            verification. It cannot catch a wrong figure common to
+                            both. Real independent verification needs the third
+                            source: set FMP_API_KEY.
+                            Cost: ~1.2 s/ticker of SEC downloads against the
+                            screener's 3.5 s/ticker budget. Set SEC_USER_AGENT to a
+                            real contact before running large universes — the
+                            default below is a placeholder and SEC throttles on
+                            fair-access grounds.
       source_priority      — order used to pick the "chosen" value per field
                             (earlier = more trusted). SEC filings beat yfinance.
       discrepancy_pct      — relative difference (%) above which two sources are
@@ -1319,6 +1594,36 @@ class ChatConfig:
         }
 
 
+def _env_rate(name: str) -> Optional[float]:
+    """Read an FX override from the environment, or ``None``.
+
+    An unset, unreadable *or non-positive* variable is not an override:
+    returning ``None`` for all three keeps ``rate_source`` honest — a typo'd
+    ``USD_ARS_OFICIAL`` leaves the placeholders in place and says so instead of
+    labelling them "env" — and keeps a zero out of a divisor, where it would
+    take down every page that renders the dual view.
+    """
+    raw = os.getenv(name)
+    if not raw:
+        return None
+    try:
+        rate = float(raw)
+    except ValueError:
+        return None
+    return rate if rate > 0 else None
+
+
+def _rate_or(name: str, fallback: float) -> float:
+    rate = _env_rate(name)
+    return fallback if rate is None else rate
+
+
+# Pesos per 1 USD when nobody has told us the real number. They are NOT a
+# quote and must never be rendered as one — see ``ArFxConfig.rate_source``.
+AR_FX_PLACEHOLDER_OFICIAL = 1000.0
+AR_FX_PLACEHOLDER_PARALLEL = 1200.0
+
+
 @dataclass
 class ArFxConfig:
     """
@@ -1327,17 +1632,61 @@ class ArFxConfig:
     Product context only: show USD amounts also in ARS (oficial + optional parallel)
     so LatAm users see the brecha. Not a tax/compliance engine; not a live FX feed
     by default — rates are user/config overrideable.
+
+    ``rate_source`` (audit U2-5) says where the numbers came from, because the
+    defaults are invented: ``placeholder`` (nobody set anything), ``env`` (the
+    operator exported ``USD_ARS_*``) or ``manual`` (a caller passed its own
+    rates). The UI reads it to label the conversion as an assumption and to
+    withhold the brecha — a gap between two placeholders is arithmetic, not a
+    market observation.
     """
     enabled: bool = True
     # Pesos per 1 USD — defaults are placeholders; override in Settings/session.
-    usd_ars_oficial: float = float(os.getenv("USD_ARS_OFICIAL", "1000"))
-    usd_ars_parallel: float = float(os.getenv("USD_ARS_PARALLEL", "1200"))
+    # default_factory, not a module-import default: the env is read when an
+    # instance is built, so a test can set USD_ARS_* without reloading `config`
+    # — reloading swaps every singleton in this module out from under the code
+    # that already imported them.
+    usd_ars_oficial: float = field(
+        default_factory=lambda: _rate_or("USD_ARS_OFICIAL", AR_FX_PLACEHOLDER_OFICIAL)
+    )
+    usd_ars_parallel: float = field(
+        default_factory=lambda: _rate_or("USD_ARS_PARALLEL", AR_FX_PLACEHOLDER_PARALLEL)
+    )
+    # Resolved in __post_init__ when left empty; pass a value to override.
+    rate_source: str = ""
+    # Free-form "as of" for the rates (env USD_ARS_ASOF). Empty = unknown.
+    rate_asof: str = field(default_factory=lambda: os.getenv("USD_ARS_ASOF", ""))
+
+    def __post_init__(self) -> None:
+        if self.rate_source:
+            return
+        env_of, env_par = _env_rate("USD_ARS_OFICIAL"), _env_rate("USD_ARS_PARALLEL")
+        # What the environment (or, failing that, the placeholders) would have
+        # produced. The label has to describe the values actually held, so a
+        # caller passing its own rates reads "manual" even under a set env.
+        from_env = (
+            AR_FX_PLACEHOLDER_OFICIAL if env_of is None else env_of,
+            AR_FX_PLACEHOLDER_PARALLEL if env_par is None else env_par,
+        )
+        if (float(self.usd_ars_oficial), float(self.usd_ars_parallel)) != from_env:
+            self.rate_source = "manual"
+        elif env_of is not None or env_par is not None:
+            self.rate_source = "env"
+        else:
+            self.rate_source = "placeholder"
+
+    @property
+    def is_placeholder(self) -> bool:
+        """True when the rates are the invented defaults — never a quote."""
+        return self.rate_source == "placeholder"
 
     def as_dict(self) -> dict:
         return {
             "enabled": self.enabled,
             "usd_ars_oficial": self.usd_ars_oficial,
             "usd_ars_parallel": self.usd_ars_parallel,
+            "rate_source": self.rate_source,
+            "rate_asof": self.rate_asof,
         }
 
 
@@ -1388,6 +1737,8 @@ OPTIMIZER = OptimizerConfig()
 REPORT = ReportConfig()
 MONTE_CARLO = MonteCarloConfig()
 DATA_QUALITY = DataQualityConfig()
+ASSET_CLASS = AssetClassConfig()
+SCREENER = ScreenerConfig()
 TAILWINDS = TailwindConfig()
 DRAGS = EconomicDragConfig()
 WITHDRAWAL = WithdrawalConfig()

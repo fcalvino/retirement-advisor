@@ -2,14 +2,13 @@
 
 from unittest.mock import patch
 
-from analysis.fundamental import FundamentalAnalyzer
 from config import THRESHOLDS
 
 
 class TestGrahamAaaYield:
     def test_higher_yield_lowers_graham_value(self):
         """V = EPS*(8.5+2g)*4.4/Y — higher Y → lower V."""
-        eps, g = 10.0, 0.10  # 10% earnings growth → g*100 = 10 in formula path
+        eps = 10.0  # 10% earnings growth → g*100 = 10 in formula path
         # fundamental uses earningsGrowth as decimal * 100
         # graham = eps * (8.5 + 2*growth_estimate) * 4.4 / y
         # growth_estimate = earningsGrowth * 100

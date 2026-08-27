@@ -958,7 +958,7 @@ else:
             icon="🎯",
         )
         # Backlog 8 — qué hacer este año
-        from data.product_ux import build_annual_action_list, ar_dual_amounts, format_ar_dual_line
+        from data.product_ux import ar_dual_amounts, build_annual_action_list, format_ar_dual_line
 
         _active_snap = next(p for p in _plans if p.id == _active_plan_id)
         _port = st.session_state.get("portfolio")

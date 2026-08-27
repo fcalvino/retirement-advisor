@@ -23,9 +23,11 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from analysis.fundamental import FundamentalResult
+from analysis.fundamental import FundamentalResult, effective_payout_pct
 from analysis.technical import TechnicalResult
-from config import DATA_QUALITY, STRATEGY as CFG
+from config import DATA_QUALITY
+from config import STRATEGY as CFG
+from config import THRESHOLDS as T
 
 _CONFIDENCE_RANK = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
 
@@ -386,8 +388,14 @@ class RetirementStrategy:
         for w in technical.warnings:
             decision.risks.append(w)
 
-        if fundamental.payout_ratio is not None and fundamental.payout_ratio > 80:
-            decision.risks.append(f"High dividend payout ratio ({fundamental.payout_ratio:.0f}%) — may cut dividend")
+        # The payout the scorer judged, at the scorer's cut (U2-6). Reading
+        # accounting `payout_ratio` against a literal 80 flagged healthy REITs.
+        payout, basis = effective_payout_pct(fundamental)
+        if payout is not None and payout > T.max_payout_ratio:
+            basis_label = "FFO" if basis == "ffo" else "earnings"
+            decision.risks.append(
+                f"High dividend payout ratio ({payout:.0f}% of {basis_label}) — may cut dividend"
+            )
         if not t.above_sma200:
             decision.risks.append("Price below SMA200 — long-term downtrend caution")
 

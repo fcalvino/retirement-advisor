@@ -75,6 +75,7 @@ st.caption(
 )
 _rx1, _rx2 = st.columns(2)
 from pathlib import Path as _PathSA
+
 if _rx1.button("🏛️ Convocar comité sobre este ticker", key="sa_to_comite", width="stretch"):
     if st.session_state.get("sa_last_symbol"):
         st.session_state["comite_last_symbol"] = st.session_state["sa_last_symbol"]

@@ -147,6 +147,30 @@ def test_old_json_without_new_fields_loads(store):
     assert got.last_refreshed_at == ""
 
 
+def test_tier0_and_missing_engine_version_are_stale():
+    """U2-2 bumped ENGINE_VERSION; plans stamped 2026.08-tier0 (or unsigned) are stale.
+
+    The scheduler still fires SORR_HIGH off `mc_summary.sorr_early_drawdown_pct`.
+    Without the bump, a plan saved under the old 'withdrawals count as a crash'
+    definition would keep its inflated figure and never be flagged.
+    """
+    from config import ENGINE_VERSION
+
+    assert ENGINE_VERSION == "2026.08-tier1"
+
+    current = PlanSnapshot.from_session(name="actual", opt_result=_fake_opt_result())
+    assert current.engine_version == ENGINE_VERSION
+    assert not current.is_engine_stale()
+
+    tier0 = PlanSnapshot.from_session(name="viejo", opt_result=_fake_opt_result())
+    tier0.engine_version = "2026.08-tier0"
+    assert tier0.is_engine_stale() is True
+
+    missing = PlanSnapshot(id="unsigned", name="unsigned", created_at="", updated_at="")
+    assert missing.engine_version == ""
+    assert missing.is_engine_stale() is True
+
+
 def test_target_weights_from_allocation():
     snap = PlanSnapshot.from_session(name="x", opt_result=_fake_opt_result())
     tw = snap.target_weights()
