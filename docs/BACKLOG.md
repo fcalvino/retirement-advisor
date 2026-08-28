@@ -61,26 +61,8 @@ una, con oráculos empíricos donde el hallazgo lo permitía.
 
 Cerradas: **U3-6** (`a5a63d9`), **U3-11** (`00fb551`, oráculo: sin `payoutRatio` ni
 FFO el score es 4.0 exacto), **U5-20** (`d86f8e9`), **U4-2** y **U4-1** (`9f05443`,
-un PR por la nota U4-1b; oráculos en `tests/test_cash_flow_oracle.py`).
-
----
-
-## Bloque 0 — Desbloqueo
-
-Una sola fila, y está primera porque es precondición declarada del único P0 de la
-oleada 3.
-
-### U0-2 · Matriz de score con IA on/off en el harness offline
-
-`scripts/measure_score_impact.py` existe desde `b141b56` pero corre
-`full_analysis(symbol, ai_config=None)` (`:66`) — o sea **solo rule-based**. La fila
-U3-7 dice literalmente *"Después de U0-2"*: sin poder medir el mismo universo con IA
-prendida y apagada, no hay forma de elegir entre subir el techo cuantitativo del moat
-y bajar `wide_threshold`, que es la decisión que U3-7 exige.
-
-**Hacer:** extender el harness a una matriz `(ticker, adjusted_score, action)` × IA
-on/off sobre el universo cacheado. Sigue siendo offline: las dos guardas que lo
-mantienen sin red no se tocan.
+un PR por la nota U4-1b; oráculos en `tests/test_cash_flow_oracle.py`). Fuera de las
+oleadas 3–7, **U0-2** también cerró — ver `ROADMAP.md`.
 
 ---
 
@@ -91,7 +73,21 @@ se guarda en unidades del índice de mercado, así que un plan que arranca sin
 capital compone sus aportes y los aportes entran mensualmente. El PR dejó dos filas
 nuevas en el bloque 4 — **U4-1c** y **U4-5** — con lo que deliberadamente **no** hizo.
 
-### U3-7 · La escala del moat está rota `P0` · depende de U0-2
+### U3-7 · La escala del moat está rota `P0` · **desbloqueado**
+
+U0-2 cerró (`docs/ROADMAP.md`), así que la matriz IA on/off ya existe y midió el
+defecto sobre los **164 tickers cacheados**:
+
+| | `moat_score` máx | bonus máx |
+|---|---:|---:|
+| IA apagada | **12,0** | **6,0** |
+| IA prendida | 19,0 | 9,5 |
+
+Con `wide_threshold = 14.0`, **ningún ticker del universo puede ser Wide Moat sin
+IA** — no es una hipótesis, es el techo medido. Y el bonus quant-only topea en 6,0
+contra los `+10` que promete el docstring. La IA mueve el score de **137 de 164**.
+
+Reproducir: `./venv/bin/python3 scripts/measure_score_impact.py --matrix matriz.md`
 
 Cuatro defectos en un mismo número:
 
@@ -104,7 +100,7 @@ Cuatro defectos en un mismo número:
 - Consecuencia compuesta: **el mismo ticker muestra un moat distinto según la
   pantalla**, sin que ninguna diga cuál modo usó.
 
-**Hacer, después de U0-2:** umbral de Wide para el modo quant-only **o** un preset de
+**Hacer:** umbral de Wide para el modo quant-only **o** un preset de
 foso cuantitativo alto. No bajar Wide a 12 con IA prendida.
 **No hacer:** recalibrar 82/68/55 en el mismo PR.
 **Oráculo:** matriz IA on/off; el preset queda documentado o queda muerto, no ambiguo.

@@ -10,6 +10,49 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U0-2 — La matriz de score con IA on/off (2026-08-28)
+
+El único desbloqueo del [`BACKLOG.md`](BACKLOG.md): U3-7 pedía elegir entre subir
+el techo cuantitativo del moat y bajar `wide_threshold`, y esa decisión no se podía
+tomar sin medir el mismo universo con la IA prendida y apagada.
+`scripts/measure_score_impact.py` existía desde `b141b56` pero corría
+`full_analysis(symbol, ai_config=None)` fijo — sólo rule-based.
+
+**Lo que apareció al intentar prender la IA.** El harness prometía *"nothing on
+disk changes"* y esa promesa se rompía en tres lugares, ninguno cubierto por las
+dos guardas originales:
+
+1. `MoatAnalyzer` y `TailwindAnalyzer` construyen **su propia** `DataCache` a
+   partir de `ai_cache_ttl_hours`, así que el bump de TTL del singleton nunca las
+   alcanzaba. Y `DataCache.get` **borra** la fila que encuentra vencida: la
+   primera corrida con IA habría destruido las 78 entradas de moat ya expiradas.
+2. Un miss de caché llamaba al proveedor. Ahora `MOAT.ai_cache_only` /
+   `TAILWINDS.ai_cache_only` devuelven el resultado cuantitativo intacto.
+3. La capa de **decisión** no tiene caché y salía a la red — 8 s por ticker,
+   verificado. `AIConfig.enrich_only` la deja en rule-based mientras el score
+   sigue enriqueciéndose por moat y tailwind, que sí están cacheados.
+
+Sin la tercera, la pata "IA on" no habría sido ni offline ni honesta:
+`AIAnalyzer.analyze` se traga cualquier excepción y cae a rule-based, así que un
+proveedor inalcanzable se habría leído como *"la IA no cambia nada"*. Por eso cada
+fila lleva **`ai_ran`**, y la matriz cuenta aparte las que la IA nunca tocó.
+
+**Lo que midió**, sobre los 164 tickers cacheados — la evidencia que U3-7 necesitaba:
+
+| | `moat_score` máx | bonus máx |
+|---|---:|---:|
+| IA apagada | **12,0** | **6,0** |
+| IA prendida | 19,0 | 9,5 |
+
+Con `MOAT.wide_threshold = 14.0`, **Wide Moat es inalcanzable sin IA** en todo el
+universo. El bonus quant-only topea en 6,0 contra los `+10` del docstring de
+`moat.py`. La IA mueve el `adjusted_score` de **137 de 164** tickers.
+
+Filas nuevas por ticker: `moat_score`, `moat_bonus`, `moat_classification`, `ai_ran`.
+Salida: `--matrix PATH` (markdown). Contrato: `tests/test_score_matrix_harness.py`.
+
+---
+
 ## Oleada 4 — Los flujos de caja del motor (2026-08-28)
 
 Cerró las dos filas P0 de [`BACKLOG.md`](BACKLOG.md) que no dependían de nada, en

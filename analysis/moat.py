@@ -270,6 +270,13 @@ class MoatAnalyzer:
         if cached:
             logger.debug(f"Moat AI cache hit for {symbol} ({ai_config.model})")
             self._apply_cached(quant_result, cached)
+        elif self.cfg.ai_cache_only:
+            # Offline measurement (U0-2): a miss is a miss. Returning the
+            # quantitative result with ai_available=False is what lets the
+            # caller tell "the AI added nothing" apart from "the AI never ran",
+            # which the normal path cannot — it swallows every failure and
+            # degrades to quant silently.
+            logger.debug(f"Moat AI cache-only miss for {symbol} — not calling the provider")
         else:
             # --- Fresh API call ---
             try:

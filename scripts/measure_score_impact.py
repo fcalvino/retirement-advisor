@@ -13,15 +13,40 @@ whose effect nobody measured is a fix nobody can argue about, so:
     # ... apply a fix ...
     ./venv/bin/python3 scripts/measure_score_impact.py --compare before.json
 
-**It never goes to the network.** Two guards make that true:
+It also answers the question U3-7 needs answered — how much of a ticker's score
+comes from the AI layer — by scoring the same universe twice, with AI off and on:
+
+    ./venv/bin/python3 scripts/measure_score_impact.py --matrix matriz.md
+
+**It never goes to the network.** Three guards make that true:
 
   * only tickers whose ``info`` *and* 10y weekly ``history`` are already cached
     are scored — everything else is skipped and counted;
   * the cache TTL is raised in-process (the entries on disk are older than the
     24h default) and ``MULTI_SOURCE.attach_in_pipeline`` is turned off, because
-    the cross-source badge downloads SEC EDGAR companyfacts per ticker.
+    the cross-source badge downloads SEC EDGAR companyfacts per ticker;
+  * the AI layer runs **cache-only** (``MOAT.ai_cache_only``,
+    ``TAILWINDS.ai_cache_only``): a miss returns the quantitative result instead
+    of calling the provider. And the AI config is ``enrich_only``, so the
+    *decision* layer — the one AI call with no cache behind it — never fires.
+    Without that the leg would be neither offline nor honest, because
+    ``AIAnalyzer.analyze`` swallows every failure and degrades to rule-based, so
+    an unreachable API would look like "the AI changed nothing".
 
-Both mutations are in-memory only: nothing on disk changes.
+The TTL guard has to reach the AI caches too. ``MoatAnalyzer`` and
+``TailwindAnalyzer`` each build their **own** ``DataCache`` from their config's
+``ai_cache_ttl_hours``, so the module-level singleton's TTL never touched them —
+and ``DataCache.get`` *deletes* the row it finds expired. Without raising those
+two the first AI run would have destroyed the older half of the cached moat
+entries on disk, breaking the promise in the next line.
+
+All mutations are in-memory only: nothing on disk changes.
+
+**What the matrix can and cannot show.** The moat and tailwind layers have a
+persistent cache, so their contribution is measurable offline — and that bonus is
+what U3-7 is about. The *decision* layer has no cache, so with AI on it still
+produces the rule-based action. The ``ai_ran`` column says so per row rather than
+letting a column of identical actions read as a finding.
 """
 
 from __future__ import annotations
@@ -36,13 +61,24 @@ from typing import Any, Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
+_OFFLINE_TTL_HOURS = 24 * 3650
+
+
 def _make_offline() -> None:
     """Serve everything from the existing cache; disable networked side-trips."""
     import data.cache as cache_module
-    from config import MULTI_SOURCE
+    from config import MOAT, MULTI_SOURCE, TAILWINDS
 
     cache_module.cache.ttl = timedelta(days=3650)
     MULTI_SOURCE.attach_in_pipeline = False
+
+    # The analyzers build their own DataCache from these, so the singleton's TTL
+    # above does not reach them. Raising them keeps every cached AI row fresh —
+    # which also stops DataCache.get from deleting the expired ones on disk.
+    MOAT.ai_cache_ttl_hours = _OFFLINE_TTL_HOURS
+    TAILWINDS.ai_cache_ttl_hours = _OFFLINE_TTL_HOURS
+    MOAT.ai_cache_only = True
+    TAILWINDS.ai_cache_only = True
 
 
 def cached_symbols() -> List[str]:
@@ -58,12 +94,31 @@ def cached_symbols() -> List[str]:
 #  Measurement                                                                #
 # --------------------------------------------------------------------------- #
 
-def measure_symbol(symbol: str) -> Optional[Dict[str, Any]]:
-    """Score one ticker end-to-end (rule-based path — no AI, no network)."""
+def offline_ai_config():
+    """An ``AIConfig`` that can only read the cache, never the network.
+
+    Provider and model are read from the environment exactly as the app reads
+    them, because the moat cache key embeds both: measuring with a different
+    model would miss every row and report "the AI changes nothing" when the
+    truth is "we looked in the wrong drawer".
+    """
+    from config import AI_CONFIG, AIConfig
+
+    return AIConfig(
+        provider=AI_CONFIG.provider,
+        model=AI_CONFIG.model,
+        api_key=AI_CONFIG.api_key,
+        enabled=True,
+        enrich_only=True,
+    )
+
+
+def measure_symbol(symbol: str, ai_config=None) -> Optional[Dict[str, Any]]:
+    """Score one ticker end-to-end. With ``ai_config`` the AI leg reads cache only."""
     from analysis.strategy import full_analysis
 
     try:
-        fund, tech, decision = full_analysis(symbol, ai_config=None)
+        fund, tech, decision = full_analysis(symbol, ai_config=ai_config)
     except Exception as exc:  # pragma: no cover - defensive, reported not raised
         print(f"  ! {symbol}: {type(exc).__name__}: {exc}", file=sys.stderr)
         return None
@@ -94,13 +149,21 @@ def measure_symbol(symbol: str) -> Optional[Dict[str, Any]]:
         "action": decision.action,
         "confidence": decision.confidence,
         "blocked": decision.blocked,
+        # U3-7 reads these: the moat scale is the thing under measurement.
+        "moat_score": round(float(fund.moat_score or 0.0), 1),
+        "moat_bonus": round(float(fund.moat_bonus or 0.0), 1),
+        "moat_classification": fund.moat_classification,
+        # Whether the AI layer actually contributed, as opposed to having been
+        # asked and having quietly failed. Without this a column of unchanged
+        # scores is ambiguous between "no effect" and "never ran".
+        "ai_ran": bool(getattr(fund.moat_detail, "ai_available", False)),
     }
 
 
-def measure_all(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
+def measure_all(symbols: List[str], ai_config=None) -> Dict[str, Dict[str, Any]]:
     out: Dict[str, Dict[str, Any]] = {}
     for i, sym in enumerate(symbols, 1):
-        row = measure_symbol(sym)
+        row = measure_symbol(sym, ai_config=ai_config)
         if row is not None:
             out[sym] = row
         print(f"\r  {i}/{len(symbols)} {sym:<10}", end="", file=sys.stderr, flush=True)
@@ -180,6 +243,78 @@ def render_comparison(before: Dict[str, Any], after: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def render_matrix(off: Dict[str, Any], on: Dict[str, Any]) -> str:
+    """The AI on/off matrix U3-7 needs before it can pick a moat threshold.
+
+    Reports the ceiling the quantitative scale actually reaches, which is the
+    heart of U3-7: ``wide_threshold`` is 14 on a 0–20 scale whose quant-only
+    tramo tops out at 12, so Wide Moat is unreachable without the AI layer.
+    """
+    common = sorted(set(off) & set(on))
+    ran = [s for s in common if on[s]["ai_ran"]]
+
+    lines: List[str] = [f"# Matriz IA on/off — {len(common)} tickers cacheados\n"]
+    lines.append(f"- Con la capa IA efectivamente aplicada: **{len(ran)}/{len(common)}**")
+    if len(ran) < len(common):
+        lines.append(
+            f"- Sin entrada en caché (la IA no corrió, la fila queda quant-only): "
+            f"**{len(common) - len(ran)}**"
+        )
+
+    def _ceiling(rows, key: str) -> float:
+        vals = [rows[s][key] for s in common if isinstance(rows[s].get(key), (int, float))]
+        return max(vals) if vals else 0.0
+
+    lines.append(
+        f"\n## Techo alcanzado por la escala\n\n"
+        f"| | moat_score máx | bonus máx | adjusted_score máx |\n|---|---:|---:|---:|\n"
+        f"| IA apagada | {_ceiling(off, 'moat_score')} | {_ceiling(off, 'moat_bonus')} "
+        f"| {_ceiling(off, 'adjusted_score')} |\n"
+        f"| IA prendida | {_ceiling(on, 'moat_score')} | {_ceiling(on, 'moat_bonus')} "
+        f"| {_ceiling(on, 'adjusted_score')} |"
+    )
+
+    from config import MOAT
+    lines.append(
+        f"\n`MOAT.wide_threshold` = **{MOAT.wide_threshold}**. Cualquier techo por debajo "
+        f"de ese número significa que la etiqueta es inalcanzable en ese modo."
+    )
+
+    moved = []
+    for sym in common:
+        d = _delta(on[sym]["adjusted_score"], off[sym]["adjusted_score"])
+        if d:
+            moved.append((abs(d), d, sym))
+    moved.sort(reverse=True)
+
+    lines.append(f"\n## Tickers cuyo score mueve la IA: **{len(moved)}**\n")
+    if moved:
+        lines.append("| Ticker | Adj. sin IA | Adj. con IA | Δ | Moat sin IA | Moat con IA | Señal |")
+        lines.append("|---|---:|---:|---:|---|---|---|")
+        for _, d, sym in moved:
+            a, b = off[sym], on[sym]
+            action = (f"{a['action']} → **{b['action']}**"
+                      if a["action"] != b["action"] else a["action"])
+            lines.append(
+                f"| {sym} | {a['adjusted_score']} | {b['adjusted_score']} | {d:+g} "
+                f"| {a['moat_classification']} ({a['moat_score']}) "
+                f"| {b['moat_classification']} ({b['moat_score']}) | {action} |"
+            )
+
+    flips = [s for s in common if off[s]["action"] != on[s]["action"]]
+    lines.append(
+        f"\n## Señales que se dan vuelta: **{len(flips)}**\n\n"
+        "> La capa de decisión no tiene caché, así que en modo offline corre "
+        "rule-based en las dos patas. Un cambio de señal acá viene del bonus de "
+        "moat moviendo el `adjusted_score` por encima de un umbral, no de que el "
+        "LLM haya opinado distinto."
+    )
+    for sym in flips:
+        lines.append(f"- **{sym}**: {off[sym]['action']} → {on[sym]['action']}")
+
+    return "\n".join(lines)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--baseline", metavar="PATH",
@@ -188,18 +323,35 @@ def main() -> int:
                         help="comparar la medición actual contra un baseline JSON")
     parser.add_argument("--out", metavar="PATH",
                         help="guardar el reporte markdown de --compare")
+    parser.add_argument("--matrix", metavar="PATH", nargs="?", const="-",
+                        help="medir el universo con IA apagada y prendida (U0-2); "
+                             "sin PATH imprime a stdout")
     parser.add_argument("--limit", type=int, default=0,
                         help="medir solo los primeros N tickers (debug)")
     args = parser.parse_args()
 
-    if not args.baseline and not args.compare:
-        parser.error("elegí --baseline o --compare")
+    if not args.baseline and not args.compare and not args.matrix:
+        parser.error("elegí --baseline, --compare o --matrix")
 
     _make_offline()
     symbols = cached_symbols()
     if args.limit:
         symbols = symbols[: args.limit]
     print(f"Midiendo {len(symbols)} tickers desde la caché (sin red)…", file=sys.stderr)
+
+    if args.matrix:
+        print("  pata 1/2: IA apagada…", file=sys.stderr)
+        off = measure_all(symbols)
+        print("  pata 2/2: IA prendida (solo caché)…", file=sys.stderr)
+        on = measure_all(symbols, ai_config=offline_ai_config())
+        report = render_matrix(off, on)
+        if args.matrix != "-":
+            Path(args.matrix).write_text(report)
+            print(f"Matriz escrita: {args.matrix}")
+        else:
+            print(report)
+        if not (args.baseline or args.compare):
+            return 0
 
     current = measure_all(symbols)
 

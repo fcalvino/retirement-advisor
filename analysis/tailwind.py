@@ -333,6 +333,9 @@ class TailwindAnalyzer:
             base_result.ai_available = bool(base_result.ai_reasoning)
             return base_result
 
+        if self.cfg.ai_cache_only:
+            return base_result   # offline measurement (U0-2): never call out
+
         try:
             from analysis.moat import call_ai_api  # shared provider dispatch
             from analysis.prompts import sector_country_tailwind_prompt
