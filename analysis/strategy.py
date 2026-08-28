@@ -241,12 +241,19 @@ class Decision:
 
     @property
     def score_badge(self) -> str:
+        """Badge for the score, read off the same ladder that produced the action.
+
+        These used to be the literals 75/60/45. Left alone when the thresholds were
+        re-anchored (2026-08-22) the badge would have called a 76 "⭐ Excellent"
+        while the engine no longer rated it STRONG BUY — verdict and badge
+        contradicting each other on the same screen.
+        """
         s = self.fundamental_score
-        if s >= 75:
+        if s >= CFG.strong_buy_score:
             return "⭐ Excellent"
-        elif s >= 60:
+        elif s >= CFG.buy_score:
             return "✅ Good"
-        elif s >= 45:
+        elif s >= CFG.hold_score:
             return "🟡 Fair"
         else:
             return "⚠️ Weak"
@@ -331,7 +338,7 @@ class RetirementStrategy:
                 decision.decisive_reason = "Fundamentales sólidos pero técnico débil — mantener, no agregar"
                 decision.rationale.append("Solid fundamentals but technical weakness — hold, do not add")
 
-        elif score >= 35:
+        elif score >= CFG.reduce_score:
             decision.action = "REDUCE"
             decision.confidence = "MEDIUM"
             decision.decisive_reason = "Calidad fundamental en deterioro — reducir exposición"
@@ -465,8 +472,12 @@ class RetirementStrategy:
         for w in technical.warnings:
             decision.risks.append(w)
 
-        # The payout the scorer judged, at the scorer's cut (U2-6). Reading
-        # accounting `payout_ratio` against a literal 80 flagged healthy REITs.
+        # The payout the *scorer* judged, at the *scorer's* cut (U2-6). This used to
+        # read `payout_ratio` — dividends over accounting profit — against a literal
+        # 80, so a REIT whose dividend the dividend dimension had just graded as
+        # healthy on FFO was told in the same breath that it might cut it: measured on
+        # the cached universe, 12 of 13. The basis is named because a payout quoted
+        # without one cannot be checked.
         payout, basis = effective_payout_pct(fundamental)
         if payout is not None and payout > T.max_payout_ratio:
             basis_label = "FFO" if basis == "ffo" else "earnings"
