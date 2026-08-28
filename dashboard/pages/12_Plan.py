@@ -612,6 +612,11 @@ def _render_plan_health(snap: PlanSnapshot) -> None:
     if st.button("🔄 Refrescar con datos de hoy", key=f"refresh_{snap.id}"):
         with st.spinner("Consultando precios actuales…"):
             st.session_state[_health_key] = compute_plan_health(snap)
+        # The refresh is now persisted onto the plan, and blocks rendered earlier
+        # in this run (the "Qué hacer este año" checklist reads the saved plan's
+        # drift) already used the pre-refresh copy. Rerun so the whole page
+        # reflects it, mirroring the "Registrar salud ahora" button below.
+        st.rerun()
 
     health = st.session_state.get(_health_key)
     if not health:
@@ -839,7 +844,12 @@ def _render_plan_ai(snap: PlanSnapshot) -> None:
                     _result = AIAnalyzer(_ai_cfg).generate_plan_narrative(snap, refreshed=_refreshed)
                     snap.narrative = _result.get("narrative", "") or snap.narrative
                     snap.macro_risks = _result.get("macro_risks", []) or []
-                    snap.last_refreshed_at = datetime.now().isoformat(timespec="seconds")
+                    # NOTE: deliberately does *not* stamp ``last_refreshed_at``.
+                    # That field means "when did we last compare this plan against
+                    # the market" (see dashboard/shared.py next_priority_action and
+                    # build_home_hub_for_prefs) and generating a narrative fetches
+                    # no prices. Stamping it here reset the freshness clock without
+                    # any refresh, while the real refresh button never moved it.
                     plan_store.upsert(snap)
                     st.toast("🧠 Narrativa del plan actualizada", icon="✅")
                     st.rerun()
@@ -855,31 +865,21 @@ def _render_load_plan(snap: PlanSnapshot) -> None:
     """Seed session_state from a saved plan so the user can do what-if iterations."""
     if st.button("📥 Cargar plan en Optimizer / Simulaciones", key=f"load_{snap.id}",
                  help="Usa el perfil, capital, horizonte y metas de este plan como punto de partida"):
+        from data.product_ux import plan_load_session_updates
+
         _mc = snap.mc_summary or {}
         _personal = snap.personal or {}
-        _capital = int(
-            float(_personal.get("current_capital", 0) or 0)
-            or float(_mc.get("initial_value", 0) or 0)
-            or 100_000
-        )
         _horizon = _snap_sim_horizon(
             int(_mc.get("horizon_years", 0) or _personal.get("primary_horizon_years", 0) or 0)
         )
-
-        # Optimizer: profile + capital (profile consumed via the preset hook on its page)
-        _pkey = snap.profile_key or _PROFILE_NAME_TO_KEY.get(snap.profile_name, "")
-        if _pkey:
-            st.session_state["_preset_profile_key"] = _pkey
-        st.session_state["optimizer_total_capital"] = _capital
-
-        # Simulaciones: horizon + capital + target + inflation + goals
-        st.session_state["horizon_years"] = _horizon
-        st.session_state["initial_value"] = min(max(_capital, 1_000), 10_000_000)
-        st.session_state["target_value"] = int(float(_mc.get("target_value", 0) or 0))
-        if _mc.get("inflation_rate") is not None:
-            st.session_state["inflation_rate"] = float(_mc.get("inflation_rate"))
-        if snap.goals:
-            st.session_state["goals_list"] = list(snap.goals)
+        # The pure helper decides which keys the plan can actually answer; keys it
+        # omits keep whatever the user already has (a plan saved without Monte
+        # Carlo must not reset the retirement goal to $0).
+        st.session_state.update(plan_load_session_updates(
+            snap,
+            horizon_years=_horizon,
+            profile_key=snap.profile_key or _PROFILE_NAME_TO_KEY.get(snap.profile_name, ""),
+        ))
 
         st.toast(f"📥 Plan «{snap.name}» cargado — andá a 📈 Optimizer o 🎲 Simulaciones y ejecutá.", icon="✅")
 

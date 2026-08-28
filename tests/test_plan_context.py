@@ -427,3 +427,62 @@ class TestSamplePlans:
         loaded = store.get(snap.id)
         assert loaded is not None
         assert loaded.withdrawal_strategy["kind"] == "fixed_real"
+
+
+# ------------------------------------------------------------------ #
+#  Sealing the refresh onto the snapshot (audit bugs 1 + 2)           #
+# ------------------------------------------------------------------ #
+
+class TestRefreshPlanAgainstMarket:
+    """``compute_plan_vs_reality`` computed and forgot.
+
+    ``refreshed_metrics`` and ``last_refreshed_at`` therefore stayed empty in
+    production forever, while three consumers read them: the annual checklist's
+    rebalance item, the Home hub drift line and the scheduler's market-drop
+    coach. These tests drive the real persistence path, not a hand-built field.
+    """
+
+    def test_refresh_seals_metrics_and_timestamp_onto_the_snapshot(self, store):
+        from data.plan_context import refresh_plan_against_market
+
+        snap = _snap()
+        store.upsert(snap)
+        assert snap.refreshed_metrics is None and snap.last_refreshed_at == ""
+
+        refreshed = refresh_plan_against_market(snap, lambda s: {"AAPL": 110.0, "KO": 55.0}[s])
+
+        assert snap.refreshed_metrics == refreshed
+        assert snap.last_refreshed_at
+        assert refreshed["summary"]["weighted_delta_pct"] == 10.0
+
+    def test_refresh_survives_the_round_trip_to_disk(self, store):
+        """The drift must be readable by the *next* session, not just this one."""
+        from data.plan_context import refresh_plan_against_market
+
+        snap = _snap()
+        store.upsert(snap)
+        refresh_plan_against_market(snap, lambda s: {"AAPL": 80.0, "KO": 40.0}[s])
+
+        reloaded = store.get(snap.id)
+        assert reloaded is not None
+        assert reloaded.last_refreshed_at == snap.last_refreshed_at
+        assert reloaded.refreshed_metrics["summary"]["weighted_delta_pct"] == -20.0
+
+    def test_snapshot_clock_matches_the_comparison_clock(self, store):
+        from data.plan_context import refresh_plan_against_market
+
+        snap = _snap()
+        store.upsert(snap)
+        refreshed = refresh_plan_against_market(snap, lambda s: 100.0)
+        # One source of time: the record and the snapshot can never disagree.
+        assert snap.last_refreshed_at == refreshed["refreshed_at"]
+
+    def test_persist_false_stamps_without_writing(self, store):
+        from data.plan_context import refresh_plan_against_market
+
+        snap = _snap()
+        store.upsert(snap)
+        refresh_plan_against_market(snap, lambda s: 100.0, persist=False)
+
+        assert snap.refreshed_metrics is not None
+        assert store.get(snap.id).refreshed_metrics is None
