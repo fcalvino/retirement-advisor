@@ -84,6 +84,7 @@ if run and symbol:
             verdict.to_decision(fund, tech),
             source="committee",
             price_at_rec=getattr(fund, "current_price", None) or None,
+            fundamental=fund,
         )
     except Exception:
         pass

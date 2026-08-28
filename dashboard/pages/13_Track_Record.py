@@ -51,13 +51,40 @@ with ctrl_r:
         with st.spinner("Puntuando recomendaciones vencidas…"):
             try:
                 result = score_due_recommendations()
-                st.success(f"Listo: {result['scored']} puntuadas, {result['skipped']} salteadas (sin precio).")
+                _msg = (
+                    f"Listo: {result['scored']} puntuadas, "
+                    f"{result['skipped']} salteadas (sin precio)."
+                )
+                if result.get("partial"):
+                    _msg += (
+                        f" {result['partial']} quedaron sin benchmark "
+                        f"({TRACK_RECORD.benchmark}): se reintentan en la próxima corrida."
+                    )
+                st.success(_msg)
             except Exception as exc:  # pragma: no cover - UI guard
                 logger.error(f"track_record page: scoring failed — {exc}")
                 st.error(f"No se pudo puntuar: {exc}")
 
 rows = track_record_store.get_scored_rows(horizon)
 all_recs = track_record_store.get_recommendations()
+
+# Source filter. The Screener logs everything it analyses as `screener`, which is the
+# unbiased sample calibration needs — but those are recommendations nobody looked at,
+# so they must not silently become the headline of "how the model did".
+_sources = sorted({(r.get("source") or "").lower() for r in rows if r.get("source")})
+if len(_sources) > 1:
+    _picked = st.multiselect(
+        "Fuente",
+        options=_sources,
+        default=_sources,
+        help=(
+            "`screener` son corridas completas del universo — muestra sin sesgo de "
+            "selección, ideal para calibrar. El resto son recomendaciones que "
+            "efectivamente viste."
+        ),
+    )
+    if _picked:
+        rows = [r for r in rows if (r.get("source") or "").lower() in _picked]
 
 # ------------------------------------------------------------------ #
 #  Headline                                                            #
@@ -74,7 +101,22 @@ m3.metric(
 m4.metric(
     "Exceso medio vs benchmark",
     f"{stats['mean_excess_pct']:+.1f}%" if stats["mean_excess_pct"] is not None else "—",
+    help=(
+        f"Promedio sobre las {stats['n_excess']} recomendaciones que tienen un exceso medido. "
+        "Una recomendación cuyo benchmark no se pudo cotizar no entra: sin el dato del "
+        "mercado no hay exceso que promediar."
+    ),
 )
+
+# A row whose benchmark could not be priced is *incomplete*, never a win (U2-4).
+if stats.get("n_benchmark_missing"):
+    st.warning(
+        f"**{stats['n_benchmark_missing']}** recomendaciones evaluadas a este horizonte no "
+        f"tienen cotización de {TRACK_RECORD.benchmark} en alguno de los dos extremos. No "
+        "cuentan como acierto ni como error, y su exceso no entra en ningún promedio — se "
+        "vuelven a intentar cada vez que corrés la puntuación.",
+        icon="⚠️",
+    )
 
 # One honest line that combines the numbers above — no spin.
 if stats["n"] > 0 and stats["overall_hit_rate"] is not None:
@@ -94,10 +136,17 @@ if stats["n"] > 0 and stats["overall_hit_rate"] is not None:
     st.info(_verdict, icon="📒")
 
 if stats["n"] == 0:
-    st.warning(
-        "Todavía no hay recomendaciones evaluadas a este horizonte. A medida que pase el "
-        "tiempo y corras la puntuación, esta página se va a poblar."
-    )
+    if rows:
+        st.warning(
+            "Hay resultados guardados a este horizonte, pero ninguno se pudo calificar: a "
+            f"todos les falta la cotización de {TRACK_RECORD.benchmark}. Volvé a correr la "
+            "puntuación cuando el dato esté disponible."
+        )
+    else:
+        st.warning(
+            "Todavía no hay recomendaciones evaluadas a este horizonte. A medida que pase el "
+            "tiempo y corras la puntuación, esta página se va a poblar."
+        )
     st.stop()
 
 # ------------------------------------------------------------------ #
@@ -114,6 +163,7 @@ calib_df = pd.DataFrame(
             "Confianza": level,
             "N": d["n"],
             "Tasa de acierto": (d["hit_rate"] * 100 if d["hit_rate"] is not None else None),
+            "N con exceso": d["n_excess"],
             "Exceso medio %": d["mean_excess_pct"],
         }
         for level, d in calib.items()
@@ -152,11 +202,27 @@ else:
 hc1, hc2 = st.columns(2)
 with hc1:
     st.subheader("Por acción")
+    st.caption(
+        "El **margen** es el ancho de la incertidumbre al 95 %: el promedio es "
+        "compatible con cualquier valor dentro de ± ese número. Cuando el margen es "
+        "mayor que el promedio, la fila dice «sin señal» — todavía no hay muestra "
+        "para distinguirlo de cero. **N** cuenta las recomendaciones calificables y "
+        "**N con exceso** las que además tienen benchmark: difieren cuando falta la "
+        "cotización del mercado."
+    )
     act = hit_rate_by_action(rows)
     st.dataframe(
         pd.DataFrame(
             [
-                {"Acción": k, "N": v["n"], "Acierto %": round(v["hit_rate"] * 100, 0), "Exceso medio %": v["mean_excess_pct"]}
+                {
+                    "Acción": k,
+                    "N": v["n"],
+                    "Acierto %": round(v["hit_rate"] * 100, 0),
+                    "N con exceso": v["n_excess"],
+                    "Exceso medio %": v["mean_excess_pct"],
+                    "Margen ±": v.get("excess_band_pct"),
+                    "Lectura": "sin señal" if v.get("inconclusive") else "distinguible de 0",
+                }
                 for k, v in act.items()
             ]
         ),
@@ -186,6 +252,7 @@ if not detail.empty:
         [
             "created_at", "symbol", "action", "confidence", "source",
             "price_at_rec", "return_pct", "benchmark_return_pct", "excess_return_pct", "hit",
+            "benchmark_missing",
         ]
     ].rename(
         columns={
@@ -199,6 +266,7 @@ if not detail.empty:
             "benchmark_return_pct": "Benchmark %",
             "excess_return_pct": "Exceso %",
             "hit": "Acierto",
+            "benchmark_missing": "Sin benchmark",
         }
     )
     st.dataframe(detail.sort_values("Fecha", ascending=False), hide_index=True, use_container_width=True)

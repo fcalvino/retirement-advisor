@@ -15,6 +15,7 @@ tested with injected prices (no yfinance in tests).
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta
 from typing import Callable, Dict, List, Optional
 
@@ -128,12 +129,13 @@ def score_due_recommendations(
 
             return_pct = (price_now / price_then - 1.0) * 100.0
 
+            bench_then = price_lookup(benchmark, rec.created_at)
+            bench_now = price_lookup(benchmark, horizon_date)
+
             # U2-4: a benchmark that could not be priced is *unknown*, not flat.
             # Defaulting it to 0.0 made ``excess`` equal ``return_pct``, so a BUY
             # that rose 10 % while the market rose 12 % — a loss — was persisted as
             # a ten-point win, permanently and indistinguishably from a real one.
-            bench_then = price_lookup(benchmark, rec.created_at)
-            bench_now = price_lookup(benchmark, horizon_date)
             benchmark_missing = not (bench_then and bench_now)
             if benchmark_missing:
                 benchmark_return_pct = None
@@ -223,8 +225,64 @@ def calibration_by_confidence(rows: List[dict]) -> Dict[str, dict]:
     return out
 
 
+def mean_with_band(values: List[float]) -> dict:
+    """Mean of *values* with the width of its 95 % uncertainty band.
+
+    Pure. Exists because the mean alone invites a conclusion the sample cannot
+    support. Measured on the real data (2026-08-22), the page showed:
+
+        STRONG BUY   n=4    mean excess  +10.40 %
+        BUY          n=13   mean excess   +4.08 %
+
+    which reads as "STRONG BUY beats BUY by six points". But these excess returns
+    have a standard deviation of 9.63 % and range from −23.5 % to +29.0 %; with
+    four observations the band around that +10.40 % is roughly ±9 points, so the
+    difference is indistinguishable from zero. Distinguishing a ~4-point gap needs
+    something like fifty observations per group.
+
+    ``band`` is the half-width: the mean is compatible with anything in
+    ``mean ± band``. ``inconclusive`` is True when that interval contains zero,
+    which is the flag the UI needs so a reader does not mistake noise for signal.
+
+    Uses Student's t rather than 1.96, which matters precisely where this function
+    is most needed: at n=4 the critical value is 3.18, not 1.96, so the normal
+    approximation would understate the band by 60 % exactly when the sample is
+    least trustworthy. A standard deviation estimated from four points is itself a
+    noisy number, and t is what accounts for that.
+    """
+    n = len(values)
+    if n == 0:
+        return {"n": 0, "mean": None, "band": None, "inconclusive": True}
+    mean = sum(values) / n
+    if n < 2:
+        return {"n": n, "mean": round(mean, 4), "band": None, "inconclusive": True}
+
+    variance = sum((v - mean) ** 2 for v in values) / (n - 1)
+    std_error = math.sqrt(variance / n)
+    band = _t_critical(n - 1) * std_error
+    return {
+        "n": n,
+        "mean": round(mean, 4),
+        "band": round(band, 4),
+        "inconclusive": abs(mean) <= band,
+    }
+
+
+def _t_critical(df: int) -> float:
+    """Two-sided 95 % critical value for *df* degrees of freedom."""
+    try:
+        from scipy import stats
+
+        return float(stats.t.ppf(0.975, df))
+    except Exception:  # pragma: no cover - scipy is a hard dependency of the project
+        return 1.96
+
+
 def hit_rate_by_action(rows: List[dict]) -> Dict[str, dict]:
     """Hit rate and mean excess return grouped by recommendation action.
+
+    The excess return carries its uncertainty band — see ``mean_with_band``. Without
+    it the table invites conclusions from four observations.
 
     U2-4: a recommendation whose benchmark could not be priced is ungradable, so it
     moves neither the numerator nor the denominator of the hit rate, and its
@@ -239,11 +297,14 @@ def hit_rate_by_action(rows: List[dict]) -> Dict[str, dict]:
         n = len(subset)
         hits = sum(1 for r in subset if r["hit"])
         excesses = _known_excesses(at_action)
+        stats = mean_with_band(excesses)
         out[action] = {
             "n": n,
             "n_excess": len(excesses),
             "hit_rate": round(hits / n, 4),
             "mean_excess_pct": (round(sum(excesses) / len(excesses), 4) if excesses else None),
+            "excess_band_pct": stats["band"],
+            "inconclusive": stats["inconclusive"],
         }
     return out
 

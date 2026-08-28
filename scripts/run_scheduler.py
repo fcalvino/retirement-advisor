@@ -119,6 +119,31 @@ def _active_plan_drift_inputs():
         return None
 
 
+def job_score_track_record() -> None:
+    """Score recommendations whose horizon has elapsed.
+
+    Nothing ran this before: the scorer existed and was wired to nothing, so of the
+    three configured horizons (30/90/252 days) only the 30-day one ever had data —
+    and only because someone typed the command by hand. The 252-day horizon is the
+    one that matches a retirement product, and it fills in only if this runs every
+    day for a year.
+
+    Idempotent by construction (an outcome is written once per recommendation and
+    horizon), so a missed day costs nothing and a repeated day does nothing.
+    """
+    logger.info("=== Track record scoring started ===")
+    try:
+        from analysis.track_record_scorer import score_due_recommendations
+
+        result = score_due_recommendations()
+        logger.info(
+            f"Track record: scored={result.get('scored', 0)} "
+            f"skipped={result.get('skipped', 0)}"
+        )
+    except Exception as exc:
+        logger.error(f"Track record scoring failed: {exc}")
+
+
 def job_alert_check() -> None:
     logger.info("=== Alert check started ===")
     try:
@@ -367,6 +392,7 @@ def main() -> None:
     logger.info("Retirement Advisor Scheduler starting…")
     logger.info(f"  Alert interval : every {REPORT.alert_check_interval_hours}h")
     logger.info(f"  Monthly report : day {REPORT.report_day_of_month} of each month at 08:00")
+    logger.info("  Track record   : daily at 07:00")
     logger.info(f"  Email enabled  : {ALERTS.email_enabled}")
     logger.info(f"  Telegram enabled: {ALERTS.telegram_enabled}")
 
@@ -379,6 +405,9 @@ def main() -> None:
         if datetime.now().day == REPORT.report_day_of_month
         else None
     )
+
+    # Score the track record daily — the horizons only fill in if this runs.
+    schedule.every().day.at("07:00").do(job_score_track_record)
 
     # Run alert check immediately on startup
     logger.info("Running initial alert check on startup…")

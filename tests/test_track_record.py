@@ -210,3 +210,109 @@ def test_summary_and_equity_curve():
     assert len(eq) == 2
     # 1.10 * 1.02 = 1.122
     assert eq.iloc[-1]["model_equity"] == pytest.approx(1.122, abs=0.001)
+
+
+# --------------------------------------------------------------------------- #
+#  Uncertainty band (2026-08-22) — the sample size travels with the average   #
+# --------------------------------------------------------------------------- #
+
+def test_mean_with_band_matches_a_hand_computation():
+    """[2,4,4,6]: mean 4 · sd √(8/3)=1.633 · se 0.8165 · t(3)=3.182 · band 2.598."""
+    import math
+
+    from analysis.track_record_scorer import mean_with_band
+
+    values = [2.0, 4.0, 4.0, 6.0]
+    expected_se = math.sqrt(8 / 3) / math.sqrt(4)
+
+    out = mean_with_band(values)
+    assert out["n"] == 4
+    assert out["mean"] == pytest.approx(4.0)
+    assert out["band"] == pytest.approx(3.182 * expected_se, abs=0.01)
+    assert out["inconclusive"] is False   # 4.0 sits outside ±2.60
+
+
+def test_small_samples_use_t_not_the_normal_approximation():
+    """At n=4 the normal critical value understates the band by 60 %.
+
+    That is the sample size where overconfidence does the most damage, so the more
+    conservative value is exactly the one that must be used there.
+    """
+    from analysis.track_record_scorer import mean_with_band
+
+    values = [2.0, 4.0, 4.0, 6.0]
+    band = mean_with_band(values)["band"]
+    normal_band = 1.96 * (8 / 3) ** 0.5 / 2
+    assert band > normal_band * 1.5
+
+
+def test_mean_with_band_flags_a_result_indistinguishable_from_zero():
+    from analysis.track_record_scorer import mean_with_band
+
+    out = mean_with_band([-10.0, 12.0, -8.0, 9.0])
+    assert out["inconclusive"] is True
+
+
+def test_mean_with_band_survives_tiny_samples():
+    from analysis.track_record_scorer import mean_with_band
+
+    assert mean_with_band([])["n"] == 0
+    assert mean_with_band([])["inconclusive"] is True
+    single = mean_with_band([7.0])
+    assert single["mean"] == pytest.approx(7.0)
+    assert single["band"] is None
+    assert single["inconclusive"] is True   # one observation is never a finding
+
+
+def test_the_real_observations_from_2026_08_22():
+    """Regression on the actual rows in the database, not on invented ones.
+
+    The page showed STRONG BUY +10.39 % (n=4) beside BUY +4.08 % (n=13) and it read
+    like a six-point edge. What the numbers really say is subtler, and the point of
+    the band is to show it: BUY's own average is **not** distinguishable from zero
+    (it ranges from −23.5 % to +29.0 %), so the six-point gap rests on one side that
+    is itself noise. This test fails if either group's reading flips silently.
+    """
+    from analysis.track_record_scorer import hit_rate_by_action
+
+    strong = [7.39, 9.88, 11.65, 12.66]
+    buy = [4.40, 1.39, 4.07, 12.45, 9.77, 4.63, 8.59, 8.67, 1.42, -23.52, -3.32, -4.55, 29.02]
+    rows = (
+        [{"action": "STRONG BUY", "hit": True, "excess_return_pct": v} for v in strong]
+        + [{"action": "BUY", "hit": True, "excess_return_pct": v} for v in buy]
+    )
+
+    out = hit_rate_by_action(rows)
+    assert out["STRONG BUY"]["n"] == 4
+    assert out["STRONG BUY"]["mean_excess_pct"] == pytest.approx(10.39, abs=0.02)
+    assert out["BUY"]["n"] == 13
+    assert out["BUY"]["mean_excess_pct"] == pytest.approx(4.08, abs=0.02)
+
+    # BUY's dispersion swallows its own average.
+    assert out["BUY"]["excess_band_pct"] > abs(out["BUY"]["mean_excess_pct"])
+    assert out["BUY"]["inconclusive"] is True, (
+        "con este rango (−23,5 % a +29,0 %) el promedio de BUY no se distingue de cero"
+    )
+
+
+# --------------------------------------------------------------------------- #
+#  Scheduler wiring (2026-08-22)                                              #
+# --------------------------------------------------------------------------- #
+
+def test_scheduler_exposes_a_track_record_job():
+    """The scorer existed and was wired to nothing — only the 30d horizon had data."""
+    import scripts.run_scheduler as sched
+
+    assert hasattr(sched, "job_score_track_record")
+
+
+def test_the_scheduler_job_never_propagates_failures(monkeypatch):
+    import scripts.run_scheduler as sched
+
+    def boom():
+        raise RuntimeError("scorer caído")
+
+    monkeypatch.setattr(
+        "analysis.track_record_scorer.score_due_recommendations", boom
+    )
+    sched.job_score_track_record()   # must not raise

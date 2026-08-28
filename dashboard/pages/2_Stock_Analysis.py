@@ -177,6 +177,7 @@ if symbol:
             decision,
             source=("ai" if ai_cfg.enabled else "rule_based"),
             price_at_rec=getattr(fund, "current_price", None) or None,
+            fundamental=fund,
         )
     except Exception:
         pass  # never let logging break the page
