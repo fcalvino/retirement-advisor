@@ -57,6 +57,9 @@ class MonteCarloResult:
     initial_value: float
     annual_withdrawal: float
     target_value: float
+    # Savings per year, deposited monthly. Separate from annual_withdrawal since
+    # tier2: cadence is a property of the instrument, not of a sign (U4-1).
+    annual_contribution: float = 0.0
 
     # Fan chart: year → {pct: portfolio_value}
     # Percentiles stored: 5, 10, 25, 50, 75, 90, 95
@@ -262,6 +265,7 @@ class MonteCarloSimulator:
             horizon_years=horizon_years,
             initial_value=initial_value,
             annual_withdrawal=annual_withdrawal,
+            annual_contribution=annual_contribution,
             target_value=target_value,
         )
 
@@ -368,6 +372,11 @@ class MonteCarloSimulator:
         # contract; without capital it falls back to the size of the savings, so
         # a plan that starts empty still has a unit to compound in (U4-2).
         basis = wealth_basis(initial_value, contribution)
+        # Report the resolved figures, not the raw arguments: a caller that sent
+        # a negative annual_withdrawal still described a contribution, and every
+        # predicate downstream should see it as one.
+        result.annual_withdrawal = withdrawal
+        result.annual_contribution = contribution
 
         def _wealth_usd(market: np.ndarray) -> np.ndarray:
             if strategy is not None:

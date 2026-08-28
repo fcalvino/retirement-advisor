@@ -388,14 +388,11 @@ class GoalPlanner:
         """
         if sim is None:
             sim = self.make_simulator(vol_scale=vol_scale, return_scale=return_scale)
-        # annual_contribution is modeled as a negative withdrawal (inflow to portfolio)
-        annual_withdrawal = -goal.annual_contribution
-
         return sim.run(
             horizon_years=goal.horizon_years,
             n_sims=n_sims,
             initial_value=allocated_capital,
-            annual_withdrawal=annual_withdrawal,
+            annual_contribution=goal.annual_contribution,
             target_value=goal.target_nominal,
             withdrawal_growth_rate=0.0,  # contributions are fixed in nominal terms
         )

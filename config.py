@@ -29,7 +29,12 @@ DB_PATH = DB_DIR / "retirement_advisor.db"
 #                   the bootstrap path before drags and before cash flows.
 #                   Plans saved under tier0 counted planned withdrawals as a
 #                   crash and persist inflated SORR figures.
-ENGINE_VERSION = "2026.08-tier1"
+#   2026.08-tier2 — U4-1/U4-2: contributions arrive monthly instead of as one
+#                   deposit in week 52, and a plan with no starting capital no
+#                   longer discards its savings. Plans saved under tier0/tier1
+#                   with contributions understate the final capital; those with
+#                   no initial capital reported it as zero, at 0 % probability.
+ENGINE_VERSION = "2026.08-tier2"
 
 
 @dataclass

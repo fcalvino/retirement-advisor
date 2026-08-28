@@ -562,3 +562,77 @@ class TestPlanLoadSessionUpdates:
         # number_input in 7_Simulaciones.py: min 1_000, max 10_000_000.
         assert huge["initial_value"] == 10_000_000
         assert tiny["initial_value"] == 1_000
+
+
+class TestEngineStalenessReasons:
+    """A stale plan must be told what actually changed since ITS stamp.
+
+    The warning used to be written once, for tier0, and shown to every stale
+    plan. A tier1 plan's withdrawals were already correct, so that copy told it
+    something false about its own numbers — the exact defect class the audits
+    exist to remove, arriving through the copy instead of the maths.
+    """
+
+    def test_the_current_version_is_not_stale_for_any_reason(self):
+        from config import ENGINE_VERSION
+        from data.product_ux import engine_staleness_reasons
+
+        assert engine_staleness_reasons(ENGINE_VERSION) == []
+
+    def test_a_tier1_plan_is_not_told_its_withdrawals_were_wrong(self):
+        from data.product_ux import engine_staleness_reasons
+
+        reasons = engine_staleness_reasons("2026.08-tier1")
+        assert len(reasons) == 1
+        assert "monto fijo en vez de capital" not in " ".join(reasons)
+        assert "aportes" in reasons[0]
+
+    def test_an_older_plan_is_told_everything_that_changed_after_it(self):
+        from data.product_ux import engine_staleness_reasons
+
+        assert len(engine_staleness_reasons("2026.08-tier0")) == 2
+
+    def test_an_unsigned_plan_predates_the_changelog_so_all_of_it_applies(self):
+        from data.product_ux import ENGINE_CHANGELOG, engine_staleness_reasons
+
+        assert len(engine_staleness_reasons("")) == len(ENGINE_CHANGELOG)
+
+    def test_every_shipped_version_has_an_entry(self):
+        """The changelog must name the version the engine currently stamps."""
+        from config import ENGINE_VERSION
+        from data.product_ux import ENGINE_CHANGELOG
+
+        assert ENGINE_VERSION in [version for version, _ in ENGINE_CHANGELOG]
+
+
+class TestContributionInputs:
+    """One helper owns the ×12, so two screens cannot quote different money."""
+
+    def test_annual_is_exactly_twelve_times_monthly(self):
+        from data.product_ux import contribution_inputs
+
+        resolved = contribution_inputs(personal={"monthly_savings": 437.5})
+        assert resolved["annual"] == pytest.approx(437.5 * 12)
+
+    def test_an_annual_figure_resolves_back_to_the_same_monthly(self):
+        from data.product_ux import contribution_inputs
+
+        assert contribution_inputs(personal={"annual_savings": 6_000.0})["monthly"] == pytest.approx(500.0)
+
+    def test_what_the_user_typed_here_beats_what_their_profile_remembers(self):
+        from data.product_ux import contribution_inputs
+
+        class _Prefs:
+            monthly_savings = 100.0
+
+        resolved = contribution_inputs({"monthly_savings": 800.0}, prefs=_Prefs())
+        assert resolved["monthly"] == pytest.approx(800.0)
+        assert resolved["source"] == "session"
+
+    def test_no_savings_anywhere_is_reported_as_no_source(self):
+        """Absent is not the same as zero, and the caller has to be able to tell."""
+        from data.product_ux import contribution_inputs
+
+        resolved = contribution_inputs()
+        assert resolved["annual"] == 0.0
+        assert resolved["source"] == ""

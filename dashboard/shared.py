@@ -472,6 +472,7 @@ def _sensitivity_run_fn(params: dict):
         n_sims=int(params.get("n_sims", 2_000)),
         initial_value=float(params.get("initial_value", 100_000)),
         annual_withdrawal=float(params.get("annual_withdrawal", 0.0)),
+        annual_contribution=float(params.get("annual_contribution", 0.0)),
         target_value=float(params.get("target_value", 0.0)),
         withdrawal_growth_rate=float(params.get("withdrawal_growth_rate", 0.0)),
         vol_scale=float(params.get("vol_scale", 1.0)),
@@ -1323,6 +1324,7 @@ def cached_monte_carlo(
     initial_value: float,
     annual_withdrawal: float,
     target_value: float,
+    annual_contribution: float = 0.0,      # savings per year, deposited monthly (U4-1)
     withdrawal_growth_rate: float = 0.0,   # inflation adjustment on withdrawals (Phase 0)
     seed: int = 42,
     vol_scale: float = 1.0,
@@ -1356,6 +1358,7 @@ def cached_monte_carlo(
         n_sims=n_sims,
         initial_value=initial_value,
         annual_withdrawal=annual_withdrawal,
+        annual_contribution=annual_contribution,
         target_value=target_value,
         withdrawal_growth_rate=withdrawal_growth_rate,
         drags=drags,
@@ -1375,8 +1378,15 @@ def cached_goal_simulation(
     vol_scale: float = 1.0,
     return_scale: float = 1.0,
     seed: int = 42,
+    engine_version: str = ENGINE_VERSION,
 ):
-    """Cache multi-goal simulation results for 30 min."""
+    """Cache multi-goal simulation results for 30 min.
+
+    ``engine_version`` is a cache key, not an argument anyone passes: without it
+    a bump to the maths would keep serving pre-bump numbers for up to half an
+    hour after deploy, which is exactly when a user is most likely to re-check
+    a plan the release just changed.
+    """
     import numpy as np
 
     from portfolio.goals import Goal, GoalPlanner
@@ -1419,6 +1429,7 @@ def cached_goal_savings_target(
     vol_scale: float = 1.0,
     return_scale: float = 1.0,
     seed: int = 42,
+    engine_version: str = ENGINE_VERSION,
 ):
     """TOTAL monthly contribution that lifts a goal to ``target_prob_pct``.
 
