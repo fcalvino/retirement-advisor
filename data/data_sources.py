@@ -25,9 +25,12 @@ brain is fully testable offline.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
-from typing import Dict, Optional
+from datetime import date
+from typing import Dict, List, Optional
 
+import pandas as pd
 from loguru import logger
 
 from config import MULTI_SOURCE
@@ -67,6 +70,37 @@ def _f(value) -> Optional[float]:
         return None
 
 
+def _annual_fact(df, candidates: List[str]) -> Optional[tuple]:
+    """``(value, as_of_iso)`` for the newest annual column of a matching row.
+
+    yfinance moves its statement row labels between versions, so every canonical
+    fact is looked up through a candidate list — the same lists the scoring engine
+    already uses (``analysis/moat.py``, ``analysis/scoring.py``,
+    ``analysis/fundamental.py``). Mirrors ``FundamentalAnalyzer._extract_annual_series``.
+
+    Returns ``None`` when no candidate matches or the newest column is empty, so a
+    fact that cannot be dated is simply not emitted rather than emitted undated.
+    """
+    if df is None or getattr(df, "empty", True):
+        return None
+    for name in candidates:
+        if name not in df.index:
+            continue
+        series = df.loc[name].dropna()
+        if series.empty:
+            continue
+        try:
+            series.index = pd.to_datetime(series.index)
+        except (TypeError, ValueError):
+            continue
+        series = series.sort_index(ascending=False)
+        value = _f(series.iloc[0])
+        if value is None:
+            continue
+        return value, series.index[0].date().isoformat()
+    return None
+
+
 # --------------------------------------------------------------------------- #
 #  yfinance (always available — wraps the existing fetcher)                   #
 # --------------------------------------------------------------------------- #
@@ -74,30 +108,64 @@ def _f(value) -> Optional[float]:
 class YFinanceSource(DataSource):
     name = "yfinance"
 
+    # Periodic facts read off the annual statements, so each one carries the
+    # fiscal period it covers. ``info``'s totalRevenue / netIncomeToCommon are
+    # **TTM with no date attached**, and comparing them against SEC's last closed
+    # 10-K is what manufactured the false conflicts: measured on US Quality
+    # (2026-08-18), every company growing faster than ``discrepancy_pct`` looked
+    # like a discrepancy — 20 of 25 on revenue, 18 of 25 on net income — while
+    # total_equity and total_assets, the two facts with no period, never did.
+    _STATEMENT_FACTS = {
+        "total_revenue": ("income_stmt", ["Total Revenue", "Revenue"]),
+        "net_income": ("income_stmt", ["Net Income"]),
+        "total_equity": (
+            "balance_sheet",
+            ["Stockholders Equity", "Total Stockholder Equity", "Common Stock Equity"],
+        ),
+        "total_assets": ("balance_sheet", ["Total Assets"]),
+    }
+
+    # Point-in-time facts: "now" by definition, so they carry no as_of. SEC does
+    # not publish them, so they are never cross-checked anyway.
+    _INFO_FACTS = {
+        "shares_outstanding": ("sharesOutstanding",),
+        "current_price": ("currentPrice", "regularMarketPrice"),
+        "market_cap": ("marketCap",),
+    }
+
     def fetch_fundamentals(self, symbol: str) -> Dict[str, SourceValue]:
+        out: Dict[str, SourceValue] = {}
+
         try:
             from data.fetcher import get_info
 
             info = get_info(symbol) or {}
         except Exception as exc:
-            logger.warning(f"YFinanceSource: {symbol} failed — {exc}")
-            return {}
+            logger.warning(f"YFinanceSource: {symbol} info failed — {exc}")
+            info = {}
 
-        mapping = {
-            "total_revenue": info.get("totalRevenue"),
-            "net_income": info.get("netIncomeToCommon"),
-            "shares_outstanding": info.get("sharesOutstanding"),
-            "current_price": info.get("currentPrice") or info.get("regularMarketPrice"),
-            "market_cap": info.get("marketCap"),
-            # Overlap with SEC EDGAR raw facts (P0.3) — absolute $, not ratios.
-            "total_equity": info.get("totalStockholderEquity") or info.get("stockholdersEquity"),
-            "total_assets": info.get("totalAssets"),
-        }
-        out: Dict[str, SourceValue] = {}
-        for field_name, raw in mapping.items():
+        for field_name, keys in self._INFO_FACTS.items():
+            raw = next((info.get(k) for k in keys if info.get(k) is not None), None)
             v = _f(raw)
             if v is not None:
                 out[field_name] = SourceValue(field_name, v, self.name)
+
+        # ``get_financials`` is cached and ``FundamentalAnalyzer.analyze`` already
+        # calls it, so this costs no extra network on the pipeline path.
+        try:
+            from data.fetcher import get_financials
+
+            financials = get_financials(symbol) or {}
+        except Exception as exc:
+            logger.warning(f"YFinanceSource: {symbol} financials failed — {exc}")
+            return out
+
+        for field_name, (stmt_key, candidates) in self._STATEMENT_FACTS.items():
+            parsed = _annual_fact(financials.get(stmt_key), candidates)
+            if parsed is not None:
+                out[field_name] = SourceValue(
+                    field_name, parsed[0], self.name, as_of=parsed[1], unit="USD"
+                )
         return out
 
 
@@ -117,16 +185,40 @@ class SecEdgarSource(DataSource):
     _TICKER_MAP_URL = "https://www.sec.gov/files/company_tickers.json"
     _FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json"
 
-    # canonical field -> candidate us-gaap concept tags (first hit wins)
+    # Canonical field -> candidate us-gaap concept tags. **All candidates are
+    # scanned and the most recently reported one wins** — order is only the
+    # tie-break when two tags cover the same period, so preferred tags go first.
+    #
+    # It used to be "first tag that exists wins", which silently returned figures
+    # a decade stale: companies retire tags (ASC 606 moved revenue off `Revenues`),
+    # but the retired tag stays in companyfacts forever with its last historical
+    # value. Measured 2026-08-18 against the live API: MSFT resolved to `Revenues`
+    # from **FY2010** (62.48 B), CRM to **FY2017** (8.39 B), and MA to
+    # `NetIncomeLoss` from **FY2013** (3.12 B) — MA reports under `ProfitLoss` now,
+    # a tag that was not even in this list.
     _CONCEPTS = {
-        "total_revenue": ["Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax"],
-        "net_income": ["NetIncomeLoss"],
+        "total_revenue": [
+            "RevenueFromContractWithCustomerExcludingAssessedTax",
+            "RevenueFromContractWithCustomerIncludingAssessedTax",
+            "Revenues",
+            "SalesRevenueNet",
+        ],
+        "net_income": ["NetIncomeLoss", "ProfitLoss"],
         "total_equity": ["StockholdersEquity"],
         "total_assets": ["Assets"],
     }
 
-    def __init__(self):
-        self._cik_cache: Dict[str, int] = {}
+    # A fiscal year, with slack for 52/53-week calendars.
+    _MIN_ANNUAL_DAYS = 330
+    _MAX_ANNUAL_DAYS = 400
+
+    # The ticker->CIK map is a ~1 MB download that does not change within a
+    # session, but ``default_fundamental_sources()`` builds a fresh adapter per
+    # ticker — so an instance-level cache made the screener re-download it once
+    # per ticker, six worker threads at a time. Shared at class level and guarded,
+    # so the pool pays for it once and SEC sees one request instead of N.
+    _cik_map: Optional[Dict[str, int]] = None
+    _cik_lock = threading.Lock()
 
     def _http_json(self, url: str) -> Optional[dict]:
         try:
@@ -142,30 +234,77 @@ class SecEdgarSource(DataSource):
             return None
 
     def _resolve_cik(self, symbol: str) -> Optional[int]:
-        if symbol in self._cik_cache:
-            return self._cik_cache[symbol]
-        data = self._http_json(self._TICKER_MAP_URL)
-        if not data:
-            return None
-        for row in data.values():
-            if str(row.get("ticker", "")).upper() == symbol.upper():
-                cik = int(row["cik_str"])
-                self._cik_cache[symbol] = cik
-                return cik
-        return None
+        cls = type(self)
+        with cls._cik_lock:
+            if cls._cik_map is None:
+                data = self._http_json(self._TICKER_MAP_URL)
+                if not data:
+                    return None          # not cached: a transient failure must stay retryable
+                cls._cik_map = {
+                    str(row["ticker"]).upper(): int(row["cik_str"])
+                    for row in data.values()
+                    if row.get("ticker") and row.get("cik_str") is not None
+                }
+        return cls._cik_map.get(symbol.upper())
 
-    @staticmethod
-    def _latest_annual(concept_facts: dict) -> Optional[tuple]:
-        """Return (value, as_of) for the most recent annual (FY) USD datapoint."""
+    @classmethod
+    def _annual_rows(cls, concept_facts: dict) -> List[dict]:
+        """Every 10-K datapoint that really covers a full fiscal year.
+
+        Two filters the previous version lacked, each one a measured bug:
+
+        - **Duration 330-400 days.** ``form=10-K`` and ``fp=FY`` are not enough: a
+          10-K also carries quarterly duration facts tagged that way. With no span
+          check, the "latest annual" revenue for KLAC resolved to a **10-Q
+          half-year from 2011** (1.45 B against a real 13.58 B), an 89 % apparent
+          discrepancy that was entirely an artifact of this function.
+        - **No fallback to "any row with a val".** That fallback is what reached
+          for quarterly data whenever a tag had no annual rows at all. A field we
+          cannot date properly is better dropped than guessed.
+
+        Instant facts (equity, assets) carry no ``start``; they are kept on ``end``.
+        """
         units = (concept_facts or {}).get("units", {})
         rows = units.get("USD") or units.get("shares") or []
-        annual = [r for r in rows if r.get("form", "").startswith("10-K") and r.get("fp") == "FY" and "val" in r]
-        if not annual:
-            annual = [r for r in rows if "val" in r and r.get("end")]
-        if not annual:
+        out: List[dict] = []
+        for r in rows:
+            if "val" not in r or not r.get("end"):
+                continue
+            if not str(r.get("form", "")).startswith("10-K"):
+                continue
+            start = r.get("start")
+            if start:
+                try:
+                    span = (date.fromisoformat(r["end"]) - date.fromisoformat(start)).days
+                except (ValueError, TypeError):
+                    continue
+                if not (cls._MIN_ANNUAL_DAYS <= span <= cls._MAX_ANNUAL_DAYS):
+                    continue
+            out.append(r)
+        return out
+
+    @classmethod
+    def _latest_annual(cls, us_gaap: dict, tags: List[str]) -> Optional[tuple]:
+        """``(value, as_of)`` for the most recently reported full year across *tags*.
+
+        Scans every candidate tag rather than stopping at the first that exists,
+        so a tag the company retired years ago cannot outrank the one it files
+        under today. Ties on ``end`` go to the earlier tag in *tags*.
+        """
+        best: Optional[dict] = None
+        for tag in tags:
+            facts = (us_gaap or {}).get(tag)
+            if not facts:
+                continue
+            for row in cls._annual_rows(facts):
+                if best is None or row["end"] > best["end"]:
+                    best = row
+        if best is None:
             return None
-        best = max(annual, key=lambda r: r.get("end", ""))
-        return _f(best.get("val")), best.get("end")
+        value = _f(best.get("val"))
+        if value is None:
+            return None
+        return value, best.get("end")
 
     def fetch_fundamentals(self, symbol: str) -> Dict[str, SourceValue]:
         cik = self._resolve_cik(symbol)
@@ -177,12 +316,11 @@ class SecEdgarSource(DataSource):
         us_gaap = facts.get("facts", {}).get("us-gaap", {})
         out: Dict[str, SourceValue] = {}
         for field_name, tags in self._CONCEPTS.items():
-            for tag in tags:
-                if tag in us_gaap:
-                    parsed = self._latest_annual(us_gaap[tag])
-                    if parsed and parsed[0] is not None:
-                        out[field_name] = SourceValue(field_name, parsed[0], self.name, as_of=parsed[1], unit="USD")
-                        break
+            parsed = self._latest_annual(us_gaap, tags)
+            if parsed is not None:
+                out[field_name] = SourceValue(
+                    field_name, parsed[0], self.name, as_of=parsed[1], unit="USD"
+                )
         return out
 
 
