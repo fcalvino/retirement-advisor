@@ -53,14 +53,15 @@ una, con oráculos empíricos donde el hallazgo lo permitía.
 | Oleada | Total | Cerradas | Abiertas |
 |---|---|---|---|
 | 3 — fórmulas con blast radius | 11 | 2 | 9 |
-| 4 — flujos del motor | 4 | 0 | 4 |
+| 4 — flujos del motor | 4 | 2 | 2 |
 | 5 — scoring y config | 20 | 1 | 19 |
 | 6 — dos motores de retorno | 2 | 0 | 2 |
 | 7 — UX del dashboard | 2 | 0 | 2 |
-| **Total** | **39** | **3** | **36** |
+| **Total** | **39** | **5** | **34** |
 
 Cerradas: **U3-6** (`a5a63d9`), **U3-11** (`00fb551`, oráculo: sin `payoutRatio` ni
-FFO el score es 4.0 exacto), **U5-20** (`d86f8e9`).
+FFO el score es 4.0 exacto), **U5-20** (`d86f8e9`), **U4-2** y **U4-1** (`9f05443`,
+un PR por la nota U4-1b; oráculos en `tests/test_cash_flow_oracle.py`).
 
 ---
 
@@ -85,45 +86,10 @@ mantienen sin red no se tocan.
 
 ## Bloque 1 — El motor descarta o falsea plata del usuario
 
-Los tres P0 vivos. Los dos primeros no dependen de nada.
-
-### U4-2 · Una meta sin capital inicial descarta todo el ahorro `P0`
-
-`monte_carlo.py:1349`:
-
-```python
-withdrawal_fraction = (annual_withdrawal / initial_value) if initial_value > 0 else 0.0
-```
-
-Con `initial_value == 0` la fracción es 0, los aportes no entran, y
-`paths_usd = paths * initial_value` deja todo en cero: **probabilidad de éxito 0 %**.
-
-**Oráculo corrido:** `initial_value=0` con aporte de 12k/año → path final `1.0000`
-(el aporte no existió). Con `initial_value=100k`, mismo aporte → `2.2000`.
-
-Por qué encabeza la lista: *"¿llego si ahorro X por mes?"* es la pregunta central del
-producto para un usuario joven, y es exactamente la que el motor contesta con un cero
-sin decir que no la sabe contestar.
-
-**Hacer:** camino ahorro-only válido — separar la escala nominal del pozo relativo,
-de modo que un plan que arranca en cero pueda componer aportes.
-**Oráculo:** meta sin capital inicial y aportes > 0 → `paths != 0`.
-
-### U4-1 · El aporte "mensual" entra una vez por año `P0`
-
-`monte_carlo.py:1351` aplica el flujo en `week_idx = min(yr * 52, ...)`. Un aporte
-mensual se agrega ×12 y se deposita entero en la semana 52. No es lo mismo que una
-anualidad mensual: once de los doce depósitos pierden su rendimiento parcial del año.
-
-**Hacer:** una sola cadencia — mensual en el motor, **o** honesta en las dos UIs que
-piden el número. No las dos cosas a medias.
-**Oráculo:** mismo input → misma plata pedida en Simulaciones y en Metas.
-
-### U4-1b · Nota de alcance
-
-U4-1 y U4-2 tocan la misma función (`_apply_withdrawals`) y el mismo invariante
-(cómo entra un flujo de caja al pozo). Conviene un solo PR con los dos oráculos,
-no dos pasadas sobre el mismo código.
+Queda **un** P0 vivo. U4-2 y U4-1 se cerraron el 2026-08-28 (`9f05443`): el pozo
+se guarda en unidades del índice de mercado, así que un plan que arranca sin
+capital compone sus aportes y los aportes entran mensualmente. El PR dejó dos filas
+nuevas en el bloque 4 — **U4-1c** y **U4-5** — con lo que deliberadamente **no** hizo.
 
 ### U3-7 · La escala del moat está rota `P0` · depende de U0-2
 
@@ -273,6 +239,8 @@ son el terreno donde ya nacieron los defectos de arriba.
 | **U5-10** | P2 | La tasa libre de riesgo vive en tres lugares con dos valores: `config.py:402` (0.045), `:694` (0.045), `:491` (`risk_free_proxy_pct = 4.0`). Más `BLOCK_SIZE` muerto, dos techos de yield y dos caps de sector | |
 | **U5-18** | P2 | 15 `utcnow` vivos entre relojes UTC-naive y local-naive: `data/cache.py` (6), `analysis/track_record.py` (8), `track_record_scorer.py` (1). Afecta la edad del dato y el dedup por día | |
 | **U3-2** | P2 | ATR y ADX usan `ewm(span=period)` en vez del suavizado de Wilder `alpha=1/period`. El RSI (`:300`) ya está bien — son los únicos dos que quedaron | `technical.py:329,353-358` |
+| **U4-1c** | P2 | U4-1 mensualizó los aportes; los **retiros** siguen anuales a propósito (`guardrails` *es* una revisión anual). Un jubilado gasta todos los meses, así que el lump de diciembre sobrestima el pozo que sobrevive. Decidir anual, pagar en doceavos — `MONTE_CARLO.withdrawal_periods_per_year` ya existe. Mueve `prob_sustain_real_pct` y `expected_depletion_year` de todo plan de retiro guardado → otro bump de `ENGINE_VERSION` | `decumulation.py`, `config.py` |
+| **U4-5** | P2 | La pestaña principal de Simulaciones **no puede** simular un aporte: su único widget de flujo es "Retiro anual" con `min_value=0`, así que la pantalla que contesta "¿llego?" no representa que alguien ahorre. El motor acepta `annual_contribution` desde tier2 y `contribution_inputs` ya resuelve el número; falta la palanca | `7_Simulaciones.py:195-204` |
 | **U4-3** | P2 | La palanca "Inflación" del tornado bumpea `withdrawal_growth_rate`; sin retiros activos el swing es exactamente 0 y el rótulo queda igual | `sensitivity.py:105-110` |
 | **U4-4** | P2 | La longevidad solo trunca: `cap_week = min(longevity*52, n_cols-1)`. Vivir 5 años más no puede alargar la simulación | `decumulation.py:300` |
 | **U5-7** | P2 | El docstring promete "Conservative: age / Aggressive: age − 10"; la función no toma perfil y siempre devuelve `min(age, 80)` | `config.py:360-362` |
