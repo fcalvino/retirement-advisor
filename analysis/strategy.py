@@ -72,6 +72,7 @@ def apply_safety_overlay(
                 decision.blocked = True
                 decision.block_reason = reason
                 decision.confidence = "HIGH"
+                decision.decisive_reason = f"Bloqueado: {reason}"
                 decision.rationale = [f"BLOCKED (safety overlay): {reason}"] + list(
                     decision.rationale or []
                 )
@@ -83,6 +84,7 @@ def apply_safety_overlay(
         decision.blocked = True
         decision.block_reason = reason
         decision.confidence = "HIGH"
+        decision.decisive_reason = f"Bloqueado: {reason}"
         decision.rationale = [f"BLOCKED (safety overlay): {reason}"] + list(
             decision.rationale or []
         )
@@ -120,6 +122,7 @@ def apply_data_quality_policy(
         decision.action = "HOLD"
         decision.confidence = "LOW"
         note = "BUY degradado a HOLD por data quality pobre (datos incompletos)"
+        decision.decisive_reason = note
         if note not in (decision.rationale or []):
             decision.rationale = [note] + list(decision.rationale or [])
         return decision
@@ -128,6 +131,7 @@ def apply_data_quality_policy(
         if getattr(config, "partial_caps_strong_buy", True) and decision.action == "STRONG BUY":
             decision.action = "BUY"
             note = "STRONG BUY capado a BUY por data quality partial (métricas incompletas)"
+            decision.decisive_reason = note
             if note not in (decision.rationale or []):
                 decision.rationale = [note] + list(decision.rationale or [])
         cap = getattr(config, "partial_max_confidence", "MEDIUM") or "MEDIUM"
@@ -178,6 +182,7 @@ def apply_negative_equity_policy(
     if decision.action in ("STRONG BUY", "BUY"):
         note = f"{decision.action} capado a HOLD por patrimonio neto negativo"
         decision.action = "HOLD"
+        decision.decisive_reason = note
         if note not in (decision.rationale or []):
             decision.rationale = [note] + list(decision.rationale or [])
         cur = decision.confidence or "MEDIUM"
@@ -203,6 +208,12 @@ class Decision:
     # Hard blocks (safety guards)
     blocked: bool = False
     block_reason: str = ""
+
+    # The one reason that explains *this* action, set wherever the engine blocks
+    # or downgrades (audit item 04). `rationale` is a descriptive list whose order
+    # is an implementation detail; this is the sentence a user needs to reconcile
+    # "95.7/100" with "HOLD". Empty when the action follows straight from the score.
+    decisive_reason: str = ""
 
     # AI analysis (empty when using rule-based engine)
     ai_reasoning: str = ""
@@ -277,6 +288,7 @@ class RetirementStrategy:
                 decision.blocked = True
                 decision.block_reason = reason
                 decision.confidence = "HIGH"
+                decision.decisive_reason = f"Bloqueado: {reason}"
                 decision.rationale.append(f"BLOCKED: {reason}")
                 return decision
         else:
@@ -287,6 +299,7 @@ class RetirementStrategy:
                 decision.blocked = True
                 decision.block_reason = f"Movimiento parabólico crypto (RSI={technical.rsi_weekly:.0f}, +{technical.price_vs_52w_low_pct:.0f}% desde 52w low)"
                 decision.confidence = "HIGH"
+                decision.decisive_reason = f"Bloqueado: {decision.block_reason}"
                 decision.rationale.append(f"BLOCKED: {decision.block_reason}")
                 return decision
 
@@ -301,6 +314,10 @@ class RetirementStrategy:
             else:
                 decision.action = "BUY"
                 decision.confidence = "MEDIUM"
+                decision.decisive_reason = (
+                    "Fundamentales de STRONG BUY, pero todavía sin margen de seguridad — "
+                    "esperar una baja"
+                )
                 decision.rationale.append("Strong fundamentals but no margin of safety yet — wait for pullback")
 
         elif score >= CFG.buy_score and tech != "BEARISH":
@@ -311,16 +328,19 @@ class RetirementStrategy:
             decision.action = "HOLD"
             decision.confidence = "MEDIUM"
             if tech == "BEARISH":
+                decision.decisive_reason = "Fundamentales sólidos pero técnico débil — mantener, no agregar"
                 decision.rationale.append("Solid fundamentals but technical weakness — hold, do not add")
 
         elif score >= 35:
             decision.action = "REDUCE"
             decision.confidence = "MEDIUM"
+            decision.decisive_reason = "Calidad fundamental en deterioro — reducir exposición"
             decision.rationale.append("Fundamental quality declining — reduce exposure gradually")
 
         else:
             decision.action = "SELL"
             decision.confidence = "HIGH"
+            decision.decisive_reason = "Deterioro fundamental — salir de la posición"
             decision.rationale.append("Fundamental deterioration — exit position")
 
         # Technical confirmation for BUY / STRONG BUY (config-first)
@@ -329,6 +349,10 @@ class RetirementStrategy:
             if not uptrend:
                 decision.action = "HOLD"
                 decision.confidence = "MEDIUM"
+                decision.decisive_reason = (
+                    "Los fundamentales dan para comprar, pero no hay tendencia alcista "
+                    "confirmada — mantener, no agregar"
+                )
                 decision.rationale.append(
                     "Fundamentals support buying but technical uptrend not confirmed "
                     "(require_technical_uptrend) — hold, do not add"
@@ -342,6 +366,7 @@ class RetirementStrategy:
             if any("Volatilidad extrema" in (w or "") for w in (fundamental.warnings or [])):
                 decision.action = "HOLD"
                 decision.confidence = "MEDIUM"
+                decision.decisive_reason = "BUY capado a HOLD por volatilidad extrema (perfil retiro)"
                 decision.rationale.append(
                     "BUY capado a HOLD por volatilidad extrema crypto (perfil retiro)"
                 )
