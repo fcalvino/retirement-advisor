@@ -45,6 +45,13 @@ AGENT_JSON_SCHEMA = (
 )
 
 
+def _eps_growth_label(fund) -> str:
+    """Honest name for the earnings-growth figure (see analysis/fundamental.py)."""
+    from analysis.fundamental import eps_growth_label
+
+    return eps_growth_label(fund)
+
+
 def _num(value, suffix: str = "") -> str:
     try:
         if value is None:
@@ -72,8 +79,9 @@ def committee_context_block(fund, tech) -> str:
             f"Margen neto: {_num(getattr(fund, 'net_margin', None), '%')}",
             f"D/E: {_num(getattr(fund, 'debt_equity', None))} | P/E: {_num(getattr(fund, 'pe_ratio', None))} | "
             f"Margen de seguridad: {_num(getattr(fund, 'margin_of_safety_pct', None), '%')}",
-            f"CAGR ingresos 5a: {_num(getattr(fund, 'revenue_cagr_5y', None), '%')} | "
-            f"CAGR EPS 5a: {_num(getattr(fund, 'eps_cagr_5y', None), '%')}",
+            f"CAGR ingresos {getattr(fund, 'revenue_cagr_years', 0) or '?'}a: "
+            f"{_num(getattr(fund, 'revenue_cagr_5y', None), '%')} | "
+            f"{_eps_growth_label(fund)}: {_num(getattr(fund, 'eps_cagr_5y', None), '%')}",
         ]
     lines += [
         f"Señal técnica: {getattr(tech, 'signal', 'n/d')} | RSI semanal: {_num(getattr(tech, 'rsi_weekly', None))} | "
