@@ -203,6 +203,53 @@ def test_screener_segments_instead_of_ranking_funds_against_companies():
     assert "no tienen estados financieros" in other_block
 
 
+# --------------------------------------------------------------------------- #
+#  The crypto path stamps its own class                                        #
+# --------------------------------------------------------------------------- #
+
+
+class TestCryptoAnalyzerStampsItsClass:
+    """``CryptoAnalyzer`` builds its own ``FundamentalResult``.
+
+    It never goes through ``FundamentalAnalyzer.analyze``, which is where
+    ``asset_class`` is normally set from ``classify_asset``. So the dataclass
+    default — ``"equity"`` — survived, and ``is_fundamentally_scorable`` answered
+    True for BTC: the one asset in the universe that provably has no financial
+    statements was being advertised as scorable by the equity engine.
+    """
+
+    @staticmethod
+    def _analyze_with_no_feed(symbol="BTC-USD"):
+        # The empty-info early return is the shortest path through analyze(), and
+        # the one that must also carry the class: a failed fetch still returns a
+        # result the Screener will classify.
+        from unittest.mock import patch
+
+        from analysis.crypto_analyzer import CryptoAnalyzer
+
+        with patch("data.crypto_fetcher.get_crypto_info", return_value={}):
+            return CryptoAnalyzer().analyze(symbol)
+
+    def test_the_result_is_crypto_not_equity(self):
+        result = self._analyze_with_no_feed()
+        assert result.asset_class == CRYPTO
+        assert result.is_crypto is True
+
+    def test_it_is_not_fundamentally_scorable(self):
+        result = self._analyze_with_no_feed()
+        assert is_fundamentally_scorable(result.asset_class) is False
+
+    def test_classify_result_agrees_with_the_stamp(self):
+        result = self._analyze_with_no_feed()
+        assert classify_result(result) == result.asset_class
+
+    def test_effective_payout_is_missing_not_zero(self):
+        """A coin pays no dividend; that is absent, not a payout of 0 %."""
+        result = self._analyze_with_no_feed()
+        assert result.payout_ratio is None
+        assert result.payout_ratio_effective is None
+
+
 def test_asset_class_singleton_is_the_source_of_truth():
     assert ASSET_CLASS.scorable_classes == ("equity",)
     assert "ETF" in ASSET_CLASS.fund_quote_types
