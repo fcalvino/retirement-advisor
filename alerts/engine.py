@@ -203,7 +203,7 @@ class AlertEngine:
                 alert = self._check_opportunity(symbol, company, signal, score, sector)
                 if alert:
                     fired.append(alert)
-                    self._log_track_record(symbol, signal, score)
+                    self._log_track_record(symbol, signal, score, sector)
 
             # 5 — Moat downgrade
             if _MOAT_RANK.get(moat_class, 0) < _MOAT_RANK.get(prev_moat, 0):
@@ -492,7 +492,9 @@ class AlertEngine:
         explanation = _get_ai_explanation(atype.value, symbol, context, AlertSeverity.INFO)
         return self._fire(atype, symbol, msg, AlertSeverity.INFO, explanation)
 
-    def _log_track_record(self, symbol: str, signal: str, score: float) -> None:
+    def _log_track_record(
+        self, symbol: str, signal: str, score: float, sector: str = ""
+    ) -> None:
         """Persist an opportunity as a recommendation for the track record (Fase 1).
 
         The alert engine speaks the underscore signal vocabulary ("STRONG_BUY");
@@ -514,7 +516,14 @@ class AlertEngine:
                 technical_signal="",
                 rationale=[f"Alerta de oportunidad: entró con señal {signal}"],
             )
-            track_record_store.log_recommendation(rec, source="rule_based")
+            # The alert loop works over plain dicts, not FundamentalResult, so only
+            # the sector is available here. The dimensions come from the Screener
+            # path, which is where the bulk of the calibration sample is built.
+            track_record_store.log_recommendation(
+                rec,
+                source="rule_based",
+                fundamental=SimpleNamespace(sector=sector or "", industry=""),
+            )
         except Exception as exc:
             logger.debug(f"track_record: opportunity log skipped for {symbol} — {exc}")
 
