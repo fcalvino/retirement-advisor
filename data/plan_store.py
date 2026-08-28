@@ -41,6 +41,24 @@ def _slugify(name: str) -> str:
     return s or "plan"
 
 
+def unique_plan_id(base_id: str, taken: Callable[[str], bool]) -> str:
+    """Return ``base_id``, or ``base_id-2`` / ``-3`` … when it is already taken.
+
+    Plan ids are derived from the name (``_slugify``), so two unrelated plans can
+    claim the same id — and ``PlanStore.upsert`` replaces by id. That is the
+    intended behaviour when *saving* (the UI warns first), but importing a backup
+    must never silently destroy a homonymous local plan. ``taken`` is injected
+    (``lambda pid: plan_store.get(pid) is not None``) so this stays pure.
+    """
+    base = (base_id or "").strip() or "plan"
+    if not taken(base):
+        return base
+    n = 2
+    while taken(f"{base}-{n}"):
+        n += 1
+    return f"{base}-{n}"
+
+
 # ------------------------------------------------------------------ #
 #  PlanSnapshot                                                        #
 # ------------------------------------------------------------------ #

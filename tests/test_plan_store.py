@@ -343,3 +343,63 @@ def test_legacy_snapshot_without_withdrawal_field_loads(tmp_path):
     loaded = store.get(snap.id)
     assert loaded is not None
     assert loaded.withdrawal_strategy is None
+
+
+# ------------------------------------------------------------------ #
+#  unique_plan_id — non-destructive import (audit bug 5)              #
+# ------------------------------------------------------------------ #
+
+class TestUniquePlanId:
+    """Plan ids are name slugs, and ``upsert`` replaces by id.
+
+    That is fine when saving (the page warns first), but importing a backup from
+    another machine could silently destroy a homonymous local plan. This is the
+    helper that lets the import offer a copy instead.
+    """
+
+    def test_free_id_is_returned_unchanged(self):
+        from data.plan_store import unique_plan_id
+
+        assert unique_plan_id("retiro-2045", lambda _pid: False) == "retiro-2045"
+
+    def test_taken_id_gets_a_numeric_suffix(self):
+        from data.plan_store import unique_plan_id
+
+        taken = {"retiro-2045"}
+        assert unique_plan_id("retiro-2045", lambda pid: pid in taken) == "retiro-2045-2"
+
+    def test_suffix_walks_until_free(self):
+        from data.plan_store import unique_plan_id
+
+        taken = {"retiro-2045", "retiro-2045-2", "retiro-2045-3"}
+        assert unique_plan_id("retiro-2045", lambda pid: pid in taken) == "retiro-2045-4"
+
+    def test_unrelated_ids_do_not_push_the_suffix(self):
+        from data.plan_store import unique_plan_id
+
+        taken = {"otro-plan", "retiro-2046"}
+        assert unique_plan_id("retiro-2045", lambda pid: pid in taken) == "retiro-2045"
+
+    def test_empty_base_falls_back_like_slugify(self):
+        from data.plan_store import unique_plan_id
+
+        assert unique_plan_id("", lambda _pid: False) == "plan"
+
+    def test_against_a_real_store_the_copy_keeps_both_plans(self, store):
+        """The end state the import flow must reach: two plans, none destroyed."""
+        from dataclasses import replace
+
+        from data.plan_store import unique_plan_id
+
+        local = PlanSnapshot(id="retiro-2045", name="Retiro 2045",
+                             created_at="", updated_at="", n_positions=3)
+        store.upsert(local)
+
+        incoming = PlanSnapshot(id="retiro-2045", name="Retiro 2045",
+                                created_at="", updated_at="", n_positions=9)
+        copy_id = unique_plan_id(incoming.id, lambda pid: store.get(pid) is not None)
+        store.upsert(replace(incoming, id=copy_id, name=f"{incoming.name} (copia)"))
+
+        assert {p.id for p in store.list()} == {"retiro-2045", "retiro-2045-2"}
+        assert store.get("retiro-2045").n_positions == 3   # untouched
+        assert store.get("retiro-2045-2").n_positions == 9

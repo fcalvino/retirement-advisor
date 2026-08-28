@@ -13,6 +13,7 @@ Mis Metas) y el perfil personal. Permite:
 from __future__ import annotations
 
 import io
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
@@ -41,7 +42,7 @@ from dashboard.shared import (
 )
 from data.env_provenance import format_drift
 from data.plan_context import activate_plan, compute_alignment_trades, deactivate_plan
-from data.plan_store import PlanSnapshot, _slugify, plan_store
+from data.plan_store import PlanSnapshot, _slugify, plan_store, unique_plan_id
 from data.product_ux import (
     MAX_DD_ESTIMATE_SHORT,
     PROXY_RATIO_HELP,
@@ -911,18 +912,51 @@ with st.expander("📦 Importar / Restaurar plan desde backup", expanded=False):
             st.error(f"No se pudo leer el plan: {_exc}")
         else:
             st.success(f"Plan válido: **{_imported.name}** · {_imported.n_positions} posiciones.")
-            _ic1, _ic2 = st.columns(2)
-            with _ic1:
-                if st.button("📥 Importar plan", type="primary", key="plan_import_btn"):
-                    plan_store.upsert(_imported)
-                    st.toast(f"✅ Plan importado: {_imported.name}", icon="📦")
-                    st.rerun()
-            with _ic2:
-                if st.button("📥 Importar y activar", key="plan_import_activate_btn"):
-                    plan_store.upsert(_imported)
-                    activate_plan(_imported.id, prefs)
-                    st.toast(f"🎯 Plan importado y activado: {_imported.name}", icon="📦")
-                    st.rerun()
+
+            # A plan id is the slug of its name, so a backup from another machine
+            # can collide with a local plan that has nothing to do with it — and
+            # ``upsert`` replaces by id. Importing must never destroy local work
+            # without a deliberate click (the save flow above already warns).
+            _clash = plan_store.get(_imported.id)
+            if _clash is None:
+                _ic1, _ic2 = st.columns(2)
+                with _ic1:
+                    if st.button("📥 Importar plan", type="primary", key="plan_import_btn"):
+                        plan_store.upsert(_imported)
+                        st.toast(f"✅ Plan importado: {_imported.name}", icon="📦")
+                        st.rerun()
+                with _ic2:
+                    if st.button("📥 Importar y activar", key="plan_import_activate_btn"):
+                        plan_store.upsert(_imported)
+                        activate_plan(_imported.id, prefs)
+                        st.toast(f"🎯 Plan importado y activado: {_imported.name}", icon="📦")
+                        st.rerun()
+            else:
+                _copy_id = unique_plan_id(_imported.id, lambda pid: plan_store.get(pid) is not None)
+                st.warning(
+                    f"⚠️ Ya existe un plan guardado con este identificador: "
+                    f"**{_clash.name}** (guardado {_clash.updated_at[:10]}, "
+                    f"{_clash.n_positions} posiciones). Elegí qué hacer — "
+                    f"«Sobrescribir» reemplaza el plan local y **no se puede deshacer**.",
+                    icon="⚠️",
+                )
+                _ic1, _ic2 = st.columns(2)
+                with _ic1:
+                    if st.button("📥 Importar como copia", type="primary",
+                                 key="plan_import_copy_btn",
+                                 help=f"Se guarda como «{_imported.name} (copia)» y conservás los dos"):
+                        _copy = replace(
+                            _imported, id=_copy_id, name=f"{_imported.name} (copia)",
+                        )
+                        plan_store.upsert(_copy)
+                        st.toast(f"✅ Importado como copia: {_copy.name}", icon="📦")
+                        st.rerun()
+                with _ic2:
+                    if st.button("♻️ Sobrescribir el existente", key="plan_import_overwrite_btn",
+                                 help=f"Reemplaza «{_clash.name}» con el plan del archivo"):
+                        plan_store.upsert(_imported)
+                        st.toast(f"♻️ Plan sobrescrito: {_imported.name}", icon="📦")
+                        st.rerun()
 
 _plans = plan_store.list()
 
