@@ -50,6 +50,7 @@ Roles:
 | ai-context | `docs/CONTEXT.md` | Contexto canónico del proyecto (arquitectura, features, estándares) |
 | ai-context | `AI_CODING_GUIDELINES.md` | Puntero corto al path canónico |
 | ai-context | `CLAUDE.md` | Puntero Claude Code (`@docs/PROMPT_INSTRUCTIONS.md`) |
+| living-guide | `docs/BACKLOG.md` | **Lo que falta hacer** — repriorización unificada (auditoría + ideación + specs) |
 | historical-plan | `docs/ROADMAP.md` | Fases ya completadas (no es backlog abierto) |
 | historical-plan | `docs/IMPLEMENTATION_PLAN.md` | Plan 2026-06 del Gran Salto — las 5 fases ya están shipped |
 | ideation | `docs/VISION_GRAN_SALTO.md` | Visión de producto 2026-06; las 3 apuestas ya están en el código |
@@ -72,6 +73,7 @@ Roles:
 |-----------|-------------|
 | [`README.md`](../README.md) | Introducción, Quick Start, configuración, metodología resumida |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Bugs, ideas, setup de desarrollo, PRs |
+| [`BACKLOG.md`](BACKLOG.md) | Trabajo abierto, priorizado y verificado contra el código |
 | [`MAINTENANCE.md`](MAINTENANCE.md) | Cómo mantener CONTEXT y el catálogo |
 | [`DEMO_HOSTED.md`](DEMO_HOSTED.md) | Demo Docker single-user |
 
@@ -108,8 +110,9 @@ Un solo path canónico: **`docs/PROMPT_INSTRUCTIONS.md`** (regla: leer
 
 ## Planes e ideación (históricos)
 
-No usar estos archivos como “el próximo sprint”. El estado actual de features
-está en [`CONTEXT.md` §6](CONTEXT.md).
+No usar estos archivos como “el próximo sprint”. El próximo sprint está en
+[`BACKLOG.md`](BACKLOG.md); el estado actual de features, en
+[`CONTEXT.md` §6](CONTEXT.md).
 
 | Documento | Rol |
 |-----------|-----|
