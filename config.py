@@ -380,6 +380,13 @@ class AIConfig:
     ))
     enabled: bool = field(default_factory=lambda: os.getenv("AI_ENABLED", "").lower() in ("true", "1", "yes"))
     use_in_screener: bool = field(default_factory=lambda: os.getenv("AI_USE_IN_SCREENER", "false").lower() in ("true", "1", "yes"))
+    # Offline measurement (U0-2). When True the AI enriches the SCORE (moat and
+    # tailwind, both cached) but the decision stays rule-based. The decision
+    # layer has no cache, so it is the one part of the AI path that cannot run
+    # without the network — and `AIAnalyzer.analyze` swallows every failure and
+    # falls back silently, so letting it try would produce a rule-based answer
+    # while looking like an AI one. Never set from the environment.
+    enrich_only: bool = False
 
 
 @dataclass
@@ -491,6 +498,11 @@ class MoatConfig:
     minimal_threshold: float = 4.0
     max_bonus: float = 10.0
     ai_cache_ttl_hours: int = 168
+    # Offline measurement (U0-2). When True a cache miss returns the
+    # quantitative result untouched instead of calling the provider, so a run
+    # with AI enabled can never reach the network. Flipped in-process by
+    # scripts/measure_score_impact.py; never persisted.
+    ai_cache_only: bool = False
     # ROIC − cost-of-equity-proxy spread scoring (D5; name kept per U1-4)
     use_roic_wacc_spread: bool = True
     risk_free_proxy_pct: float = 4.0
@@ -752,6 +764,7 @@ class TailwindConfig:
     max_bonus: float = 8.0
     optimizer_er_tilt: float = 0.05
     ai_cache_ttl_hours: int = 720
+    ai_cache_only: bool = False   # see MoatConfig.ai_cache_only (U0-2)
     data_file: str = "data/tailwinds/sector_country.json"
 
 

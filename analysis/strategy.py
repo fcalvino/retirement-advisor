@@ -507,10 +507,12 @@ def full_analysis(
         tech_symbol = normalize_crypto_ticker(symbol) if is_crypto(symbol) else symbol
         tech = TechnicalAnalyzer().analyze(tech_symbol)
 
-    if ai_config and ai_config.enabled:
+    if ai_config and ai_config.enabled and not getattr(ai_config, "enrich_only", False):
         from analysis.ai_analyzer import AIAnalyzer
         decision = AIAnalyzer(ai_config).analyze(fund, tech)
     else:
+        # enrich_only: the AI still fed the score through the cached moat and
+        # tailwind layers; only the decision falls back here (U0-2).
         decision = RetirementStrategy().decide(fund, tech)
 
     # P0 D1: hard safety blocks always win (AI path included)
