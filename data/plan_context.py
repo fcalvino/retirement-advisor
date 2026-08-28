@@ -298,6 +298,38 @@ def compute_plan_vs_reality(
     }
 
 
+def refresh_plan_against_market(
+    snap: PlanSnapshot,
+    price_lookup: PriceLookup,
+    *,
+    persist: bool = True,
+) -> dict:
+    """Refresh a plan against today's market **and seal the result onto it**.
+
+    ``compute_plan_vs_reality`` is pure — it returns the comparison and forgets
+    it. That left ``refreshed_metrics`` and ``last_refreshed_at`` permanently
+    empty in production, so three consumers that read them were dead: the
+    "Qué hacer este año" rebalance item (``product_ux.build_annual_action_list``),
+    the Home hub drift line (``product_ux.build_home_plan_hub``) and the
+    scheduler's market-drop coach fallback (``scripts/run_scheduler.py``).
+
+    ``last_refreshed_at`` takes its value from the comparison itself rather than
+    a fresh ``datetime.now()`` so the snapshot's clock and the health record's
+    clock can never disagree. It means "when did we last compare this plan
+    against the market" — the meaning both of its readers in
+    ``dashboard/shared.py`` assume.
+
+    ``persist=False`` computes and stamps without writing (used for partial
+    comparisons that must not overwrite a full refresh).
+    """
+    refreshed = compute_plan_vs_reality(snap, price_lookup)
+    snap.refreshed_metrics = refreshed
+    snap.last_refreshed_at = refreshed["refreshed_at"]
+    if persist:
+        plan_store.upsert(snap)
+    return refreshed
+
+
 # ------------------------------------------------------------------ #
 #  Longitudinal plan-health history (Fase H.2)                         #
 # ------------------------------------------------------------------ #
@@ -308,7 +340,7 @@ def record_plan_health(
     *,
     source: str = "manual",
     refreshed: Optional[dict] = None,
-    min_days_between: int = 0,
+    min_days_between: Optional[int] = None,
 ):
     """Capture a longitudinal health record for a plan (Fase H.2).
 
@@ -316,9 +348,18 @@ def record_plan_health(
     price fetch) and appends a lightweight ``PlanHealthRecord`` to the store.
     Returns the record, or None when skipped by the dedup window. Pure w.r.t.
     Streamlit; network access is injected via ``price_lookup``.
+
+    ``min_days_between`` defaults to ``HEALTH.min_days_between_records`` instead
+    of a hardcoded 0: the dashboard button used to call this without the
+    argument, so every click appended a record. That let two clicks a second
+    apart satisfy ``degradation_min_records`` and raise a "deriva sostenida"
+    warning, and let 60 clicks evict a plan's real history via ``max_records``.
     """
     from config import HEALTH
     from data.plan_health import PlanHealthRecord, plan_health_store
+
+    if min_days_between is None:
+        min_days_between = int(HEALTH.min_days_between_records)
 
     if refreshed is None:
         refreshed = compute_plan_vs_reality(snap, price_lookup)
@@ -374,12 +415,23 @@ def compute_longitudinal_drift(history: List[dict]) -> dict:
 
     # Degradation: the most recent ``degradation_min_records`` records all show
     # |weighted drift| ≥ threshold → sustained structural drift, not noise.
+    #
+    # "Sustained" has to mean *over time*, so those records must also fall on
+    # distinct calendar days. Without that check the signal measured clicks
+    # instead of months: two taps of "Registrar salud ahora" a second apart were
+    # enough to declare a plan structurally degraded. The dedup window in
+    # ``record_plan_health`` prevents new same-day duplicates, but histories
+    # already written by the old code still carry them.
     need = max(1, int(HEALTH.degradation_min_records))
     if n >= need:
         recent = history[-need:]
         recent_drifts = [r.get("weighted_delta_pct") for r in recent]
-        if all(d is not None and abs(float(d)) >= HEALTH.degradation_drift_pct
-               for d in recent_drifts):
+        distinct_days = {str(r.get("recorded_at", ""))[:10] for r in recent}
+        if (
+            all(d is not None and abs(float(d)) >= HEALTH.degradation_drift_pct
+                for d in recent_drifts)
+            and len(distinct_days) >= need
+        ):
             base["degraded"] = True
             base["degraded_reason"] = (
                 f"Deriva ponderada sostenida ≥{HEALTH.degradation_drift_pct:.0f}% en "

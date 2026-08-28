@@ -135,27 +135,54 @@ class TestRecordPlanHealth:
         assert rec.weighted_delta_pct == 3.3
 
 
+def _rec(day: str, drift: float, quality: float = 100.0) -> dict:
+    """A history record dict as ``get_plan_health_history`` returns them."""
+    return {
+        "plan_id": "retiro-2045",
+        "recorded_at": f"{day}T09:00:00",
+        "weighted_delta_pct": drift,
+        "avg_score_then": 75.0,
+        "data_quality_pct": quality,
+        "source": "manual",
+    }
+
+
 class TestLongitudinalDrift:
     def test_empty_history(self):
         d = pc.compute_longitudinal_drift([])
         assert d["n_records"] == 0
         assert d["degraded"] is False
 
-    def test_not_degraded_small_drift(self, health_store):
-        pc.record_plan_health(_snap(), _flat_price_lookup(-3.0))
-        pc.record_plan_health(_snap(), _flat_price_lookup(-4.0))
-        d = pc.compute_longitudinal_drift(pc.get_plan_health_history("retiro-2045"))
+    def test_not_degraded_small_drift(self):
+        d = pc.compute_longitudinal_drift([
+            _rec("2026-06-01", -3.0), _rec("2026-07-01", -4.0),
+        ])
         assert d["n_records"] == 2
         assert d["degraded"] is False
 
-    def test_degraded_when_sustained_large_drift(self, health_store):
-        # Two records both with -20% weighted drift → ≥15% sustained → degraded.
-        pc.record_plan_health(_snap(), _flat_price_lookup(-20.0))
-        pc.record_plan_health(_snap(), _flat_price_lookup(-20.0))
-        d = pc.compute_longitudinal_drift(pc.get_plan_health_history("retiro-2045"))
+    def test_degraded_when_sustained_large_drift(self):
+        # Two records on different days, both -20% → ≥15% sustained → degraded.
+        d = pc.compute_longitudinal_drift([
+            _rec("2026-06-01", -20.0), _rec("2026-07-01", -20.0),
+        ])
         assert d["degraded"] is True
         assert "sostenida" in d["degraded_reason"].lower()
         assert d["latest_drift_pct"] == pytest.approx(-20.0, abs=0.1)
+
+    def test_same_day_records_are_not_sustained_drift(self):
+        """Regression: "sostenida" must mean over time, not over clicks.
+
+        The UI button appended a record per click with no dedup, so two taps a
+        second apart satisfied ``degradation_min_records`` and raised the "plan
+        envejecido" warning. Histories written by that code still exist on disk,
+        so the guard lives here too, not only in the dedup window.
+        """
+        d = pc.compute_longitudinal_drift([
+            _rec("2026-07-01", -20.0), _rec("2026-07-01", -20.0),
+        ])
+        assert d["n_records"] == 2
+        assert d["degraded"] is False
+        assert d["degraded_reason"] == ""
 
     def test_single_large_drift_not_degraded(self, health_store):
         # Only one record → below degradation_min_records → not yet degraded.
@@ -163,6 +190,44 @@ class TestLongitudinalDrift:
         d = pc.compute_longitudinal_drift(pc.get_plan_health_history("retiro-2045"))
         assert d["n_records"] == 1
         assert d["degraded"] is False
+
+
+class TestRecordDedupWindow:
+    """The dashboard button called ``record_plan_health`` without a dedup window.
+
+    ``min_days_between`` defaulted to a hardcoded 0, so every click appended a
+    record: the "Ya habías registrado la salud hoy" branch in the page was
+    unreachable, and ``max_records=60`` meant a long clicking session could evict
+    a plan's real history. The scheduler always passed the config value.
+    """
+
+    def test_second_record_the_same_day_is_deduped_by_default(self, health_store):
+        from config import HEALTH
+
+        assert HEALTH.min_days_between_records >= 1, "config drives the window"
+
+        first = pc.record_plan_health(_snap(), _flat_price_lookup(-20.0))
+        second = pc.record_plan_health(_snap(), _flat_price_lookup(-20.0))
+
+        assert first is not None
+        assert second is None, "same-day re-record must be skipped, not appended"
+        assert len(pc.get_plan_health_history("retiro-2045")) == 1
+
+    def test_explicit_zero_still_allows_back_to_back_records(self, health_store):
+        """Callers can still opt out — the default is a policy, not a lock."""
+        pc.record_plan_health(_snap(), _flat_price_lookup(-5.0), min_days_between=0)
+        pc.record_plan_health(_snap(), _flat_price_lookup(-6.0), min_days_between=0)
+        assert len(pc.get_plan_health_history("retiro-2045")) == 2
+
+    def test_clicking_all_day_cannot_evict_the_real_history(self, health_store):
+        from config import HEALTH
+
+        for _ in range(HEALTH.max_records + 5):
+            pc.record_plan_health(_snap(), _flat_price_lookup(-20.0))
+
+        history = pc.get_plan_health_history("retiro-2045")
+        assert len(history) == 1
+        assert not pc.compute_longitudinal_drift(history)["degraded"]
 
 
 # ------------------------------------------------------------------ #

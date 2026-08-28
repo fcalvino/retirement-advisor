@@ -465,3 +465,100 @@ def test_alert_engine_market_drop_coach_fires():
         drop_threshold_pct=8.0,
     )
     assert again is None
+
+
+# --------------------------------------------------------------------------- #
+#  plan_load_session_updates — "Cargar plan" seeding (audit bug 6)            #
+# --------------------------------------------------------------------------- #
+
+class TestPlanLoadSessionUpdates:
+    """The page set ``target_value`` unconditionally when loading a plan.
+
+    A plan saved without running Monte Carlo has ``mc_summary is None`` — a
+    supported path the page advertises — so loading it wrote a $0 retirement
+    goal over whatever the user had. ``inflation_rate``, two lines below, was
+    correctly guarded. The rule is now in one tested place: a key the plan
+    cannot answer is omitted, and the user's current value survives.
+    """
+
+    @staticmethod
+    def _snap(**overrides):
+        from data.plan_store import PlanSnapshot
+
+        base = dict(
+            id="retiro-2045", name="Retiro 2045", created_at="", updated_at="",
+            personal={"current_capital": 250_000.0},
+        )
+        base.update(overrides)
+        return PlanSnapshot(**base)
+
+    def test_plan_without_monte_carlo_omits_the_target(self):
+        from data.product_ux import plan_load_session_updates
+
+        out = plan_load_session_updates(self._snap(), horizon_years=20)
+
+        assert "target_value" not in out, "must not overwrite the user's goal with $0"
+        assert "inflation_rate" not in out
+        assert "goals_list" not in out
+        assert out["initial_value"] == 250_000
+        assert out["horizon_years"] == 20
+
+    def test_plan_with_a_target_carries_it_over(self):
+        from data.product_ux import plan_load_session_updates
+
+        out = plan_load_session_updates(
+            self._snap(mc_summary={"target_value": 750_000, "inflation_rate": 3.5}),
+            horizon_years=25,
+        )
+        assert out["target_value"] == 750_000
+        assert out["inflation_rate"] == 3.5
+
+    def test_a_zero_target_is_treated_as_absent(self):
+        from data.product_ux import plan_load_session_updates
+
+        out = plan_load_session_updates(
+            self._snap(mc_summary={"target_value": 0, "inflation_rate": None}),
+            horizon_years=20,
+        )
+        assert "target_value" not in out
+        assert "inflation_rate" not in out
+
+    def test_goals_and_profile_are_seeded_only_when_present(self):
+        from data.product_ux import plan_load_session_updates
+
+        bare = plan_load_session_updates(self._snap(), horizon_years=20)
+        assert "_preset_profile_key" not in bare
+
+        full = plan_load_session_updates(
+            self._snap(goals=[{"name": "casa", "target_amount_today": 100_000}]),
+            horizon_years=20, profile_key="moderate",
+        )
+        assert full["_preset_profile_key"] == "moderate"
+        assert full["goals_list"] == [{"name": "casa", "target_amount_today": 100_000}]
+
+    def test_capital_falls_back_to_mc_then_to_the_default(self):
+        from data.product_ux import plan_load_session_updates
+
+        from_mc = plan_load_session_updates(
+            self._snap(personal=None, mc_summary={"initial_value": 80_000}),
+            horizon_years=20,
+        )
+        assert from_mc["optimizer_total_capital"] == 80_000
+
+        empty = plan_load_session_updates(
+            self._snap(personal=None), horizon_years=20,
+        )
+        assert empty["optimizer_total_capital"] == 100_000
+
+    def test_simulaciones_capital_stays_inside_the_widget_bounds(self):
+        from data.product_ux import plan_load_session_updates
+
+        huge = plan_load_session_updates(
+            self._snap(personal={"current_capital": 99_000_000.0}), horizon_years=20,
+        )
+        tiny = plan_load_session_updates(
+            self._snap(personal={"current_capital": 10.0}), horizon_years=20,
+        )
+        # number_input in 7_Simulaciones.py: min 1_000, max 10_000_000.
+        assert huge["initial_value"] == 10_000_000
+        assert tiny["initial_value"] == 1_000
