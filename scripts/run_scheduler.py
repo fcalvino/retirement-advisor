@@ -103,11 +103,19 @@ def _active_plan_drift_inputs():
         for sym in positions:
             try:
                 info = get_info(sym)
-                current_prices[sym] = float(
+                px = float(
                     info.get("currentPrice") or info.get("regularMarketPrice") or 0.0
                 )
             except Exception as exc:
                 logger.debug(f"Scheduler drift: price lookup failed for {sym}: {exc}")
+                continue
+            # U2-3: a missing quote leaves the key absent. Writing 0.0 made the
+            # detector read the position as 0 % of the portfolio and inflated
+            # every other weight; "unknown" must look like "unknown".
+            if px > 0:
+                current_prices[sym] = px
+            else:
+                logger.debug(f"Scheduler drift: no usable quote for {sym}")
 
         target_weights = plan.target_weights()
         if not target_weights:

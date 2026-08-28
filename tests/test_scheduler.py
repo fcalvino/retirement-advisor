@@ -156,6 +156,26 @@ class TestActivePlanDriftInputs:
         # The label is user-facing: it must name the plan, not "the optimizer".
         assert "FIRE 2040" in label
 
+    def test_a_quote_without_a_price_is_omitted_not_written_as_zero(
+        self, monkeypatch, stub_plan_context, stub_fetcher
+    ):
+        """U2-3: "unknown" must look like unknown, never like a price of 0.
+
+        `alerts/portfolio_alerts.py` already sets aside anything that prices at
+        <= 0, so a 0.0 written here is currently absorbed downstream. This pins
+        the producer side anyway: the two representations must not diverge, and
+        an absent key is the one that cannot be mistaken for a valuation.
+        """
+        stub_plan_context.get_active_plan = lambda: _Plan()
+        self._install_tracker(monkeypatch)
+        # A live response that simply carries no usable quote for the symbol.
+        stub_fetcher.get_info = lambda sym: {"longName": "Apple Inc."}
+
+        positions, prices, weights, _label = sched._active_plan_drift_inputs()
+        assert positions                      # the position is still tracked
+        assert "AAPL" not in prices           # not 0.0, absent
+        assert weights
+
     def test_a_failing_price_lookup_does_not_lose_the_whole_check(
         self, monkeypatch, stub_plan_context, stub_fetcher
     ):
