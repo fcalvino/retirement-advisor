@@ -147,6 +147,7 @@ def _tool_retirement_projection(args: dict) -> dict:
     initial_value = _arg_float("initial_value", personal.get("current_capital", 100_000))
     horizon_years = int(_arg_float("horizon_years", personal.get("primary_horizon_years", 20)))
     annual_withdrawal = _arg_float("annual_withdrawal", 0.0)
+    annual_contribution = _arg_float("annual_contribution", 0.0)
     target_value = _arg_float("target_value", 0.0)
 
     try:
@@ -164,6 +165,7 @@ def _tool_retirement_projection(args: dict) -> dict:
             n_sims=2000,
             initial_value=initial_value,
             annual_withdrawal=annual_withdrawal,
+            annual_contribution=annual_contribution,
             target_value=target_value,
         )
         out = {
@@ -172,6 +174,7 @@ def _tool_retirement_projection(args: dict) -> dict:
             "horizon_years": horizon_years,
             "initial_value": round(initial_value, 0),
             "annual_withdrawal": round(annual_withdrawal, 0),
+            "annual_contribution": round(annual_contribution, 0),
             "median_terminal": round(float(res.median_terminal), 0),
             "p10_terminal": round(float(res.p10_terminal), 0),
             "p90_terminal": round(float(res.p90_terminal), 0),
@@ -222,10 +225,12 @@ def build_default_registry() -> Dict[str, Tool]:
         Tool(
             name="retirement_projection",
             description=("Proyección Monte Carlo del plan: probabilidad de éxito y rangos de capital final. "
-                         "Útil para '¿me alcanza si me jubilo en X años / retiro Y por año?'."),
+                         "Útil para '¿me alcanza si me jubilo en X años / retiro Y por año?' y para "
+                         "'¿llego si ahorro Z por mes?', que funciona incluso sin capital inicial."),
             parameters={
                 "horizon_years": "años de proyección (opcional)",
                 "annual_withdrawal": "retiro anual en USD (opcional)",
+                "annual_contribution": "ahorro anual en USD, se deposita mensualmente (opcional)",
                 "initial_value": "capital inicial en USD (opcional)",
                 "target_value": "objetivo de capital en USD (opcional)",
             },

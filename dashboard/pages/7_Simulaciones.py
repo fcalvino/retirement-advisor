@@ -39,6 +39,7 @@ from data.product_ux import (
     PROXY_RETURN_HELP,
     PROXY_RETURN_LABEL,
     ar_dual_context,
+    contribution_inputs,
     mc_has_cash_flows,
     pot_growth_column_label,
     pot_growth_delta,
@@ -80,7 +81,8 @@ if _prefs_sim.is_onboarded and not st.session_state.get("_goal_form_seeded"):
     if _prefs_sim.primary_goal_type in GOAL_TYPE_ICONS:
         st.session_state.setdefault("new_goal_type", _prefs_sim.primary_goal_type)
     st.session_state.setdefault("new_goal_horizon", min(max(_prefs_sim.primary_horizon_years or 5, 1), 40))
-    st.session_state.setdefault("new_goal_contribution", int(min(max(_prefs_sim.annual_savings, 0), 500_000)))
+    _seed_savings = contribution_inputs(prefs=_prefs_sim)["annual"]
+    st.session_state.setdefault("new_goal_contribution", int(min(max(_seed_savings, 0), 500_000)))
     st.session_state.setdefault("new_goal_allocated", int(min(max(_prefs_sim.current_capital, 0), 10_000_000)))
     st.session_state["_goal_form_seeded"] = True
 if _prefs_sim.is_onboarded:
@@ -432,9 +434,11 @@ def _tab_mc_content():
     if target_value > 0 and mc.prob_achieve_target_pct < 70:
         from data.product_ux import compute_gap_to_goal_levers
 
-        _ann_contrib = float(st.session_state.get("annual_contribution") or 0.0)
-        if _ann_contrib <= 0:
-            _ann_contrib = float(getattr(_prefs_sim, "annual_savings", 0) or 0)
+        # U4-1: one helper owns the monthly→annual conversion, so this screen
+        # and Metas cannot quote the same saver different money. It also
+        # replaces a read of a session key that no widget ever wrote — a
+        # fallback dressed up as a user input.
+        _ann_contrib = contribution_inputs(st.session_state, prefs=_prefs_sim)["annual"]
         # U1-7: `median_cagr_pct` NO puede alimentar `annual_return` cuando la
         # simulación tuvo flujos. `compute_gap_to_goal_levers` capitaliza los
         # aportes por su cuenta, así que pasarle una tasa que ya los contiene

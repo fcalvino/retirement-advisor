@@ -303,18 +303,25 @@ def mc_has_cash_flows(mc_result) -> bool:
 
     Accepts a ``MonteCarloResult``, a persisted ``mc_summary`` mapping or None,
     so the one predicate serves the live pages, the PDF and the saved bundle.
-    A contribution is a negative ``annual_withdrawal`` (that is how
-    ``GoalPlanner`` models ``Goal.annual_contribution``), hence ``!= 0``.
+
+    Contributions have their own field since tier2, but a negative
+    ``annual_withdrawal`` still means one — that is how ``GoalPlanner`` modelled
+    ``Goal.annual_contribution`` and how older saved bundles are stored — so
+    both are checked. Missing either would let a savings-only plan report "no
+    cash flows", and the pot's growth would be relabelled a *return* (U1-7) on
+    exactly the plan where that overstates it most.
     """
     if mc_result is None:
         return False
     if isinstance(mc_result, Mapping):
         withdrawal = mc_result.get("annual_withdrawal") or 0.0
+        contribution = mc_result.get("annual_contribution") or 0.0
         strategy = mc_result.get("withdrawal_strategy_applied")
     else:
         withdrawal = getattr(mc_result, "annual_withdrawal", 0.0) or 0.0
+        contribution = getattr(mc_result, "annual_contribution", 0.0) or 0.0
         strategy = getattr(mc_result, "withdrawal_strategy_applied", None)
-    return bool(float(withdrawal) != 0.0 or strategy)
+    return bool(float(withdrawal) != 0.0 or float(contribution) != 0.0 or strategy)
 
 
 def pot_growth_pct(terminal: float, initial: float, years: float) -> Optional[float]:
@@ -1724,6 +1731,105 @@ def guided_empty_state(
 # --------------------------------------------------------------------------- #
 #  PDF partner blurb (backlog 11) — pure text blocks                          #
 # --------------------------------------------------------------------------- #
+
+# --------------------------------------------------------------------------- #
+#  Why a saved plan is stale (U6-2) — one entry per engine tier               #
+# --------------------------------------------------------------------------- #
+
+ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
+    (
+        "2026.08-tier0",
+        "Los retiros descontaban un monto fijo en vez de capital, así que el dinero "
+        "retirado seguía creciendo: el capital final y la herencia salían sobrestimados.",
+    ),
+    (
+        "2026.08-tier1",
+        "La caída máxima y el riesgo de secuencia se medían sobre el pozo después de "
+        "los retiros, así que el gasto planificado se contaba como un derrumbe de mercado.",
+    ),
+    (
+        "2026.08-tier2",
+        "Los aportes entraban una vez por año en vez de una vez por mes, y un plan que "
+        "arrancaba sin capital inicial descartaba todo el ahorro: proyectaba cero y 0 % "
+        "de probabilidad de éxito.",
+    ),
+)
+
+
+def engine_staleness_reasons(engine_version: str) -> List[str]:
+    """Everything that changed AFTER the stamp a saved plan carries.
+
+    A tier1 plan is not stale for the tier0 reason — its withdrawals were already
+    correct. Telling it otherwise is a false statement shown to the user, which
+    is the class of defect this project's audits exist to remove, so the copy is
+    derived from the plan's own stamp instead of being written once for whichever
+    tier happened to be newest when the warning was drafted.
+
+    An unknown or empty stamp predates the changelog, so every reason applies.
+    """
+    versions = [version for version, _ in ENGINE_CHANGELOG]
+    start = versions.index(engine_version) + 1 if engine_version in versions else 0
+    return [reason for _, reason in ENGINE_CHANGELOG[start:]]
+
+
+# --------------------------------------------------------------------------- #
+#  Savings, in one unit, from one place (backlog U4-1)                        #
+# --------------------------------------------------------------------------- #
+
+MONTHS_PER_YEAR = 12
+
+
+def contribution_inputs(
+    session: Optional[Mapping[str, Any]] = None,
+    *,
+    prefs: Any = None,
+    personal: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Resolve the user's savings to one number, in one unit, with its source.
+
+    Returns ``{"monthly": float, "annual": float, "source": str}``.
+
+    The profile asks for a monthly figure, the goal form asked for a yearly one,
+    the PDF block wanted either, and each surface did its own ``* 12`` — so the
+    same saver could be quoted different money depending on the screen they were
+    looking at. The conversion lives here and nowhere else, which is what makes
+    "same input, same money" checkable instead of merely intended.
+
+    ``source`` names where the figure came from, so a surface can say whether the
+    number is one the user typed here or one carried over from their profile.
+    Empty when there is no savings figure at all — which is a real answer, not a
+    zero to be rendered as if the user had said zero.
+    """
+    session = dict(session or {})
+    personal = dict(personal or {})
+
+    def _positive(value: Any) -> Optional[float]:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if number > 0 else None
+
+    candidates = (
+        (_positive(session.get("monthly_savings")), 1, "session"),
+        (_positive(session.get("annual_savings")), MONTHS_PER_YEAR, "session"),
+        (_positive(personal.get("monthly_savings")), 1, "personal"),
+        (_positive(personal.get("annual_savings")), MONTHS_PER_YEAR, "personal"),
+        (_positive(getattr(prefs, "monthly_savings", None)), 1, "perfil"),
+        (_positive(getattr(prefs, "annual_savings", None)), MONTHS_PER_YEAR, "perfil"),
+    )
+
+    for value, divisor, source in candidates:
+        if value is not None:
+            monthly = value / divisor
+            return {
+                "monthly": monthly,
+                "annual": monthly * MONTHS_PER_YEAR,
+                "source": source,
+            }
+
+    return {"monthly": 0.0, "annual": 0.0, "source": ""}
+
 
 # --------------------------------------------------------------------------- #
 #  PDF mc_params assembly (backlog 11) — real call-path helper                #

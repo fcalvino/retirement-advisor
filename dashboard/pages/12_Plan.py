@@ -430,17 +430,24 @@ def _render_env_provenance(snap: PlanSnapshot) -> None:
 
 
 def _render_engine_staleness(snap: PlanSnapshot) -> None:
-    """Warn when a saved plan's numbers predate the 2026-08 Tier 0 engine fix."""
+    """Warn when a saved plan's numbers predate the current engine.
+
+    The reasons are derived from the stamp the plan carries, not written for
+    whichever tier was newest when this was drafted: a tier1 plan's withdrawals
+    were already correct, so telling it they were not is simply false.
+    """
     _render_env_provenance(snap)
     if not getattr(snap, "is_engine_stale", None) or not snap.is_engine_stale():
         return
 
+    from data.product_ux import engine_staleness_reasons
+
+    sello = snap.engine_version or "sin sello"
+    razones = engine_staleness_reasons(snap.engine_version or "")
     st.warning(
-        "⚠️ **Este plan se calculó con el motor anterior a la corrección de agosto 2026.** "
-        "Las cifras de retiro (cuánto dura el ingreso, herencia, probabilidad de ruina) "
-        "sobrestimaban el capital final: los retiros descontaban un monto fijo en vez de "
-        "capital, así que el dinero retirado seguía creciendo. Volvé a simular para ver "
-        "los números corregidos."
+        f"⚠️ **Este plan se calculó con el motor `{sello}`.** Desde entonces cambió:\n\n"
+        + "\n".join(f"- {razon}" for razon in razones)
+        + "\n\nVolvé a simular para ver los números corregidos."
     )
     if st.button("🔄 Recalcular con el motor corregido", key=f"recalc_{snap.id}"):
         st.session_state["_plan_recalc_target"] = snap.id

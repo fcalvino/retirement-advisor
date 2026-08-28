@@ -32,10 +32,18 @@ from config import MONTE_CARLO
 from data.fetcher import get_history
 from portfolio.decumulation import (
     WithdrawalStrategy,
+    apply_cash_flow_schedule,
     apply_withdrawal_strategy,
+    cash_flow_weeks,
     decumulation_metrics,
-    withdraw_at_week,
+    wealth_basis,
 )
+
+
+def _constant_amount(amount: float):
+    """An ``amount_fn`` that ignores the pot and always moves the same figure."""
+    return lambda _wealth: amount
+
 
 # ------------------------------------------------------------------ #
 #  Result dataclass                                                    #
@@ -49,6 +57,9 @@ class MonteCarloResult:
     initial_value: float
     annual_withdrawal: float
     target_value: float
+    # Savings per year, deposited monthly. Separate from annual_withdrawal since
+    # tier2: cadence is a property of the instrument, not of a sign (U4-1).
+    annual_contribution: float = 0.0
 
     # Fan chart: year → {pct: portfolio_value}
     # Percentiles stored: 5, 10, 25, 50, 75, 90, 95
@@ -196,6 +207,7 @@ class MonteCarloSimulator:
         n_sims: int,
         initial_value: float,
         annual_withdrawal: float = 0.0,
+        annual_contribution: float = 0.0,
         target_value: float = 0.0,
         withdrawal_growth_rate: float = 0.0,   # e.g. 0.03 for 3% annual increase (inflation)
         drags: Optional[dict] = None,          # Item 1: economic drags (None = base behavior)
@@ -211,10 +223,17 @@ class MonteCarloSimulator:
         horizon_years : projection horizon (5, 10, 15, 20, 30, etc.)
         n_sims        : number of simulation paths (default 10 000)
         initial_value : starting portfolio value in USD
-        annual_withdrawal : amount withdrawn at end of each year (0 = accumulation
-                        phase). A NEGATIVE value is a contribution (inflow) and is
-                        applied as such — that is how GoalPlanner models
-                        ``Goal.annual_contribution``.
+        annual_withdrawal : amount withdrawn at the end of each year, ANNUAL
+                        cadence (0 = accumulation phase). A NEGATIVE value is
+                        still accepted as a contribution — the form GoalPlanner
+                        and the chat tool used before ``annual_contribution``
+                        existed — and is folded into it.
+        annual_contribution : amount saved per year, deposited MONTHLY (U4-1).
+                        The user is asked for a monthly figure, so the money has
+                        to arrive monthly; depositing the year's total in week 52
+                        cost eleven of the twelve deposits their partial year of
+                        growth. Works with ``initial_value=0`` (U4-2), which is
+                        the plan of anyone who is saving their way in.
         target_value  : retirement goal for probability calculation (0 = skip)
         drags         : optional economic-drag dict (Item 1). When None the
                         simulation is byte-identical to the pre-feature engine.
@@ -246,6 +265,7 @@ class MonteCarloSimulator:
             horizon_years=horizon_years,
             initial_value=initial_value,
             annual_withdrawal=annual_withdrawal,
+            annual_contribution=annual_contribution,
             target_value=target_value,
         )
 
@@ -308,10 +328,12 @@ class MonteCarloSimulator:
         # and 1.5 %/yr over 30 years would re-create the same mechanical decline
         # through the other door. Their effect is shown by the base_* metrics.
         #
-        # Computed HERE, not later: the legacy withdrawal kernel
-        # (_apply_withdrawals → withdraw_at_week) mutates `paths` in place, so
-        # holding a reference and measuring it after step 4 would read the
-        # already-contaminated series.
+        # Computed here rather than later because this IS the market series.
+        # It used to have a second reason — the legacy kernel wrote through its
+        # input, so a reference held across step 4 would have read a
+        # contaminated array. Since tier2 the cash-flow kernel holds units and
+        # never touches `paths`, so the guarantee is structural and pinned by
+        # ``tests/test_cash_flow_oracle.py`` instead of resting on call order.
         market_dd = self._compute_drawdown_metrics(paths, horizon_years)
 
         # 3b — Economic drags (Item 1). total_drag_frac == 0 → base behavior,
@@ -331,31 +353,43 @@ class MonteCarloSimulator:
         # the legacy fixed-amount path. With no strategy, behavior is unchanged.
         strategy = WithdrawalStrategy.coerce(withdrawal_strategy)
 
-        def _withdraw(p: np.ndarray) -> np.ndarray:
+        # A negative ``annual_withdrawal`` has always meant a contribution —
+        # that is how GoalPlanner modelled ``Goal.annual_contribution``. Since
+        # tier2 the two directions are separate parameters, because cadence is a
+        # property of the instrument (savings arrive monthly, retirement
+        # withdrawals annually) and hanging that on the sign of one number is
+        # the kind of implicit contract that needs a paragraph to explain.
+        # The negative form is still accepted so saved sessions and the chat
+        # tool keep working.
+        contribution = float(annual_contribution)
+        withdrawal = float(annual_withdrawal)
+        if withdrawal < 0:
+            contribution += -withdrawal
+            withdrawal = 0.0
+
+        # The pot is expressed in multiples of a positive basis. With capital
+        # that basis IS the capital, so every existing plan keeps its exact
+        # contract; without capital it falls back to the size of the savings, so
+        # a plan that starts empty still has a unit to compound in (U4-2).
+        basis = wealth_basis(initial_value, contribution)
+        # Report the resolved figures, not the raw arguments: a caller that sent
+        # a negative annual_withdrawal still described a contribution, and every
+        # predicate downstream should see it as one.
+        result.annual_withdrawal = withdrawal
+        result.annual_contribution = contribution
+
+        def _wealth_usd(market: np.ndarray) -> np.ndarray:
             if strategy is not None:
                 return apply_withdrawal_strategy(
-                    p, initial_value, strategy, n_horizon_weeks,
+                    market, initial_value, strategy, n_horizon_weeks,
                     inflation_rate=withdrawal_growth_rate,
-                )
-            # ``!= 0``, not ``> 0``: a NEGATIVE annual_withdrawal is a
-            # CONTRIBUTION (inflow), which is how GoalPlanner models
-            # ``Goal.annual_contribution``. The old ``> 0`` guard dropped those
-            # inflows silently, so every goal simulation ignored the savings the
-            # user had entered in the form. ``withdraw_at_week`` already handles
-            # the negative case (it adds units instead of removing them), so the
-            # fix is the guard, not the math. Every other caller passes ≥ 0, so
-            # non-goal simulations are byte-identical.
-            if annual_withdrawal != 0:
-                return self._apply_withdrawals(
-                    p, initial_value, annual_withdrawal, n_horizon_weeks,
-                    withdrawal_growth_rate=withdrawal_growth_rate
-                )
-            return p
+                ) * initial_value
+            return self._apply_cash_flows(
+                market, initial_value, basis, withdrawal, contribution,
+                n_horizon_weeks, withdrawal_growth_rate=withdrawal_growth_rate,
+            ) * basis
 
-        paths = _withdraw(paths)
-
-        # Scale from relative (start=1.0) to dollar values
-        paths_usd = paths * initial_value
+        paths_usd = _wealth_usd(paths)
 
         # 5 — Compute output statistics
         result.years = list(range(0, horizon_years + 1))
@@ -373,7 +407,7 @@ class MonteCarloSimulator:
 
         # 5b — Base (no-drag) reference metrics for the comparison badge.
         if base_paths is not None:
-            base_terminal = _withdraw(base_paths)[:, -1] * initial_value
+            base_terminal = _wealth_usd(base_paths)[:, -1]
             result.base_median_terminal = float(np.median(base_terminal))
             result.base_p10_terminal    = float(np.percentile(base_terminal, 10))
             result.base_p90_terminal    = float(np.percentile(base_terminal, 90))
@@ -392,7 +426,7 @@ class MonteCarloSimulator:
             )
             if total_drag_frac > 0:
                 realistic_paths = self._apply_drags(realistic_paths, total_drag_frac)
-            realistic_terminal = _withdraw(realistic_paths)[:, -1] * initial_value
+            realistic_terminal = _wealth_usd(realistic_paths)[:, -1]
             result.realistic_reference_applied = True
             result.realistic_median_terminal = float(np.median(realistic_terminal))
             result.realistic_p10_terminal    = float(np.percentile(realistic_terminal, 10))
@@ -407,8 +441,25 @@ class MonteCarloSimulator:
         # recovers. With the absorbing kernel the two agree, but measuring the
         # minimum states the intent and stays correct if the kernel changes.
         # (audit D2 — the terminal-only test used to hide early bankruptcies.)
-        _ruin_eps = max(initial_value, 1.0) * 1e-9
-        result.prob_ruin_pct = float((paths_usd.min(axis=1) <= _ruin_eps).mean() * 100)
+        #
+        # Ruin means the money ran out, which presupposes there was money. A plan
+        # funded purely by savings is worth 0 until its first deposit lands, and
+        # reading that prefix as bankruptcy would report 100 % failure for every
+        # saver who starts with nothing. The prefix is deterministic (0 × market
+        # on every path), so the boundary is a scalar, not a per-path search.
+        _first_flow_week = 0
+        if initial_value <= 0 and contribution > 0:
+            _first_flow_week = cash_flow_weeks(
+                MONTE_CARLO.contribution_periods_per_year, horizon_years, paths_usd.shape[1]
+            )[0]
+        _ruin_eps = max(initial_value, contribution, 1.0) * 1e-9
+        result.prob_ruin_pct = float(
+            (paths_usd[:, _first_flow_week:].min(axis=1) <= _ruin_eps).mean() * 100
+        )
+        if initial_value <= 0 and contribution <= 0:
+            result.warnings.append(
+                "Este plan no tiene capital inicial ni aportes: no hay nada que proyectar."
+            )
 
         # SORR and drawdown metrics — computed in step 3a on the market series.
         (result.sorr_early_drawdown_pct, result.median_max_drawdown_pct,
@@ -420,11 +471,18 @@ class MonteCarloSimulator:
         # keep seeing drags and withdrawals (U2-2 moves the % metrics, not this).
         result.p10_intra_min = float(np.percentile(paths_usd.min(axis=1), 10))
 
-        # CAGR per simulation
-        terminal_positive = np.where(terminal > 0, terminal, np.nan)
-        cagrs = (terminal_positive / initial_value) ** (1 / horizon_years) - 1
-        result.median_cagr_pct = float(np.nanmedian(cagrs) * 100)
-        result.p10_cagr_pct    = float(np.nanpercentile(cagrs, 10) * 100)
+        # Pot growth per simulation. Already not a rate of return whenever there
+        # are cash flows (see MonteCarloResult) — and with no starting capital it
+        # is not a number at all: there is no base to have grown from. Report 0
+        # rather than inf, and let the caller's cash-flow check suppress the
+        # label, so no surface can render "∞ %/año" as a projection.
+        if initial_value > 0:
+            terminal_positive = np.where(terminal > 0, terminal, np.nan)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                cagrs = (terminal_positive / initial_value) ** (1 / horizon_years) - 1
+            if np.isfinite(cagrs).any():
+                result.median_cagr_pct = float(np.nanmedian(cagrs) * 100)
+                result.p10_cagr_pct    = float(np.nanpercentile(cagrs, 10) * 100)
 
         # 5c — Decumulation metrics (Fase H.1). Only when a strategy was applied.
         if strategy is not None:
@@ -631,6 +689,63 @@ class MonteCarloSimulator:
         return paths
 
     @staticmethod
+    def _apply_cash_flows(
+        market: np.ndarray,
+        initial_value: float,
+        basis: float,
+        annual_withdrawal: float,
+        annual_contribution: float,
+        n_horizon_weeks: int,
+        withdrawal_growth_rate: float = 0.0,
+    ) -> np.ndarray:
+        """Turn a market curve plus a savings/spending plan into a wealth curve.
+
+        ``market`` is the relative bootstrap path (start = 1.0) and is never
+        modified. The return value is wealth in multiples of ``basis``, so the
+        caller multiplies once to get dollars.
+
+        Two cadences, because a saving and a pension are two different
+        instruments (U4-1): contributions arrive
+        ``MONTE_CARLO.contribution_periods_per_year`` times a year — twelve,
+        matching the monthly figure the profile asks for — while withdrawals stay
+        annual. Setting the config to 1 reproduces the tier1 engine exactly.
+
+        The inflation rate steps once a year for both, so the twelve deposits of
+        a year still sum to that year's nominal total. Only the timing changes,
+        which is what makes the direction of the fix provable rather than merely
+        different.
+
+        When a deposit and a withdrawal land on the same week — month 12 and the
+        year's withdrawal both fall on week 52 — the deposit is applied first.
+        You get paid, then you spend.
+
+        Delegates to ``portfolio.decumulation.cash_flow_units`` via
+        ``apply_cash_flow_schedule``, the single implementation of the cash-flow
+        maths, so this entry point and the strategy engine cannot drift apart.
+        """
+        n_cols = market.shape[1]
+        horizon_years = n_horizon_weeks // 52
+        events: List[Tuple[int, object]] = []
+
+        def _schedule(annual_amount: float, periods_per_year: int, sign: float) -> None:
+            periods = max(1, int(periods_per_year))
+            per_period = annual_amount / periods / basis
+            for i, week in enumerate(cash_flow_weeks(periods, horizon_years, n_cols)):
+                year = i // periods + 1
+                grown = per_period * ((1 + withdrawal_growth_rate) ** (year - 1))
+                events.append((week, _constant_amount(sign * grown)))
+
+        # Contributions are queued first, and the sort below is stable, so a
+        # deposit and a withdrawal on the same week keep that order.
+        if annual_contribution:
+            _schedule(annual_contribution, MONTE_CARLO.contribution_periods_per_year, -1.0)
+        if annual_withdrawal:
+            _schedule(annual_withdrawal, MONTE_CARLO.withdrawal_periods_per_year, +1.0)
+
+        events.sort(key=lambda ev: ev[0])
+        return apply_cash_flow_schedule(market, initial_value / basis, events)
+
+    @staticmethod
     def _apply_withdrawals(
         paths: np.ndarray,
         initial_value: float,
@@ -638,27 +753,21 @@ class MonteCarloSimulator:
         n_horizon_weeks: int,
         withdrawal_growth_rate: float = 0.0,
     ) -> np.ndarray:
+        """Legacy entry point: cash flows expressed as one signed annual amount.
+
+        A negative ``annual_withdrawal`` is a contribution. Kept so callers and
+        tests written before the two directions were separated keep working;
+        new code should call :meth:`_apply_cash_flows`. Requires capital, since
+        a signed fraction of ``initial_value`` is the very representation that
+        cannot express a plan starting from zero (U4-2).
         """
-        Apply annual withdrawals (as fraction of initial_value) at every 52-week mark.
-        If withdrawal_growth_rate > 0, the withdrawal amount grows each year
-        (e.g. 0.03 = 3% inflation adjustment — common for long-term retirement planning).
-
-        Delegates to ``portfolio.decumulation.withdraw_at_week`` — the single
-        implementation of the withdrawal maths — so this legacy entry point and
-        the strategy engine cannot drift apart. The withdrawal removes capital
-        (the remaining balance keeps tracking the market) and depletion is
-        permanent. See ``docs/AUDITORIA_2026-08.md`` D1/D2.
-        """
-        withdrawal_fraction = (annual_withdrawal / initial_value) if initial_value > 0 else 0.0
-        horizon_years = n_horizon_weeks // 52
-
-        for yr in range(1, horizon_years + 1):
-            week_idx = min(yr * 52, paths.shape[1] - 1)
-            # Grow the withdrawal fraction over time if requested
-            grown_fraction = withdrawal_fraction * ((1 + withdrawal_growth_rate) ** (yr - 1))
-            paths = withdraw_at_week(paths, week_idx, grown_fraction)
-
-        return paths
+        withdrawal = max(annual_withdrawal, 0.0)
+        contribution = max(-annual_withdrawal, 0.0)
+        return MonteCarloSimulator._apply_cash_flows(
+            paths, initial_value, wealth_basis(initial_value, contribution),
+            withdrawal, contribution, n_horizon_weeks,
+            withdrawal_growth_rate=withdrawal_growth_rate,
+        )
 
     @staticmethod
     def _compute_drawdown_metrics(

@@ -10,6 +10,58 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## Oleada 4 — Los flujos de caja del motor (2026-08-28)
+
+Cerró las dos filas P0 de [`BACKLOG.md`](BACKLOG.md) que no dependían de nada, en
+un solo PR como pedía la nota de alcance U4-1b: tocan la misma función y el mismo
+invariante.
+
+**U4-2 — una meta sin capital inicial descartaba todo el ahorro** (`9f05443`).
+El pozo se expresaba como múltiplo de `initial_value` y el flujo como fracción de
+él, así que un plan sin capital no tenía unidad en la que expresar sus aportes: la
+fracción daba 0, los aportes se descartaban y `paths_usd = paths * 0` dejaba todo
+en cero. El motor contestaba **0 % de probabilidad** a *"¿llego si ahorro X por
+mes?"* en vez de admitir que no sabía modelar la pregunta. Como
+`GoalPlanner._allocate_capital` reparte proporcionalmente, con `total_capital = 0`
+le pasaba a **todas** las metas.
+
+**U4-1 — el aporte "mensual" entraba una vez por año** (`9f05443`). Se
+multiplicaba ×12 y se depositaba entero en la semana 52, así que once de los doce
+depósitos perdían su rendimiento parcial: +1,8 % a +4,5 % de proyección según el
+retorno, medido.
+
+**Cómo:** el pozo pasa a guardarse en **unidades del índice de mercado** —
+`wealth = units × market`. Un flujo compra o vende unidades al nivel de la semana
+en que cae, y cada semana del resultado se escribe una sola vez, así que doce
+eventos por año cuestan lo mismo que uno. La ruina sigue siendo absorbente porque
+las unidades tienen piso en 0 — ahora una propiedad del álgebra, no de una rama
+defensiva. La cadencia vive en `MONTE_CARLO.contribution_periods_per_year` (12) y
+`withdrawal_periods_per_year` (1), así que la semántica tier1 es reproducible en
+vez de borrada.
+
+**Lo que el PR deliberadamente no hizo**, abierto como filas nuevas: **U4-1c** (la
+cadencia del retiro) y **U4-5** (la palanca de aporte en Simulaciones).
+
+**Efectos colaterales que aparecieron al poder arrancar en cero:** la ruina dejó
+de contar las semanas previas al primer depósito (arrancar sin nada no es
+bancarrota), el crecimiento del pozo dejó de dividir por capital cero, y
+`mc_has_cash_flows` aprendió el parámetro nuevo — sin eso un plan de sólo aporte
+habría reportado "sin flujos" y su crecimiento se habría rotulado *retorno* (U1-7)
+justo donde más lo sobrestima.
+
+`ENGINE_VERSION` → **`2026.08-tier2`**. De paso, el aviso de plan viejo dejó de
+mentir: estaba escrito una sola vez para tier0 y se mostraba a cualquier plan
+obsoleto, así que a un plan tier1 —cuyos retiros ya estaban bien— le decía algo
+falso sobre sus propios números. Ahora las razones salen de `ENGINE_CHANGELOG`
+filtrado por el sello que el plan lleva.
+
+**Oráculos:** `tests/test_cash_flow_oracle.py` (21 tests). Los 133 de
+`test_withdrawal_oracle` / `test_decumulation` / `test_sorr_oracle` /
+`test_audit_2026_08_repro` pasan **sin editarse**, que era el criterio de
+aceptación: D1, D2, la paridad del kernel y U2-2 siguen en pie.
+
+---
+
 ## Fase H — Plan de Retiro como SO Personal: decumulación, historia, sensibilidad y adopción (2026-06)
 
 Evolución de "construir el plan" a "maximizar su valor como sistema operativo de retiro", reutilizando >80% de la infraestructura existente (Monte Carlo con drags, PlanSnapshot extensible, shared helpers, journey, alertas, config-driven). Todo opt-in y conservador por defecto: con la capa nueva desactivada los números base son **byte-idénticos**. Suite completa: **419 pasando** (+68 sobre las 351 de Fase G), sin regresiones.

@@ -147,24 +147,28 @@ def test_old_json_without_new_fields_loads(store):
     assert got.last_refreshed_at == ""
 
 
-def test_tier0_and_missing_engine_version_are_stale():
-    """U2-2 bumped ENGINE_VERSION; plans stamped 2026.08-tier0 (or unsigned) are stale.
+def test_superseded_and_missing_engine_versions_are_stale():
+    """Every superseded tier is stale, and the literal is asserted on purpose.
 
-    The scheduler still fires SORR_HIGH off `mc_summary.sorr_early_drawdown_pct`.
-    Without the bump, a plan saved under the old 'withdrawals count as a crash'
-    definition would keep its inflated figure and never be flagged.
+    The assertion is here to make a bump a conscious act rather than a silent
+    one: a change to the maths that forgets it leaves saved plans presenting
+    numbers the engine no longer produces. U2-2 (tier1) moved the SORR figures
+    the scheduler fires alerts off; U4-1/U4-2 (tier2) moved every projection
+    that has contributions, and turned plans with no starting capital from a
+    flat zero into real numbers.
     """
     from config import ENGINE_VERSION
 
-    assert ENGINE_VERSION == "2026.08-tier1"
+    assert ENGINE_VERSION == "2026.08-tier2"
 
     current = PlanSnapshot.from_session(name="actual", opt_result=_fake_opt_result())
     assert current.engine_version == ENGINE_VERSION
     assert not current.is_engine_stale()
 
-    tier0 = PlanSnapshot.from_session(name="viejo", opt_result=_fake_opt_result())
-    tier0.engine_version = "2026.08-tier0"
-    assert tier0.is_engine_stale() is True
+    for superseded in ("2026.08-tier0", "2026.08-tier1"):
+        old = PlanSnapshot.from_session(name="viejo", opt_result=_fake_opt_result())
+        old.engine_version = superseded
+        assert old.is_engine_stale() is True
 
     missing = PlanSnapshot(id="unsigned", name="unsigned", created_at="", updated_at="")
     assert missing.engine_version == ""

@@ -34,6 +34,7 @@ import pandas as pd
 import pytest
 
 from analysis.backtesting import BacktestEngine
+from config import MONTE_CARLO
 from portfolio.decumulation import decumulation_metrics
 from portfolio.monte_carlo import MonteCarloSimulator
 
@@ -139,15 +140,23 @@ class TestDragFractionResolution:
 #  2. Contributions (negative withdrawals)                             #
 # ================================================================== #
 
-def oracle_contribution_sequence(
+def oracle_annual_lump_contribution_sequence(
     path: list[float], initial: float, annual_contribution: float, years: int,
     growth_rate: float = 0.0,
 ) -> float:
-    """Reference: capital accounting for an accumulation plan.
+    """Reference for a plan whose savings arrive as ONE deposit per year.
 
-    Each year the existing balance follows the market, then the saver adds
-    cash. New money starts compounding only from the moment it arrives — which
-    is the whole point the engine has to get right.
+    Each year the existing balance follows the market, then the saver adds the
+    whole year's cash at the 52-week mark. New money starts compounding only
+    from the moment it arrives — which is the part the engine has to get right
+    whatever the cadence.
+
+    This was the shipped instrument until tier2, and it is still a legal
+    configuration (``contribution_periods_per_year = 1``), so it stays under
+    test. It is no longer the default, because the product asks the user for a
+    *monthly* figure and depositing it every December cost eleven of the twelve
+    deposits their partial year of growth (backlog U4-1). The monthly reference
+    lives in ``tests/test_cash_flow_oracle.py``.
     """
     val = initial
     for yr in range(1, years + 1):
@@ -156,6 +165,13 @@ def oracle_contribution_sequence(
     return val
 
 
+@pytest.fixture
+def annual_contribution_cadence(monkeypatch):
+    """Pin the engine to one deposit a year, the instrument modelled below."""
+    monkeypatch.setattr(MONTE_CARLO, "contribution_periods_per_year", 1)
+
+
+@pytest.mark.usefixtures("annual_contribution_cadence")
 class TestContributionsOracle:
     @pytest.mark.parametrize("annual_return", [-0.06, 0.0, 0.05, 0.11])
     @pytest.mark.parametrize("years", [5, 15, 30])
@@ -166,7 +182,9 @@ class TestContributionsOracle:
         engine = MonteCarloSimulator._apply_withdrawals(
             np.array([path]).copy(), initial, -contribution, years * 52,
         )[0, -1] * initial
-        oracle = oracle_contribution_sequence(list(path), initial, contribution, years)
+        oracle = oracle_annual_lump_contribution_sequence(
+            list(path), initial, contribution, years
+        )
 
         assert engine == pytest.approx(oracle, rel=1e-9)
 
@@ -177,7 +195,7 @@ class TestContributionsOracle:
             np.array([path]).copy(), initial, -contribution, years * 52,
             withdrawal_growth_rate=0.03,
         )[0, -1] * initial
-        oracle = oracle_contribution_sequence(
+        oracle = oracle_annual_lump_contribution_sequence(
             list(path), initial, contribution, years, growth_rate=0.03
         )
         assert engine == pytest.approx(oracle, rel=1e-9)
@@ -200,19 +218,56 @@ class TestContributionsOracle:
         assert with_savings > without * 1.5
 
     def test_contribution_only_compounds_from_when_it_arrives(self):
-        """A dollar saved in year 20 must not have grown since year 0."""
+        """A dollar saved in year 20 must not have grown since year 0.
+
+        Squeezed from both sides since tier2: the annual lump is the floor, the
+        naive "every deposit compounds from t=0" is the ceiling, and the shipped
+        monthly cadence sits strictly between them. That pins the *direction* of
+        the cadence fix, not just that the two references differ.
+        """
         years = 20
         path = _geometric_path(0.10, years)
         initial, contribution = 10_000.0, 1_000.0
-        engine = MonteCarloSimulator._apply_withdrawals(
+        lump = MonteCarloSimulator._apply_withdrawals(
             np.array([path]).copy(), initial, -contribution, years * 52,
         )[0, -1] * initial
         # Upper bound: every contribution compounding from t=0 (what a naive
         # "add a constant level to all future weeks" implementation produces).
         naive_upper = initial * path[-1] + contribution * years * path[-1]
-        assert engine < naive_upper
-        assert engine == pytest.approx(
-            oracle_contribution_sequence(list(path), initial, contribution, years), rel=1e-9
+        assert lump < naive_upper
+        assert lump == pytest.approx(
+            oracle_annual_lump_contribution_sequence(
+                list(path), initial, contribution, years
+            ),
+            rel=1e-9,
+        )
+
+
+class TestCadenceIsConfigured:
+    """The shipped cadence is a config value, and it is the monthly one."""
+
+    def test_the_engine_deposits_monthly_by_default(self):
+        assert MONTE_CARLO.contribution_periods_per_year == 12
+
+    def test_depositing_monthly_beats_depositing_once_a_year(self, monkeypatch):
+        years, initial, contribution = 20, 10_000.0, 12_000.0
+        path = _geometric_path(0.08, years)
+
+        def _terminal() -> float:
+            return MonteCarloSimulator._apply_withdrawals(
+                np.array([path]).copy(), initial, -contribution, years * 52,
+            )[0, -1] * initial
+
+        monthly = _terminal()
+        monkeypatch.setattr(MONTE_CARLO, "contribution_periods_per_year", 1)
+        annual = _terminal()
+
+        assert monthly > annual
+        assert annual == pytest.approx(
+            oracle_annual_lump_contribution_sequence(
+                list(path), initial, contribution, years
+            ),
+            rel=1e-9,
         )
 
 

@@ -12,25 +12,28 @@ Design rules (mirror the rest of the project):
   - Functions operate on the *relative* paths array (start = 1.0) produced by
     ``MonteCarloSimulator._simulate_paths``; ``initial_value`` converts to USD.
   - Strategies are config-driven (``config.WITHDRAWAL``); nothing hardcoded.
-  - ``withdraw_at_week`` is the single implementation of the withdrawal maths.
-    ``MonteCarloSimulator._apply_withdrawals`` delegates to it, so the two entry
+  - ``cash_flow_units`` is the single implementation of the cash-flow maths.
+    ``MonteCarloSimulator._apply_cash_flows`` delegates to it, so the two entry
     points cannot drift apart.
 
-Withdrawal semantics (corrected 2026-08, audit D1/D2)
------------------------------------------------------
-A withdrawal removes **capital**: units are sold, the cash leaves the portfolio,
-and only the *remaining* capital keeps compounding with the market. The engine
-therefore scales the whole remaining path by ``remaining / current`` rather than
-subtracting a constant nominal level from every future week.
+Cash-flow semantics (audit D1/D2 in 2026-08, backlog U4-1/U4-2 in tier2)
+------------------------------------------------------------------------
+The pot is held as **units of the market index**: wealth is ``units × market``.
+A withdrawal sells units, so the cash leaves and only the remaining capital
+keeps compounding — never subtracting a constant nominal level from every future
+week, which is what let withdrawn money keep growing implicitly and overstated
+terminal wealth by ~60% over 30 years (``docs/AUDITORIA_2026-08.md`` D1,
+``tests/test_withdrawal_oracle.py``).
 
-The previous implementation subtracted a fixed amount from all future weeks,
-which let the withdrawn money keep participating in growth implicitly. It
-overstated terminal wealth by ~60% over a 30-year horizon in a rising market and
-let bankrupt paths "resurrect" when the market recovered. See
-``docs/AUDITORIA_2026-08.md`` (D1, D2) and ``tests/test_withdrawal_oracle.py``.
+Ruin is absorbing by construction: units floored at 0 stay 0, so no amount of
+market growth revives a pot that was spent (D2) — no separate bookkeeping.
 
-Ruin is absorbing by construction: when nothing is left the scale factor is 0,
-so every later week is 0 too — no separate bookkeeping needed.
+Holding units rather than a rescaled wealth path is also what makes a *deposit*
+expressible. Scaling by ``remaining / current`` can shrink a pot but can never
+inject into one worth nothing, so a plan with no starting capital used to
+discard every contribution and project zero (backlog U4-2). Units are bought at
+the market level, so an empty plan funds itself, and a schedule of twelve
+monthly deposits costs no more than one annual lump (U4-1).
 
 Strategies
 ----------
@@ -48,7 +51,7 @@ guardrails   : **simplified** Guyton-Klinger — start at a base rate, then cut
                    raise after a year with a negative portfolio return; below,
                    ``spend *= (1 + inflation_rate)`` runs unconditionally;
                  * the **portfolio management rule** — which sleeve funds the
-                   withdrawal; ``withdraw_at_week`` sells the portfolio pro rata;
+                   withdrawal; ``cash_flow_units`` sells the portfolio pro rata;
                  * the **time bound on the cut** — GK suspends capital
                    preservation in the last 15 years of the plan; here it applies
                    at every horizon year.
@@ -60,6 +63,7 @@ guardrails   : **simplified** Guyton-Klinger — start at a base rate, then cut
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from typing import Dict, Optional, Union
 
 import numpy as np
@@ -157,35 +161,110 @@ class WithdrawalStrategy:
 
 
 # ------------------------------------------------------------------ #
-#  Withdrawal kernel — the single source of withdrawal maths           #
+#  Cash-flow kernel — the single source of cash-flow maths             #
 # ------------------------------------------------------------------ #
 
-def withdraw_at_week(paths: np.ndarray, week_idx: int, amount) -> np.ndarray:
-    """Remove ``amount`` of capital at ``week_idx`` and rescale the future.
+def wealth_basis(initial_value: float, *flows: float) -> float:
+    """The positive USD scale the relative pot is expressed in.
+
+    Equals ``initial_value`` whenever the plan has capital, so every existing
+    caller keeps its exact contract. When the plan starts empty it falls back to
+    the size of a cash flow, because a savings-only plan still needs a unit to
+    be expressed in — and expressing it in "multiples of zero" is what made the
+    engine answer 0 % to "¿llego si ahorro X por mes?" (backlog U4-2).
+
+    What is load-bearing is only that the result is **positive**: the projection
+    is homogeneous of degree 1 in the basis, so every reported figure is the same
+    whichever positive scale is chosen (pinned by
+    ``tests/test_cash_flow_oracle.py::TestTheBasisIsAnImplementationDetail``).
+    Falling back to the size of the flow rather than to 1.0 is for conditioning
+    — it keeps the unit near the money being modelled — not for correctness.
+    """
+    if initial_value > 0:
+        return float(initial_value)
+    for flow in flows:
+        if flow:
+            return float(abs(flow))
+    return 1.0
+
+
+def cash_flow_units(units: np.ndarray, market_at_week: np.ndarray, amount) -> np.ndarray:
+    """THE cash-flow primitive: buy or sell units at the current market level.
 
     Parameters
     ----------
-    paths : (n_sims, n_weeks+1) array of *relative* portfolio values, modified
-            in place and also returned.
-    week_idx : the week the withdrawal happens at.
-    amount : scalar or ``(n_sims,)`` array, in the same relative units as
-            ``paths`` (1.0 == the initial portfolio value).
+    units : (n_sims,) holdings before the flow. Wealth is ``units × market``.
+    market_at_week : (n_sims,) the market index at the week the flow happens.
+    amount : scalar or ``(n_sims,)``, in the same units as wealth. **Positive
+            removes capital, negative adds it.**
 
-    Selling units scales the remaining position: every later week is multiplied
-    by ``remaining / current``. The withdrawn capital stops compounding, which is
-    what a real withdrawal does — subtracting a constant level instead would let
-    it keep growing implicitly (audit D1).
+    Holding units instead of a rescaled wealth path is what lets both defects be
+    fixed at once. Selling units is still what a withdrawal does — the cash
+    leaves and only the remaining capital compounds (audit D1) — but a *deposit*
+    into a pot worth nothing is now expressible, because units are bought at the
+    market level rather than as a fraction of a balance that does not exist.
 
-    When ``current <= 0`` or the withdrawal empties the portfolio the factor is
-    0, so the path is dead from here on and cannot recover (audit D2).
+    Units are floored at 0, so a pot emptied by spending stays empty however the
+    market moves afterwards (audit D2). Absorption is now a property of the
+    algebra rather than of a defensive branch. A later *contribution* does
+    revive such a path, which is arithmetic: depositing money into an empty
+    account leaves you with the money you deposited.
     """
-    current = paths[:, week_idx]
-    remaining = np.maximum(current - amount, 0.0)
     with np.errstate(divide="ignore", invalid="ignore"):
-        factor = np.where(current > 0, remaining / current, 0.0)
-    factor = np.nan_to_num(factor, nan=0.0, posinf=0.0, neginf=0.0)
-    paths[:, week_idx:] *= factor[:, np.newaxis]
-    return paths
+        delta = np.where(market_at_week > 0, amount / market_at_week, 0.0)
+    delta = np.nan_to_num(delta, nan=0.0, posinf=0.0, neginf=0.0)
+    return np.maximum(units - delta, 0.0)
+
+
+def apply_cash_flow_schedule(market: np.ndarray, units0, events) -> np.ndarray:
+    """Materialise a wealth path from an untouched market index and a schedule.
+
+    Parameters
+    ----------
+    market : (n_sims, n_weeks+1) relative market curve, starting at 1.0. **Never
+            modified** — that is what makes the U2-2 guarantee structural rather
+            than a consequence of the order in which ``run`` calls things.
+    units0 : scalar or ``(n_sims,)`` holdings at week 0.
+    events : iterable of ``(week_idx, amount_fn)`` in non-decreasing week order.
+            ``amount_fn`` receives the pre-flow wealth at that week, so
+            value-dependent strategies (constant_pct, guardrails) keep working.
+
+    Each week is written exactly once, so a schedule of 360 monthly flows costs
+    the same as one of 30 annual flows. That is what makes the monthly cadence
+    of U4-1 affordable: the previous kernel rescaled the whole remaining path on
+    every event, which at twelve events a year would have been a 12× slowdown of
+    an engine that promises to answer in under two seconds.
+    """
+    n_sims = market.shape[0]
+    units = np.broadcast_to(np.asarray(units0, dtype=float), (n_sims,)).astype(float).copy()
+    out = np.empty_like(market)
+
+    previous = 0
+    for week_idx, amount_fn in events:
+        out[:, previous:week_idx] = units[:, np.newaxis] * market[:, previous:week_idx]
+        pre_flow_wealth = units * market[:, week_idx]
+        units = cash_flow_units(units, market[:, week_idx], amount_fn(pre_flow_wealth))
+        previous = week_idx
+
+    out[:, previous:] = units[:, np.newaxis] * market[:, previous:]
+    return out
+
+
+def cash_flow_weeks(periods_per_year: int, horizon_years: int, n_cols: int) -> list[int]:
+    """The week each cash flow of a plan lands on, clipped to the horizon.
+
+    With weekly bars a month is 52/12 ≈ 4.33 bars, so monthly flows alternate
+    between 4- and 5-week gaps and period 12 lands exactly on week 52. Year
+    boundaries therefore still coincide with the fan-chart year marks and with
+    the annual withdrawal schedule.
+    """
+    periods = max(1, int(periods_per_year))
+    weeks = []
+    for year in range(1, horizon_years + 1):
+        for period in range(1, periods + 1):
+            week = (year - 1) * 52 + round(period * 52 / periods)
+            weeks.append(min(week, n_cols - 1))
+    return weeks
 
 
 # ------------------------------------------------------------------ #
@@ -210,53 +289,71 @@ def apply_withdrawal_strategy(
     inflation_rate : annual growth applied to spending (e.g. 0.03).
 
     Returns a NEW array (input is copied). At each 52-week mark the withdrawal
-    is taken out of capital via :func:`withdraw_at_week`, so the remaining
+    is taken out of capital via :func:`cash_flow_units`, so the remaining
     balance keeps tracking the market and depletion is permanent.
+
+    Decumulation stays **annual** on purpose. The guardrails strategy *is* an
+    annual review, so paying monthly while deciding annually is a separate
+    design question (backlog U4-1c), not a side effect of the contribution
+    cadence fix.
     """
-    p = paths.copy()
     horizon_years = n_horizon_weeks // 52
-    n_cols = p.shape[1]
-    n_sims = p.shape[0]
+    n_cols = paths.shape[1]
+    n_sims = paths.shape[0]
+    weeks = [min(yr * 52, n_cols - 1) for yr in range(1, horizon_years + 1)]
+
+    if initial_value <= 0:
+        # Decumulating nothing is degenerate: there is no capital to convert a
+        # dollar amount or a percentage into. Returning zeros states that, where
+        # silently withdrawing nothing would present an empty plan as a solvent
+        # one. ``MonteCarloSimulator.run`` warns when it hits this.
+        return np.zeros_like(paths)
 
     if strategy.kind == "fixed_real":
-        # Same maths as MonteCarloSimulator._apply_withdrawals (shared kernel).
-        withdrawal_fraction = (strategy.annual_amount / initial_value) if initial_value > 0 else 0.0
-        for yr in range(1, horizon_years + 1):
-            week_idx = min(yr * 52, n_cols - 1)
-            grown = withdrawal_fraction * ((1 + inflation_rate) ** (yr - 1))
-            p = withdraw_at_week(p, week_idx, grown)
-        return p
+        withdrawal_fraction = strategy.annual_amount / initial_value
+        events = [
+            (week, _fixed_amount(withdrawal_fraction * ((1 + inflation_rate) ** (yr - 1))))
+            for yr, week in enumerate(weeks, start=1)
+        ]
+        return apply_cash_flow_schedule(paths, 1.0, events)
 
     if strategy.kind == "constant_pct":
         pct = strategy.pct
-        for yr in range(1, horizon_years + 1):
-            week_idx = min(yr * 52, n_cols - 1)
-            w = pct * p[:, week_idx]                 # per-path relative value
-            p = withdraw_at_week(p, week_idx, w)
-        return p
+        events = [(week, lambda wealth: pct * wealth) for week in weeks]
+        return apply_cash_flow_schedule(paths, 1.0, events)
 
     if strategy.kind == "guardrails":
         wr0 = strategy.pct                           # initial withdrawal rate (fraction of initial value)
         ceiling_rate = wr0 * (1.0 + strategy.guardrail_ceiling_band)
         floor_rate = wr0 * (1.0 - strategy.guardrail_floor_band)
         # Spending in relative units (start = wr0, since paths start at 1.0 == initial_value).
-        spend = np.full(n_sims, wr0, dtype=float)
-        for yr in range(1, horizon_years + 1):
-            week_idx = min(yr * 52, n_cols - 1)
-            if yr > 1:
+        state = {"spend": np.full(n_sims, wr0, dtype=float)}
+
+        def _guardrail_amount(current: np.ndarray, *, year: int) -> np.ndarray:
+            spend = state["spend"]
+            if year > 1:
                 spend = spend * (1.0 + inflation_rate)
-            current = p[:, week_idx]
             with np.errstate(divide="ignore", invalid="ignore"):
                 rate = np.where(current > 0, spend / current, np.inf)
             # Capital-preservation rule: withdrawal rate too high → cut spending.
             spend = np.where(rate > ceiling_rate, spend * (1.0 - strategy.guardrail_cut_pct), spend)
             # Prosperity rule: withdrawal rate too low → raise spending.
             spend = np.where(rate < floor_rate, spend * (1.0 + strategy.guardrail_raise_pct), spend)
-            w = np.minimum(spend, np.maximum(current, 0.0))   # never withdraw more than available
-            p = withdraw_at_week(p, week_idx, w)
-        return p
+            state["spend"] = spend
+            return np.minimum(spend, np.maximum(current, 0.0))   # never withdraw more than available
+
+        events = [
+            (week, partial(_guardrail_amount, year=yr))
+            for yr, week in enumerate(weeks, start=1)
+        ]
+        return apply_cash_flow_schedule(paths, 1.0, events)
 
     raise ValueError(f"Unknown withdrawal strategy '{strategy.kind}'")
+
+
+def _fixed_amount(amount: float):
+    """An ``amount_fn`` that ignores the pot and always takes the same figure."""
+    return lambda _wealth: amount
 
 
 # ------------------------------------------------------------------ #
