@@ -176,6 +176,9 @@ class Decision:
             "HOLD": "🟡",
             "REDUCE": "🟠",
             "SELL": "🔴",
+            # AVOID used to fall through to the "⚪" default — the most negative
+            # verdict in the scale drawn more neutrally than HOLD (audit item 22).
+            "AVOID": "⛔",
         }.get(self.action, "⚪")
 
     @property

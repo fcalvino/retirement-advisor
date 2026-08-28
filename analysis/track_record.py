@@ -60,6 +60,29 @@ class RecommendationLog(_Base):
     plan_id           = Column(String, nullable=True)
     created_at        = Column(DateTime, default=datetime.utcnow, index=True)
 
+    # --- Calibration inputs (2026-08-22) ------------------------------------
+    # Everything above describes *what was recommended*. These describe *why*, and
+    # they exist because the questions this table is supposed to settle could not be
+    # answered without them: where to cut the decision thresholds, which capital
+    # ratio separates a solid bank from a fragile one, what leverage is normal for a
+    # regulated utility. All three are answered by grouping past recommendations by
+    # the metric that drove them — and none of that was being stored.
+    #
+    # This is the one gap that could not wait: a recommendation's metrics cannot be
+    # reconstructed once prices and statements have moved on, so every day without
+    # these columns produced evidence that would never be usable.
+    sector            = Column(String, default="")
+    industry          = Column(String, default="")
+    profitability_score = Column(Float, nullable=True)
+    health_score      = Column(Float, nullable=True)
+    valuation_score   = Column(Float, nullable=True)
+    growth_score      = Column(Float, nullable=True)
+    dividend_score    = Column(Float, nullable=True)
+    # Industry-specific metrics, JSON-encoded like ``rationale`` above, because what
+    # matters is polymorphic: equity/assets for a bank, P/FFO for a REIT, D/E for a
+    # utility. A ``backfilled`` key marks rows reconstructed after the fact.
+    metrics_json      = Column(Text, default="")
+
 
 class RecommendationOutcome(_Base):
     """Deferred scoring of a recommendation at a fixed horizon."""
@@ -76,6 +99,7 @@ class RecommendationOutcome(_Base):
     excess_return_pct     = Column(Float, nullable=True)
     hit                   = Column(Boolean, nullable=True)
     scored_at             = Column(DateTime, default=datetime.utcnow)
+
     # --- U2-4 (2026-08-24) --------------------------------------------------
     # True when the benchmark could not be priced at one or both ends of the
     # horizon. Such a row is *incomplete*, not neutral: ``benchmark_return_pct``
@@ -86,13 +110,21 @@ class RecommendationOutcome(_Base):
     benchmark_missing     = Column(Boolean, default=False)
 
 
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _start_of_day(dt: datetime) -> datetime:
+    return dt.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
 #: Metrics worth keeping per company type, as ``(attribute, key)``. Deliberately
 #: small: these are the numbers the open calibration questions turn on, not a dump
 #: of the whole result. Absent attributes are skipped, so an object that does not
 #: carry them (a crypto result, a duck-typed stub) simply contributes nothing.
 _INDUSTRY_METRICS = (
-    ("debt_equity", "debt_equity"),
-    ("p_ffo", "p_ffo"),
+    ("debt_equity", "debt_equity"),        # utilities: what leverage is normal here?
+    ("p_ffo", "p_ffo"),                    # REITs: the multiple that means something
     ("ffo_payout_pct", "ffo_payout_pct"),
     ("roe", "roe"),
     ("roic", "roic"),
@@ -101,9 +133,9 @@ _INDUSTRY_METRICS = (
 )
 
 
-#: Every attribute ``snapshot_calibration_inputs`` reads. Exported so a caller
-#: that cannot keep the object around — the Screener, which builds rows inside a
-#: thread pool — can snapshot the raw values and rebuild an equivalent stand-in.
+#: Every attribute ``calibration_fields`` reads. Exported so a caller that cannot
+#: keep the object around — the Screener, which builds rows inside a thread pool —
+#: can snapshot the raw values and rebuild an equivalent stand-in later.
 CALIBRATION_ATTRS = (
     "sector", "industry",
     "profitability_score", "health_score", "valuation_score",
@@ -113,11 +145,12 @@ CALIBRATION_ATTRS = (
 
 
 def snapshot_calibration_inputs(fundamental: Any) -> dict:
-    """Raw values of the attributes the track-record payload stores as ``inputs``.
+    """Raw values of the attributes ``calibration_fields`` reads.
 
-    Pure and defensive: a missing attribute is skipped. Used by
-    ``dashboard.shared._track_payload`` so a FundamentalResult-like object can
-    be flattened after the thread pool without redesigning the store.
+    The round-trip that matters: ``calibration_fields(SimpleNamespace(**snapshot))``
+    must equal ``calibration_fields(fundamental)``. Storing the *output* of
+    ``calibration_fields`` instead would not survive it — the industry metrics come
+    back already JSON-encoded and a second pass would silently drop them.
     """
     out = {}
     for attr in CALIBRATION_ATTRS:
@@ -130,12 +163,55 @@ def snapshot_calibration_inputs(fundamental: Any) -> dict:
     return out
 
 
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+def calibration_fields(fundamental: Any) -> dict:
+    """Columns to store alongside a recommendation so it can be calibrated later.
 
+    Pure and defensive: anything missing is simply left out. Returns ``{}`` for
+    ``None`` so callers that have no ``FundamentalResult`` behave exactly as before.
 
-def _start_of_day(dt: datetime) -> datetime:
-    return dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    The point of separating this from the store is that *what is worth remembering*
+    is a judgement that changes as new questions appear (banks needed a capital
+    ratio nobody was recording), while the persistence around it does not.
+    """
+    if fundamental is None:
+        return {}
+
+    def safe(attr):
+        """A hostile or half-built object costs us the field, never the row."""
+        try:
+            return getattr(fundamental, attr, None)
+        except Exception:
+            return None
+
+    out: dict = {}
+    for attr in ("sector", "industry"):
+        value = safe(attr)
+        if value:
+            out[attr] = str(value)
+
+    for attr in ("profitability_score", "health_score", "valuation_score",
+                 "growth_score", "dividend_score"):
+        value = safe(attr)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            out[attr] = float(value)
+
+    metrics = {}
+    # Equity/assets leads the list: it is the capital ratio the bank question turns
+    # on, and the one genuinely unrecoverable later — it needs the balance sheet as
+    # of the recommendation, not as of whenever someone gets around to asking.
+    for attr, key in (("equity_to_assets_pct", "equity_to_assets_pct"),) + _INDUSTRY_METRICS:
+        value = safe(attr)
+        if isinstance(value, bool):
+            metrics[key] = value
+        elif isinstance(value, (int, float)):
+            metrics[key] = round(float(value), 4)
+
+    if metrics:
+        try:
+            out["metrics_json"] = json.dumps(metrics, ensure_ascii=False)
+        except (TypeError, ValueError):
+            pass
+    return out
 
 
 class TrackRecordStore:
@@ -154,21 +230,31 @@ class TrackRecordStore:
         """Add new columns to an existing table without dropping data (SQLite safe).
 
         ``create_all`` creates *missing tables*; it does not touch a table that
-        already exists, so U2-4's ``benchmark_missing`` would not appear on any
-        database created before it. Same shape as ``alerts/store.py:_migrate``.
+        already exists, so the calibration columns added in 2026-08 would simply not
+        appear on any database created before them — and every read of them would
+        fail. Same shape as ``alerts/store.py:_migrate``.
         """
+        migrations = [
+            ("recommendation_log", "sector",              "VARCHAR DEFAULT ''"),
+            ("recommendation_log", "industry",            "VARCHAR DEFAULT ''"),
+            ("recommendation_log", "profitability_score", "FLOAT"),
+            ("recommendation_log", "health_score",        "FLOAT"),
+            ("recommendation_log", "valuation_score",     "FLOAT"),
+            ("recommendation_log", "growth_score",        "FLOAT"),
+            ("recommendation_log", "dividend_score",      "FLOAT"),
+            ("recommendation_log", "metrics_json",        "TEXT DEFAULT ''"),
+            ("recommendation_outcome", "benchmark_missing", "BOOLEAN DEFAULT 0"),
+        ]
         with engine.connect() as conn:
             from sqlalchemy import text
 
-            try:
-                conn.execute(text(
-                    "ALTER TABLE recommendation_outcome "
-                    "ADD COLUMN benchmark_missing BOOLEAN DEFAULT 0"
-                ))
-                conn.commit()
-                logger.info("track_record migration: added recommendation_outcome.benchmark_missing")
-            except Exception:
-                pass  # column already exists
+            for table, column, col_def in migrations:
+                try:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}"))
+                    conn.commit()
+                    logger.info(f"track_record migration: added {table}.{column}")
+                except Exception:
+                    pass  # column already exists
 
     # ------------------------------------------------------------------ #
     #  Capture                                                            #
@@ -181,8 +267,15 @@ class TrackRecordStore:
         source: str = "rule_based",
         price_at_rec: Optional[float] = None,
         plan_id: Optional[str] = None,
+        fundamental: Any = None,
     ) -> Optional[int]:
         """Persist a ``Decision`` (or duck-typed equivalent). Returns the row id.
+
+        Pass ``fundamental`` (the ``FundamentalResult`` behind the decision) to also
+        capture what the calibration questions need: sector, industry, the five
+        dimensions separately, and the industry-specific metric. Optional so every
+        existing call site keeps working, but a call without it records a
+        recommendation that can never be used to calibrate anything.
 
         Returns ``None`` when capture is disabled or the row is deduped away.
         Defensive by design: a logging failure must never break the analysis
@@ -207,6 +300,8 @@ class TrackRecordStore:
                 logger.debug(f"track_record: dedupe {symbol}/{action} (already logged today)")
                 return None
 
+            fields = calibration_fields(fundamental)
+
             with self._Session() as s:
                 row = RecommendationLog(
                     symbol=symbol,
@@ -219,6 +314,7 @@ class TrackRecordStore:
                     rationale=json.dumps(list(rationale), ensure_ascii=False),
                     plan_id=plan_id,
                     created_at=_utcnow(),
+                    **fields,
                 )
                 s.add(row)
                 s.commit()
