@@ -173,7 +173,12 @@ def wealth_basis(initial_value: float, *flows: float) -> float:
     be expressed in — and expressing it in "multiples of zero" is what made the
     engine answer 0 % to "¿llego si ahorro X por mes?" (backlog U4-2).
 
-    Never returns 0. That is the whole point.
+    What is load-bearing is only that the result is **positive**: the projection
+    is homogeneous of degree 1 in the basis, so every reported figure is the same
+    whichever positive scale is chosen (pinned by
+    ``tests/test_cash_flow_oracle.py::TestTheBasisIsAnImplementationDetail``).
+    Falling back to the size of the flow rather than to 1.0 is for conditioning
+    — it keeps the unit near the money being modelled — not for correctness.
     """
     if initial_value > 0:
         return float(initial_value)

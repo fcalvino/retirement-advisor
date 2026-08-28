@@ -314,6 +314,40 @@ class TestDepletionIsStillAbsorbing:
 #  4. One unit, one source (U4-1's second oracle)                      #
 # ================================================================== #
 
+class TestTheBasisIsAnImplementationDetail:
+    """The internal scale must never reach a reported number.
+
+    Wealth is held in multiples of a positive basis. The projection is
+    homogeneous of degree 1 in it, so any positive choice gives the same answer
+    — and a mutation test that swapped the basis for another positive value went
+    undetected, which is the right outcome for a free parameter but only if it
+    is stated. What is NOT free is the basis being positive: that is the whole
+    of U4-2, and a basis of zero collapses every projection back to nothing.
+    """
+
+    HORIZON = 12
+    RATE = 0.06
+    CONTRIB = 9_000.0
+
+    def _terminal(self, basis: float) -> float:
+        market = np.array([_index(self.RATE, self.HORIZON)])
+        wealth = MonteCarloSimulator._apply_cash_flows(
+            market, 0.0, basis, 0.0, self.CONTRIB, self.HORIZON * 52,
+        )
+        return float(wealth[0, -1] * basis)
+
+    @pytest.mark.parametrize("basis", [1.0, 250.0, 1e6])
+    def test_the_answer_does_not_depend_on_the_scale_it_was_computed_in(self, basis):
+        assert self._terminal(basis) == pytest.approx(self._terminal(1.0), rel=1e-9)
+
+    def test_the_scale_chosen_for_a_savings_only_plan_is_positive(self):
+        from portfolio.decumulation import wealth_basis
+
+        assert wealth_basis(0.0, 9_000.0) > 0.0
+        assert wealth_basis(0.0) > 0.0
+        assert wealth_basis(50_000.0, 9_000.0) == 50_000.0
+
+
 class TestContributionUnitsContract:
     """Simulaciones and Metas must ask for the same money.
 
