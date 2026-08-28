@@ -21,13 +21,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-INDEX_PATH = ROOT / "docs" / "INDEX.md"
 
 EXCLUDE_DIR_NAMES = frozenset(
     {"venv", ".venv", "node_modules", ".git", ".pytest_cache", "__pycache__"}
 )
 # Session notes, not product docs — see docs/INDEX.md and the audit non-goals.
-EXCLUDE_PREFIXES = ("logs/", "qa/")
+# ``.claude/`` holds harness scratch (resume checkpoints, local settings) written
+# by the tooling, not documentation a maintainer curates.
+EXCLUDE_PREFIXES = ("logs/", "qa/", ".claude/")
 
 MUST_NOT_EXIST = (
     "RESUMEN_EJECUTIVO.md",
