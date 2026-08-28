@@ -27,4 +27,9 @@ data/user_preferences.json
 data/retirement_plans.json
 data/plan_health_history.json
 data/personal_book_convictions.json
+# Derived cache of the last Screener run (safe to delete; rebuilt on demand).
+data/screener_last_run.json
+# Local working notes (audit write-ups, scratch plans). Not product docs — they
+# must never be committed. See scripts/check_doc_catalog.py for the catalog rule.
+plan.md
 

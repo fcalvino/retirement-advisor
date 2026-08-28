@@ -75,6 +75,19 @@ class DataCache:
                 return None
             return (datetime.utcnow() - entry.cached_at).total_seconds() / 3600.0
 
+    def keys_with_prefix(self, prefix: str) -> list[str]:
+        """Every cached key starting with *prefix*, ignoring TTL.
+
+        Read-only metadata probe (never deletes, never fetches), used by offline
+        tooling — ``scripts/measure_score_impact.py`` enumerates what is already
+        cached so it can re-score the universe without touching the network.
+        """
+        with self._Session() as session:
+            rows = session.query(CacheEntry.key).filter(
+                CacheEntry.key.like(f"{prefix}%")
+            ).all()
+        return [row[0] for row in rows]
+
     def clear_all(self) -> None:
         with self._Session() as session:
             session.query(CacheEntry).delete()
