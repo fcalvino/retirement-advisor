@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from analysis.fundamental import eps_growth_label
+from config import MOAT
 from dashboard.shared import (
     _MOAT_DESCRIPTION,
     _MOAT_EMOJI,
@@ -354,13 +355,32 @@ if symbol:
         )
         _moat_score = getattr(fund, "moat_score", 0.0)
         _moat_class = getattr(fund, "moat_classification", "—")
+        # U3-7: the scale depends on whether the AI layer ran, and so do the
+        # thresholds. Showing "/20" on a quant-only score invited a comparison
+        # with an AI-enriched one — the reason the same ticker looked like a
+        # different company depending on the screen.
+        _md = getattr(fund, "moat_detail", None)
+        _moat_ai = bool(getattr(_md, "ai_available", False))
+        _moat_max = getattr(_md, "scale_max", 20.0)
+        _moat_mode = getattr(_md, "mode_label", "cuantitativo + IA")
+        _th = (
+            (MOAT.wide_threshold, MOAT.narrow_threshold, MOAT.minimal_threshold)
+            if _moat_ai else
+            (MOAT.quant_only_wide_threshold, MOAT.quant_only_narrow_threshold,
+             MOAT.quant_only_minimal_threshold)
+        )
         col4.metric(
             "Economic Moat",
-            f"{_moat_score:.1f}/20",
-            delta=_moat_class,
+            f"{_moat_score:.1f}/{_moat_max:.0f}",
+            delta=f"{_moat_class} · {_moat_mode}",
             delta_color="off",
             delta_arrow="off",
-            help="Ventaja competitiva sostenible (Wide ≥14 | Narrow ≥8 | Minimal ≥4)",
+            help=(
+                f"Ventaja competitiva sostenible, medida en modo **{_moat_mode}** "
+                f"(Wide ≥{_th[0]:g} | Narrow ≥{_th[1]:g} | Minimal ≥{_th[2]:g}). "
+                "Sin la capa de IA el tramo cuantitativo topea en 12, así que los "
+                "umbrales son otros — no es la misma escala corrida."
+            ),
         )
         col5.metric("Score Ajustado", f"{fund.adjusted_score:.1f}/100")
 
@@ -406,7 +426,10 @@ if symbol:
             f"{_moat_emoji} Economic Moat — {_moat_class} ({_moat_score:.1f}/20)",
             expanded=False,
         ):
-            st.markdown(_moat_badge_html(_moat_class, _moat_score, _moat_bonus), unsafe_allow_html=True)
+            st.markdown(
+                _moat_badge_html(_moat_class, _moat_score, _moat_bonus, _moat_max),
+                unsafe_allow_html=True,
+            )
             st.caption(_MOAT_DESCRIPTION.get(_moat_class, ""))
             st.divider()
 

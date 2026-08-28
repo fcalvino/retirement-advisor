@@ -10,6 +10,49 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U3-7 — La escala del moat, por modo (2026-08-28)
+
+El último P0 del [`BACKLOG.md`](BACKLOG.md), desbloqueado por U0-2.
+
+**El defecto.** `wide_threshold = 14.0` vive en una escala 0–20 que sólo existe
+cuando la capa de IA corrió. Sin ella el total **es** el tramo cuantitativo, que
+topea en 12. O sea que Wide Moat era inalcanzable **por construcción**: medido
+sobre los 164 tickers cacheados, **0 Wide sin IA contra 22 con IA**. De ahí salían
+los otros tres: el Optimizer hardcodeaba `>= 14` sobre filas que en esa ruta suelen
+venir sin IA, el docstring prometía `+10` cuando el bonus quant-only topea en 6, y
+el mismo ticker mostraba un foso distinto según la pantalla sin que ninguna dijera
+en qué modo estaba.
+
+**La decisión, tomada con datos.** El backlog autorizaba «umbral de Wide para el
+modo quant-only **o** un preset de foso cuantitativo alto». Se eligió lo primero:
+`quant_only_wide_threshold = 11.0`, `narrow = 6.5`, `minimal = 2.5`.
+
+No son los umbrales de 0–20 reescalados por 12/20 (serían 8,4 / 4,8 / 2,4). Ese
+reescalado coincide con la etiqueta que produce la IA en apenas el **58 %** del
+universo, porque un foso cuantitativo fuerte **predice** uno cualitativo fuerte en
+vez de ser independiente de él. Ajustados contra la etiqueta con IA llegan al
+**86 %**, sin ningún error de más de un escalón, y erran para el lado conservador:
+16 subestimaciones contra 7 sobreestimaciones, y 2 falsos Wide sobre 13.
+
+**Alcance, verificado sobre el universo real:** 57 etiquetas corregidas,
+**0 `adjusted_score` movidos, 0 `moat_bonus` movidos, 0 señales movidas**. El
+`no_hacer` del backlog —no recalibrar 82/68/55, no bajar Wide con IA prendida— se
+respeta por construcción: la fórmula del bonus no se tocó.
+
+**Además:** `classify_moat()` queda como implementación única a nivel módulo (el
+Optimizer prefiere la etiqueta que el motor ya calculó y sólo clasifica como
+fallback); `MoatDetail.scale_max` / `.mode_label` hacen que las pantallas puedan
+decir en qué modo están, que era el cuarto defecto; y la clasificación tras un
+**fallo** de la IA dejó de degradar al ticker por una caída del proveedor.
+
+Fuera de alcance a propósito, abierto como **U3-7b**: el Optimizer sigue
+normalizando por `/20` para *rankear* (`:483`, `:509`). Es el mismo supuesto de
+escala única, pero en los pesos, y `:625` es el doble conteo de μ (U5-6).
+
+Contrato: `tests/test_moat_scale.py` (20 tests).
+
+---
+
 ## U0-2 — La matriz de score con IA on/off (2026-08-28)
 
 El único desbloqueo del [`BACKLOG.md`](BACKLOG.md): U3-7 pedía elegir entre subir

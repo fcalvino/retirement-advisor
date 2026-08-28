@@ -24,14 +24,24 @@ This module evaluates moat in two independent layers:
       switching_costs          — friction to change provider (time, money, operational risk)
       regulatory_ip            — patents, exclusive licenses, or regulatory barriers to entry
 
-  CLASSIFICATION (total 0–20):
-    Wide Moat   ≥ 14  — durable advantage for 20+ years (MSFT, AAPL, V)
-    Narrow Moat ≥  8  — advantage for 10+ years, more vulnerable (MELI, HD)
-    Minimal     ≥  4  — some protection but eroding or limited (most commodity cos.)
-    None        <  4  — no identifiable sustainable advantage
+  CLASSIFICATION — two scales, because two scales exist (U3-7):
+    with AI (total 0–20)   Wide ≥ 14 | Narrow ≥ 8   | Minimal ≥ 4   | None below
+    quant-only (0–12)      Wide ≥ 11 | Narrow ≥ 6.5 | Minimal ≥ 2.5 | None below
+
+    Judging a quant-only total against the 0–20 thresholds made Wide unreachable
+    by construction: the quantitative tramo caps at 12 and the threshold is 14.
+    Measured over the cached universe, that was 0 Wide out of 164 without AI
+    against 22 with it. The quant-only set is fitted against the AI-on label
+    (86 % agreement, no error beyond one step) rather than rescaled 12/20, which
+    only reaches 58 %. Thresholds live in ``config.MOAT``.
 
   BONUS applied to FundamentalResult.adjusted_score:
-    min(moat_total × 0.5, 10.0) → max +10 pts
+    min(moat_total × 0.5, MOAT.max_bonus) — so what it can actually pay depends
+    on which scale produced the total: up to +10 with the AI layer (total 0–20),
+    but at most **+6** quant-only, because the quantitative tramo tops out at 12.
+    Recalibrating the bonus so both modes pay the same is NOT this: it would move
+    every quant-only adjusted_score and drag the 82/68/55 decision thresholds
+    with it (backlog U3-7 `no_hacer`).
     This rewards structural quality that short-term financials may not capture
     (e.g. MELI: expensive P/E but Wide Moat lifts it to BUY territory).
 """
@@ -161,10 +171,37 @@ class MoatDetail:
         """AI qualitative score as percentage of maximum (8 pts)."""
         return round(self.ai_total / 8 * 100, 1) if self.ai_available else 0.0
 
+    @property
+    def scale_max(self) -> float:
+        """The ceiling this total was actually measured against: 20 or 12.
+
+        Rendering a quant-only score as "/20" invites the reader to compare it
+        with an AI-enriched one, which is exactly the comparison that made the
+        same ticker look like a different company on different screens (U3-7).
+        """
+        return 20.0 if self.ai_available else 12.0
+
+    @property
+    def mode_label(self) -> str:
+        """Which mode produced the label, for any surface that shows it."""
+        return "cuantitativo + IA" if self.ai_available else "solo cuantitativo"
+
 
 # ------------------------------------------------------------------ #
 #  Analyzer                                                            #
 # ------------------------------------------------------------------ #
+
+def classify_moat(total: float, *, ai_available: bool, cfg=None) -> str:
+    """The single mapping from a moat total to its label.
+
+    Exposed at module level because a surface that reimplements it drifts from
+    the engine, which is how the Optimizer ended up hardcoding ``>= 14`` on rows
+    that usually have no AI behind them and therefore could never reach it
+    (backlog U3-7). ``ai_available`` picks the scale — see
+    :meth:`MoatAnalyzer._classify`.
+    """
+    return MoatAnalyzer._classify_with(cfg or MOAT, total, ai_available)
+
 
 class MoatAnalyzer:
     """
@@ -232,7 +269,7 @@ class MoatAnalyzer:
         detail = MoatDetail()
         self._score_quant(detail, info, income_stmt, balance_sheet, cashflow)
         detail.total = round(detail.quant_total, 1)
-        detail.classification = self._classify(detail.total)
+        detail.classification = self._classify(detail.total, ai_available=False)
         detail.bonus = self._bonus(detail.total)
         logger.debug(f"{symbol}: moat quant={detail.quant_total:.1f}/12 ({detail.classification})")
         return detail
@@ -333,9 +370,15 @@ class MoatAnalyzer:
                 logger.warning(f"{symbol}: moat AI unexpected error — {exc}")
                 quant_result.ai_reasoning = f"[Error: {exc}]"
 
-        # Recompute combined totals regardless of whether AI succeeded
+        # Recompute combined totals regardless of whether AI succeeded — and
+        # classify on the scale that produced the total. When the AI failed,
+        # ai_total is 0 and the total IS the quantitative tramo, so judging it
+        # against the 0–20 thresholds would silently demote the ticker for a
+        # provider outage rather than for anything about the company.
         quant_result.total = round(quant_result.quant_total + quant_result.ai_total, 1)
-        quant_result.classification = self._classify(quant_result.total)
+        quant_result.classification = self._classify(
+            quant_result.total, ai_available=quant_result.ai_available
+        )
         quant_result.bonus = self._bonus(quant_result.total)
         return quant_result
 
@@ -522,14 +565,35 @@ class MoatAnalyzer:
     #  Classification                                                      #
     # ------------------------------------------------------------------ #
 
-    def _classify(self, total: float) -> str:
-        """Map a total moat score (0–20) to a classification label via MOAT thresholds."""
-        cfg = self.cfg
-        if total >= cfg.wide_threshold:
+    def _classify(self, total: float, ai_available: bool = True) -> str:
+        """Map a moat score to a label, on the scale that actually produced it.
+
+        Two scales exist and they are not interchangeable. With the AI layer the
+        total runs 0–20 and the thresholds are 14 / 8 / 4. Without it the total
+        is the quantitative tramo alone, 0–12, and those thresholds would make
+        **Wide unreachable by construction** — measured across the whole cached
+        universe, not inferred (U3-7). ``quant_only_*`` is the set for that
+        shorter ruler.
+
+        Passing the wrong mode is the defect this fixes, so ``ai_available`` is
+        required at every call site rather than defaulted at the bottom of the
+        stack.
+        """
+        return self._classify_with(self.cfg, total, ai_available)
+
+    @staticmethod
+    def _classify_with(cfg, total: float, ai_available: bool) -> str:
+        wide, narrow, minimal = (
+            (cfg.wide_threshold, cfg.narrow_threshold, cfg.minimal_threshold)
+            if ai_available else
+            (cfg.quant_only_wide_threshold, cfg.quant_only_narrow_threshold,
+             cfg.quant_only_minimal_threshold)
+        )
+        if total >= wide:
             return "Wide"
-        if total >= cfg.narrow_threshold:
+        if total >= narrow:
             return "Narrow"
-        if total >= cfg.minimal_threshold:
+        if total >= minimal:
             return "Minimal"
         return "None"
 

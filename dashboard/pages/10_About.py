@@ -388,6 +388,8 @@ st.code(
     "  + consistency_score        (0–15)   # estabilidad ROE/EPS/márgenes\n"
     "  + piotroski_bonus          (0–12)   # 9 checks YoY de calidad contable\n"
     "  + moat_bonus               (0–10)   # min(moat_score × 0.5, 10)\n"
+    "                                       # solo cuantitativo: tope real +6,\n"
+    "                                       # porque el tramo quant llega a 12\n"
     ", 100)",
     language="python",
 )

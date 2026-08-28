@@ -77,14 +77,30 @@ Evaluado por un LLM con contexto de la empresa. **Cacheado 7 días por ticker.**
 
 ---
 
-## Clasificaciones
+## Clasificaciones — dos escalas, no una
 
-| Clasificación | Score | Descripción |
-|---|---|---|
-| 🏰 **Wide Moat** | ≥ 14/20 | Ventaja duradera 20+ años — capital allocation para largo plazo |
-| 🟢 **Narrow Moat** | ≥ 8/20 | Ventaja sólida ~10 años — monitorear competencia y disrupción |
-| 🟡 **Minimal Moat** | ≥ 4/20 | Alguna protección pero erosionándose — revisión anual recomendada |
-| ⚪ **No Moat** | < 4/20 | Sin ventaja competitiva identificable — evitar para retiro |
+El total se mide contra la escala que efectivamente lo produjo. Con la capa de IA
+va de 0 a 20; sin ella, el total **es** el tramo cuantitativo, que topea en 12.
+
+| Clasificación | Con IA (0–20) | Solo cuantitativo (0–12) | Descripción |
+|---|---|---|---|
+| 🏰 **Wide Moat** | ≥ 14 | ≥ 11 | Ventaja duradera 20+ años — capital allocation para largo plazo |
+| 🟢 **Narrow Moat** | ≥ 8 | ≥ 6,5 | Ventaja sólida ~10 años — monitorear competencia y disrupción |
+| 🟡 **Minimal Moat** | ≥ 4 | ≥ 2,5 | Alguna protección pero erosionándose — revisión anual recomendada |
+| ⚪ **No Moat** | < 4 | < 2,5 | Sin ventaja competitiva identificable — evitar para retiro |
+
+**Por qué dos juegos de umbrales (U3-7).** Aplicar 14/8/4 a un total quant-only
+hacía Wide Moat inalcanzable por construcción: el techo es 12 y el umbral 14.
+Medido sobre los 164 tickers cacheados, eso daba **0 Wide sin IA contra 22 con IA**,
+y el mismo ticker aparecía con foso distinto según la pantalla.
+
+Los umbrales cuantitativos **no** son los otros reescalados por 12/20 (serían
+8,4 / 4,8 / 2,4). Ese reescalado coincide con la etiqueta que produce la IA en
+apenas el 58 % del universo, porque un foso cuantitativo fuerte *predice* uno
+cualitativo fuerte en vez de ser independiente de él. Ajustados directamente contra
+la etiqueta con IA llegan al 86 %, sin errores de más de un escalón, y erran para
+el lado conservador. Reproducible con
+`./venv/bin/python3 scripts/measure_score_impact.py --matrix`.
 
 ---
 
@@ -96,6 +112,12 @@ adjusted_score = base + consistency + piotroski_bonus + moat_bonus  (cap 100)
 ```
 
 El bonus está **intencionalmente capeado en +10 pts** para que el moat complemente —pero no domine— el análisis fundamental cuantitativo. Una empresa con Wide Moat pero fundamentals pobres (P/E 80x, deuda alta) no debería ser BUY solo por el moat.
+
+**Ojo con el tope real:** `max_bonus` es 10, pero lo que el bonus *puede* pagar
+depende del total, y el total depende del modo. Solo cuantitativo el máximo es
+`min(12 × 0,5, 10) = **6**`. Igualar los dos modos movería todos los
+`adjusted_score` quant-only y arrastraría los umbrales de decisión 82/68/55, así
+que es una recalibración aparte, no parte de U3-7.
 
 **Ejemplo — MELI:**
 - Base Score: 41/100 (penalizado por P/E 44x)
@@ -143,9 +165,14 @@ Los umbrales de clasificación se pueden ajustar en `config.py → MoatConfig` s
 ```python
 @dataclass
 class MoatConfig:
-    wide_threshold: float = 14.0    # bajar a 12 para ser más generoso con "Wide"
+    # Escala 0–20 (la capa de IA corrió)
+    wide_threshold: float = 14.0
     narrow_threshold: float = 8.0
     minimal_threshold: float = 4.0
+    # Escala 0–12 (solo cuantitativo) — ajustados contra la etiqueta con IA
+    quant_only_wide_threshold: float = 11.0
+    quant_only_narrow_threshold: float = 6.5
+    quant_only_minimal_threshold: float = 2.5
     max_bonus: float = 10.0         # subir para dar más peso al moat en el score final
     ai_cache_ttl_hours: int = 168   # reducir para re-evaluar más frecuentemente
 
