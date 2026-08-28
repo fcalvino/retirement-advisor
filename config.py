@@ -926,9 +926,22 @@ class MonteCarloConfig:
       warn_static_weights / warn_crypto_without_extra_vol — append human-readable
       assumptions to MonteCarloResult.warnings (no change to path math).
       default_vol_scale_* — suggested caller overrides by profile (informational).
+
+    Cash-flow cadence (U4-1). How many times a year money moves in or out:
+      contribution_periods_per_year — 12 = the saver deposits monthly, which is
+        the unit the profile asks for ("Ahorro mensual aproximado"). Setting it
+        to 1 reproduces the pre-tier2 engine exactly: a single deposit in week
+        52, which cost eleven of the twelve deposits their partial year of
+        growth. Kept configurable so both cadences stay under test.
+      withdrawal_periods_per_year — 1. Retirement withdrawals stay annual on
+        purpose: the guardrails strategy IS an annual review, so paying monthly
+        while deciding annually is a separate design question (backlog U4-1c),
+        not a side effect of fixing the contribution cadence.
     """
     vol_adjustment: float = 1.10         # +10% volatility (conservative)
     mean_haircut: float = 0.80           # -20% expected return (conservative)
+    contribution_periods_per_year: int = 12
+    withdrawal_periods_per_year: int = 1
     min_history_weeks: int = 104         # 2 years minimum
     default_n_sims: int = 10_000
     default_horizon_years: int = 20

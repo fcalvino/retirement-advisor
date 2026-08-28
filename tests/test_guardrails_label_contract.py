@@ -307,11 +307,26 @@ def test_the_inflation_rule_is_still_absent():
 
 
 def test_the_cut_still_applies_at_every_horizon_year():
-    """GK suspends capital preservation in the last 15 years; here it does not."""
+    """GK suspends capital preservation in the last 15 years; here it does not.
+
+    The schedule covers every horizon year (``weeks`` is built from
+    ``range(1, horizon_years + 1)``) and the cut is unconditional on the year, so
+    no horizon is exempt. Asserted on behaviour as well as source, because the
+    tier2 kernel expresses the same schedule as an event list rather than an
+    inline loop and a source-only check would have read as a rule change.
+    """
     src = _src("portfolio/decumulation.py")
     body = src.split('if strategy.kind == "guardrails":', 1)[1]
-    assert "for yr in range(1, horizon_years + 1):" in body
-    # No year-based gate around the cut — the branch is unconditional on `yr`.
+    # No year-based gate around the cut — the branch is unconditional on `year`.
     cut_line = [ln for ln in body.splitlines() if "guardrail_cut_pct" in ln and "np.where" in ln]
     assert len(cut_line) == 1
-    assert "yr" not in cut_line[0]
+    assert "year" not in cut_line[0]
+
+    # Behaviour: a portfolio that keeps breaching the ceiling is cut in the
+    # final year too, which canonical GK would have spared.
+    strategy = WithdrawalStrategy.guardrails(0.04)
+    horizon = 20
+    path = _weekly_path([-0.05] * horizon)
+    withdrawals = _engine_withdrawals(path, strategy, horizon, 0.0)
+    assert withdrawals[-1] > 0.0        # the pot is still alive to be cut
+    assert withdrawals[-1] < withdrawals[-2]
