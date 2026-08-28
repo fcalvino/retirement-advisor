@@ -99,7 +99,7 @@ Screener cache → Optimizer (score≥threshold; excluye poor; haircut partial)
 | Soft gate decisión | `strategy.decide` + `apply_safety_overlay` (path AI) | Solo **`poor`** degrada BUY→HOLD + confidence LOW |
 | Risks en decisión | strategy | `partial` y `poor` agregan risk text |
 | Personal book | `personal_sizer` | `data_quality_level != "poor"` para core concentration; risk si poor |
-| Reconciliación multi-fuente | `reconcile` / `data_quality_agent` | Conflicto si Δ relativa > `discrepancy_pct` (5%); downgrade 1 nivel si `conflict_downgrades_quality` |
+| Reconciliación multi-fuente | `reconcile` / `data_quality_agent` | **Solo compara valores del mismo período fiscal** (`as_of` a ±15 días). Conflicto si Δ relativa > `discrepancy_pct` (5%) *entre valores comparables*; downgrade 1 nivel si `conflict_downgrades_quality`. Períodos que no coinciden → `comparable=False`: se reportan como "no se pudo verificar", **no** como discrepancia, y no mueven el badge |
 | Cap DY basura | optimizer `_clean_div_yield` | DY fuera de [0, 15] → 0 |
 | History mínimo MC | `MONTE_CARLO.min_history_weeks` (104) | Bloquea / avisa si historia corta |
 | MC missing tickers | `_load_returns` | Rebalancea pesos; o SPY fallback |
@@ -124,6 +124,22 @@ Screener cache → Optimizer (score≥threshold; excluye poor; haircut partial)
 - `FundamentalAnalyzer._attach_cross_source_quality` invoca `attach_cross_source_quality` tras `compute_data_quality` cuando `MULTI_SOURCE.enabled` y `attach_in_pipeline`.
 - Sigue **sin sobrescribir** métricas del score; solo badge + warnings.
 - Kill-switch: `attach_in_pipeline=False` deja la UI de Calidad de Datos operativa sin red en batch.
+
+#### G1.1 — La comparación tiene que ser del mismo período — ✅ cerrado 2026-08-18
+
+El chequeo cruzado degradaba **22 de 25 tickers con cero métricas faltantes** (16 STRONG BUY → BUY). No medía calidad: medía si SEC había contestado. Corrida `default` del 2026-08-17 (solo yfinance respondió) → 22 `good`; corrida `us_quality` del 2026-08-18 (SEC respondió) → 22 `partial`. Tres defectos apilados:
+
+1. **Tags us-gaap muertos.** `_CONCEPTS` tomaba el primer tag que existiera en la historia de la empresa. Las empresas retiran tags (ASC 606 sacó revenue de `Revenues`) pero el tag retirado sobrevive en `companyfacts` con su último valor histórico: MSFT resolvía a **FY2010** (62,48 B), CRM a **FY2017** (8,39 B), MA a `NetIncomeLoss` de **FY2013** (3,12 B — hoy reporta bajo `ProfitLoss`, que ni estaba en la lista). Ahora se escanean **todos** los tags candidatos y gana el de `end` más reciente; el orden de la lista es solo desempate.
+2. **Fallback a trimestrales.** `_latest_annual` caía a "cualquier row con `val`", que en KLAC devolvió un **10-Q de 2011**. Ahora exige duración de 330–400 días y no hay fallback.
+3. **TTM contra FY.** yfinance entregaba TTM sin fecha (`info.totalRevenue`) contra el último 10-K de SEC; con `discrepancy_pct=5%`, toda empresa que creciera más de 5% anual era "discrepancia" por definición. `YFinanceSource` ahora lee los estados anuales (`get_financials`, ya cacheado y ya llamado por `analyze()`) y estampa `as_of`.
+
+Regla nueva en `reconcile()`: **el reconciliador se niega a comparar valores cuyos períodos no coinciden**, en vez de comparar y llamar conflicto a la diferencia. `agreement_pct` solo cuenta campos comparables.
+
+Re-medido sobre las mismas 24 empresas: **0 conflictos (antes 38), 0 degradaciones falsas (antes 22)**.
+
+**Qué compra esto, y qué no.** Con los períodos alineados, cada campo comparable coincide con **Δ = 0,00%**: los estados anuales de yfinance derivan de los mismos filings de SEC. Es un chequeo de **procedencia** (¿el número que usó el score sale del 10-K vigente?), no verificación independiente — no puede detectar un dato mal que esté mal en ambos. Verificación independiente de verdad requiere la tercera fuente: `FMP_API_KEY`. Lo que sí detecta es desactualización real: QCOM y V tienen `total_equity` con el tag de SEC congelado en 2019 y 2011, y salen como "no se pudo verificar".
+
+Costo: ~1,2 s/ticker contra el presupuesto de 3,5 s/ticker del screener. `SecEdgarSource._cik_map` pasó a nivel de clase con lock — `default_fundamental_sources()` crea un adapter por ticker, así que el mapa ticker→CIK (~1 MB) se re-descargaba una vez por ticker con 6 hilos en paralelo. Definir `SEC_USER_AGENT` con un contacto real antes de correr universos grandes.
 
 #### G2 — `partial` no frena el pipeline (P0/P1) — ✅ cerrado (soft) 2026-08-11
 
