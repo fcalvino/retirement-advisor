@@ -1,5 +1,9 @@
 # Estado del Proyecto — Retirement Advisor
 
+> **Rol: `historical-plan`. Este archivo es un diario de fases ya shipeadas, no un backlog.**
+> Lo que falta hacer vive en [`BACKLOG.md`](BACKLOG.md), priorizado y verificado
+> contra el código. Cuando una fila del backlog se cierra, se muda acá con su commit.
+
 ## ✅ Todo implementado y en producción (GitHub main)
 
 Este plan describe trabajo **ya completado**. El plan original (AI integration) fue implementado junto con las Fases 1.5, 2 y 3.

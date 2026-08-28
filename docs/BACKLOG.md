@@ -1,0 +1,391 @@
+# Backlog — Retirement Advisor
+
+> **Rol:** `living-guide`. Esto es lo que **falta hacer**. Última repriorización: 2026-08-28.
+>
+> No confundir con [`ROADMAP.md`](ROADMAP.md), que es el diario de fases **ya
+> shipeadas**, ni con [`brainstorm/`](brainstorm/00_INDICE.md), que es ideación sin
+> verificar contra el código.
+
+---
+
+## Por qué existe este archivo
+
+Hasta hoy el trabajo abierto vivía en tres lugares y ninguno era el repo:
+
+| Fuente | Qué tenía | Problema |
+|---|---|---|
+| `auditoria_remediacion_unificada.csv` | 69 filas, oleadas 0–7 + 8 fuera de alcance | Vivía en `~/Downloads`, fuera de git, sin estado de cierre |
+| [`brainstorm/99_PRIORIZACION.md`](brainstorm/99_PRIORIZACION.md) | Quick wins + apuestas de producto | Escrito el 2026-06-20; la mayoría ya se shipeó y nadie lo tachó |
+| [`prefilter_contract.md`](prefilter_contract.md) | Contrato del portero | Spec sin código y sin dueño |
+
+Las tres corrientes nunca se cruzaron entre sí, así que no había forma de responder
+"¿qué hago ahora?" sin releer las tres. Este archivo es esa respuesta.
+
+---
+
+## El criterio de orden
+
+No todo defecto pesa igual. El orden de abajo sale de aplicar estas cinco bandas,
+en este orden, y dentro de cada banda ordenar por **cuántas superficies leen el
+número**:
+
+1. **Rompe una decisión.** El motor produce una cifra falsa que cambia qué compra,
+   vende o ahorra el usuario — y no lo avisa. Un cero silencioso es peor que un
+   error ruidoso.
+2. **Bloquea a otro.** Precondición declarada de algo de la banda 1.
+3. **Corrompe la evidencia.** No cambia una decisión de hoy, pero ensucia el
+   track record, que es el único juez que tiene el motor sobre sí mismo.
+4. **Promete lo que no calcula.** La etiqueta dice más que la fórmula. Casi todo
+   cerrado en la oleada 1; lo que queda es residual.
+5. **Higiene y fricción.** Config duplicada, literales, UX incómoda. No mueve un
+   número hoy; cada uno es un bug futuro barato de prevenir.
+
+**La regla que resuelve los empates:** un número que el usuario ve y usa para
+decidir, y que está mal, pesa más que una pantalla incómoda. Siempre.
+
+---
+
+## Estado verificado (2026-08-28)
+
+Las 39 filas de oleadas 3–7 de la auditoría se verificaron contra `main` una por
+una, con oráculos empíricos donde el hallazgo lo permitía.
+
+| Oleada | Total | Cerradas | Abiertas |
+|---|---|---|---|
+| 3 — fórmulas con blast radius | 11 | 2 | 9 |
+| 4 — flujos del motor | 4 | 0 | 4 |
+| 5 — scoring y config | 20 | 1 | 19 |
+| 6 — dos motores de retorno | 2 | 0 | 2 |
+| 7 — UX del dashboard | 2 | 0 | 2 |
+| **Total** | **39** | **3** | **36** |
+
+Cerradas: **U3-6** (`a5a63d9`), **U3-11** (`00fb551`, oráculo: sin `payoutRatio` ni
+FFO el score es 4.0 exacto), **U5-20** (`d86f8e9`).
+
+---
+
+## Bloque 0 — Desbloqueo
+
+Una sola fila, y está primera porque es precondición declarada del único P0 de la
+oleada 3.
+
+### U0-2 · Matriz de score con IA on/off en el harness offline
+
+`scripts/measure_score_impact.py` existe desde `b141b56` pero corre
+`full_analysis(symbol, ai_config=None)` (`:66`) — o sea **solo rule-based**. La fila
+U3-7 dice literalmente *"Después de U0-2"*: sin poder medir el mismo universo con IA
+prendida y apagada, no hay forma de elegir entre subir el techo cuantitativo del moat
+y bajar `wide_threshold`, que es la decisión que U3-7 exige.
+
+**Hacer:** extender el harness a una matriz `(ticker, adjusted_score, action)` × IA
+on/off sobre el universo cacheado. Sigue siendo offline: las dos guardas que lo
+mantienen sin red no se tocan.
+
+---
+
+## Bloque 1 — El motor descarta o falsea plata del usuario
+
+Los tres P0 vivos. Los dos primeros no dependen de nada.
+
+### U4-2 · Una meta sin capital inicial descarta todo el ahorro `P0`
+
+`monte_carlo.py:1349`:
+
+```python
+withdrawal_fraction = (annual_withdrawal / initial_value) if initial_value > 0 else 0.0
+```
+
+Con `initial_value == 0` la fracción es 0, los aportes no entran, y
+`paths_usd = paths * initial_value` deja todo en cero: **probabilidad de éxito 0 %**.
+
+**Oráculo corrido:** `initial_value=0` con aporte de 12k/año → path final `1.0000`
+(el aporte no existió). Con `initial_value=100k`, mismo aporte → `2.2000`.
+
+Por qué encabeza la lista: *"¿llego si ahorro X por mes?"* es la pregunta central del
+producto para un usuario joven, y es exactamente la que el motor contesta con un cero
+sin decir que no la sabe contestar.
+
+**Hacer:** camino ahorro-only válido — separar la escala nominal del pozo relativo,
+de modo que un plan que arranca en cero pueda componer aportes.
+**Oráculo:** meta sin capital inicial y aportes > 0 → `paths != 0`.
+
+### U4-1 · El aporte "mensual" entra una vez por año `P0`
+
+`monte_carlo.py:1351` aplica el flujo en `week_idx = min(yr * 52, ...)`. Un aporte
+mensual se agrega ×12 y se deposita entero en la semana 52. No es lo mismo que una
+anualidad mensual: once de los doce depósitos pierden su rendimiento parcial del año.
+
+**Hacer:** una sola cadencia — mensual en el motor, **o** honesta en las dos UIs que
+piden el número. No las dos cosas a medias.
+**Oráculo:** mismo input → misma plata pedida en Simulaciones y en Metas.
+
+### U4-1b · Nota de alcance
+
+U4-1 y U4-2 tocan la misma función (`_apply_withdrawals`) y el mismo invariante
+(cómo entra un flujo de caja al pozo). Conviene un solo PR con los dos oráculos,
+no dos pasadas sobre el mismo código.
+
+### U3-7 · La escala del moat está rota `P0` · depende de U0-2
+
+Cuatro defectos en un mismo número:
+
+- `config.py:484` fija `wide_threshold = 14.0` sobre una escala 0–20, pero el tramo
+  cuantitativo topea en **12**. **Wide Moat es inalcanzable sin IA.**
+- `optimizer.py:523` hardcodea `>= 14` para la etiqueta "Wide Moat", sobre filas del
+  screener que en la ruta del Optimizer suelen venir sin IA.
+- El bonus real quant-only es `min(12 × 0.5, 10) = 6`; el docstring de `moat.py:34`
+  promete `+10`.
+- Consecuencia compuesta: **el mismo ticker muestra un moat distinto según la
+  pantalla**, sin que ninguna diga cuál modo usó.
+
+**Hacer, después de U0-2:** umbral de Wide para el modo quant-only **o** un preset de
+foso cuantitativo alto. No bajar Wide a 12 con IA prendida.
+**No hacer:** recalibrar 82/68/55 en el mismo PR.
+**Oráculo:** matriz IA on/off; el preset queda documentado o queda muerto, no ambiguo.
+
+---
+
+## Bloque 2 — Números que cambian una decisión de compra
+
+### U5-6 + U6-1 · El moat rinde dos veces en μ `P1`
+
+`optimizer.py:623-630` construye μ como `score_ret + div_ret + moat_ret`, con
+`views.moat = 0.20`. Pero el `adjusted_score` que alimenta `score_ret` **ya incluye**
+el bonus de moat (`min(total × 0.5, 10)`). El foso se paga dos veces y el optimizer
+sobrepondera empresas con moat alto respecto de lo que el propio motor dice que valen.
+
+U6-1 es la versión estructural del mismo problema: hay dos motores de retorno (proxy
+del optimizer vs historia+haircut del Monte Carlo) y el proxy no está anclado a nada.
+
+**Hacer:** μ desde score base + dividendo, **o** sacar el término de moat. Una de las
+dos, no una mezcla.
+**Oráculo:** un ticker con moat 20 no rinde dos veces.
+**Si μ se mueve:** bumpear `ENGINE_VERSION` (U6-2, hoy en `2026.08-tier1`) y avisar
+del stale de planes guardados.
+
+### U3-1 · Historial corto se lee como "debajo de la tendencia" `P1`
+
+`technical.py:35` declara `above_sma200: bool = False` y `:112` cae a `False` cuando
+la media es NaN. **Oráculo corrido:** una serie de 108 semanas devuelve
+`above_sma200 = False` — indistinguible de un precio realmente por debajo de la media
+de 200 semanas. Y `strategy.py:487` (`if not t.above_sma200`) degrada la acción por
+eso.
+
+Un ticker con menos de ~3,8 años de historia queda castigado por no tener historia.
+
+**Hacer:** `above_sma200 = None` cuando `len < ventana`; no degradar un BUY sin
+`decisive_reason`.
+**No hacer:** relabel y recálculo juntos — U1-3 ya eligió relabel, la ventana no se toca.
+**Oráculo:** serie de 108w → `None`, no `False`.
+
+### U3-3 + U3-4 + U3-5 · La cadena de Graham `P1`
+
+Tres defectos encadenados sobre el mismo número, que termina en
+`require_margin_of_safety` — la puerta que desbloquea STRONG BUY.
+
+| id | defecto | evidencia |
+|---|---|---|
+| U3-5 | `g` es CAGR de **Net Income**, no por acción | `fundamental.py:1198` — con buybacks, EPS CAGR ≠ NI CAGR |
+| U3-3 | con `g = 0` no se produce ningún V | `fundamental.py:691` `if eps > 0 and growth_used > 0`. Oráculo: V(g=0, EPS 5) = **41,56**; el motor devuelve `None` |
+| U3-4 | `Y` congelada en 4,5 % y sin disclaimer | `config.py:99`; `2_Stock_Analysis.py:642-645` imprime "Graham Intrinsic Value" a secas |
+
+**Hacer:** CAGR por acción; `V = EPS × 8.5 × 4.4 / Y` cuando `g = 0` y sin V cuando
+`g < 0`; `Y` inyectable con disclaimer de proxy. **Sin fetch live** — eso es X-04.
+
+### U3-8 · Dos ROIC, y el impuesto es de otro país `P1`
+
+`fundamental.py:876` y `moat.py:610` calculan ROIC por separado, ambos con la tasa
+de EE.UU. hardcodeada (`0.21` en uno, `0.79` en el otro), fuera de config. Un ADR
+argentino o brasileño usa 21 % en silencio. Además, `fundamental.py:813-816` cae a
+ROA cuando no puede computar ROIC y lo reporta igual bajo el nombre "ROIC".
+
+ROIC alimenta el moat *y* la dimensión de calidad: el mismo error entra dos veces.
+
+**Hacer:** una implementación; tasa en config; no disfrazar ROA de ROIC.
+**Oráculo:** ADRs AR/BR no usan 21 % en silencio.
+
+### U3-9 + U3-10 · Ratios armados con dos años fiscales distintos `P1` `P2`
+
+- **U3-9** (`fundamental.py:344-346`): `compute_ffo` hace dos `_latest_row_value`
+  independientes — Net Income de un año, D&A de otro — y
+  `compute_ffo_payout_pct` elige Cash Dividends Paid por tercera vez. Alimenta la
+  banda P/FFO de 8 puntos y el riesgo de corte de dividendo en
+  `strategy._build_rationale`.
+- **U3-10** (`fundamental.py:1342-1345`): `_row` hace `dropna()` por candidato, así
+  que EBIT puede venir de FY2024 e Interest Expense de FY2023 — y el ratio sale sin
+  marca. Alimenta una banda de salud de 5 puntos.
+
+**Hacer:** anclar en un solo `as_of`, o devolver `None` si los períodos no coinciden.
+La capa `_same_period` existe para esto.
+**No hacer:** revertir el `dropna()` — arreglaba el `0.0` silencioso.
+**Oráculo:** un estado con la columna nueva en blanco → FFO `None`; nunca una mezcla
+de años.
+
+### U5-15 · El horizonte anual del track record dura 8,3 meses `P1`
+
+`track_record_scorer.py:122` hace `timedelta(days=252)` — 252 días **calendario**,
+o sea ~8,3 meses. `config.py:1307` lo describe como "252 ≈ 12 trading months". Además
+`hold_band_pct = 5.0` es la misma banda para el horizonte de 30 días y el de 252.
+
+Esto está en la banda 3 del criterio: no cambia una compra de hoy, pero corrompe la
+única evidencia que el motor tiene sobre sí mismo, y esa evidencia solo crece con el
+tiempo. Cada mes que pasa sin arreglarlo es un mes de muestra contaminada.
+
+**Hacer:** 252 días de trading o ~365 calendario, explícito; bandas por horizonte.
+
+### U5-13 · `capital_gap` suma dólares de años distintos `P1`
+
+`goals.py:228` resta `median_terminal` (valor en el año N de **cada** meta, cada una
+con su propio N) de `total_capital_needed`. Sumar USD de 2031 con USD de 2046 y
+presentar el resultado como "te falta esto" no es una cifra.
+
+**Hacer:** traer todo a valor presente en una fecha, o no sumar.
+
+---
+
+## Bloque 3 — Scoring calibrado sobre supuestos falsos
+
+Nada de acá miente sobre lo que calcula; todo está mal calibrado o mal alcanzado.
+
+| id | sev | qué | evidencia |
+|---|---|---|---|
+| **U5-5** | P1 | Un banco no puede alcanzar calidad de datos buena: `_QUALITY_KEY_FIELDS` exige `current_ratio` y `debt_equity` para todos | `fundamental.py:464-468` — sin conciencia de `company_type` |
+| **U5-4** | P1 | REITs: PEG sobre earnings, bandas de payout 40/75 planas aplicadas sobre FFO | `config.py:146,150` |
+| **U5-12** | P1 | `tracker.py:5` promete "annualized return (IRR/XIRR)" y no hay una sola implementación de IRR en el módulo. La curva se arma con las shares de **hoy** proyectadas 5 años atrás, y de esa curva salen el `downside_vol_ratio`, el Sharpe realizado, el drawdown y la beta | grep: `irr` solo aparece en el docstring |
+| **U5-14** | P1 | La deriva del plan se renormaliza al subconjunto con precio en la ruta de `PLAN_HEALTH_DEGRADATION`. `drift_breakdown` delega el hueco al caller (`plan_context.py:467`) y solo el detector de alertas tiene el gate de U2-3 | |
+| **U5-16** | P1 | `_ARS_TICKERS = {YPF, PAM, CEPU, LOMA, TEO, EDN}` literal en el módulo; faltan GGAL, BMA, SUPV, BBAR, TGS, CRESY, IRS y cualquier custom | `optimizer.py:45` |
+| **U5-1** | P1 | Piotroski paga `bonus_strong = 12.0` como si fuera calidad de retiro | `config.py:393` |
+| **U5-17** | P2 | El bootstrap nunca sortea la última observación. Oráculo: T=100, BLOCK_SIZE=4 → índice más alto alcanzable **98** | `monte_carlo.py:613` |
+| **U5-2** | P2 | F4 usa `<` estricto: LTD=0 en ambos años da `0 < 0 = False` → fail | `scoring.py:301` |
+| **U5-3** | P2 | F6 cae a `"Common Stock"` (importe en USD, no cantidad de acciones); tolerancia `1.02` hardcodeada | `scoring.py:273,317` |
+| **U5-8** | P2 | No pagar dividendo (+3) puntúa más que pagar un yield bajo (+2) | `_score_dividends` |
+
+---
+
+## Bloque 4 — Higiene, config y fricción
+
+Ninguno mueve un número hoy. Todos son bugs futuros baratos de prevenir, y varios
+son el terreno donde ya nacieron los defectos de arriba.
+
+| id | sev | qué | evidencia |
+|---|---|---|---|
+| **U5-9** | P2 | Literales que deberían estar en config, movidos 1:1 y byte-idénticos: `0.18`/`0.05` de μ, `0.21`/`0.79` del tax, FCF 4/2, quick 1.5/1.0, F6 1.02, MaxDD 1.5, payout 80 | `optimizer.py:623,625`, `fundamental.py:882`, `moat.py:626` |
+| **U5-10** | P2 | La tasa libre de riesgo vive en tres lugares con dos valores: `config.py:402` (0.045), `:694` (0.045), `:491` (`risk_free_proxy_pct = 4.0`). Más `BLOCK_SIZE` muerto, dos techos de yield y dos caps de sector | |
+| **U5-18** | P2 | 15 `utcnow` vivos entre relojes UTC-naive y local-naive: `data/cache.py` (6), `analysis/track_record.py` (8), `track_record_scorer.py` (1). Afecta la edad del dato y el dedup por día | |
+| **U3-2** | P2 | ATR y ADX usan `ewm(span=period)` en vez del suavizado de Wilder `alpha=1/period`. El RSI (`:300`) ya está bien — son los únicos dos que quedaron | `technical.py:329,353-358` |
+| **U4-3** | P2 | La palanca "Inflación" del tornado bumpea `withdrawal_growth_rate`; sin retiros activos el swing es exactamente 0 y el rótulo queda igual | `sensitivity.py:105-110` |
+| **U4-4** | P2 | La longevidad solo trunca: `cap_week = min(longevity*52, n_cols-1)`. Vivir 5 años más no puede alargar la simulación | `decumulation.py:300` |
+| **U5-7** | P2 | El docstring promete "Conservative: age / Aggressive: age − 10"; la función no toma perfil y siempre devuelve `min(age, 80)` | `config.py:360-362` |
+| **U5-11** | P2 | `weight_quality_moat_tailwind = 45` y sus tres hermanos nunca se leen: solo se interpolan en un f-string | `config.py:1266` → `personal_sizer.py:648` |
+| **U5-19** | P3 | Black-Litterman documenta Π como "CAPM equilibrium **excess** returns" mientras las views `q` son retornos totales | `black_litterman.py:83` |
+| **U7-1** | P3 | `preset_gap` se evalúa en cada rerun contra los widgets actuales, así que sacar un valor a mano dispara "ese filtro no se aplicó", que es falso | `1_Screener.py:663` |
+| **U7-2** | P3 | Vaciar el multiselect "Fuente" muestra **todas** las filas en vez de ninguna | `13_Track_Record.py:86` |
+| **U0-3** | P3 | CONTEXT §8 (a)(b) describen como abiertos dos defectos ya cerrados | |
+
+---
+
+## Bloque 5 — Oleadas nuevas
+
+Trabajo que ninguna de las tres fuentes cubre, o que cambió de costo desde que se
+escribió.
+
+### N1 · La cotización del dólar es un placeholder que se presenta como dato
+
+U2-5 cerró **la conversión** (deflactar antes de aplicar el spot). Lo que quedó
+abierto y sin dueño es **de dónde sale la cotización**: `ArFxConfig` trae 1000/1200
+pesos por dólar hardcodeados y `USD_ARS_*` no se exporta en ninguna parte del repo,
+así que la "brecha del 20 %" que la UI mostraba era la resta de dos números
+inventados (CONTEXT §8).
+
+La ideación pide "Módulo Doble Moneda" como apuesta grande y diferencial real frente
+a competidores globales. La auditoría lo tocó de costado. Nadie es dueño del
+problema completo.
+
+**Alcance mínimo:** una fuente de FX real o una entrada manual explícita del usuario,
+con `rate_source` describiendo la procedencia de forma que la UI pueda decir "esto lo
+pusiste vos" vs "esto salió de X". Sin eso, cualquier número en pesos es decorativo.
+
+### N2 · Sacar "segunda fuente de datos" de fuera de alcance
+
+`X-08` clasificó "yfinance como fuente única" como fuera de alcance, y CONTEXT §8 lo
+mantiene como limitación conocida ("no hay retry automático; si falla un ticker, se
+loggea y se continúa").
+
+Pero desde entonces `data/data_sources.py` (17 KB) existe y ya sabe hablar con más de
+una fuente — lo usa `attach_cross_source_quality` para **reconciliar**. La
+infraestructura del fallback ya está construida; lo que falta es usarla en el camino
+de **fetch**, no solo en el de verificación.
+
+El costo bajó lo suficiente como para que "fuera de alcance" ya no sea la respuesta
+correcta. Empezar por el retry, que es la mitad barata.
+
+### N3 · Accesibilidad y tema
+
+`99_PRIORIZACION.md` lo lista como quick win y sigue abierto: **no existe
+`.streamlit/config.toml`** en el repo, así que no hay tema declarado ni paleta
+controlada. Es de los pocos quick wins de la ideación que no se shipeó.
+
+### N4 · El backlog vive en el repo
+
+Este archivo. Falta cerrar el círculo: mover
+`auditoria_remediacion_unificada.csv` adentro del repo (o versionar su estado acá),
+para que "qué está abierto" no dependa de un archivo en `~/Downloads`. Es lo que
+U0-1 pedía a medias.
+
+---
+
+## Qué de la ideación ya no aplica
+
+`brainstorm/99_PRIORIZACION.md` es del 2026-06-20. Verificado contra el código de
+hoy, **la mayoría ya se shipeó** y conviene dejarlo dicho para no volver a
+priorizarlo:
+
+| Idea del brainstorm | Estado real |
+|---|---|
+| Reorganizar menú + fusionar pantallas (era la apuesta #1) | ✅ `app.py:361-387` — `st.navigation` por intención, 15 páginas en modo normal, Allocation adentro de Optimizer, Comité bajo Ajustes |
+| Sacar herramientas de dev del menú | ✅ `app.py:353-359` — `is_dev_mode()` esconde Eval IA, Calidad de Datos y Macro RAG |
+| Mostrar resultados cacheados al entrar (Screener) | ✅ `data/screener_store.py` |
+| Filtros y búsqueda arriba de la tabla | ✅ Auditoría Screener item 09 |
+| Barra de progreso real | ✅ `1_Screener.py:258` + `format_eta` |
+| Acción única destacada ("hoy hacé esto") | ✅ Ola 1, `next_priority_action` |
+| Distinguir calculado vs interpretación de IA | ✅ Ola 1, `render_calc_badge`/`render_ai_badge` |
+| Preguntas sugeridas clicables en el Chat | ✅ `18_Chat.py:69`, `chat_suggested_questions` |
+| Botón "probar con plan de ejemplo" | ✅ Fase H.4 + `app.py:189` |
+| Realista vs Conservador visible | ✅ Fase J, `7_Simulaciones.py:416-422` |
+| Deriva inteligente cuando cartera y plan no se superponen | ✅ U2-3, `drift_breakdown` sobre la unión |
+| Asistente "¿qué cambio para llegar?" | 🟡 El motor existe (`monthly_savings_for_probability`, bisección sobre la probabilidad MC real); falta la superficie que lo presente como asistente |
+| Segunda fuente de datos + reintentos | 🟡 Reconciliación ✅, fallback de fetch ❌, retry ❌ → **N2** |
+| Módulo Doble Moneda | 🟡 Conversión ✅ (U2-5), cotización ❌ → **N1** |
+| Modo oscuro y accesibilidad | ❌ → **N3** |
+| Separar el motor de la interfaz (API interna) | ❌ Sigue siendo la apuesta grande sin empezar |
+| Unificar ficha + comité + chat | ❌ |
+| Chat como puerta de entrada principal | ❌ |
+| Módulo de Impuestos | ❌ |
+| Versión web multiusuario | ❌ |
+
+---
+
+## Fuera de alcance (sin cambios)
+
+- `X-01` — scorer bancario/utilities completo
+- `X-02` — IRR canónico
+- `X-03` — completar el método de Guyton-Klinger. Hoy el motor corre una versión
+  **simplificada**: dos de las cuatro reglas (preservación de capital y prosperidad).
+  No implementa la regla de inflación ni las otras dos — ver CONTEXT §8 (U1-6)
+- `X-04` — AAA en vivo
+- `X-05` — universo/prefiltro
+- `X-06` — reabrir D1/D2/D4/D5/D6
+- `X-07` — haircut MC −20 %/+10 % vol (documentado)
+
+**`X-08` (yfinance como fuente única) sale de esta lista** — ver N2.
+
+---
+
+## Cómo mantener este archivo
+
+- Una fila se cierra cuando su **oráculo** pasa, no cuando el código "parece bien".
+  Ver CONTEXT §5: *"tests del motor = oráculo, no auto-consistencia"*.
+- Al cerrar una fila, moverla a [`ROADMAP.md`](ROADMAP.md) con su commit.
+- Si un cambio mueve μ o el Monte Carlo, bumpear `ENGINE_VERSION` (U6-2).
+- Este archivo está en la tabla canónica de [`INDEX.md`](INDEX.md); si se renombra,
+  correr `scripts/check_doc_catalog.py`.
