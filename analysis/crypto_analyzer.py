@@ -163,6 +163,7 @@ class CryptoAnalyzer:
 
         result = FundamentalResult(symbol=symbol)
         result.is_crypto = True   # sentinel used by dashboard & ai_analyzer
+        result.asset_class = "crypto"   # audit item 01 — not fundamentally scorable
         result.sector = "Crypto / Digital Asset"
         result.industry = "Store of Value / Monetary Asset"
 
@@ -230,6 +231,7 @@ class CryptoAnalyzer:
         result.fcf_yield = None
         result.dividend_yield = None
         result.payout_ratio = None
+        result.payout_ratio_effective = None
         result.graham_value = None
         result.margin_of_safety_pct = None
 
