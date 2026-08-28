@@ -274,7 +274,11 @@ class AlertEngine:
         horizon_years: int,
         initial_value: float,
     ) -> Optional[FiredAlert]:
-        """Fire SORR_HIGH if early drawdown probability exceeds threshold."""
+        """Fire SORR_HIGH if early drawdown probability exceeds threshold.
+
+        The input is measured on the market series (U2-2): planned withdrawals
+        no longer inflate it, so this alert fires on real sequence risk only.
+        """
         if sorr_early_drawdown_pct < ALERTS.sorr_high_threshold_pct:
             return None
         symbol = "PORTFOLIO"
@@ -285,7 +289,7 @@ class AlertEngine:
             return None
         msg = (
             f"⚠️ SORR elevado: **{sorr_early_drawdown_pct:.1f}%** de probabilidad de drawdown "
-            f"severo en los primeros 5 años (horizonte: {horizon_years} años, "
+            f"severo **de mercado** en los primeros 5 años (horizonte: {horizon_years} años, "
             f"capital: ${initial_value:,.0f}). Revisá la estrategia de retiros."
         )
         context = {
