@@ -87,8 +87,9 @@ def apply_safety_overlay(
             decision.rationale or []
         )
 
-    # Soft data-quality policy also on AI path (same as decide())
+    # Soft policies also on AI path (same as decide())
     if not decision.blocked:
+        apply_negative_equity_policy(decision, fundamental)
         apply_data_quality_policy(decision, fundamental)
 
     return decision
@@ -136,6 +137,52 @@ def apply_data_quality_policy(
             note = f"Confianza capada a {cap} por data quality partial"
             if note not in (decision.rationale or []):
                 decision.rationale = list(decision.rationale or []) + [note]
+
+    return decision
+
+
+def apply_negative_equity_policy(
+    decision: "Decision",
+    fundamental: FundamentalResult,
+    *,
+    config=None,
+) -> "Decision":
+    """Cap the action when shareholders' equity is negative (audit 2026-08-22, P1-3).
+
+    Both hard guards in ``_check_safety_blocks`` key off fields that yfinance
+    *omits* for exactly this population: ``debtToEquity`` (so ``> max_debt_equity``
+    never fires) and ``priceToBook`` (so ``< 0`` never fires). Measured on the
+    cached universe, MCD, SBUX, ABBV, YUM and LOW sailed through both — MCD with
+    $54.8B of debt against −$1.79B of equity — and on top of that collected 7 of
+    20 health points with the note "Very low debt D/E=0.00".
+
+    Negative equity is not insolvency: in those names it is the accounting residue
+    of years of buybacks. So this does not block. It states the fact, adds the risk
+    and caps the action at HOLD, because "how levered is it" is a question the data
+    cannot answer for these companies — and STRONG BUY is an answer.
+
+    Same shape as :func:`apply_data_quality_policy`, and called from the same two
+    places (``decide`` and ``apply_safety_overlay``) so the LLM path cannot skip it.
+    """
+    if config is None:
+        config = CFG
+    if not getattr(config, "negative_equity_caps_action", True):
+        return decision
+    if not getattr(fundamental, "negative_equity", False):
+        return decision
+
+    risk = "Patrimonio neto negativo — D/E indefinido, apalancamiento no verificable"
+    if risk not in (decision.risks or []):
+        decision.risks = list(decision.risks or []) + [risk]
+
+    if decision.action in ("STRONG BUY", "BUY"):
+        note = f"{decision.action} capado a HOLD por patrimonio neto negativo"
+        decision.action = "HOLD"
+        if note not in (decision.rationale or []):
+            decision.rationale = [note] + list(decision.rationale or [])
+        cur = decision.confidence or "MEDIUM"
+        if _CONFIDENCE_RANK.get(cur, 1) > _CONFIDENCE_RANK.get("MEDIUM", 1):
+            decision.confidence = "MEDIUM"
 
     return decision
 
@@ -306,6 +353,7 @@ class RetirementStrategy:
             decision.risks.append(
                 f"Calidad de datos {dq['level']}: faltan {missing}"
             )
+        apply_negative_equity_policy(decision, fundamental)
         apply_data_quality_policy(decision, fundamental)
 
         logger.info(f"{symbol}: {decision.action} (F={score:.1f}, T={tech}{'  🪙crypto' if _is_crypto else ''})")
