@@ -170,8 +170,10 @@ class TestMaxDebtEquity:
 
 
 class TestAdjustedScoreForDecision:
-    # Derived from the ladder rather than literals: 66 used to sit above buy=60
-    # and now sits below buy=68, so a hardcoded fixture silently became HOLD.
+    # Both scores are derived from the ladder rather than written as literals: what
+    # these tests assert is *which of the two fields* decide() reads, not the value
+    # of any particular threshold. The old literals (41 / 66) silently became a
+    # HOLD case when the thresholds were re-anchored to 82/68/55 (2026-08-22).
     ADJ_IN_BUY_BAND = STRATEGY.buy_score + 5      # comfortably a BUY
     BASE_BELOW_HOLD = STRATEGY.hold_score - 10    # comfortably not a BUY
 
@@ -195,17 +197,17 @@ class TestAdjustedScoreForDecision:
         with patch.object(STRATEGY, "use_adjusted_score_for_decision", False):
             with patch.object(STRATEGY, "require_technical_uptrend", True):
                 d = eng.decide(fund, tech)
+        # base score sits below hold_score → REDUCE / SELL path; never BUY
         assert d.action in ("REDUCE", "SELL", "HOLD")
         assert d.action not in ("BUY", "STRONG BUY")
         assert d.fundamental_score == self.BASE_BELOW_HOLD
 
     def test_effective_decision_score_helper(self):
-        fund = _fund(total_score=self.BASE_BELOW_HOLD,
-                     adjusted_score=self.ADJ_IN_BUY_BAND)
+        fund = _fund(total_score=41.0, adjusted_score=66.0)
         with patch.object(STRATEGY, "use_adjusted_score_for_decision", True):
-            assert effective_decision_score(fund) == self.ADJ_IN_BUY_BAND
+            assert effective_decision_score(fund) == 66.0
         with patch.object(STRATEGY, "use_adjusted_score_for_decision", False):
-            assert effective_decision_score(fund) == self.BASE_BELOW_HOLD
+            assert effective_decision_score(fund) == 41.0
 
 
 class TestSafetyOverlay:
