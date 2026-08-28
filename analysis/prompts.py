@@ -119,6 +119,18 @@ def _macro_factors_output_spec(for_moat: bool = False, for_portfolio: bool = Fal
     return shape
 
 
+def _eps_growth_label(fund) -> str:
+    """Name the earnings-growth figure honestly inside the prompt.
+
+    ``eps_cagr_5y`` is a compounded rate off the statements when the data allows
+    and yfinance's quarterly YoY otherwise — telling the model "EPS CAGR" for the
+    second one invites it to reason about a trend that was never measured.
+    """
+    from analysis.fundamental import eps_growth_label
+
+    return eps_growth_label(fund)
+
+
 def _payout_block(fund) -> str:
     """The payout line, measured against what actually funds the dividend.
 
@@ -414,7 +426,7 @@ Valuación ({fund.valuation_score:.0f}/25):
   P/E={fmt(fund.pe_ratio, "x")} | PEG={fmt(fund.peg_ratio)} | EV/EBITDA={fmt(fund.ev_ebitda, "x")} | P/B={fmt(fund.pb_ratio, "x")}
 
 Crecimiento ({fund.growth_score:.0f}/20):
-  Revenue CAGR 5Y={fmt(fund.revenue_cagr_5y, "%")} | EPS CAGR={fmt(fund.eps_cagr_5y, "%")} | FCF Yield={fmt(fund.fcf_yield, "%")}
+  Revenue CAGR {getattr(fund, "revenue_cagr_years", 0) or "?"}Y={fmt(fund.revenue_cagr_5y, "%")} | {_eps_growth_label(fund)}={fmt(fund.eps_cagr_5y, "%")} | FCF Yield={fmt(fund.fcf_yield, "%")}
 
 Dividendos ({fund.dividend_score:.0f}/10):
   Yield={fmt(fund.dividend_yield, "%")} | {_payout_block(fund)}

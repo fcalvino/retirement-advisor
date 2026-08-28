@@ -5,6 +5,7 @@ from __future__ import annotations
 import plotly.graph_objects as go
 import streamlit as st
 
+from analysis.fundamental import eps_growth_label
 from dashboard.shared import (
     _MOAT_DESCRIPTION,
     _MOAT_EMOJI,
@@ -429,7 +430,7 @@ if symbol:
                     st.metric(label, f"{val:.1f}/2", help=tip)
                     st.markdown(_dim_bar_html(val), unsafe_allow_html=True)
 
-            _quant_pct = round(getattr(_moat_detail, "quant_total", 0) / 12 * 100)
+            _quant_pct = _moat_detail.quant_pct
             st.markdown(
                 f"<small><b>Subtotal cuantitativo: {_moat_detail.quant_total:.1f}/12 "
                 f"({_quant_pct:.0f}%)</b></small>",
@@ -456,7 +457,7 @@ if symbol:
                         st.markdown(_dim_bar_html(val), unsafe_allow_html=True)
 
                 _ai_total = getattr(_moat_detail, "ai_total", 0)
-                _ai_pct   = round(_ai_total / 8 * 100) if _ai_total > 0 else 0
+                _ai_pct = _moat_detail.ai_pct
                 st.markdown(
                     f"<small><b>Subtotal AI: {_ai_total:.1f}/8 ({_ai_pct:.0f}%)</b></small>",
                     unsafe_allow_html=True,
@@ -616,14 +617,19 @@ if symbol:
                 ("Current Ratio",    fund.current_ratio,    "x"),
                 ("Interest Coverage",fund.interest_coverage,"x"),
                 ("P/E Ratio",        fund.pe_ratio,         "x"),
+                # For a REIT the earnings multiple that drives the score is P/FFO;
+                # P/E stays above for reference but measures the wrong thing.
+                *([("P/FFO",         fund.p_ffo,            "x")] if fund.p_ffo else []),
                 ("PEG Ratio",        fund.peg_ratio,        "x"),
                 ("EV/EBITDA",        fund.ev_ebitda,        "x"),
                 ("P/B Ratio",        fund.pb_ratio,         "x"),
-                ("Revenue CAGR 5Y",  fund.revenue_cagr_5y,  "%"),
-                ("EPS CAGR 5Y",      fund.eps_cagr_5y,      "%"),
+                (f"Revenue CAGR {fund.revenue_cagr_years}Y" if fund.revenue_cagr_years
+                 else "Revenue CAGR",  fund.revenue_cagr_5y,  "%"),
+                (eps_growth_label(fund),  fund.eps_cagr_5y,      "%"),
                 ("FCF Yield",        fund.fcf_yield,        "%"),
                 ("Dividend Yield",   fund.dividend_yield,   "%"),
                 ("Payout Ratio",     fund.payout_ratio,     "%"),
+                *([("Payout s/ FFO", fund.ffo_payout_pct,   "%")] if fund.ffo_payout_pct else []),
             ]
             for i, (label, value, unit) in enumerate(metrics):
                 with cols[i % 3]:
