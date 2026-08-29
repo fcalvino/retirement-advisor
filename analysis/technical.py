@@ -330,7 +330,11 @@ class TechnicalAnalyzer:
                 (high - close.shift()).abs(),
                 (low - close.shift()).abs(),
             ], axis=1).max(axis=1)
-            atr = tr.ewm(span=period, adjust=False).mean()
+            # Wilder's smoothing: alpha = 1/period, NOT span=period
+            # (which would be alpha = 2/(period+1), almost twice as reactive).
+            # Same convention as ``_rsi`` above. The MACD below stays on span
+            # on purpose — a MACD is defined with EMAs, not with Wilder.
+            atr = tr.ewm(alpha=1 / period, adjust=False).mean()
             val = atr.iloc[-1]
             return float(val) if not pd.isna(val) else None
         except Exception:
@@ -354,12 +358,20 @@ class TechnicalAnalyzer:
             dm_plus = np.where((high - prev_high) > (prev_low - low), np.maximum(high - prev_high, 0), 0)
             dm_minus = np.where((prev_low - low) > (high - prev_high), np.maximum(prev_low - low, 0), 0)
 
-            atr = tr.ewm(span=period, adjust=False).mean()
-            di_plus = pd.Series(dm_plus, index=df.index).ewm(span=period, adjust=False).mean() / atr * 100
-            di_minus = pd.Series(dm_minus, index=df.index).ewm(span=period, adjust=False).mean() / atr * 100
+            # Four Wilder smoothings, not three: TR, +DM, -DM and finally DX.
+            # The DX one is the easiest to miss and the one that sets the number
+            # the ``adx >= 25`` gate above reads. Note the TR one cannot move the
+            # result — S(TR) is a common factor of both DI legs and the DX
+            # divides them by each other — but it stays Wilder because that is
+            # the textbook DI, and a test pins the cancellation so a surviving
+            # mutant there is not misread as missing coverage.
+            wilder = dict(alpha=1 / period, adjust=False)
+            atr = tr.ewm(**wilder).mean()
+            di_plus = pd.Series(dm_plus, index=df.index).ewm(**wilder).mean() / atr * 100
+            di_minus = pd.Series(dm_minus, index=df.index).ewm(**wilder).mean() / atr * 100
 
             dx = (di_plus - di_minus).abs() / (di_plus + di_minus).replace(0, 1e-10) * 100
-            adx = dx.ewm(span=period, adjust=False).mean()
+            adx = dx.ewm(**wilder).mean()
             val = adx.iloc[-1]
             return float(val) if not pd.isna(val) else None
         except Exception:
