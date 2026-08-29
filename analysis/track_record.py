@@ -20,7 +20,7 @@ Design notes (project conventions):
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, List, Optional
 
 from loguru import logger
@@ -38,6 +38,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from config import DB_PATH, TRACK_RECORD
+from data.clock import local_day_start_utc, utc_now
 
 
 class _Base(DeclarativeBase):
@@ -58,7 +59,7 @@ class RecommendationLog(_Base):
     price_at_rec      = Column(Float, nullable=True)
     rationale         = Column(Text, default="")          # JSON-encoded list[str]
     plan_id           = Column(String, nullable=True)
-    created_at        = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at        = Column(DateTime, default=utc_now, index=True)
 
     # --- Calibration inputs (2026-08-22) ------------------------------------
     # Everything above describes *what was recommended*. These describe *why*, and
@@ -98,7 +99,7 @@ class RecommendationOutcome(_Base):
     benchmark_return_pct  = Column(Float, nullable=True)
     excess_return_pct     = Column(Float, nullable=True)
     hit                   = Column(Boolean, nullable=True)
-    scored_at             = Column(DateTime, default=datetime.utcnow)
+    scored_at             = Column(DateTime, default=utc_now)
 
     # --- U2-4 (2026-08-24) --------------------------------------------------
     # True when the benchmark could not be priced at one or both ends of the
@@ -110,12 +111,11 @@ class RecommendationOutcome(_Base):
     benchmark_missing     = Column(Boolean, default=False)
 
 
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
-
-
-def _start_of_day(dt: datetime) -> datetime:
-    return dt.replace(hour=0, minute=0, second=0, microsecond=0)
+#: U5-18: el reloj y el corte del día viven en ``data.clock``. Este módulo tenía
+#: su propio ``_utcnow`` —correcto pero duplicado— y un ``_start_of_day`` que
+#: cortaba a las 00:00 **UTC**. Para un usuario en UTC−3 eso hacía que el "día"
+#: del dedup corriera de 21:00 a 21:00 local, y dejaba entrar 80 de 394 filas
+#: que eran la misma recomendación repetida en el mismo día del usuario.
 
 
 #: Metrics worth keeping per company type, as ``(attribute, key)``. Deliberately
@@ -313,7 +313,7 @@ class TrackRecordStore:
                     price_at_rec=(round(float(price_at_rec), 4) if price_at_rec else None),
                     rationale=json.dumps(list(rationale), ensure_ascii=False),
                     plan_id=plan_id,
-                    created_at=_utcnow(),
+                    created_at=utc_now(),
                     **fields,
                 )
                 s.add(row)
@@ -325,7 +325,7 @@ class TrackRecordStore:
             return None
 
     def _exists_today(self, symbol: str, action: str) -> bool:
-        today = _start_of_day(_utcnow())
+        today = local_day_start_utc(utc_now())
         with self._Session() as s:
             return (
                 s.query(RecommendationLog.id)
@@ -369,7 +369,7 @@ class TrackRecordStore:
         later run completes them in place (``save_outcome`` upserts). The cost is
         one cached lookup of the benchmark per run.
         """
-        now = now or _utcnow()
+        now = now or utc_now()
         from datetime import timedelta
 
         cutoff = now - timedelta(days=horizon_days)
@@ -424,7 +424,7 @@ class TrackRecordStore:
                 existing.excess_return_pct = excess_return_pct
                 existing.hit = hit
                 existing.benchmark_missing = bool(benchmark_missing)
-                existing.scored_at = _utcnow()
+                existing.scored_at = utc_now()
             else:
                 s.add(
                     RecommendationOutcome(
@@ -436,7 +436,7 @@ class TrackRecordStore:
                         excess_return_pct=excess_return_pct,
                         hit=hit,
                         benchmark_missing=bool(benchmark_missing),
-                        scored_at=_utcnow(),
+                        scored_at=utc_now(),
                     )
                 )
             s.commit()

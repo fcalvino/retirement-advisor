@@ -43,7 +43,7 @@ Pure Python + in-memory SQLite — no network, no Streamlit.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from types import SimpleNamespace
 from typing import Optional
 
@@ -58,6 +58,7 @@ from analysis.track_record_scorer import (
     score_due_recommendations,
     summary_stats,
 )
+from data.clock import utc_now
 
 BULLISH = ("STRONG BUY", "BUY")
 BEARISH = ("REDUCE", "SELL", "AVOID")
@@ -187,7 +188,7 @@ def test_a_benchmark_lookup_failure_is_never_persisted_as_beating_the_market(sto
     The market leg is what the lookup fails on, so the engine never sees the +12 %.
     What it must not do is *invent* a 0 % market and call the result a hit.
     """
-    created = datetime.utcnow() - timedelta(days=40)
+    created = utc_now() - timedelta(days=40)
     horizon_date = created + timedelta(days=30)
     _log_due(store, symbol="NVDA", action="BUY", price_at_rec=100.0, created=created)
 
@@ -215,7 +216,7 @@ def test_a_benchmark_lookup_failure_is_never_persisted_as_beating_the_market(sto
 
 
 def test_a2_the_counters_separate_partial_from_fully_scored(store):
-    created = datetime.utcnow() - timedelta(days=40)
+    created = utc_now() - timedelta(days=40)
     horizon_date = created + timedelta(days=30)
     _log_due(store, symbol="NVDA", action="BUY", price_at_rec=100.0, created=created)
 
@@ -246,7 +247,7 @@ def test_a2_the_counters_separate_partial_from_fully_scored(store):
 def test_b_engine_agrees_with_the_reference_when_the_benchmark_resolves(
     store, action, price_now, bench_now
 ):
-    created = datetime.utcnow() - timedelta(days=40)
+    created = utc_now() - timedelta(days=40)
     horizon_date = created + timedelta(days=30)
     _log_due(store, symbol="NVDA", action=action, price_at_rec=100.0, created=created)
 
@@ -368,7 +369,7 @@ def test_e_equity_curve_drops_the_leg_it_cannot_compare():
     Keeping it would let the model compound while its opponent stands still —
     the chart's whole claim ("vs SPY on the same stretches") stops being true.
     """
-    now = datetime.utcnow()
+    now = utc_now()
     rows = [
         {"action": "BUY", "hit": True, "return_pct": 10.0, "benchmark_return_pct": 4.0,
          "excess_return_pct": 6.0, "benchmark_missing": False, "created_at": now - timedelta(days=3)},
@@ -389,7 +390,7 @@ def test_e_equity_curve_drops_the_leg_it_cannot_compare():
 
 def test_e2_a_genuine_zero_percent_benchmark_is_still_plotted():
     """0.0 is a measurement; None is the absence of one. They must not share a path."""
-    now = datetime.utcnow()
+    now = utc_now()
     rows = [
         {"action": "BUY", "hit": True, "return_pct": 10.0, "benchmark_return_pct": 0.0,
          "excess_return_pct": 10.0, "benchmark_missing": False, "created_at": now - timedelta(days=1)},
@@ -411,7 +412,7 @@ def test_f_a_partial_outcome_is_completed_by_a_later_run(store):
     unscorable forever, because ``get_pending_scoring`` filters on the existence
     of an outcome row.
     """
-    created = datetime.utcnow() - timedelta(days=40)
+    created = utc_now() - timedelta(days=40)
     horizon_date = created + timedelta(days=30)
     _log_due(store, symbol="NVDA", action="BUY", price_at_rec=100.0, created=created)
 
@@ -437,7 +438,7 @@ def test_f_a_partial_outcome_is_completed_by_a_later_run(store):
 
 
 def test_f2_a_completed_outcome_is_not_rescored(store):
-    created = datetime.utcnow() - timedelta(days=40)
+    created = utc_now() - timedelta(days=40)
     horizon_date = created + timedelta(days=30)
     _log_due(store, symbol="NVDA", action="BUY", price_at_rec=100.0, created=created)
 
@@ -459,7 +460,7 @@ def test_f2_a_completed_outcome_is_not_rescored(store):
 # --------------------------------------------------------------------------- #
 
 def test_g_hold_keeps_its_hit_without_a_benchmark(store):
-    created = datetime.utcnow() - timedelta(days=40)
+    created = utc_now() - timedelta(days=40)
     horizon_date = created + timedelta(days=30)
     _log_due(store, symbol="KO", action="HOLD", price_at_rec=100.0, created=created)
 

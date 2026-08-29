@@ -30,6 +30,7 @@ from sqlalchemy import Column, DateTime, Integer, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from config import DB_PATH, MACRO_RAG
+from data.clock import utc_now
 
 
 class _Base(DeclarativeBase):
@@ -45,7 +46,7 @@ class MacroDocRow(_Base):
     source     = Column(String, default="")
     tags       = Column(String, default="")               # comma-separated
     as_of      = Column(String, default="")               # ISO date of the fact
-    ingested_at = Column(DateTime, default=datetime.utcnow)
+    ingested_at = Column(DateTime, default=utc_now)
 
 
 @dataclass
@@ -108,11 +109,11 @@ class MacroRagStore:
                 existing.source = doc.source
                 existing.tags = ",".join(doc.tags)
                 existing.as_of = doc.as_of
-                existing.ingested_at = datetime.utcnow()
+                existing.ingested_at = utc_now()
             else:
                 s.add(MacroDocRow(
                     doc_key=key, title=doc.title, body=doc.body, source=doc.source,
-                    tags=",".join(doc.tags), as_of=doc.as_of, ingested_at=datetime.utcnow(),
+                    tags=",".join(doc.tags), as_of=doc.as_of, ingested_at=utc_now(),
                 ))
             s.commit()
 

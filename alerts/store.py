@@ -10,7 +10,7 @@ Tables (same DB as cache):
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from enum import Enum
 from typing import List, Optional
 
@@ -19,6 +19,7 @@ from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Text, 
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from config import DB_PATH
+from data.clock import utc_now
 
 MAX_HISTORY = 500  # cap rows in alert_history
 
@@ -74,7 +75,7 @@ class AlertSnapshot(_Base):
     score           = Column(Float, default=0.0)
     signal          = Column(String, default="")
     moat_class      = Column(String, default="")
-    updated_at      = Column(DateTime, default=datetime.utcnow)
+    updated_at      = Column(DateTime, default=utc_now)
 
 
 class AlertHistory(_Base):
@@ -86,7 +87,7 @@ class AlertHistory(_Base):
     explanation = Column(Text, default="")    # AI-generated explanation (Phase 6)
     severity    = Column(String, default=AlertSeverity.INFO)
     is_read     = Column(Boolean, default=False)
-    fired_at    = Column(DateTime, default=datetime.utcnow)
+    fired_at    = Column(DateTime, default=utc_now)
 
 
 class AlertCooldown(_Base):
@@ -144,12 +145,12 @@ class AlertStore:
                 snap.score      = score
                 snap.signal     = signal
                 snap.moat_class = moat_class
-                snap.updated_at = datetime.utcnow()
+                snap.updated_at = utc_now()
             else:
                 s.add(AlertSnapshot(
                     symbol=symbol, score=score,
                     signal=signal, moat_class=moat_class,
-                    updated_at=datetime.utcnow(),
+                    updated_at=utc_now(),
                 ))
             s.commit()
 
@@ -164,16 +165,16 @@ class AlertStore:
             cd = s.get(AlertCooldown, key)
             if cd is None:
                 return False
-            return datetime.utcnow() - cd.last_fired < timedelta(hours=hours)
+            return utc_now() - cd.last_fired < timedelta(hours=hours)
 
     def set_cooldown(self, alert_type: AlertType, symbol: str) -> None:
         key = f"{alert_type}:{symbol}"
         with self._Session() as s:
             cd = s.get(AlertCooldown, key)
             if cd:
-                cd.last_fired = datetime.utcnow()
+                cd.last_fired = utc_now()
             else:
-                s.add(AlertCooldown(key=key, last_fired=datetime.utcnow()))
+                s.add(AlertCooldown(key=key, last_fired=utc_now()))
             s.commit()
 
     # ------------------------------------------------------------------ #
@@ -196,7 +197,7 @@ class AlertStore:
                 explanation=explanation,
                 severity=severity,
                 is_read=False,
-                fired_at=datetime.utcnow(),
+                fired_at=utc_now(),
             ))
             s.commit()
             # Trim old rows
@@ -263,7 +264,7 @@ class AlertStore:
         days: Optional[int] = None,
     ) -> None:
         """Silence a (symbol, alert_type) combination. Use '*' as wildcard."""
-        expires_at = datetime.utcnow() + timedelta(days=days) if days else None
+        expires_at = utc_now() + timedelta(days=days) if days else None
         with self._Session() as s:
             s.add(AlertMute(symbol=symbol, alert_type=alert_type, expires_at=expires_at))
             s.commit()
@@ -277,7 +278,7 @@ class AlertStore:
                 s.commit()
 
     def get_mutes(self) -> List[AlertMute]:
-        now = datetime.utcnow()
+        now = utc_now()
         with self._Session() as s:
             rows = (
                 s.query(AlertMute)
@@ -295,7 +296,7 @@ class AlertStore:
 
     def is_muted(self, symbol: str, alert_type: str) -> bool:
         """Return True if this (symbol, alert_type) combination is silenced."""
-        now = datetime.utcnow()
+        now = utc_now()
         with self._Session() as s:
             q = s.query(AlertMute).filter(
                 (AlertMute.expires_at == None) | (AlertMute.expires_at > now)  # noqa: E711
@@ -311,7 +312,7 @@ class AlertStore:
         with self._Session() as s:
             s.query(AlertMute).filter(
                 AlertMute.expires_at != None,  # noqa: E711
-                AlertMute.expires_at <= datetime.utcnow(),
+                AlertMute.expires_at <= utc_now(),
             ).delete(synchronize_session=False)
             s.commit()
 

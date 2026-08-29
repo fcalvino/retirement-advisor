@@ -89,12 +89,23 @@ class TestNingunModuloDeProduccionUsaElRelojDeprecado:
         "analysis/track_record_scorer.py",
     ]
 
-    def test_el_barrido_no_encuentra_utcnow_en_produccion(self):
+    def test_el_barrido_no_encuentra_utcnow_en_ningun_lado(self):
+        """Incluye los tests a propósito.
+
+        Un test que llama al reloj deprecado se rompe el día que Python lo saque,
+        y hasta entonces ensucia la salida: la suite emitía 167 advertencias y
+        ahora emite 11, ninguna de datetime. Dejar los tests afuera del barrido
+        habría sido hacer la mitad del trabajo y llamarla completa.
+        """
         malos = []
         for rel in sorted(
             str(p.relative_to(ROOT))
             for p in ROOT.rglob("*.py")
-            if "venv" not in str(p) and "/tests/" not in str(p)
+            if "venv" not in str(p)
+            # `data/clock.py` es el módulo que REEMPLAZA a `utcnow`, así que
+            # tiene que poder nombrarlo en su documentación, y este archivo lo
+            # nombra para explicar qué barre. Son las dos únicas excepciones.
+            and p.name not in ("clock.py", "test_clock_oracle.py")
         ):
             for n, line in enumerate((ROOT / rel).read_text(encoding="utf-8").splitlines(), 1):
                 if re.search(r"\butcnow\b", line):
@@ -211,7 +222,7 @@ class TestElDedupUsaElDiaDelUsuario:
         store.log_recommendation(_decision(), source="test")
 
         (fila,) = store.get_recommendations(limit=5)
-        assert fila["created_at"] == instante
+        assert fila.created_at == instante
 
 
 if __name__ == "__main__":

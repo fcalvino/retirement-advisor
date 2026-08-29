@@ -24,6 +24,7 @@ from loguru import logger
 
 from analysis.track_record import track_record_store
 from config import TRACK_RECORD
+from data.clock import utc_now
 
 # A price lookup: (symbol, date) -> price at or just before that date, or None.
 PriceLookup = Callable[[str, datetime], Optional[float]]
@@ -130,7 +131,7 @@ def score_due_recommendations(
     because the ticker itself could not be priced.
     """
     store = store or track_record_store
-    now = now or datetime.utcnow()
+    now = now or utc_now()
     price_lookup = price_lookup or _price_on_or_before
     benchmark = TRACK_RECORD.benchmark
 

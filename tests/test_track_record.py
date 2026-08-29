@@ -8,7 +8,7 @@ scorer never touches the network.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -21,6 +21,7 @@ from analysis.track_record_scorer import (
     score_due_recommendations,
     summary_stats,
 )
+from data.clock import utc_now
 
 
 @pytest.fixture
@@ -129,7 +130,7 @@ def _backdate(store, rec_id, when):
 
 def test_scoring_is_idempotent_and_correct(store):
     # A BUY 40 days ago; we score at the 30-day horizon.
-    created = datetime.utcnow() - timedelta(days=40)
+    created = utc_now() - timedelta(days=40)
     rid = store.log_recommendation(_decision(symbol="NVDA", action="BUY"), price_at_rec=100.0)
     assert rid is not None
     _backdate(store, rid, created)
@@ -166,7 +167,7 @@ def test_scoring_skips_when_price_missing(store):
         from analysis.track_record import RecommendationLog
 
         row = s.get(RecommendationLog, recs[0].id)
-        row.created_at = datetime.utcnow() - timedelta(days=300)
+        row.created_at = utc_now() - timedelta(days=300)
         s.commit()
 
     res = score_due_recommendations(store, price_lookup=lambda sym, when: None)
@@ -195,7 +196,7 @@ def test_calibration_by_confidence_synthetic():
 
 
 def test_summary_and_equity_curve():
-    now = datetime.utcnow()
+    now = utc_now()
     rows = [
         {"action": "BUY", "hit": True, "excess_return_pct": 4.0, "return_pct": 10.0,
          "benchmark_return_pct": 6.0, "created_at": now - timedelta(days=2)},
