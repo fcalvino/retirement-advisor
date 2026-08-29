@@ -155,6 +155,17 @@ class FundamentalThresholds:
     # What it is measured against is `payout_basis`: FFO for a REIT, earnings otherwise
     # (see effective_payout_pct). REIT-specific bands are U5-4's call, not this one's.
     max_payout_ratio: float = 75.0
+    # REIT bands (U5-4). A REIT distributes over 90 % of taxable income BY LAW and
+    # pays it out of FFO, so the industrial cuts are not stricter — they are the
+    # wrong ruler. Measured on the 13 cached REITs, not one reached ≤40 % (the
+    # lowest is 49 %) and four were warned "may cut dividend" at 78–82 %, which is
+    # ordinary on FFO. ≤70 % is comfortable and >90 % is genuinely stretched.
+    #
+    # These two are a calibration choice, not an empirical finding: 13 REITs with
+    # no scored outcomes cannot settle a threshold. They are grounded in what the
+    # distribution requirement makes possible, not in observed hit rates.
+    reit_payout_excellent: float = 70.0
+    reit_max_payout_ratio: float = 90.0
     # % — top payout band (3 pts). A literal 40 used to live in `_score_dividends`;
     # the cut belongs here with the other dividend thresholds. Missing payout is
     # not this band (it scores 0); a reported 0 % still is.

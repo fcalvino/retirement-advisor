@@ -390,6 +390,43 @@ def _row_value_at(df: pd.DataFrame, names, period: Optional[str]) -> Optional[fl
     return None
 
 
+#: Why a REIT's PEG is not scored, in the words the surface can show.
+PEG_NOT_APPLICABLE_REIT = (
+    "PEG no aplica a un REIT: el feed lo calcula sobre ganancias contables, que la "
+    "depreciación deprime — el mismo error de categoría que P/E vs P/FFO. Medido, "
+    "da lecturas sin sentido (PLD 128,0). No se puntúa en vez de puntuar un artefacto."
+)
+
+
+def payout_excellent_for(basis: Optional[str], config=None) -> float:
+    """Top payout band for the basis the payout was measured on (U5-4)."""
+    cfg = config or T
+    if basis == "ffo":
+        return float(cfg.reit_payout_excellent)
+    return float(cfg.payout_excellent)
+
+
+def max_payout_for(basis: Optional[str], config=None) -> float:
+    """The sustainable-payout cut for that basis — **the single cut**, still.
+
+    U2-6 made the dividend dimension and the "may cut dividend" risk read one
+    number so they could not disagree. That invariant is unchanged; what changed
+    is that the number now depends on what the payout was measured against, since
+    75 % of earnings and 75 % of FFO are not the same claim about a company.
+    """
+    cfg = config or T
+    if basis == "ffo":
+        return float(cfg.reit_max_payout_ratio)
+    return float(cfg.max_payout_ratio)
+
+
+def peg_applies_to(company_type: Optional[str]) -> bool:
+    """False for a REIT: its PEG is built on earnings depreciation depresses."""
+    from analysis.company_type import REIT
+
+    return company_type != REIT
+
+
 def compute_ffo_payout_pct(
     cashflow: pd.DataFrame,
     ffo: Optional[float],
@@ -1208,11 +1245,27 @@ class FundamentalAnalyzer:
             else:
                 result.warnings.append(f"Expensive P/E: {pe:.1f}x")
 
-        # PEG (7 pts)
+        # PEG (7 pts). U5-4: not scored for a REIT. The feed builds it from
+        # accounting earnings, which depreciation depresses — the same category
+        # error P/E → P/FFO already fixed — so the ratio is an artifact: PLD reads
+        # 128.0, EQR 16.1. Scoring 4 points because one of them happens to land
+        # under 1.5 is the defect; a P/FFO-based growth-adjusted multiple would
+        # need an FFO growth series and a calibration this project cannot ground.
+        from analysis.company_type import classify_company
+
+        company_type = classify_company(
+            result.symbol, sector=info.get("sector"), industry=info.get("industry")
+        )
         peg = reported_positive_metric(info, "pegRatio")
-        result.peg_ratio = peg
+        if not peg_applies_to(company_type):
+            result.peg_ratio = None
+            result.notes["peg"] = PEG_NOT_APPLICABLE_REIT
+            peg = None
+        else:
+            result.peg_ratio = peg
         if peg is None:
-            missing.append("PEG")
+            if peg_applies_to(company_type):
+                missing.append("PEG")
         elif peg <= T.peg_excellent:
             score += 7
             result.notes["peg"] = f"Attractive PEG {peg:.2f}"
@@ -1420,11 +1473,11 @@ class FundamentalAnalyzer:
         missing: list = []
         if payout is None:
             missing.append("Payout")
-        elif 0 < payout <= T.payout_excellent:
+        elif 0 < payout <= payout_excellent_for(result.payout_basis):
             score += 3
-        elif payout <= T.max_payout_ratio:
+        elif payout <= max_payout_for(result.payout_basis):
             score += 2
-        elif payout > T.max_payout_ratio:
+        elif payout > max_payout_for(result.payout_basis):
             base = "sobre FFO" if result.payout_basis == "ffo" else "sobre ganancias"
             result.warnings.append(
                 f"Payout alto {payout:.0f}% {base} — el dividendo puede no ser sostenible"

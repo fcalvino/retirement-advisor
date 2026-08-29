@@ -54,10 +54,10 @@ una, con oráculos empíricos donde el hallazgo lo permitía.
 |---|---|---|---|
 | 3 — fórmulas con blast radius | 11 | 10 | 1 |
 | 4 — flujos del motor | 4 | 2 | 2 |
-| 5 — scoring y config | 20 | 5 | 15 |
+| 5 — scoring y config | 20 | 6 | 14 |
 | 6 — dos motores de retorno | 2 | 0 | 2 |
 | 7 — UX del dashboard | 2 | 0 | 2 |
-| **Total** | **39** | **17** | **22** |
+| **Total** | **39** | **18** | **21** |
 
 Cerradas: **U3-6** (`a5a63d9`), **U3-11** (`00fb551`, oráculo: sin `payoutRatio` ni
 FFO el score es 4.0 exacto), **U5-20** (`d86f8e9`), **U4-2** y **U4-1** (`9f05443`,
@@ -70,7 +70,8 @@ de Graham: `g` por acción, V con `g = 0`, y la tasa `Y` nombrada como proxy),
 **U3-9 + U3-10** (`c2e7f6b`, cada ratio anclado en un solo año fiscal),
 **U5-15** (`070d2a8`, el horizonte anual dura un año y su banda escala con él),
 **U5-13** (`ca72aa6`, el gap de capital en dólares de un solo año),
-**U5-5** (`ae13e50`, un ratio que un banco no puede tener no le falta).
+**U5-5** (`ae13e50`, un ratio que un banco no puede tener no le falta),
+**U5-4** (`ecb704c`, un REIT juzgado con bandas de REIT).
 Fuera de las oleadas 3–7,
 **U0-2** también cerró — ver `ROADMAP.md`.
 
@@ -113,7 +114,6 @@ Nada de acá miente sobre lo que calcula; todo está mal calibrado o mal alcanza
 
 | id | sev | qué | evidencia |
 |---|---|---|---|
-| **U5-4** | P1 | REITs: PEG sobre earnings, bandas de payout 40/75 planas aplicadas sobre FFO | `config.py:146,150` |
 | **U5-12** | P1 | `tracker.py:5` promete "annualized return (IRR/XIRR)" y no hay una sola implementación de IRR en el módulo. La curva se arma con las shares de **hoy** proyectadas 5 años atrás, y de esa curva salen el `downside_vol_ratio`, el Sharpe realizado, el drawdown y la beta | grep: `irr` solo aparece en el docstring |
 | **U5-14** | P1 | La deriva del plan se renormaliza al subconjunto con precio en la ruta de `PLAN_HEALTH_DEGRADATION`. `drift_breakdown` delega el hueco al caller (`plan_context.py:467`) y solo el detector de alertas tiene el gate de U2-3 | |
 | **U5-16** | P1 | `_ARS_TICKERS = {YPF, PAM, CEPU, LOMA, TEO, EDN}` literal en el módulo; faltan GGAL, BMA, SUPV, BBAR, TGS, CRESY, IRS y cualquier custom | `optimizer.py:45` |

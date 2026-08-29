@@ -23,11 +23,10 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from analysis.fundamental import FundamentalResult, effective_payout_pct
+from analysis.fundamental import FundamentalResult, effective_payout_pct, max_payout_for
 from analysis.technical import TechnicalResult
 from config import DATA_QUALITY
 from config import STRATEGY as CFG
-from config import THRESHOLDS as T
 from data.product_ux import TREND_MA_LABEL_EN
 
 _CONFIDENCE_RANK = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
@@ -479,7 +478,10 @@ class RetirementStrategy:
         # the cached universe, 12 of 13. The basis is named because a payout quoted
         # without one cannot be checked.
         payout, basis = effective_payout_pct(fundamental)
-        if payout is not None and payout > T.max_payout_ratio:
+        # U5-4: the cut depends on the basis. 75 % of earnings and 75 % of FFO are
+        # not the same claim, and U2-6's invariant — one number for the score and
+        # the warning — is preserved by both reading this helper.
+        if payout is not None and payout > max_payout_for(basis):
             basis_label = "FFO" if basis == "ffo" else "earnings"
             decision.risks.append(
                 f"High dividend payout ratio ({payout:.0f}% of {basis_label}) — may cut dividend"
