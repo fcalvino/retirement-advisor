@@ -1,10 +1,15 @@
 """
-Shared utilities for AI response parsing across analysis modules.
+Shared utilities across analysis modules.
+
+AI response parsing, plus the numeric primitives that more than one scorer needs
+and that must not be re-implemented per module — a formula with two copies has
+two behaviours (see ``roic_pct``).
 """
 
 from __future__ import annotations
 
 import json
+from typing import Any, Optional
 
 
 def extract_json_object(raw: str) -> dict:
@@ -96,3 +101,53 @@ def extract_json_object(raw: str) -> dict:
         else:
             # Inner for-loop exhausted without finding a matching `}` — no more candidates
             raise ValueError("AI response contains an incomplete JSON object (unmatched braces)")
+
+
+# --------------------------------------------------------------------------- #
+#  ROIC — one formula, one tax rate (backlog U3-8)                            #
+# --------------------------------------------------------------------------- #
+
+def corporate_tax_rate_pct(country: Optional[str], cfg: Any = None) -> float:
+    """The statutory corporate tax rate for the jurisdiction taxing the profit.
+
+    Falls back to ``TaxConfig.default_corporate_tax_rate_pct`` — deliberately not
+    the United States' rate — when the feed reports no country or one not in the
+    table. An unknown jurisdiction is an assumption, and defaulting to a specific
+    country's number disguises it as a fact.
+    """
+    from config import TAXES
+
+    conf = cfg if cfg is not None else TAXES
+    table = getattr(conf, "corporate_tax_rate_pct", None) or {}
+    default = float(getattr(conf, "default_corporate_tax_rate_pct", 23.0))
+    if not country:
+        return default
+    return float(table.get(str(country).strip(), default))
+
+
+def roic_pct(
+    ebit: float,
+    equity: float,
+    long_term_debt: float,
+    tax_rate_pct: float,
+) -> Optional[float]:
+    """Return on invested capital, as a percentage. The single implementation.
+
+        NOPAT = EBIT × (1 − t)
+        ROIC  = NOPAT / (equity + long-term debt)
+
+    ``fundamental`` and ``moat`` both scored a ROIC and each built it from
+    scratch, spelling the same tax rate as ``0.21`` in one and ``0.79`` in the
+    other (U3-8). The *window* they want genuinely differs — the latest year for
+    "what does it earn now", the average for "does it last" — so that stays with
+    each caller. The formula does not.
+
+    ``None`` when the invested capital is zero or negative: there is no return on
+    capital that is not there, and a negative denominator would flip the sign of
+    a perfectly healthy operating profit.
+    """
+    invested = float(equity) + float(long_term_debt)
+    if invested <= 0:
+        return None
+    nopat = float(ebit) * (1.0 - float(tax_rate_pct) / 100.0)
+    return nopat / invested * 100.0

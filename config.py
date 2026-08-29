@@ -466,6 +466,59 @@ class CryptoMoatConfig:
 
 
 @dataclass
+class TaxConfig:
+    """Statutory corporate income-tax rates, by the country that levies them.
+
+    NOPAT is ``EBIT × (1 − t)``, so ``t`` decides how much of the operating
+    profit the company actually keeps — and it is set by law where the company
+    is taxed, not where its ADR trades. Both ROIC computations used to hardcode
+    the United States' 21 % for every issuer (U3-8): an Argentine company taxed
+    at 35 % was credited with keeping 79 cents of every operating dollar.
+
+    Ireland is the reason this is not a one-directional conservatism: at 12.5 %
+    the US rate *understates* what the company keeps.
+
+    These are headline statutory rates, not effective rates — a company's real
+    tax bill depends on credits, carry-forwards and where it books profit. Using
+    the statutory rate is the standard NOPAT convention and is what makes the
+    figure comparable across companies; it is an approximation either way, and
+    the point of this table is that it is now an approximation per jurisdiction
+    instead of one country's rate applied to all of them.
+    """
+
+    #: Country name as the data feed reports it → statutory rate, %.
+    corporate_tax_rate_pct: dict = field(default_factory=lambda: {
+        "United States": 21.0,
+        "Argentina": 35.0,
+        "Brazil": 34.0,
+        "Chile": 27.0,
+        "Mexico": 30.0,
+        "Colombia": 35.0,
+        "Peru": 29.5,
+        "Ireland": 12.5,
+        "Luxembourg": 24.9,
+        "United Kingdom": 25.0,
+        "Canada": 26.5,
+        "Germany": 29.9,
+        "France": 25.0,
+        "Spain": 25.0,
+        "Netherlands": 25.8,
+        "Switzerland": 19.7,
+        "Israel": 23.0,
+        "China": 25.0,
+        "Japan": 29.7,
+        "India": 25.2,
+        "Australia": 30.0,
+        "South Africa": 27.0,
+        "Uruguay": 25.0,
+    })
+    #: Used when the feed reports no country, or one not listed above. Deliberately
+    #: NOT the US rate: an unknown jurisdiction is an assumption, and defaulting to
+    #: a specific country's rate disguises it as a fact. Roughly the OECD average.
+    default_corporate_tax_rate_pct: float = 23.0
+
+
+@dataclass
 class MoatConfig:
     """
     Thresholds and limits for the Economic Moat scoring system.
@@ -1796,6 +1849,7 @@ CONSISTENCY = ConsistencyThresholds()
 PIOTROSKI = PiotroskiConfig()
 BACKTEST = BacktestConfig()
 MOAT = MoatConfig()
+TAXES = TaxConfig()
 CRYPTO_MOAT = CryptoMoatConfig()
 OPTIMIZER = OptimizerConfig()
 REPORT = ReportConfig()

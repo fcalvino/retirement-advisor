@@ -10,6 +10,49 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U3-8 — Un solo ROIC, gravado donde la empresa tributa (2026-08-28)
+
+El ROIC alimenta la dimensión de calidad (7 puntos) **y** la durabilidad del moat,
+así que un error acá entra dos veces al score ajustado. Tres defectos encima.
+
+**Dos implementaciones.** `fundamental._compute_roic` y `moat._avg_roic` armaban
+NOPAT / capital invertido cada una por su cuenta, y cada una escribía la misma tasa
+distinto: `0.21` en una, `0.79` en la otra. Dos grafías de una constante esconden
+que es una sola constante. La fórmula se muda a `analysis.utils.roic_pct`; la
+**ventana** se queda con cada consumidor, porque esa diferencia sí es deliberada:
+`fundamental` lee el último año para puntuar lo que la empresa gana **hoy**, y el
+moat promedia los años disponibles para juzgar si **dura**. Un test verifica que
+las dos coinciden dado un único año.
+
+**La tasa era la de EE.UU., para todos.** La fija la ley que grava la ganancia
+operativa, no el lugar donde cotiza el ADR. 25 de los 164 tickers cacheados no son
+estadounidenses, y 4 cambian de banda de puntaje al gravarse bien:
+
+| ticker | país | tasa | ROIC al 21 % | ROIC real | banda |
+|---|---|---:|---:|---:|---|
+| EDN | Argentina | 35 % | 16,1 | **13,3** | excelente → bueno |
+| SBS | Brasil | 34 % | 15,5 | **12,9** | excelente → bueno |
+| PAM | Argentina | 35 % | 11,2 | **9,2** | bueno → aceptable |
+| ETN | Irlanda | 12,5 % | 14,5 | **16,1** | bueno → **excelente** |
+
+ETN es la razón por la que esto no es una poda disfrazada de arreglo: Irlanda grava
+al 12,5 %, así que la tasa de EE.UU. venía **subestimando** lo que esas empresas se
+quedan. La corrección corta para los dos lados.
+
+Las tasas viven en `config.TAXES` porque cambian por ley y no por código, y el
+default de país desconocido **no** es la tasa de EE.UU.: una jurisdicción que no se
+conoce es un supuesto, y ponerle el número de un país concreto lo disfraza de dato.
+
+**ROA se reportaba con el nombre de ROIC.** Cuando los estados no daban un ROIC,
+`returnOnAssets` se asignaba a `result.roic`, se puntuaba contra las bandas de ROIC
+y se imprimía como "ROIC" en toda superficie. Denominador distinto, cantidad
+distinta. El fallback se fue; medido sobre el universo cacheado disparaba en **0 de
+164** tickers, así que hoy no mueve nada — era una trampa latente, no una muleta viva.
+
+Contrato: `tests/test_roic_oracle.py`.
+
+---
+
 ## U3-3 + U3-4 + U3-5 — La cadena de Graham (2026-08-28)
 
 Tres defectos encadenados sobre `graham_value`, que termina en

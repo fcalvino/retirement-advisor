@@ -56,7 +56,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-from analysis.utils import extract_json_object
+from analysis.utils import corporate_tax_rate_pct, extract_json_object, roic_pct
 from config import MOAT, AIConfig
 
 # ------------------------------------------------------------------ #
@@ -423,7 +423,9 @@ class MoatAnalyzer:
         #    (Buffett/Morningstar). U1-4: that hurdle is a cost-of-equity proxy,
         #    not a WACC — see _wacc_proxy below.
         #    Legacy absolute ROIC bands remain when use_roic_wacc_spread is False.
-        roic_avg = self._avg_roic(income_stmt, balance_sheet)
+        roic_avg = self._avg_roic(
+            income_stmt, balance_sheet, country=str(info.get("country") or "")
+        )
         if roic_avg is not None:
             d.roic_sustained = self._score_roic_sustained(
                 roic_avg, sector=str(info.get("sector") or ""),
@@ -675,12 +677,15 @@ class MoatAnalyzer:
         return (gross[common] / rev_c * 100).dropna()
 
     def _avg_roic(
-        self, income_stmt: pd.DataFrame, balance_sheet: pd.DataFrame
+        self, income_stmt: pd.DataFrame, balance_sheet: pd.DataFrame,
+        country: Optional[str] = None,
     ) -> Optional[float]:
-        """
-        Compute average ROIC = NOPAT / Invested Capital over available years.
-        NOPAT = EBIT × (1 − 0.21). Invested Capital = Equity + Long-term Debt.
-        Returns None if insufficient data.
+        """Average ROIC over the available years — does the return LAST?
+
+        The formula and the tax rate come from ``analysis.utils`` so this and
+        ``FundamentalAnalyzer._compute_roic`` cannot drift (U3-8). Averaging is
+        the difference that stays: the moat is a claim about durability, so one
+        good year is not the question.
         """
         try:
             ebit_s = self._row_series(income_stmt, ["EBIT", "Operating Income"])
@@ -694,13 +699,16 @@ class MoatAnalyzer:
             common = ebit_s.index.intersection(equity_s.index)
             if len(common) < 1:
                 return None
-            nopat = ebit_s[common] * 0.79  # NOPAT = EBIT × (1 − tax rate)
             ic = equity_s[common].copy()
             if not ltd_s.empty:
                 ic = ic + ltd_s.reindex(common).fillna(0)
-            ic = ic.replace(0, np.nan)
-            roic = (nopat / ic * 100).dropna()
-            return float(roic.mean()) if not roic.empty else None
+            tax_pct = corporate_tax_rate_pct(country)
+            per_year = [
+                roic_pct(float(ebit_s[common][idx]), float(ic[idx]), 0.0, tax_pct)
+                for idx in common
+            ]
+            values = [v for v in per_year if v is not None and not np.isnan(v)]
+            return float(np.mean(values)) if values else None
         except Exception:
             return None
 
