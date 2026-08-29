@@ -71,7 +71,22 @@ DB_PATH = DB_DIR / "retirement_advisor.db"
 #                   cuyo yield se descartaba a cero. Además, un yield que no se
 #                   pudo medir dejó de contarse como una empresa que no paga: 6
 #                   scores se mueven entre −2 y +4, ninguna señal cambia.
-ENGINE_VERSION = "2026.08-tier6"
+#   2026.08-tier7 — U4-1c: el jubilado gasta todos los meses. Los retiros salían
+#                   una vez al año, con dos efectos que se sumaban — el año
+#                   entero salía junto en la semana 52, componiendo doce meses de
+#                   más antes de irse, y el primer año transcurría entero sin que
+#                   saliera un peso. La decisión sigue siendo anual (los
+#                   guardrails SON una revisión anual); lo que cambia es el pago.
+#                   El efecto NO es uniformemente conservador: con gasto exógeno
+#                   (fixed_real) el pozo baja —caso D1: 553.133 → 536.748, −2,96 %;
+#                   sostener el retiro cae hasta −1,30 pp y el legado mediano
+#                   hasta −8,3 %— pero con gasto endógeno (constant_pct,
+#                   guardrails) el presupuesto pasa a decidirse al INICIO del año
+#                   en vez del final, y en un mercado que sube eso deja +3,0 % a
+#                   +6,4 % de legado. Todo plan de retiro guardado bajo
+#                   tier0-tier6 tiene prob_sustain_real_pct y
+#                   expected_depletion_year calculados con la cadencia vieja.
+ENGINE_VERSION = "2026.08-tier7"
 
 
 @dataclass(frozen=True)
@@ -1209,15 +1224,20 @@ class MonteCarloConfig:
         to 1 reproduces the pre-tier2 engine exactly: a single deposit in week
         52, which cost eleven of the twelve deposits their partial year of
         growth. Kept configurable so both cadences stay under test.
-      withdrawal_periods_per_year — 1. Retirement withdrawals stay annual on
-        purpose: the guardrails strategy IS an annual review, so paying monthly
-        while deciding annually is a separate design question (backlog U4-1c),
-        not a side effect of fixing the contribution cadence.
+      withdrawal_periods_per_year — 12 desde U4-1c. Un jubilado gasta todos los
+        meses, y el motor lo hacía gastar una vez al año con dos efectos que se
+        sumaban: el año entero salía junto en la semana 52 —componiendo doce
+        meses de más antes de irse— y el primer año transcurría entero sin que
+        saliera un peso. **La decisión sigue siendo anual**: el presupuesto se
+        calcula en la primera cuota del año y las once restantes lo repiten,
+        porque los guardrails SON una revisión anual y recalcularlos en cada
+        cuota sería otro método. Poniéndolo en 1 se reproduce el motor
+        tier2-tier5 exactamente.
     """
     vol_adjustment: float = 1.10         # +10% volatility (conservative)
     mean_haircut: float = 0.80           # -20% expected return (conservative)
     contribution_periods_per_year: int = 12
-    withdrawal_periods_per_year: int = 1
+    withdrawal_periods_per_year: int = 12
     min_history_weeks: int = 104         # 2 years minimum
     default_n_sims: int = 10_000
     default_horizon_years: int = 20

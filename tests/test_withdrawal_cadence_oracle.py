@@ -16,6 +16,15 @@ dos maneras que se suman:
 
 Las dos empujan en la misma dirección: **sobrestiman el pozo que sobrevive**.
 
+Pero el arreglo **no es uniformemente conservador**, y descubrirlo costó un test
+que afirmaba lo contrario. Con gasto exógeno (``fixed_real``) el total del año
+es un número dado y adelantarlo sólo puede dejar menos capital. Con gasto
+endógeno (``constant_pct``, ``guardrails``) el importe sale de la riqueza, y
+repartir el pago obliga a decidir el presupuesto al **inicio** del año en vez
+del final —no se paga en enero con una decisión de diciembre—. En un mercado
+que sube, decidir antes da un importe menor y eso empuja el pozo para arriba.
+Cuál de los dos términos gana depende de la dirección del mercado.
+
 Lo que este oráculo NO permite es arreglarlo convirtiendo la estrategia en otra
 cosa. La decisión sigue siendo anual —los guardrails son una revisión anual, y
 recalcularlos doce veces al año sería un método distinto, no el mismo método
@@ -70,31 +79,64 @@ def _retiros_por_semana(paths: np.ndarray, market: np.ndarray) -> np.ndarray:
 # --------------------------------------------------------------------------- #
 
 
-class TestGastarTodosLosMesesDejaMenosPozo:
+class TestGastarTodosLosMesesCambiaElPozo:
+    """El efecto NO es uniformemente conservador, y eso hay que decirlo.
 
-    @pytest.mark.parametrize("kind,build", [
-        ("fixed_real", lambda: WithdrawalStrategy.fixed_real(40_000.0)),
-        ("constant_pct", lambda: WithdrawalStrategy.constant_pct(0.04)),
-        ("guardrails", lambda: WithdrawalStrategy.guardrails(0.04)),
-    ])
-    def test_el_pozo_final_baja_en_las_tres_estrategias(self, cadencia, kind, build):
-        """El mismo gasto anual, repartido, deja menos capital — porque el dinero
-        que sale en enero no compone los once meses siguientes.
+    Con **gasto exógeno** (``fixed_real``, el importe lo fija el jubilado) el
+    total del año no depende del mercado, así que adelantarlo sólo puede dejar
+    menos capital: es aritmética.
 
-        Con mercado plano la diferencia sería cero, así que el test corre sobre
-        un mercado que crece: es la única condición donde la cadencia importa, y
-        por eso es donde hay que medirla.
-        """
+    Con **gasto endógeno** (``constant_pct``, ``guardrails``, el importe sale de
+    la riqueza) cambian dos cosas a la vez. Se reparte el pago —que baja el
+    pozo— y el presupuesto pasa a decidirse al **inicio** del año en vez del
+    final, porque no se puede pagar en enero con una decisión de diciembre. En
+    un mercado que sube, decidir antes da un importe menor, y ese término empuja
+    el pozo para arriba. Cuál gana depende de la dirección del mercado.
+    """
+
+    def test_con_gasto_exogeno_el_pozo_final_baja(self, cadencia):
+        """El caso donde la dirección es demostrable sin supuestos: el total
+        anual es el mismo número, sólo se adelanta."""
         market = _mercado(52 * 20, weekly_growth=0.0015)
+        strat = WithdrawalStrategy.fixed_real(40_000.0)
 
         cadencia(1)
-        anual = apply_withdrawal_strategy(market.copy(), 1_000_000.0, build(), 52 * 20)
+        anual = apply_withdrawal_strategy(market.copy(), 1_000_000.0, strat, 52 * 20)
         cadencia(12)
-        mensual = apply_withdrawal_strategy(market.copy(), 1_000_000.0, build(), 52 * 20)
+        mensual = apply_withdrawal_strategy(market.copy(), 1_000_000.0, strat, 52 * 20)
 
         assert mensual[0, -1] < anual[0, -1], (
-            f"{kind}: mensual dejó {mensual[0, -1]:.4f} y anual {anual[0, -1]:.4f} — "
-            f"repartir el gasto no puede dejar MÁS pozo"
+            f"mensual dejó {mensual[0, -1]:.4f} y anual {anual[0, -1]:.4f} — con el "
+            f"total del año fijo, adelantarlo no puede dejar MÁS pozo"
+        )
+
+    @pytest.mark.parametrize("build", [
+        lambda: WithdrawalStrategy.constant_pct(0.04),
+        lambda: WithdrawalStrategy.guardrails(0.04),
+    ])
+    def test_con_gasto_endogeno_el_presupuesto_se_decide_al_inicio(self, cadencia, build):
+        """La semántica que el reparto obliga, fijada de forma directa.
+
+        El presupuesto del año 1 tiene que salir de la riqueza al **empezar** el
+        año, no de la del final. Con un mercado que crece 0,3 %/semana la
+        riqueza de la semana 52 es ~17 % mayor que la de la semana 4, así que
+        las dos lecturas dan importes bien distintos y el test las distingue.
+        """
+        market = _mercado(52 * 3, weekly_growth=0.003)
+        cadencia(12)
+        salidas = _retiros_por_semana(
+            apply_withdrawal_strategy(market.copy(), 1_000_000.0, build(), 52 * 3), market
+        )
+        total_ano1 = salidas[:52].sum()
+        riqueza_inicio = market[0, 4]        # primera cuota
+        riqueza_fin = market[0, 52]
+
+        cerca_del_inicio = abs(total_ano1 - 0.04 * riqueza_inicio)
+        cerca_del_fin = abs(total_ano1 - 0.04 * riqueza_fin)
+        assert cerca_del_inicio < cerca_del_fin, (
+            f"el presupuesto del año 1 ({total_ano1:.5f}) se parece más al 4 % de "
+            f"la riqueza de fin de año ({0.04 * riqueza_fin:.5f}) que al de "
+            f"inicio ({0.04 * riqueza_inicio:.5f}): se sigue decidiendo tarde"
         )
 
     def test_el_primer_ano_deja_de_ser_gratis(self, cadencia):

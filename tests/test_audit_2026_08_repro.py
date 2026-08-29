@@ -36,14 +36,32 @@ from portfolio.optimizer import PortfolioOptimizer
 INIT = 100_000.0
 
 
-def _correct_sequential(path_rel: np.ndarray, initial: float, annual_w: float, years: int) -> float:
-    """Independent oracle: withdrawal removes capital; remainder tracks the market."""
+def _correct_sequential(
+    path_rel: np.ndarray, initial: float, annual_w: float, years: int,
+    periods: int | None = None,
+) -> float:
+    """Independent oracle: withdrawal removes capital; remainder tracks the market.
+
+    Semana a semana desde U4-1c: el gasto ya no sale una vez al año, así que una
+    referencia anual no podría expresar la cadencia que valida. Con
+    ``periods=1`` recorre exactamente las mismas semanas que la versión previa.
+    """
+    if periods is None:
+        periods = MONTE_CARLO.withdrawal_periods_per_year
+    periods = max(1, int(periods))
+    cuota = annual_w / periods
+    pagos = {
+        (yr - 1) * 52 + round(p * 52 / periods)
+        for yr in range(1, years + 1)
+        for p in range(1, periods + 1)
+    }
     val = float(initial)
-    for yr in range(1, years + 1):
-        val *= float(path_rel[yr * 52] / path_rel[(yr - 1) * 52])
-        val = max(0.0, val - annual_w)
-        if val <= 0.0:
-            return 0.0
+    for week in range(1, years * 52 + 1):
+        val *= float(path_rel[week] / path_rel[week - 1])
+        if week in pagos:
+            val = max(0.0, val - cuota)
+            if val <= 0.0:
+                return 0.0
     return val
 
 
@@ -77,20 +95,28 @@ class TestAuditD1WithdrawalRemovesCapital:
         path = _bull_path(years, 0.08)
         annual_w = 4_000.0
 
-        oracle = _correct_sequential(path, INIT, annual_w, years)
-        motor = (
-            MonteCarloSimulator._apply_withdrawals(
-                np.array([path], dtype=float).copy(),
-                INIT,
-                annual_w,
-                years * 52,
-            )[0, -1]
-            * INIT
-        )
+        def _motor(periods):
+            saved = MONTE_CARLO.withdrawal_periods_per_year
+            MONTE_CARLO.withdrawal_periods_per_year = periods
+            try:
+                return MonteCarloSimulator._apply_withdrawals(
+                    np.array([path], dtype=float).copy(), INIT, annual_w, years * 52,
+                )[0, -1] * INIT
+            finally:
+                MONTE_CARLO.withdrawal_periods_per_year = saved
 
-        # The audit's oracle figure is unchanged; the engine now reproduces it.
+        # La cadencia con la que se documentó la auditoría. Sigue reproducible.
+        oracle = _correct_sequential(path, INIT, annual_w, years, periods=1)
+        motor = _motor(1)
         assert oracle == pytest.approx(553_133, abs=5)
         assert motor == pytest.approx(oracle, rel=1e-9)
+
+        # U4-1c: el jubilado gasta todos los meses. −2,96 % sobre el caso D1.
+        oracle_m = _correct_sequential(path, INIT, annual_w, years, periods=12)
+        motor_m = _motor(12)
+        assert motor_m == pytest.approx(oracle_m, rel=1e-9)
+        assert motor_m == pytest.approx(536_748, abs=5)
+        assert motor_m < motor
 
         # Pre-fix this engine returned 886_266 (+60.2%).
         err = (motor - oracle) / oracle
@@ -146,13 +172,26 @@ class TestAuditD2RuinIsAbsorbing:
         assert first_z < len(usd) - 1, "el path debe agotarse dentro del horizonte"
         assert bool((usd[first_z:] <= 1e-9).all()), "el path resucitó tras tocar 0"
 
-        # Depletion now happens at week 208 vs week 185 pre-fix — LATER, not
-        # earlier. The old constant-level subtraction over-penalised falling
-        # markets (it removed a fixed nominal amount from a shrinking balance),
-        # so the bug was not uniformly optimistic: it overstated bull paths and
-        # understated bear ones. Only the direction of the error was consistent
-        # with "wrong", not its sign.
-        assert first_z == 208
+        # Semana de agotamiento, fijada bajo LAS DOS cadencias.
+        #
+        # 185 pre-D1 → 208 con retiros anuales → 221 con cuotas mensuales. El
+        # segundo salto es de U4-1c y va en la dirección que sorprende: repartir
+        # el gasto agota el pozo **más tarde**, no antes. Un lump anual puede
+        # fundir la cartera de un golpe; doce cuotas la desangran de a poco, y en
+        # un mercado en caída el cruce por cero se corre. Es la contracara del
+        # mismo cambio que baja el capital terminal con gasto fijo: la cadencia
+        # no es uniformemente conservadora, y decir que lo es sería falso.
+        assert first_z == 221
+
+        saved = MONTE_CARLO.withdrawal_periods_per_year
+        MONTE_CARLO.withdrawal_periods_per_year = 1
+        try:
+            usd_anual = MonteCarloSimulator._apply_withdrawals(
+                np.array([path], dtype=float).copy(), INIT, annual_w, years * 52,
+            )[0] * INIT
+        finally:
+            MONTE_CARLO.withdrawal_periods_per_year = saved
+        assert int(np.where(usd_anual <= 1e-9)[0][0]) == 208
 
         # The two metrics that used to contradict each other now agree.
         metrics = decumulation_metrics(usd.reshape(1, -1), years, INIT)

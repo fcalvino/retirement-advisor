@@ -1897,6 +1897,15 @@ ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
         "Telecom Argentina y Vale se les decía que no pagaban. La cartera sugerida "
         "puede cambiar para esos papeles.",
     ),
+    (
+        "2026.08-tier7",
+        "Los retiros salían del pozo una vez al año, en diciembre, y el primer año "
+        "de la jubilación transcurría entero sin que saliera un peso. Ahora el "
+        "gasto se reparte en doce, que es como se gasta de verdad — la decisión de "
+        "cuánto gastar sigue siendo anual. Si tu plan retira un monto fijo, el "
+        "capital proyectado baja y la fecha de agotamiento se adelanta; si retira "
+        "un porcentaje, el presupuesto pasa a fijarse al empezar cada año.",
+    ),
 )
 
 

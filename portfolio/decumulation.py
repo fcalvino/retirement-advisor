@@ -68,7 +68,7 @@ from typing import Dict, Optional, Union
 
 import numpy as np
 
-from config import WITHDRAWAL
+from config import MONTE_CARLO, WITHDRAWAL
 
 VALID_KINDS = ("fixed_real", "constant_pct", "guardrails")
 
@@ -271,12 +271,69 @@ def cash_flow_weeks(periods_per_year: int, horizon_years: int, n_cols: int) -> l
 #  Path transformation                                                 #
 # ------------------------------------------------------------------ #
 
+def _annual_review_schedule(
+    horizon_years: int,
+    n_cols: int,
+    periods_per_year: int,
+) -> list[tuple[int, int, bool]]:
+    """Las semanas en que sale plata, cada una etiquetada con su año y con si es
+    la que dispara la revisión de ese año.
+
+    Devuelve ``(week, year, es_revision)``. La revisión de un año cae en su
+    **primer** pago: es cuando el jubilado decide su presupuesto, no cuando ya
+    lo gastó. Con ``periods_per_year=1`` el primer pago del año es el único y
+    cae en la semana 52, así que la lista es idéntica a la que producía el
+    cronograma anual — de ahí que poner la config en 1 reproduzca el motor
+    previo exactamente.
+    """
+    periods = max(1, int(periods_per_year))
+    out: list[tuple[int, int, bool]] = []
+    for year in range(1, horizon_years + 1):
+        for period in range(1, periods + 1):
+            week = min((year - 1) * 52 + round(period * 52 / periods), n_cols - 1)
+            out.append((week, year, period == 1))
+    return out
+
+
+def _in_instalments(decide):
+    """Envuelve una decisión anual en un pagador por cuotas (U4-1c).
+
+    ``decide(wealth, year)`` devuelve **la cuota**, ya dividida. Este envoltorio
+    lo llama una sola vez por año —en la semana de revisión— y las cuotas
+    restantes repiten ese importe sin volver a mirar el mercado. Eso es lo que
+    mantiene la estrategia siendo la que es: los guardrails son una revisión
+    anual, y recalcularlos en cada cuota sería otro método, no el mismo método
+    mejor pagado.
+
+    La división la hace cada estrategia y no este envoltorio, para que
+    ``fixed_real`` pueda ordenar sus operaciones igual que
+    ``MonteCarloSimulator._apply_cash_flows`` —dividir por las cuotas antes de
+    aplicar la inflación— y los dos entry points sigan siendo **bit a bit
+    idénticos**. Dividir acá los separaba en 1e-15, que no es un error pero sí
+    la pérdida de una garantía que costó una auditoría conseguir.
+    """
+    estado: dict = {"cuota": None}
+
+    def _pagar(wealth, *, year: int, es_revision: bool):
+        if es_revision or estado["cuota"] is None:
+            estado["cuota"] = decide(wealth, year)
+        # Sin recorte contra la riqueza disponible, a propósito. `cash_flow_units`
+        # pisa las unidades a cero, así que pedir más de lo que hay deja el pozo
+        # en cero **exacto**; recortarlo acá dejaba una miga de 5e-19 y volvía la
+        # absorción una rama defensiva en vez de una propiedad del álgebra, que es
+        # justo lo que la auditoría D2 sacó del código.
+        return estado["cuota"]
+
+    return _pagar
+
+
 def apply_withdrawal_strategy(
     paths: np.ndarray,
     initial_value: float,
     strategy: WithdrawalStrategy,
     n_horizon_weeks: int,
     inflation_rate: float = 0.0,
+    periods_per_year: Optional[int] = None,
 ) -> np.ndarray:
     """Apply a withdrawal strategy to relative simulation paths.
 
@@ -287,20 +344,28 @@ def apply_withdrawal_strategy(
     strategy : the chosen :class:`WithdrawalStrategy`.
     n_horizon_weeks : total simulated weeks (``horizon_years * 52``).
     inflation_rate : annual growth applied to spending (e.g. 0.03).
+    periods_per_year : cuotas por año. ``None`` usa
+        ``MONTE_CARLO.withdrawal_periods_per_year``.
 
-    Returns a NEW array (input is copied). At each 52-week mark the withdrawal
-    is taken out of capital via :func:`cash_flow_units`, so the remaining
-    balance keeps tracking the market and depletion is permanent.
+    Cada salida sale del capital vía :func:`cash_flow_units`, así que el saldo
+    restante sigue al mercado y el agotamiento es permanente.
 
-    Decumulation stays **annual** on purpose. The guardrails strategy *is* an
-    annual review, so paying monthly while deciding annually is a separate
-    design question (backlog U4-1c), not a side effect of the contribution
-    cadence fix.
+    **Se decide una vez al año y se paga en cuotas (U4-1c).** Antes el año
+    entero de gasto salía junto en la semana 52, lo que sobrestimaba el pozo por
+    dos vías: ese dinero componía doce meses de más antes de irse, y el primer
+    año de jubilación transcurría entero sin que saliera un peso. Ahora el año
+    se reparte, pero **la decisión no se mueve**: el importe se calcula en la
+    primera cuota del año y las demás lo repiten. Los guardrails son una
+    revisión anual; recalcularlos doce veces sería otro método.
     """
     horizon_years = n_horizon_weeks // 52
     n_cols = paths.shape[1]
     n_sims = paths.shape[0]
-    weeks = [min(yr * 52, n_cols - 1) for yr in range(1, horizon_years + 1)]
+    periods = max(1, int(
+        MONTE_CARLO.withdrawal_periods_per_year
+        if periods_per_year is None else periods_per_year
+    ))
+    agenda = _annual_review_schedule(horizon_years, n_cols, periods)
 
     if initial_value <= 0:
         # Decumulating nothing is degenerate: there is no capital to convert a
@@ -310,26 +375,29 @@ def apply_withdrawal_strategy(
         return np.zeros_like(paths)
 
     if strategy.kind == "fixed_real":
-        withdrawal_fraction = strategy.annual_amount / initial_value
-        events = [
-            (week, _fixed_amount(withdrawal_fraction * ((1 + inflation_rate) ** (yr - 1))))
-            for yr, week in enumerate(weeks, start=1)
-        ]
-        return apply_cash_flow_schedule(paths, 1.0, events)
 
-    if strategy.kind == "constant_pct":
+        # Mismo orden que `_apply_cash_flows`: dividir por las cuotas primero y
+        # crecer con la inflación después, para que los dos entry points den
+        # exactamente los mismos bits.
+        per_period_fraction = strategy.annual_amount / periods / initial_value
+
+        def decide(_wealth, year):
+            return per_period_fraction * ((1 + inflation_rate) ** (year - 1))
+
+    elif strategy.kind == "constant_pct":
         pct = strategy.pct
-        events = [(week, lambda wealth: pct * wealth) for week in weeks]
-        return apply_cash_flow_schedule(paths, 1.0, events)
 
-    if strategy.kind == "guardrails":
+        def decide(wealth, _year):
+            return pct * wealth / periods
+
+    elif strategy.kind == "guardrails":
         wr0 = strategy.pct                           # initial withdrawal rate (fraction of initial value)
         ceiling_rate = wr0 * (1.0 + strategy.guardrail_ceiling_band)
         floor_rate = wr0 * (1.0 - strategy.guardrail_floor_band)
         # Spending in relative units (start = wr0, since paths start at 1.0 == initial_value).
         state = {"spend": np.full(n_sims, wr0, dtype=float)}
 
-        def _guardrail_amount(current: np.ndarray, *, year: int) -> np.ndarray:
+        def decide(current, year):
             spend = state["spend"]
             if year > 1:
                 spend = spend * (1.0 + inflation_rate)
@@ -340,15 +408,22 @@ def apply_withdrawal_strategy(
             # Prosperity rule: withdrawal rate too low → raise spending.
             spend = np.where(rate < floor_rate, spend * (1.0 + strategy.guardrail_raise_pct), spend)
             state["spend"] = spend
-            return np.minimum(spend, np.maximum(current, 0.0))   # never withdraw more than available
+            # El recorte contra `current` que había acá se fue con el clamp
+            # genérico: lo hace el álgebra de unidades, y de forma exacta.
+            return spend / periods
 
-        events = [
-            (week, partial(_guardrail_amount, year=yr))
-            for yr, week in enumerate(weeks, start=1)
-        ]
-        return apply_cash_flow_schedule(paths, 1.0, events)
+    else:
+        raise ValueError(f"Unknown withdrawal strategy '{strategy.kind}'")
 
-    raise ValueError(f"Unknown withdrawal strategy '{strategy.kind}'")
+    pagar = _in_instalments(decide)
+    events = [
+        (week, partial(pagar, year=year, es_revision=es_rev))
+        for week, year, es_rev in agenda
+    ]
+    return apply_cash_flow_schedule(paths, 1.0, events)
+
+
+
 
 
 def _fixed_amount(amount: float):

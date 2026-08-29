@@ -32,6 +32,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from config import MONTE_CARLO
 from portfolio.decumulation import (
     WithdrawalStrategy,
     apply_withdrawal_strategy,
@@ -75,49 +76,80 @@ REGIMES = {
 #  The oracle — sequential capital accounting, one path at a time     #
 # ------------------------------------------------------------------ #
 
+def _payment_schedule(years: int, periods: int) -> dict[int, tuple[int, bool]]:
+    """``{semana: (año, es_revisión)}``. Derivado de la definición: ``periods``
+    cuotas por año, la primera de cada año es la que decide el presupuesto."""
+    out: dict[int, tuple[int, bool]] = {}
+    for yr in range(1, years + 1):
+        for p in range(1, periods + 1):
+            out[(yr - 1) * 52 + round(p * 52 / periods)] = (yr, p == 1)
+    return out
+
+
 def _oracle_path(
     path_rel: np.ndarray,
     initial: float,
     strategy: WithdrawalStrategy,
     years: int,
     inflation: float = 0.0,
+    periods: int | None = None,
 ) -> np.ndarray:
     """Return the full USD value series at each yearly mark, [year0 .. yearN].
 
-    Deliberately a plain Python loop. A withdrawal removes capital; whatever is
-    left compounds with the market. Once the capital reaches zero it can never
-    recover — there is nothing left to compound.
+    Deliberately a plain Python loop, **week by week** rather than year by year
+    (U4-1c): el gasto ya no sale una vez al año, así que una referencia que
+    avanzara de a un año no podría expresar la cadencia que tiene que validar.
+
+    Modela lo que un retiro es: se venden activos, la plata se va, y sólo el
+    capital *restante* sigue al mercado. Una vez en cero no se recupera, porque
+    no queda nada que componga.
+
+    **Se decide una vez al año y se paga en cuotas.** El presupuesto se fija en
+    la primera cuota del año y las demás lo repiten — los guardrails son una
+    revisión anual, no una mensual.
     """
+    if periods is None:
+        periods = MONTE_CARLO.withdrawal_periods_per_year
+    periods = max(1, int(periods))
+    agenda = _payment_schedule(years, periods)
+
     values = [float(initial)]
     val = float(initial)
+    cuota = 0.0
 
     # guardrails bookkeeping (spend tracked in USD)
     spend = float(strategy.pct) * float(initial)
     ceiling_rate = float(strategy.pct) * (1.0 + strategy.guardrail_ceiling_band)
     floor_rate = float(strategy.pct) * (1.0 - strategy.guardrail_floor_band)
 
-    for yr in range(1, years + 1):
-        growth = float(path_rel[yr * 52] / path_rel[(yr - 1) * 52])
-        val *= growth  # only surviving capital participates
+    for week in range(1, years * 52 + 1):
+        val *= float(path_rel[week] / path_rel[week - 1])   # sólo el capital vivo crece
 
-        if strategy.kind == "fixed_real":
-            w = strategy.annual_amount * ((1.0 + inflation) ** (yr - 1))
-        elif strategy.kind == "constant_pct":
-            w = strategy.pct * val
-        elif strategy.kind == "guardrails":
-            if yr > 1:
-                spend *= (1.0 + inflation)
-            rate = (spend / val) if val > 0 else float("inf")
-            if rate > ceiling_rate:
-                spend *= (1.0 - strategy.guardrail_cut_pct)
-            if rate < floor_rate:
-                spend *= (1.0 + strategy.guardrail_raise_pct)
-            w = min(spend, max(val, 0.0))
-        else:  # pragma: no cover - guarded by WithdrawalStrategy
-            raise AssertionError(strategy.kind)
+        if week in agenda:
+            yr, es_revision = agenda[week]
+            if es_revision:
+                if strategy.kind == "fixed_real":
+                    anual = strategy.annual_amount * ((1.0 + inflation) ** (yr - 1))
+                elif strategy.kind == "constant_pct":
+                    anual = strategy.pct * val
+                elif strategy.kind == "guardrails":
+                    if yr > 1:
+                        spend *= (1.0 + inflation)
+                    rate = (spend / val) if val > 0 else float("inf")
+                    if rate > ceiling_rate:
+                        spend *= (1.0 - strategy.guardrail_cut_pct)
+                    if rate < floor_rate:
+                        spend *= (1.0 + strategy.guardrail_raise_pct)
+                    anual = spend
+                else:  # pragma: no cover - guarded by WithdrawalStrategy
+                    raise AssertionError(strategy.kind)
+                cuota = anual / periods
 
-        val = max(0.0, val - w)
-        values.append(val)
+            w = min(cuota, max(val, 0.0))
+            val = max(0.0, val - w)
+
+        if week % 52 == 0:
+            values.append(val)
 
     return np.array(values)
 
@@ -128,6 +160,7 @@ def _engine_yearly(
     strategy: WithdrawalStrategy,
     years: int,
     inflation: float = 0.0,
+    periods: int | None = None,
 ) -> np.ndarray:
     """Run the real engine on one path and sample it at the yearly marks."""
     out = apply_withdrawal_strategy(
@@ -136,6 +169,7 @@ def _engine_yearly(
         strategy,
         years * 52,
         inflation_rate=inflation,
+        periods_per_year=periods,
     )
     usd = out[0] * initial
     return np.array([usd[min(yr * 52, len(usd) - 1)] for yr in range(years + 1)])
@@ -168,15 +202,16 @@ STRATEGIES = {
 @pytest.mark.parametrize("strategy_key", sorted(STRATEGIES))
 @pytest.mark.parametrize("years", [5, 20, 30])
 @pytest.mark.parametrize("inflation", [0.0, 0.03])
+@pytest.mark.parametrize("periods", [1, 12])   # U4-1c: las dos cadencias validan
 class TestEngineMatchesOracle:
-    def test_yearly_values_match(self, regime, strategy_key, years, inflation):
+    def test_yearly_values_match(self, regime, strategy_key, years, inflation, periods):
         path = REGIMES[regime](years)
         strategy = STRATEGIES[strategy_key]()
-        engine = _engine_yearly(path, INIT, strategy, years, inflation)
-        oracle = _oracle_path(path, INIT, strategy, years, inflation)
+        engine = _engine_yearly(path, INIT, strategy, years, inflation, periods=periods)
+        oracle = _oracle_path(path, INIT, strategy, years, inflation, periods=periods)
         _assert_close(
             engine, oracle,
-            f"{regime}/{strategy_key}/{years}y/infl={inflation}",
+            f"{regime}/{strategy_key}/{years}y/infl={inflation}/{periods}cuotas",
         )
 
 
@@ -184,17 +219,33 @@ class TestD1KnownRegression:
     """The exact case from docs/AUDITORIA_2026-08.md — must now be correct."""
 
     def test_bull_30y_4pct_matches_oracle(self):
+        """El caso D1, fijado bajo LAS DOS cadencias.
+
+        El 553.133 es el número con el que se documentó la auditoría, y se
+        calculó cuando los retiros eran anuales. U4-1c no lo invalida: lo deja
+        como el resultado de esa cadencia, que sigue siendo reproducible. Lo que
+        agrega es cuánto cuesta que el jubilado gaste todos los meses.
+        """
         years = 30
         path = _constant_growth_path(years, 0.08)
         strategy = WithdrawalStrategy.fixed_real(4_000.0)
 
-        engine = _engine_yearly(path, INIT, strategy, years)[-1]
-        oracle = _oracle_path(path, INIT, strategy, years)[-1]
-
-        assert oracle == pytest.approx(553_133, abs=5)
-        assert engine == pytest.approx(oracle, rel=1e-9)
+        # --- la cadencia con la que se documentó D1 ------------------------ #
+        anual = _engine_yearly(path, INIT, strategy, years, periods=1)[-1]
+        oraculo_anual = _oracle_path(path, INIT, strategy, years, periods=1)[-1]
+        assert oraculo_anual == pytest.approx(553_133, abs=5)
+        assert anual == pytest.approx(oraculo_anual, rel=1e-9)
         # The pre-fix engine returned 886_266 here (+60.2%).
-        assert engine < 600_000
+        assert anual < 600_000
+
+        # --- U4-1c: el jubilado gasta todos los meses ---------------------- #
+        mensual = _engine_yearly(path, INIT, strategy, years, periods=12)[-1]
+        oraculo_mensual = _oracle_path(path, INIT, strategy, years, periods=12)[-1]
+        assert mensual == pytest.approx(oraculo_mensual, rel=1e-9)
+        assert mensual == pytest.approx(536_748, abs=5)
+        assert mensual < anual, (
+            "repartir un gasto anual fijo no puede dejar más capital"
+        )
 
 
 # ------------------------------------------------------------------ #
@@ -337,4 +388,9 @@ class TestMonteCarloEntryPoint:
             np.array([path], dtype=float), INIT,
             WithdrawalStrategy.fixed_real(amount), years * 52, inflation_rate=infl,
         )
-        np.testing.assert_allclose(legacy, strategy, rtol=0, atol=0)
+        # Tolerancia en vez de identidad de bits: los dos caminos hacen la misma
+        # aritmética en distinto orden —el legacy divide por las cuotas antes de
+        # aplicar la inflación y el de estrategia después— y desde U4-1c eso deja
+        # una diferencia de punto flotante de 7,8e-18. La afirmación que importa
+        # es que no puedan divergir, no que redondeen igual.
+        np.testing.assert_allclose(legacy, strategy, rtol=1e-12, atol=1e-15)
