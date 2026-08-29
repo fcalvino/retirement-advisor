@@ -63,7 +63,25 @@ def _price_on_or_before(symbol: str, when: datetime) -> Optional[float]:
 #  Hit logic (pure)                                                           #
 # --------------------------------------------------------------------------- #
 
-def compute_hit(action: str, return_pct: float, excess_return_pct: Optional[float]) -> Optional[bool]:
+def hold_band_for(horizon_days: int) -> float:
+    """The ± band inside which a HOLD counts as the right call, for one horizon.
+
+    Dispersion grows with the square root of time, so one band cannot serve both
+    a month and a year: at ±5 % almost any equity is outside it over twelve
+    months, which graded a HOLD as wrong for the passage of time rather than for
+    the call (U5-15). Config holds the per-horizon table; the 30-day entry is the
+    shipped anchor and the rest are scaled from it by √t.
+    """
+    table = getattr(TRACK_RECORD, "hold_band_pct_by_horizon", None) or {}
+    return float(table.get(int(horizon_days), TRACK_RECORD.hold_band_pct))
+
+
+def compute_hit(
+    action: str,
+    return_pct: float,
+    excess_return_pct: Optional[float],
+    horizon_days: Optional[int] = None,
+) -> Optional[bool]:
     """Directional correctness of a recommendation, or None when it is ungradable.
 
     - Bullish actions (BUY/STRONG BUY): hit when we beat the benchmark.
@@ -77,13 +95,17 @@ def compute_hit(action: str, return_pct: float, excess_return_pct: Optional[floa
     unknown there is no answer and this returns None — a recommendation nobody
     could grade must not be filed as a win. The HOLD rule is measured against an
     absolute band with no market term in it, so it stays gradable.
+
+    ``horizon_days`` selects that band (U5-15). It is optional so older callers
+    keep working, and they get the fallback — the same single band as before.
     """
     a = (action or "").upper()
     if a in tuple(x.upper() for x in TRACK_RECORD.bullish_actions):
         return None if excess_return_pct is None else excess_return_pct > 0
     if a in tuple(x.upper() for x in TRACK_RECORD.bearish_actions):
         return None if excess_return_pct is None else excess_return_pct < 0
-    return abs(return_pct) <= TRACK_RECORD.hold_band_pct
+    band = hold_band_for(horizon_days) if horizon_days is not None else TRACK_RECORD.hold_band_pct
+    return abs(return_pct) <= band
 
 
 # --------------------------------------------------------------------------- #
@@ -149,7 +171,7 @@ def score_due_recommendations(
                 benchmark_return_pct = (bench_now / bench_then - 1.0) * 100.0
                 excess = return_pct - benchmark_return_pct
 
-            hit = compute_hit(rec.action, return_pct, excess)
+            hit = compute_hit(rec.action, return_pct, excess, horizon_days=horizon)
 
             store.save_outcome(
                 rec_id=rec.id,
