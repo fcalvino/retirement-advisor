@@ -10,6 +10,50 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U5-6 — El foso se paga una sola vez en μ (2026-08-28)
+
+`optimizer._expected_returns` armaba μ como `score_ret + div_ret + moat_ret`, pero
+el `adjusted_score` que alimenta `score_ret` **ya contiene** el bonus de moat
+(`min(moat_total × 0,5, max_bonus)`, agregado en `FundamentalAnalyzer.analyze`). La
+misma ventaja se pagaba dos veces, y el optimizer sobreponderaba empresas con foso
+ancho respecto de lo que el propio motor dice que valen.
+
+**Se sacó el término, no el bonus del score.** Era la disyuntiva que el backlog
+dejaba abierta, y la otra rama tiene una trampa: `adjusted_score` está topado en
+100, así que restarle el bonus resta de más —hasta 7 puntos— en los 6 tickers que
+están en el tope, que es justo el techo del ranking donde el optimizer asigna.
+
+Medido sobre las 150 equities cacheadas: μ baja de **7,49 a 6,99 pp** de promedio,
+**0,95 pp** como máximo en el foso más ancho, y **2 nombres rotan en el top-20**.
+
+`views.moat` se **borra**, no se pone en 0: un peso en cero se lee como una perilla
+apagada, y volver a encenderla restauraría el doble conteo.
+
+**Los pesos que quedan NO se renormalizan, y eso es el punto.** Llevar 0,50/0,30 a
+0,625/0,375 mantiene la suma en 1 y deshace el arreglo: infla la contribución del
+foso que legítimamente vive dentro del score junto con todo lo demás, subiendo μ
+**+1,24 pp** contra los −0,50 que se acaban de quitar. Son escaladores por
+componente, no partes de un todo; `er_absolute_cap` (14 pp) es lo que acota el total.
+
+El test de la auditoría D3 afirmaba que los pesos suman 1,0. Era incidental —cierto
+porque había tres pesos para tres componentes—. Lo que D3 protege es que μ sea
+independiente del perfil, que no se tocó, así que la afirmación se movió a su sujeto
+real en vez de borrarse.
+
+El término de tailwind tiene la misma forma y se queda: es un tilt **declarado y
+acotado**, con perilla (`TAILWINDS.optimizer_er_tilt`, ~±0,9 %), no un error de
+contabilidad. El docstring ahora dice cuál es cuál.
+
+`ENGINE_VERSION` → **`2026.08-tier3`**. Los planes guardados tienen asignaciones
+inclinadas hacia el foso y el aviso de staleness lo dice.
+
+**U6-1 sigue abierto.** Quitar un término duplicado no es lo mismo que anclar el
+modelo: el proxy sigue sin estar atado a nada observable.
+
+Contrato: `tests/test_mu_moat_oracle.py`.
+
+---
+
 ## U3-7 — La escala del moat, por modo (2026-08-28)
 
 El último P0 del [`BACKLOG.md`](BACKLOG.md), desbloqueado por U0-2.

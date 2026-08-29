@@ -1753,6 +1753,12 @@ ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
         "arrancaba sin capital inicial descartaba todo el ahorro: proyectaba cero y 0 % "
         "de probabilidad de éxito.",
     ),
+    (
+        "2026.08-tier3",
+        "El optimizer pagaba el foso dos veces al estimar el atractivo de cada activo, "
+        "así que las empresas con foso ancho quedaban sobreponderadas respecto de lo que "
+        "el propio motor dice que valen. La cartera sugerida puede cambiar.",
+    ),
 )
 
 

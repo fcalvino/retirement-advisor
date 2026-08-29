@@ -208,11 +208,20 @@ class TestAuditD3MuIsProfileIndependent:
         assert cons.dividend_weight > aggr.dividend_weight
         assert aggr.score_weight > cons.score_weight
 
-    def test_view_weights_are_shared_and_normalised(self):
+    def test_view_weights_are_shared_across_profiles(self):
+        """D3's subject is that μ is profile-independent, not that it sums to 1.
+
+        The sum used to be 1.0 because there were three weights covering three
+        components. U5-6 removed the moat term — the moat was being paid twice,
+        since adjusted_score already carries its bonus — and deliberately did
+        NOT renormalise the survivors: doing so would have inflated the moat
+        contribution that legitimately lives inside the score, raising μ by
+        1.24 pp against the 0.50 pp the fix removes. So the sum is no longer a
+        meaningful invariant, while what D3 actually guards is untouched.
+        """
         from config import VIEW_WEIGHTS
 
-        total = VIEW_WEIGHTS.score + VIEW_WEIGHTS.dividend + VIEW_WEIGHTS.moat
-        assert total == pytest.approx(1.0)
+        assert VIEW_WEIGHTS.score > 0 and VIEW_WEIGHTS.dividend > 0
         # The profile dataclasses still carry their own preference weights,
         # which must NOT be the ones feeding μ.
         assert (CONSERVATIVE_PROFILE.score_weight,

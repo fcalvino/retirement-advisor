@@ -54,16 +54,17 @@ una, con oráculos empíricos donde el hallazgo lo permitía.
 |---|---|---|---|
 | 3 — fórmulas con blast radius | 11 | 3 | 8 |
 | 4 — flujos del motor | 4 | 2 | 2 |
-| 5 — scoring y config | 20 | 1 | 19 |
+| 5 — scoring y config | 20 | 2 | 18 |
 | 6 — dos motores de retorno | 2 | 0 | 2 |
 | 7 — UX del dashboard | 2 | 0 | 2 |
-| **Total** | **39** | **6** | **33** |
+| **Total** | **39** | **7** | **32** |
 
 Cerradas: **U3-6** (`a5a63d9`), **U3-11** (`00fb551`, oráculo: sin `payoutRatio` ni
 FFO el score es 4.0 exacto), **U5-20** (`d86f8e9`), **U4-2** y **U4-1** (`9f05443`,
 un PR por la nota U4-1b; oráculos en `tests/test_cash_flow_oracle.py`), **U3-7**
-(escala del moat por modo; oráculo empírico sobre los 164 tickers). Fuera de las
-oleadas 3–7, **U0-2** también cerró — ver `ROADMAP.md`.
+(escala del moat por modo; oráculo empírico sobre los 164 tickers), **U5-6**
+(`4395455`, el foso deja de pagarse dos veces en μ). Fuera de las oleadas 3–7,
+**U0-2** también cerró — ver `ROADMAP.md`.
 
 ---
 
@@ -76,21 +77,25 @@ Cada uno dejó filas nuevas con lo que deliberadamente **no** hizo: **U4-1c** y
 
 ## Bloque 2 — Números que cambian una decisión de compra
 
-### U5-6 + U6-1 · El moat rinde dos veces en μ `P1`
+### U6-1 · El proxy de retorno del optimizer no está anclado a nada `P1`
 
-`optimizer.py:623-630` construye μ como `score_ret + div_ret + moat_ret`, con
-`views.moat = 0.20`. Pero el `adjusted_score` que alimenta `score_ret` **ya incluye**
-el bonus de moat (`min(total × 0.5, 10)`). El foso se paga dos veces y el optimizer
-sobrepondera empresas con moat alto respecto de lo que el propio motor dice que valen.
+**U5-6 cerró** (`4395455`): el moat ya no se paga dos veces en μ. Queda la mitad
+estructural, que es la que da nombre a la fila: hay **dos motores de retorno** —
+el proxy del optimizer (`score/100 × 0.18` más el dividendo, acotado por
+`er_absolute_cap`) y el del Monte Carlo (historia semanal + haircut del 20 %) — y
+el primero no está atado al segundo ni a nada observable. Que el score de un
+ticker sea 80 no dice que su **atractivo estimado (proxy del optimizer)** sea
+7,2 %; lo dice la constante `0.18`, que nadie calibró contra nada.
 
-U6-1 es la versión estructural del mismo problema: hay dos motores de retorno (proxy
-del optimizer vs historia+haircut del Monte Carlo) y el proxy no está anclado a nada.
+Hoy los dos números conviven en la misma pantalla con nombres distintos (U1-1/U1-2
+dejó «Atractivo estimado (proxy)» para uno y «retorno histórico» para el otro), así
+que al menos no se confunden. Pero ordenar una cartera con un proxy inventado sigue
+siendo ordenarla con un número inventado.
 
-**Hacer:** μ desde score base + dividendo, **o** sacar el término de moat. Una de las
-dos, no una mezcla.
-**Oráculo:** un ticker con moat 20 no rinde dos veces.
-**Si μ se mueve:** bumpear `ENGINE_VERSION` (U6-2, hoy en `2026.08-tier1`) y avisar
-del stale de planes guardados.
+**Hacer:** anclar el proxy a algo verificable — el retorno histórico que ya calcula
+el MC, o una calibración explícita de `0.18` contra el universo — o declararlo
+ordinal y dejar de expresarlo en puntos porcentuales.
+**Cuidado:** blast radius sobre toda la asignación, no sólo sobre el ordenamiento.
 
 ### U3-1 · Historial corto se lee como "debajo de la tendencia" `P1`
 
@@ -198,7 +203,7 @@ son el terreno donde ya nacieron los defectos de arriba.
 
 | id | sev | qué | evidencia |
 |---|---|---|---|
-| **U3-7b** | P2 | El Optimizer sigue normalizando el moat por `/20` para rankear (`:483`, `:509`), así que una fila sin IA —cuyo techo real es 12— queda sistemáticamente peor rankeada por no haber sido enriquecida, no por la empresa. U3-7 arregló las **etiquetas**; esto es el mismo supuesto de escala única en los **pesos**. Se dejó afuera a propósito: `:625` es el doble conteo de μ (U5-6) y tocar los tres juntos mezcla dos PRs | `optimizer.py:483,509` |
+| **U3-7b** | P2 | El Optimizer sigue normalizando el moat por `/20` para rankear (`:483`, `:509`), así que una fila sin IA —cuyo techo real es 12— queda sistemáticamente peor rankeada por no haber sido enriquecida, no por la empresa. U3-7 arregló las **etiquetas**; esto es el mismo supuesto de escala única en los **pesos**. Se dejó afuera de U3-7 a propósito; `:625`, el tercer `/20`, desapareció con U5-6 al quitarse el término de moat de μ | `optimizer.py:483,509` |
 | **U5-9** | P2 | Literales que deberían estar en config, movidos 1:1 y byte-idénticos: `0.18`/`0.05` de μ, `0.21`/`0.79` del tax, FCF 4/2, quick 1.5/1.0, F6 1.02, MaxDD 1.5, payout 80 | `optimizer.py:623,625`, `fundamental.py:882`, `moat.py:626` |
 | **U5-10** | P2 | La tasa libre de riesgo vive en tres lugares con dos valores: `config.py:402` (0.045), `:694` (0.045), `:491` (`risk_free_proxy_pct = 4.0`). Más `BLOCK_SIZE` muerto, dos techos de yield y dos caps de sector | |
 | **U5-18** | P2 | 15 `utcnow` vivos entre relojes UTC-naive y local-naive: `data/cache.py` (6), `analysis/track_record.py` (8), `track_record_scorer.py` (1). Afecta la edad del dato y el dedup por día | |
