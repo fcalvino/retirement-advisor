@@ -10,6 +10,85 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U6-1 — El proxy se ordena, no se cotiza (2026-08-29)
+
+La última fila del Bloque 2, y la que más cambió de forma al medirla.
+
+### La fila decía «inventado». Es lo contrario, y peor, a la vez
+
+Medido sobre las 149 equities cacheadas con ≥5 años de historia semanal:
+
+| pregunta | respuesta |
+|---|---|
+| ¿El score predice retorno? | **Sí.** Pendiente +20,8 pp/100 pts sobre el CAGR realizado, p < 0,0001 |
+| ¿El intercepto cero del motor es correcto? | **Sí.** Intercepto medido: **−1,43 %** |
+| ¿μ está anclado a algo observable? | **No.** Correlación con el drift del Monte Carlo: **+0,025** |
+| ¿Tiene la precisión que su formato promete? | **No.** R² = 0,116; rango p10–p90 de μ = 3,4 pp contra 19 pp del CAGR real |
+
+O sea: la **estructura** está bien —el signo, la pendiente y el cero que asume—
+y lo que está mal es que un número con R² 0,12 y un rango de 3,4 pp se
+presentara como «7,2 % anual». Eso promete exactitud (no la tiene), precisión
+(tampoco) y una unidad que invita a capitalizarlo o compararlo contra un plazo
+fijo.
+
+### Por qué no se recalibró el `0.18`
+
+Dos razones independientes, y la segunda es la que cierra la discusión.
+
+**Es hindsight.** La pendiente sale de regresar el score de *hoy* contra el
+retorno de los *últimos diez años*, en una ventana con 13 % de CAGR medio.
+Ajustar la constante a eso hornea dos sesgos y vuelve a μ más *confiado*, no más
+correcto. Los datos forward-looking que harían falta no existen: el track record
+tiene 22 filas, todas a 30 días (misma pared que U5-1b).
+
+**Y no serviría.** Con el span llevado a 0,417, el score al que μ satura
+`er_absolute_cap` cae **por debajo del score medio del universo** (69,5): más de
+la mitad de los candidatos quedaría pegada al mismo techo, indistinguible entre
+sí. Medido: **95 de 150 tickers contra el cap**, y el desvío de μ pasando de
+1,45 pp a 1,41 pp. **El cap manda, no el span** — recalibrar *aplana* la vista.
+Ese argumento quedó como test ejecutable, no como comentario.
+
+### Dos cosas que la fila no anticipaba
+
+**μ no elige acciones, elige pesos.** Con μ plano el optimizer selecciona el
+mismo conjunto exacto en los tres perfiles (19/19, 30/30, 45/45 posiciones);
+sólo se mueven los pesos, 20–46 pp de L1 sobre 200. La selección la hacen el
+prefiltro y las restricciones. Eso acota el blast radius que la fila advertía:
+es real, pero es sobre ponderación, no sobre qué entra a la cartera.
+
+**El help estaba desactualizado.** Prometía «score + dividendo + moat» y U5-6
+sacó el término de moat de μ dos semanas antes. Un rótulo que enumera un término
+inexistente es la misma clase de defecto que esta fila cierra.
+
+### Qué cambió, y qué no
+
+`expected_return_pct` **no se toca**: Black-Litterman lo necesita en unidades de
+retorno. Lo que cambia son las **16 superficies** que lo renderizaban con un
+signo de porcentaje. La traducción es `μ / er_absolute_cap × 100`, estrictamente
+monótona — el 100 es el cap del motor, no un redondeo elegido aparte.
+
+**Verificado de forma exhaustiva: 11.175 pares comparados sobre el universo, 0
+inversiones.** Mismo ranking, mismos pesos, misma cartera; descrita sin prometer
+una precisión que no existe. `git diff main --name-only` no toca ningún archivo
+del camino de scoring ni de μ, y **`ENGINE_VERSION` no se bumpea**.
+
+### Lo que deliberadamente no hizo
+
+`er_absolute_cap` sigue en 0,14 y nadie lo calibró tampoco. Hoy casi no muerde
+—1 ticker de 150— así que no es urgente; pero si alguna vez se sube el span, el
+cap pasa a ser la restricción que manda. El oráculo falla si eso pasa, en vez de
+dejar el razonamiento envejecer en un comentario.
+
+Oráculo: `tests/test_proxy_ordinal_oracle.py`, 13 tests, con un barrido sobre
+toda superficie de usuario que falla si alguna vuelve a interpolar el proxy
+seguido de un `%`. Las seis mutaciones mueren.
+
+**De paso:** `ruff` atrapó un `F821` que los 2179 tests no vieron — un helper
+que referenciaba una constante que ese archivo nunca había importado, porque
+usaba el literal. Ningún test ejerce esa rama del PDF.
+
+---
+
 ## N5 — Un yield que no era el de la empresa (2026-08-29)
 
 Apareció contestando otra pregunta. Después de mergear el PR #42 quedaba abierto
