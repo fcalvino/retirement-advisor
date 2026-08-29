@@ -1830,6 +1830,16 @@ ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
         "30 % se puntuaba como bueno pero se descartaba al estimar el atractivo del "
         "activo. La cartera sugerida puede cambiar para los papeles de dividendo alto.",
     ),
+    (
+        "2026.08-tier6",
+        "El dividendo de 8 acciones no era el suyo: en los ADRs latinoamericanos "
+        "el dividendo se declara en moneda local y el precio cotiza en dólares, y "
+        "el motor los dividía igual — Telecom Argentina figuraba con 94,7 % de "
+        "rendimiento contra el 0,31 % real. Además, no haber podido medir un "
+        "rendimiento se contaba como que la empresa no paga dividendos, y a Itaú, "
+        "Telecom Argentina y Vale se les decía que no pagaban. La cartera sugerida "
+        "puede cambiar para esos papeles.",
+    ),
 )
 
 

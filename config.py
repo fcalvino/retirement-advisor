@@ -59,7 +59,19 @@ DB_PATH = DB_DIR / "retirement_advisor.db"
 #                   de 3.60 % a 9.16 %. Los planes guardados bajo tier0-tier4
 #                   tienen asignaciones que descartaban ese dividendo.
 #                   El Monte Carlo es byte-idéntico (verificado por checksum).
-ENGINE_VERSION = "2026.08-tier5"
+#   2026.08-tier6 — N5: el yield de dividendo de 8 tickers no era el de la
+#                   empresa. `trailingAnnualDividendRate / price` es inmune a las
+#                   unidades del feed pero no a su MONEDA, y en un ADR
+#                   latinoamericano el dividendo se declara en moneda local
+#                   contra un precio en USD — TEO daba 94.73 % contra el 0.31 %
+#                   que reporta el feed. μ se corrige en las dos direcciones:
+#                   ABEV −4.66 pp y BSBR −3.78 pp (revierte la regresión que
+#                   tier5 introdujo al subir el techo del optimizer), SBS −3.64,
+#                   BAP −2.78, HON −0.93; y VALE +2.44, ITUB +0.66, TEO +0.09,
+#                   cuyo yield se descartaba a cero. Además, un yield que no se
+#                   pudo medir dejó de contarse como una empresa que no paga: 6
+#                   scores se mueven entre −2 y +4, ninguna señal cambia.
+ENGINE_VERSION = "2026.08-tier6"
 
 
 @dataclass(frozen=True)
@@ -215,6 +227,15 @@ class FundamentalThresholds:
     # unit (yfinance mixes fractions and percents across its dividend fields —
     # SCHD once scored on a "313%" yield). See normalize_dividend_yield_pct().
     max_plausible_dividend_yield_pct: float = 30.0
+    # N5: cuánto puede alejarse el yield derivado (`trailingAnnualDividendRate /
+    # price`) del que reporta el feed (`dividendYield`) antes de que se lo
+    # considere corrupto y gane el segundo. NO es una calibración: medido sobre
+    # los 130 tickers cacheados que traen los tres campos, las dos poblaciones no
+    # se solapan —122 por debajo de 1.04x, 8 por encima de 3.12x, y NADA en el
+    # medio— así que cualquier corte dentro de esa banda parte igual. 2.0 está en
+    # el centro. Si algún día aparece un ticker en la banda vacía, este número
+    # deja de ser obvio y hay que volver a mirar los datos.
+    dividend_yield_crosscheck_ratio: float = 2.0
     # % — sustainable payout. **The single cut**: the dividend dimension grades against
     # it (`_score_dividends`) and the decision engine reads the same number for the
     # "may cut dividend" risk (`_build_rationale`). They used to disagree — the risk

@@ -51,13 +51,13 @@ from analysis.fundamental import (
 # --------------------------------------------------------------------------- #
 
 CORRUPTOS = [
-    ("TEO",  1.4718, 1.5537, 0.31, 6.78, "Argentina"),
-    ("SBS",  1.4058, 11.00,  0.63, 1.79, "Brazil"),
-    ("ITUB", 2.4650, 6.5850, 2.19, 4.32, "Brazil"),
-    ("VALE", 4.0500, 10.963, 8.12, 9.33, "Brazil"),
+    ("TEO",  13.632, 14.390, 0.31, 6.78, "Argentina"),
+    ("SBS",  0.6640, 5.1950, 0.63, 1.79, "Brazil"),
+    ("ITUB", 2.9550, 7.8950, 2.19, 4.32, "Brazil"),
+    ("VALE", 5.4770, 14.825, 8.12, 9.33, "Brazil"),
     ("ABEV", 0.7300, 2.9550, 5.64, 5.19, "Brazil"),
-    ("BAP",  32.500, 250.00, 3.72, 3.02, "Peru"),
-    ("HON",  9.4000, 215.00, 1.27, 2.10, "United States"),
+    ("BAP",  50.000, 384.57, 3.72, 3.02, "Peru"),
+    ("HON",  9.4000, 215.24, 1.27, 2.10, "United States"),
     ("BSBR", 1.0710, 5.7750, 5.95, 6.75, "Brazil"),
 ]
 
@@ -200,6 +200,32 @@ class TestUnYieldQueNoSePudoMedirNoEsUnaEmpresaSinDividendo:
         paga, y reinvertir el flujo no es un defecto."""
         score, nota = _dividend_score({})
         assert score == pytest.approx(3.0)
+        assert "No dividend" in nota
+
+    @pytest.mark.parametrize("sym,last_val,ultimo_pago", [
+        ("ADBE", 0.0065, "2005-03-24"),
+        ("MELI", 0.1500, "2017-12-28"),
+        ("PAM",  0.0750, "2012-01-12"),
+        ("YPF",  0.1380, "2019-07-09"),
+        ("LOMA", 0.4650, "2023-06-30"),
+        ("CEPU", 0.3500, "2024-11-29"),
+    ])
+    def test_haber_pagado_alguna_vez_no_es_pagar(self, sym, last_val, ultimo_pago):
+        """Anti-cheat en la dirección contraria, y un falso positivo que este PR
+        se comió antes de medir.
+
+        ``lastDividendValue`` es el registro del último dividendo que la empresa
+        pagó **alguna vez**, no una señal de que siga pagando: Adobe lo trae en
+        0.0065 con fecha 2005. Si cuenta como evidencia de reparto, seis growth
+        genuinas pierden su crédito de +3 — el mismo defecto que N5 arregla, en
+        espejo. Los tres campos que sí valen son de los últimos doce meses.
+        """
+        info = {"lastDividendValue": last_val}
+        score, nota = _dividend_score(info)
+        assert score == pytest.approx(3.0), (
+            f"{sym} no paga desde {ultimo_pago}: es growth, no una pagadora "
+            f"inmensurable"
+        )
         assert "No dividend" in nota
 
     def test_el_caso_queda_marcado_para_que_el_usuario_lo_vea(self):
