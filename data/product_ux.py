@@ -1209,10 +1209,14 @@ def ar_dual_amounts(
     }
     if parallel is not None and parallel > 0:
         out["ars_parallel"] = round(usd * parallel, 0)
+        # N1: the brecha needs BOTH legs sourced. ``rate_source`` reports the
+        # weaker one, so a market official against a placeholder parallel still
+        # reads "placeholder" here — which is right: one real number minus one
+        # invented one is not a market observation either.
         if rate_source == "placeholder":
             out["brecha_omitted_reason"] = (
-                "las tasas son valores por defecto, no una cotización: su brecha no "
-                "dice nada del mercado"
+                "al menos una de las dos no es una cotización sino un valor por "
+                "defecto: su brecha no dice nada del mercado"
             )
         else:
             out["brecha_pct"] = round((parallel / oficial - 1.0) * 100.0, 1)

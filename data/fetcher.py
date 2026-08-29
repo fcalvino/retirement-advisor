@@ -261,3 +261,31 @@ def compute_cagr_available(
         return None, 0
 
     return (end_val / start_val) ** (1 / years) - 1, years
+
+
+def usd_ars_quote(symbol: str = "ARS=X"):
+    """Official USD/ARS rate and the date it is from, or ``None`` (N1).
+
+    Goes through :func:`get_history`, so it shares the cache, the TTL and the
+    failure handling of every other price this project fetches — no second
+    mechanism for talking to the same feed.
+
+    Returns ``(pesos_per_usd, "YYYY-MM-DD")``. ``None`` when the quote is missing
+    or non-positive: the caller falls back to the placeholder and labels it as
+    one, because a fabricated rate that looks sourced is what would unlock a
+    brecha that describes nothing.
+    """
+    try:
+        hist = get_history(symbol, period="5d", interval="1d")
+    except Exception as exc:
+        logger.debug(f"usd_ars_quote: {symbol} failed — {exc}")
+        return None
+    if hist is None or hist.empty or "close" not in hist.columns:
+        return None
+    closes = hist["close"].dropna()
+    if closes.empty:
+        return None
+    rate = float(closes.iloc[-1])
+    if rate <= 0:
+        return None
+    return rate, str(closes.index[-1])[:10]

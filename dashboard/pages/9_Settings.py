@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import streamlit as st
 
+from config import ar_fx_from_market
 from dashboard.shared import _save_ai_config_to_env
 from data.cache import cache
+from data.fetcher import usd_ars_quote
 from data.preferences import UserPreferences
 from data.universe_loader import UNIVERSE_META, load_universe
 
@@ -272,6 +276,63 @@ if st.button("Guardar configuración AI", type="primary"):
         st.info("API Key vacía — se usará el scoring clásico.")
 
 st.divider()
+
+# ------------------------------------------------------------------ #
+#  Cotización del peso (N1)                                           #
+# ------------------------------------------------------------------ #
+
+st.subheader("💵 Cotización del peso")
+st.caption(
+    "El **oficial** se toma del mercado (`ARS=X`) con la misma caché que el resto "
+    "de los precios. El **paralelo** no tiene una fuente gratuita, así que lo "
+    "ponés vos — y la app lo muestra como tuyo, no como una cotización."
+)
+
+_fx_now = ar_fx_from_market(
+    quote_lookup=usd_ars_quote,
+    usd_ars_parallel=(_prefs.usd_ars_parallel or None),
+    parallel_asof=_prefs.usd_ars_parallel_asof,
+)
+_fc1, _fc2 = st.columns(2)
+_fc1.metric(
+    "Oficial (pesos/USD)", f"${_fx_now.usd_ars_oficial:,.0f}",
+    help=(
+        "Origen: **market** — cotizado de `ARS=X`."
+        if _fx_now.source_oficial == "market"
+        else "Origen: **placeholder** — no se pudo cotizar, así que es un valor de "
+             "referencia inventado, no un dato."
+    ),
+)
+_par_actual = float(_prefs.usd_ars_parallel or 0.0)
+_par_nuevo = _fc2.number_input(
+    "Paralelo (pesos/USD) — 0 = sin cargar",
+    min_value=0.0, max_value=1_000_000.0, step=50.0,
+    value=_par_actual, format="%.0f", key="usd_ars_parallel_input",
+    help="El que vos observás. Con 0 la app no muestra brecha, porque una brecha "
+         "contra un valor por defecto no dice nada del mercado.",
+)
+if st.button("Guardar cotización", key="save_usd_ars_parallel"):
+    _prefs.usd_ars_parallel = float(_par_nuevo)
+    _prefs.usd_ars_parallel_asof = (
+        datetime.now().date().isoformat() if _par_nuevo > 0 else ""
+    )
+    _prefs.save()
+    st.success("Cotización guardada." if _par_nuevo > 0 else "Paralelo borrado.")
+    st.rerun()
+
+if _fx_now.rate_source == "placeholder":
+    st.info(
+        "La **brecha** no se muestra hasta que las dos cotizaciones tengan origen: "
+        "restar dos números inventados —o uno real y uno inventado— no describe "
+        "al mercado.",
+        icon="ℹ️",
+    )
+else:
+    st.caption(
+        f"Brecha actual: **{(_fx_now.usd_ars_parallel / _fx_now.usd_ars_oficial - 1) * 100:+.1f}%** "
+        f"· oficial *{_fx_now.source_oficial}* · paralelo *{_fx_now.source_parallel}*"
+        + (f" · {_fx_now.rate_asof}" if _fx_now.rate_asof else "")
+    )
 
 # ------------------------------------------------------------------ #
 #  Caché                                                              #

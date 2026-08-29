@@ -95,6 +95,11 @@ class UserPreferences:
     # so scoring/data-quality warnings are loud and the optimizer treats them
     # conservatively. Empty list = pre-feature behavior (backward-compatible).
     custom_tickers: List[dict] = field(default_factory=list)
+    #: Parallel USD/ARS rate the user entered, and when (N1). The official leg is
+    #: quoted from the market; this one has no free feed, so it is theirs and is
+    #: labelled as theirs. 0 = not set, which keeps the brecha withheld.
+    usd_ars_parallel: float = 0.0
+    usd_ars_parallel_asof: str = ""
 
     # ------------------------------------------------------------------ #
 
