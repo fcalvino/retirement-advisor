@@ -287,15 +287,15 @@ class TestTheDeadBootstrapKnob:
     def test_the_simulator_reads_the_config_field(self):
         from portfolio.monte_carlo import MonteCarloSimulator
 
-        assert MonteCarloSimulator().block_size == MONTE_CARLO.block_size_weeks
+        assert MonteCarloSimulator(["SPY"]).block_size == MONTE_CARLO.block_size_weeks
 
     def test_moving_the_knob_moves_the_block(self):
-        from portfolio.monte_carlo import MonteCarloSimulator
-
         saved = MONTE_CARLO.block_size_weeks
         try:
+            from portfolio.monte_carlo import MonteCarloSimulator
+
             MONTE_CARLO.block_size_weeks = 9
-            assert MonteCarloSimulator().block_size == 9
+            assert MonteCarloSimulator(["SPY"]).block_size == 9
         finally:
             MONTE_CARLO.block_size_weeks = saved
 
@@ -328,7 +328,7 @@ class TestTheDividendYieldCeilingHasOneHome:
         from analysis.fundamental import normalize_dividend_yield_pct
 
         opt = PortfolioOptimizer("moderate")
-        scored, _ = normalize_dividend_yield_pct({"dividendYield": 20.0})
+        scored = normalize_dividend_yield_pct({"dividendYield": 20.0})
         assert scored == pytest.approx(20.0)
         assert opt._clean_div_yield(scored) == pytest.approx(20.0)
 
@@ -385,16 +385,31 @@ class TestTheSizingWeightsAreNotAWeighting:
             assert not hasattr(PERSONAL_BOOK, field), field
             assert field not in PERSONAL_BOOK.as_dict(), field
 
-    def test_the_justification_claims_no_percentage_split(self):
-        """The oracle for "promete lo que no calcula": the user-facing text must
-        not name a proportion the engine never computes."""
+    def test_every_number_it_cites_is_a_number_a_gate_reads(self):
+        """The oracle for "promete lo que no calcula", stated so it survives a
+        rewrite of the prose: whatever figures the justification shows the user,
+        each one has to be a threshold some gate actually compares against.
+
+        45/20/20/15 fails this — no gate reads them. 40 (`sell_all_score`),
+        40 (`max_practical_concentration_single_name`) and 72
+        (`min_score_for_core_concentration`) pass, because `_decide_sizing`
+        branches on all three.
+        """
         import re
 
         positions, convictions, enrich = _book_fixture()
         analysis = analyze_personal_book(positions, convictions, enrich)
         text = analysis.concentration_justification_overall
-        assert not re.search(r"\d+\s*%", text), (
-            "the sizing justification still advertises a percentage weighting: " + text
+
+        readable = {
+            round(float(v), 1)
+            for v in PERSONAL_BOOK.as_dict().values()
+            if isinstance(v, (int, float)) and not isinstance(v, bool)
+        }
+        cited = {round(float(m), 1) for m in re.findall(r"\d+(?:[.,]\d+)?", text)}
+        orphans = cited - readable
+        assert not orphans, (
+            f"the justification cites {sorted(orphans)}, which no sizing gate reads: {text}"
         )
 
     def test_the_justification_still_names_the_axes_that_do_decide(self):

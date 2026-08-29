@@ -14,6 +14,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
+# Module-level: the copy constants below are built at import time, so they cannot
+# use the lazy `from config import X as config` the functions in this file do.
+# Safe in both directions — config.py imports nothing from data/.
+from config import MOAT
+
 # --------------------------------------------------------------------------- #
 #  Canonical labels for the two models that produce a "return" (U1-1, U1-2)   #
 # --------------------------------------------------------------------------- #
@@ -95,9 +100,13 @@ FAST_MA_LABEL_EN = "50-week SMA"
 
 COST_OF_EQUITY_LABEL = "costo de equity proxy"
 COST_OF_EQUITY_HELP = (
-    "El umbral es la tasa libre de riesgo (4 %) + la prima de riesgo de acciones "
-    "del sector (4–6 pp). **No es un WACC**: no pondera deuda ni escudo fiscal. "
-    "Tampoco es CAPM con beta: la prima es sectorial y plana."
+    # U5-10: la tasa venía escrita a mano acá. Era 4 % porque MOAT declaraba su
+    # propia tasa libre de riesgo, 50 bp por debajo de la que usaban el backtest
+    # y el optimizer. Al unificarse, una copia hardcodeada habría quedado
+    # mintiendo — que es exactamente lo que este contrato de etiqueta atrapa.
+    f"El umbral es la tasa libre de riesgo ({MOAT.risk_free_proxy_pct:g} %) + la prima "
+    "de riesgo de acciones del sector (4–6 pp). **No es un WACC**: no pondera deuda "
+    "ni escudo fiscal. Tampoco es CAPM con beta: la prima es sectorial y plana."
 )
 
 ROIC_SPREAD_LABEL = f"spread ROIC − {COST_OF_EQUITY_LABEL}"
@@ -1812,6 +1821,14 @@ ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
         "La simulación nunca sorteaba la observación más reciente del historial y "
         "sub-muestreaba las anteriores, así que se apoyaba de más en la parte vieja de "
         "la ventana. Volvé a simular para usar el historial completo.",
+    ),
+    (
+        "2026.08-tier5",
+        "Dos números que el motor usa estaban escritos dos veces con valores distintos. "
+        "El umbral de rentabilidad que exige el foso usaba una tasa libre de riesgo "
+        "medio punto más baja que el resto del motor, y un dividendo de entre 15 % y "
+        "30 % se puntuaba como bueno pero se descartaba al estimar el atractivo del "
+        "activo. La cartera sugerida puede cambiar para los papeles de dividendo alto.",
     ),
 )
 

@@ -35,6 +35,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from config import MONTE_CARLO
 from portfolio.monte_carlo import MonteCarloSimulator
 
 
@@ -81,7 +82,7 @@ class TestEveryObservationCanBeDrawn:
         the last bar can only be reached by the last one. Before, the head had
         one start and the tail had none — an asymmetry with no justification.
         """
-        n_obs, block = 100, MonteCarloSimulator.BLOCK_SIZE
+        n_obs, block = 100, MONTE_CARLO.block_size_weeks
         max_start = max(n_obs - block + 1, 1)
         reachable = oracle_reachable_indices(n_obs, block, max_start)
         assert reachable == set(range(n_obs))

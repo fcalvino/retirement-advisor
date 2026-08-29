@@ -14,25 +14,37 @@ from config import MOAT
 
 class TestRoicWaccSpread:  # noqa: N801 — legacy name, the hurdle is Ke (U1-4)
     def test_higher_spread_scores_higher(self):
-        """Same ROIC, cheaper equity (lower ERP sector) → higher score in spread mode."""
+        """Same ROIC, cheaper equity (lower ERP sector) → higher score in spread mode.
+
+        U5-10: the ROIC figures used to be written against a hand-computed
+        ``Ke = 4 + erp``, so unifying the risk-free rate to the 4.5 the backtest
+        and the optimizer already used broke the test at the ``spread == 0``
+        boundary — ROIC 9 against a Technology hurdle that moved from 9.0 to 9.5.
+        The bands are what this test is about, so the inputs are now placed
+        *relative to the hurdle the engine reports*. That is what makes it a test
+        of the spread logic instead of a second, silent copy of the rate.
+        """
         ma = MoatAnalyzer()
-        # Force known rf/erp
-        # Technology ERP default 5 → Ke = 4+5 = 9; ROIC 15 → spread 6 → 1.0
-        # With patched excellent threshold still 10, good 4
-        assert ma._score_roic_sustained(15.0, sector="Technology") == 1.0
-        # Utilities ERP 4 → Ke 8; ROIC 15 → spread 7 → 1.0
-        # Energy ERP 6 → Ke 10; ROIC 15 → spread 5 → 1.0
-        # ROIC 20, Tech Ke 9 → spread 11 → 2.0
-        assert ma._score_roic_sustained(20.0, sector="Technology") == 2.0
-        # ROIC 9, Tech Ke 9 → spread 0 → 0.5
-        assert ma._score_roic_sustained(9.0, sector="Technology") == 0.5
-        # ROIC 5, Tech Ke 9 → spread -4 → 0.0
-        assert ma._score_roic_sustained(5.0, sector="Technology") == 0.0
+        ke = ma._wacc_proxy("Technology")
+        assert ma._score_roic_sustained(ke + 6.0, sector="Technology") == 1.0
+        assert ma._score_roic_sustained(ke + 11.0, sector="Technology") == 2.0
+        assert ma._score_roic_sustained(ke, sector="Technology") == 0.5
+        assert ma._score_roic_sustained(ke - 4.0, sector="Technology") == 0.0
+
+    def test_the_hurdle_uses_the_shared_risk_free_rate(self):
+        """U5-10: MOAT declared its own 4.0 while BACKTEST and OPTIMIZER used
+        4.5 for the same Treasury proxy. One quantity, one number."""
+        from config import RISK_FREE
+
+        ma = MoatAnalyzer()
+        assert MOAT.risk_free_proxy_pct == RISK_FREE.annual_pct
+        assert ma._wacc_proxy("Technology") == RISK_FREE.annual_pct + 5.0
 
     def test_high_roic_low_spread_not_full_points(self):
         """A ROIC that clears the absolute band still loses points to a pricey sector."""
         ma = MoatAnalyzer()
-        # Ke = 4 + 6 = 10 for Energy; ROIC 12 → spread 2 → 0.5 (not 1.0 from absolute ≥12)
+        # Energy ERP 6 → Ke 10.5; ROIC 12 → spread 1.5 → 0.5 (not the 1.0 the
+        # legacy absolute band would have given a ROIC ≥ 12).
         score = ma._score_roic_sustained(12.0, sector="Energy")
         assert score == 0.5
 
