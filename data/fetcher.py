@@ -10,8 +10,11 @@ from loguru import logger
 from data.cache import cache
 
 # Maximum attempts and base delay for exponential backoff on yfinance failures.
-_MAX_RETRIES = 3
-_RETRY_BASE_DELAY = 2.0   # seconds — doubles each attempt (2s, 4s, 8s)
+# N2: the policy lives in config.FETCH with the rest of the tunables.
+
+#: Sentinel: "the feed answered, and the answer is no dividends". Distinct from a
+#: failed call, which must be retried; paying nothing is not an error.
+_NO_DIVIDENDS = pd.Series(dtype=float)
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -24,16 +27,23 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
 
 def _fetch_with_retry(fn, symbol: str, label: str):
     """
-    Call fn() up to _MAX_RETRIES times with exponential backoff.
+    Call fn() up to ``FETCH.max_retries`` times with exponential backoff.
     Returns the result or None on permanent failure.
+
+    Every fetcher that reaches the network goes through here (N2). Two of the four
+    used to skip it, and a transient failure on ``get_financials`` demoted a BUY
+    to HOLD by way of an empty statement and a "poor" data-quality badge.
     """
-    delay = _RETRY_BASE_DELAY
-    for attempt in range(1, _MAX_RETRIES + 1):
+    from config import FETCH
+
+    attempts = max(1, int(FETCH.max_retries))
+    delay = float(FETCH.retry_base_delay_s)
+    for attempt in range(1, attempts + 1):
         try:
             return fn()
         except Exception as exc:
-            if attempt == _MAX_RETRIES:
-                logger.error(f"{symbol}: {label} failed after {_MAX_RETRIES} attempts — {exc}")
+            if attempt == attempts:
+                logger.error(f"{symbol}: {label} failed after {attempts} attempts — {exc}")
                 return None
             logger.warning(f"{symbol}: {label} attempt {attempt} failed ({exc}), retrying in {delay:.0f}s")
             time.sleep(delay)
@@ -150,29 +160,34 @@ def get_financials(symbol: str) -> Dict[str, pd.DataFrame]:
             k: pd.DataFrame(v) for k, v in cached.items()
         }
 
-    try:
+    # N2: through the retry, like every other networked fetch. A transient
+    # failure here returns empty statements, and empty statements demote a BUY to
+    # HOLD via has_financials=False and a "poor" data-quality badge — a scoring
+    # consequence for one flaky HTTP call.
+    def _fetch():
         ticker = yf.Ticker(symbol)
-        result = {
+        statements = {
             "income_stmt": ticker.financials,
             "balance_sheet": ticker.balance_sheet,
             "cashflow": ticker.cashflow,
         }
         # Drop entirely empty statements
-        result = {k: v for k, v in result.items() if v is not None and not v.empty}
-        if not result:
-            logger.warning(f"{symbol}: no financial statements available")
-            return {}
+        statements = {k: v for k, v in statements.items() if v is not None and not v.empty}
+        if not statements:
+            raise ValueError("no financial statements available")
+        return statements
 
-        # Timestamps can't be JSON keys — convert columns and index to strings
-        serializable = {
-            k: df.rename(columns=str).rename(index=str).to_dict()
-            for k, df in result.items()
-        }
-        cache.set(key, serializable)
-        return result
-    except Exception as exc:
-        logger.error(f"{symbol}: failed to fetch financials — {exc}")
+    result = _fetch_with_retry(_fetch, symbol, "financials")
+    if not result:
         return {}
+
+    # Timestamps can't be JSON keys — convert columns and index to strings
+    serializable = {
+        k: df.rename(columns=str).rename(index=str).to_dict()
+        for k, df in result.items()
+    }
+    cache.set(key, serializable)
+    return result
 
 
 def get_dividends(symbol: str) -> pd.Series:
@@ -184,18 +199,23 @@ def get_dividends(symbol: str) -> pd.Series:
         s.index = pd.to_datetime(s.index)
         return s
 
-    try:
+    # N2: through the retry. A failure here costs the dividend dimension and the
+    # growth streak. An empty series is a real answer — a company that pays
+    # nothing — so it is returned rather than retried.
+    def _fetch():
         ticker = yf.Ticker(symbol)
         divs = ticker.dividends
         if divs is None or divs.empty:
-            return pd.Series(dtype=float)
+            return _NO_DIVIDENDS
         divs.index = divs.index.tz_localize(None)
-        # Convert Timestamp index to strings for JSON compatibility
-        cache.set(key, {str(k): v for k, v in divs.to_dict().items()})
         return divs
-    except Exception as exc:
-        logger.error(f"{symbol}: failed to fetch dividends — {exc}")
+
+    divs = _fetch_with_retry(_fetch, symbol, "dividends")
+    if divs is None or divs is _NO_DIVIDENDS or divs.empty:
         return pd.Series(dtype=float)
+    # Convert Timestamp index to strings for JSON compatibility
+    cache.set(key, {str(k): v for k, v in divs.to_dict().items()})
+    return divs
 
 
 def get_info_age_hours(symbol: str) -> Optional[float]:

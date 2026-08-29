@@ -509,6 +509,23 @@ class CryptoMoatConfig:
 
 
 @dataclass
+class FetchConfig:
+    """Retry policy for network fetches (N2).
+
+    ``_fetch_with_retry`` had these as literals in ``data/fetcher.py`` while every
+    other tunable in this project lives here. They are a choice — how long to keep
+    a screener run waiting on a flaky ticker before giving up on it — and the
+    right value depends on how many tickers the run has left to go.
+
+    Backoff doubles each attempt, so 3 × 2 s means a permanent failure costs about
+    six seconds before the fetcher degrades quietly.
+    """
+
+    max_retries: int = 3
+    retry_base_delay_s: float = 2.0
+
+
+@dataclass
 class ArsRiskConfig:
     """Which countries carry the ARS-style macro discount, and nothing else.
 
@@ -1960,6 +1977,7 @@ BACKTEST = BacktestConfig()
 MOAT = MoatConfig()
 TAXES = TaxConfig()
 ARS_RISK = ArsRiskConfig()
+FETCH = FetchConfig()
 CRYPTO_MOAT = CryptoMoatConfig()
 OPTIMIZER = OptimizerConfig()
 REPORT = ReportConfig()

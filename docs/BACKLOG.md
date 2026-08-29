@@ -157,19 +157,22 @@ son el terreno donde ya nacieron los defectos de arriba.
 Trabajo que ninguna de las tres fuentes cubre, o que cambió de costo desde que se
 escribió.
 
-### N2 · Sacar "segunda fuente de datos" de fuera de alcance
+### N2b · El fallback de fetch a una segunda fuente
 
-`X-08` clasificó "yfinance como fuente única" como fuera de alcance, y CONTEXT §8 lo
-mantiene como limitación conocida ("no hay retry automático; si falla un ticker, se
-loggea y se continúa").
+**El retry cerró** (`1fa5013`): los cuatro fetchers reintentan y la política vive en
+`config.FETCH`. Queda la mitad cara, que es la que `X-08` tenía en mente.
 
-Pero desde entonces `data/data_sources.py` (17 KB) existe y ya sabe hablar con más de
-una fuente — lo usa `attach_cross_source_quality` para **reconciliar**. La
-infraestructura del fallback ya está construida; lo que falta es usarla en el camino
-de **fetch**, no solo en el de verificación.
+`data/data_sources.py` habla con SEC EDGAR y FMP, pero sólo en el camino de
+**verificación** (`attach_cross_source_quality`). Usarlas en el de **fetch** exige
+decidir a quién creerle cuando difieren — y difieren, que es exactamente la razón
+por la que existe la capa de reconciliación. Pedirle dos veces a la misma fuente y
+elegir entre dos fuentes distintas son trabajos distintos.
 
-El costo bajó lo suficiente como para que "fuera de alcance" ya no sea la respuesta
-correcta. Empezar por el retry, que es la mitad barata.
+**Hallazgo del PR del retry:** `YFinanceSource` importa `get_financials`
+**localmente** y su comentario dice que espera un cache hit porque `analyze` ya lo
+trajo. Cuando la caché falla, es una segunda llamada de red redundante — invisible
+hasta que el retry la volvió cara (la suite pasó de 23 s a 7m26). Vale arreglarlo
+junto con el fallback.
 
 ### N3 · Accesibilidad y tema
 
