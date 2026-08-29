@@ -88,10 +88,16 @@ Fuera de las oleadas 3–7,
 
 ## Bloque 1 — El motor descarta o falsea plata del usuario
 
-**Vacío.** Los tres P0 se cerraron el 2026-08-28 — U4-2 y U4-1 en `9f05443`,
-U3-7 después de que U0-2 diera la matriz que lo desbloqueaba. Ver `ROADMAP.md`.
+**Vacío otra vez.** Los tres P0 originales se cerraron el 2026-08-28 — U4-2 y
+U4-1 en `9f05443`, U3-7 después de que U0-2 diera la matriz que lo desbloqueaba.
 Cada uno dejó filas nuevas con lo que deliberadamente **no** hizo: **U4-1c** y
 **U4-5** en el bloque 4, **U3-7b** también.
+
+**N5** volvió a llenarlo por un día y se cerró el 2026-08-29: el yield de
+dividendo de 8 tickers no era el de la empresa, y a tres pagadores reales el
+producto les decía que no pagaban. Apareció mientras se decidía si bajar el
+techo de yield que unificó U5-10 — y la respuesta fue que el techo era la perilla
+equivocada. Ver `ROADMAP.md`.
 
 ## Bloque 2 — Números que cambian una decisión de compra
 
