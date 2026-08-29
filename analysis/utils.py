@@ -151,3 +151,66 @@ def roic_pct(
         return None
     nopat = float(ebit) * (1.0 - float(tax_rate_pct) / 100.0)
     return nopat / invested * 100.0
+
+
+# --------------------------------------------------------------------------- #
+#  Fiscal-period alignment (backlog U3-9 / U3-10)                             #
+# --------------------------------------------------------------------------- #
+
+def aligned_latest(
+    frames_rows: "list[tuple[Any, list]]",
+) -> "tuple[Optional[list], Optional[str]]":
+    """Values from the newest period on which **every** requested row reported.
+
+    Returns ``(values, period)`` in the order asked for, or ``(None, None)`` when
+    no period has all of them.
+
+    A ratio compares quantities measured over the same span; two numbers from
+    different fiscal years are not one. Each side used to be fetched with its own
+    ``dropna()``, so each landed on whatever year that row last reported — AAPL
+    divided EBIT from 2025 by interest expense from 2023, and LLY showed 38x
+    where the aligned figure is 21.8x (U3-10). Net income and D&A live in
+    different statements, so FFO could drift further still (U3-9).
+
+    It **anchors** rather than discarding. Refusing to produce a ratio whenever
+    the newest columns disagree would re-break what an earlier fix repaired: the
+    ``dropna()`` was added so those same two companies would not lose interest
+    coverage entirely to a blank latest column. Stepping back to the newest
+    shared year keeps the metric and makes it true. Only a genuine absence of
+    overlap yields nothing.
+
+    ``frames_rows`` pairs a statement with the candidate row names to try in it,
+    first match winning — the same convention the callers already use. The frames
+    may be different statements, which is exactly the case that drifts most.
+    """
+    import pandas as pd
+
+    per_side = []
+    for df, names in frames_rows:
+        if df is None or getattr(df, "empty", True):
+            return None, None
+        reported = None
+        for name in names:
+            if name in df.index:
+                reported = {
+                    col: value
+                    for col, value in df.loc[name].items()
+                    if pd.notna(value)
+                }
+                break
+        if not reported:
+            return None, None
+        per_side.append(reported)
+
+    common = set(per_side[0])
+    for side in per_side[1:]:
+        common &= set(side)
+    if not common:
+        return None, None
+
+    period = max(common, key=lambda c: str(c))
+    try:
+        values = [float(side[period]) for side in per_side]
+    except (TypeError, ValueError):
+        return None, None
+    return values, str(period)

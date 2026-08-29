@@ -23,7 +23,7 @@ from loguru import logger
 from analysis.moat import MoatAnalyzer, MoatDetail
 from analysis.scoring import ConsistencyDetail, EnhancedScoring, PiotroskiDetail
 from analysis.tailwind import TailwindAnalyzer, TailwindDetail
-from analysis.utils import corporate_tax_rate_pct, roic_pct
+from analysis.utils import aligned_latest, corporate_tax_rate_pct, roic_pct
 from config import STRATEGY
 from config import THRESHOLDS as T
 from data.fetcher import (
@@ -327,6 +327,30 @@ def _latest_row_value(df: pd.DataFrame, names) -> Optional[float]:
     return None
 
 
+def _ffo_parts(
+    income_stmt: pd.DataFrame, cashflow: pd.DataFrame
+) -> "tuple[Optional[list], Optional[str]]":
+    """Net income and D&A from one fiscal year, plus the year they came from.
+
+    U3-9: the two halves live in different statements, so fetching each with its
+    own ``dropna()`` could pair 2025 net income with 2022 D&A (GOOGL). D&A is
+    tried on the cash flow first, then on the income statement, and each attempt
+    is aligned against net income in its own right.
+
+    The period is returned because the payout has to use the dividends of the
+    same year — anchoring it against the latest net income instead would just
+    move the mismatch one step along.
+    """
+    values, period = aligned_latest([
+        (income_stmt, ["Net Income"]), (cashflow, _DA_ROWS),
+    ])
+    if values is None:
+        values, period = aligned_latest([
+            (income_stmt, ["Net Income"]), (income_stmt, _DA_ROWS),
+        ])
+    return values, period
+
+
 def compute_ffo(income_stmt: pd.DataFrame, cashflow: pd.DataFrame) -> Optional[float]:
     """Funds from operations: ``net income + depreciation & amortization``.
 
@@ -342,19 +366,35 @@ def compute_ffo(income_stmt: pd.DataFrame, cashflow: pd.DataFrame) -> Optional[f
     the universe (2026-08-22), O showed a P/E of 45.7 against a P/FFO of 16.5, and
     a payout of 236 % against 70 %. Computable for 12 of the 13 cached REITs.
     """
-    net_income = _latest_row_value(income_stmt, ["Net Income"])
-    da = _latest_row_value(cashflow, _DA_ROWS)
-    if da is None:
-        da = _latest_row_value(income_stmt, _DA_ROWS)
-
-    if net_income is None or da is None:
+    values, _period = _ffo_parts(income_stmt, cashflow)
+    if values is None:
         return None
 
+    net_income, da = values
     ffo = net_income + da
     return ffo if ffo > 0 else None
 
 
-def compute_ffo_payout_pct(cashflow: pd.DataFrame, ffo: Optional[float]) -> Optional[float]:
+def _row_value_at(df: pd.DataFrame, names, period: Optional[str]) -> Optional[float]:
+    """The value a row reported in one specific period, or ``None``."""
+    if df is None or df.empty or not period:
+        return None
+    for name in names:
+        if name in df.index:
+            for col, value in df.loc[name].items():
+                if str(col) == str(period) and pd.notna(value):
+                    try:
+                        return float(value)
+                    except (TypeError, ValueError):
+                        return None
+    return None
+
+
+def compute_ffo_payout_pct(
+    cashflow: pd.DataFrame,
+    ffo: Optional[float],
+    income_stmt: Optional[pd.DataFrame] = None,
+) -> Optional[float]:
     """Dividends paid over FFO, in percent — the payout that means something here.
 
     Taken from the definition (cash actually distributed over funds from
@@ -364,7 +404,15 @@ def compute_ffo_payout_pct(cashflow: pd.DataFrame, ffo: Optional[float]) -> Opti
     """
     if not ffo or ffo <= 0:
         return None
-    paid = _latest_row_value(cashflow, _DIVIDENDS_PAID_ROWS)
+    # U3-9: the dividends of the year the FFO came from. Picked independently,
+    # this was a third fiscal year in the same ratio — MELI paired 2022 dividends
+    # with 2025 FFO. ``income_stmt`` is optional so older callers keep working;
+    # without it the dividends are simply the latest reported, as before.
+    if income_stmt is not None:
+        _parts, period = _ffo_parts(income_stmt, cashflow)
+        paid = _row_value_at(cashflow, _DIVIDENDS_PAID_ROWS, period)
+    else:
+        paid = _latest_row_value(cashflow, _DIVIDENDS_PAID_ROWS)
     if paid is None:
         return None
     return abs(paid) / ffo * 100
@@ -656,7 +704,9 @@ class FundamentalAnalyzer:
             result.ffo = compute_ffo(income_stmt, cashflow)
             if result.ffo and result.market_cap > 0:
                 result.p_ffo = round(result.market_cap / result.ffo, 2)
-            result.ffo_payout_pct = compute_ffo_payout_pct(cashflow, result.ffo)
+            result.ffo_payout_pct = compute_ffo_payout_pct(
+                cashflow, result.ffo, income_stmt=income_stmt
+            )
             if result.ffo is None:
                 result.notes["ffo"] = (
                     "Sin D&A en los estados — se usa la valuación contable, "
@@ -1057,11 +1107,22 @@ class FundamentalAnalyzer:
         return ratio
 
     def _compute_interest_coverage(self, income_stmt: pd.DataFrame) -> Optional[float]:
+        """EBIT over interest expense, both from the SAME fiscal year (U3-10).
+
+        Fetching each side with its own ``dropna()`` landed each on whatever year
+        that row last reported: AAPL divided 2025 EBIT by 2023 interest, and LLY
+        showed 38× where the aligned figure is 21.8×. Anchoring steps back to the
+        newest shared year instead of refusing the ratio, which is what keeps the
+        earlier blank-latest-column fix intact.
+        """
         try:
-            if income_stmt.empty:
+            values, _period = aligned_latest([
+                (income_stmt, ["EBIT", "Operating Income"]),
+                (income_stmt, ["Interest Expense"]),
+            ])
+            if values is None:
                 return None
-            ebit = self._row(income_stmt, ["EBIT", "Operating Income"])
-            interest = self._row(income_stmt, ["Interest Expense"])
+            ebit, interest = values
             if interest == 0:
                 return None
             return float(ebit / abs(interest))

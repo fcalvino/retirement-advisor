@@ -52,12 +52,12 @@ una, con oráculos empíricos donde el hallazgo lo permitía.
 
 | Oleada | Total | Cerradas | Abiertas |
 |---|---|---|---|
-| 3 — fórmulas con blast radius | 11 | 8 | 3 |
+| 3 — fórmulas con blast radius | 11 | 10 | 1 |
 | 4 — flujos del motor | 4 | 2 | 2 |
 | 5 — scoring y config | 20 | 2 | 18 |
 | 6 — dos motores de retorno | 2 | 0 | 2 |
 | 7 — UX del dashboard | 2 | 0 | 2 |
-| **Total** | **39** | **12** | **27** |
+| **Total** | **39** | **14** | **25** |
 
 Cerradas: **U3-6** (`a5a63d9`), **U3-11** (`00fb551`, oráculo: sin `payoutRatio` ni
 FFO el score es 4.0 exacto), **U5-20** (`d86f8e9`), **U4-2** y **U4-1** (`9f05443`,
@@ -66,7 +66,8 @@ un PR por la nota U4-1b; oráculos en `tests/test_cash_flow_oracle.py`), **U3-7*
 (`4395455`, el foso deja de pagarse dos veces en μ), **U3-1** (historial corto es
 `None`, no "debajo de la tendencia"), **U3-3 + U3-4 + U3-5** (`c68769d`, la cadena
 de Graham: `g` por acción, V con `g = 0`, y la tasa `Y` nombrada como proxy),
-**U3-8** (`28bab01`, un solo ROIC, con la tasa del país que grava).
+**U3-8** (`28bab01`, un solo ROIC, con la tasa del país que grava),
+**U3-9 + U3-10** (`c2e7f6b`, cada ratio anclado en un solo año fiscal).
 Fuera de las oleadas 3–7,
 **U0-2** también cerró — ver `ROADMAP.md`.
 
@@ -100,23 +101,6 @@ siendo ordenarla con un número inventado.
 el MC, o una calibración explícita de `0.18` contra el universo — o declararlo
 ordinal y dejar de expresarlo en puntos porcentuales.
 **Cuidado:** blast radius sobre toda la asignación, no sólo sobre el ordenamiento.
-
-### U3-9 + U3-10 · Ratios armados con dos años fiscales distintos `P1` `P2`
-
-- **U3-9** (`fundamental.py:344-346`): `compute_ffo` hace dos `_latest_row_value`
-  independientes — Net Income de un año, D&A de otro — y
-  `compute_ffo_payout_pct` elige Cash Dividends Paid por tercera vez. Alimenta la
-  banda P/FFO de 8 puntos y el riesgo de corte de dividendo en
-  `strategy._build_rationale`.
-- **U3-10** (`fundamental.py:1342-1345`): `_row` hace `dropna()` por candidato, así
-  que EBIT puede venir de FY2024 e Interest Expense de FY2023 — y el ratio sale sin
-  marca. Alimenta una banda de salud de 5 puntos.
-
-**Hacer:** anclar en un solo `as_of`, o devolver `None` si los períodos no coinciden.
-La capa `_same_period` existe para esto.
-**No hacer:** revertir el `dropna()` — arreglaba el `0.0` silencioso.
-**Oráculo:** un estado con la columna nueva en blanco → FFO `None`; nunca una mezcla
-de años.
 
 ### U5-15 · El horizonte anual del track record dura 8,3 meses `P1`
 
