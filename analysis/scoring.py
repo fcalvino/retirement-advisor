@@ -270,7 +270,13 @@ class EnhancedScoring:
         ltd = self._extract(balance_sheet, ["Long Term Debt", "Long-Term Debt"])
         current_assets = self._extract(balance_sheet, ["Current Assets"])
         current_liab = self._extract(balance_sheet, ["Current Liabilities"])
-        shares = self._extract(balance_sheet, ["Ordinary Shares Number", "Share Issued", "Common Stock"])
+        # U5-3: no ``Common Stock`` fallback — that row is a CURRENCY AMOUNT, not a
+        # share count, and the two are not even off by a constant factor (AAPL
+        # 93.6bn against 14.8bn shares, KO 1.76bn against 4.3bn). Comparing par
+        # value year over year says nothing about dilution. ``Ordinary Shares
+        # Number`` is present in 150 of 150 cached balance sheets, so the fallback
+        # never ran; without a real count the signal has no answer and says so.
+        shares = self._extract(balance_sheet, ["Ordinary Shares Number", "Share Issued"])
         ocf = self._extract(cashflow, ["Operating Cash Flow", "Cash Flow From Continuing Operating Activities"]) if cashflow is not None and not cashflow.empty else None
 
         # === F1: ROA > 0 (current year) ===
@@ -295,11 +301,20 @@ class EnhancedScoring:
         ))
 
         # === F4: Leverage (LTD/TotalAssets) decreased YoY ===
+        # U5-2: a company with no long-term debt in either year gives 0 < 0 and
+        # loses the point. It cannot reduce what it does not have, and zero
+        # leverage is not a failure to improve — it is the best state of the thing
+        # being measured. The strict comparison is right everywhere else and stays:
+        # holding leverage flat at 30 % genuinely did not improve, which is what
+        # Piotroski's F_LEVER asks. Only the degenerate case is exempted.
         d.f4_leverage_decreasing = self._safe(lambda: (
             ltd is not None and total_assets is not None
             and len(ltd) >= 2 and len(total_assets) >= 2
             and total_assets.iloc[0] > 0 and total_assets.iloc[1] > 0
-            and (ltd.iloc[0] / total_assets.iloc[0]) < (ltd.iloc[1] / total_assets.iloc[1])
+            and (
+                (ltd.iloc[0] / total_assets.iloc[0]) < (ltd.iloc[1] / total_assets.iloc[1])
+                or (ltd.iloc[0] == 0 and ltd.iloc[1] == 0)
+            )
         ))
 
         # === F5: Current Ratio improved YoY ===
@@ -310,11 +325,14 @@ class EnhancedScoring:
             and (current_assets.iloc[0] / current_liab.iloc[0]) > (current_assets.iloc[1] / current_liab.iloc[1])
         ))
 
-        # === F6: No new shares issued (≤2% dilution YoY) ===
+        # === F6: No new shares issued (dilution within PIOTROSKI.max_dilution_pct) ===
+        # U5-3: the tolerance comes from config, not from a literal in the middle
+        # of the comparison.
+        _dilution_cap = 1.0 + self.pc.max_dilution_pct / 100.0
         d.f6_no_dilution = self._safe(lambda: (
             shares is not None and len(shares) >= 2
             and shares.iloc[1] > 0
-            and shares.iloc[0] <= shares.iloc[1] * 1.02
+            and shares.iloc[0] <= shares.iloc[1] * _dilution_cap
         ))
 
         # === F7: Gross Margin improved YoY ===
