@@ -1752,14 +1752,20 @@ with tab_goals:
                 f"{sum(1 for gr in plan_result.goal_results if gr.prob_success_pct >= _success_target)}"
                 f"/{len(plan_result.goal_results)}",
             )
-            capital_gap = plan_result.capital_gap
+            capital_gap = plan_result.capital_gap_today
             pk4.metric(
-                "Gap de capital (vs. medianas)",
+                "Gap de capital (en USD de hoy)",
                 f"${capital_gap:,.0f}" if capital_gap > 0 else "✅ Sin gap",
                 delta="déficit proyectado" if capital_gap > 0 else None,
                 delta_color="inverse" if capital_gap > 0 else "off",
                 delta_arrow="off",
-                help="Diferencia entre las medianas proyectadas y los valores objetivo nominales.",
+                help=(
+                    "Lo que falta para alcanzar cada meta, medido contra la mediana "
+                    "proyectada y traído a **dólares de hoy** con la inflación de cada "
+                    "meta.\n\nSe deflacta meta por meta *antes* de sumar: una meta a 25 "
+                    "años y otra a 5 años están en años distintos, y sumar sus montos "
+                    "nominales no da una cifra (U5-13)."
+                ),
             )
 
             # Plan-level warnings

@@ -25,6 +25,7 @@ from typing import Dict, List, Optional
 import numpy as np
 
 from config import GOAL_CARD
+from data.product_ux import present_value_usd
 from portfolio.monte_carlo import MonteCarloResult, MonteCarloSimulator
 
 # ------------------------------------------------------------------ #
@@ -195,10 +196,14 @@ class GoalPlan:
     total_capital: float
     n_sims: int
 
-    # Aggregated metrics (computed after init via compute_aggregates)
-    total_capital_needed: float = 0.0
+    # Aggregated metrics (computed after init via compute_aggregates).
+    # The ``_today`` suffix is load-bearing: these sum across goals with
+    # different target years, and nominal dollars from different years are not
+    # the same unit (U5-13). Each goal is deflated to today's purchasing power
+    # by its own ``expected_inflation`` before anything is added.
+    total_capital_needed_today: float = 0.0
     total_capital_allocated: float = 0.0
-    capital_gap: float = 0.0            # positive = shortfall
+    capital_gap_today: float = 0.0      # positive = shortfall, in today's USD
     plan_feasibility_score: float = 0.0  # 0–100 weighted by priority
     warnings: List[str] = field(default_factory=list)
 
@@ -212,22 +217,34 @@ class GoalPlan:
 
         weighted_prob_sum = 0.0
         total_weight = 0.0
-        capital_needed_sum = 0.0
+        needed_today = 0.0
+        gap_today = 0.0
 
         for gr in self.goal_results:
             w = priority_weight.get(gr.goal.priority, 2)
             weighted_prob_sum += gr.prob_success_pct * w
             total_weight += w
-            capital_needed_sum += gr.target_nominal
+
+            # U5-13: deflate each goal on its own terms — its own horizon, its own
+            # inflation — and only then add. Summing the nominal targets first
+            # would add 2031 dollars to 2051 dollars, and netting the sums would
+            # let a surplus in one year cancel a shortfall in another.
+            years = float(gr.goal.horizon_years)
+            infl = float(gr.goal.expected_inflation)
+            needed_today += present_value_usd(
+                gr.target_nominal, annual_inflation_pct=infl, years=years
+            )
+            shortfall = max(0.0, gr.target_nominal - gr.median_terminal)
+            gap_today += present_value_usd(
+                shortfall, annual_inflation_pct=infl, years=years
+            )
 
         self.plan_feasibility_score = (
             weighted_prob_sum / total_weight if total_weight > 0 else 0.0
         )
-        self.total_capital_needed = capital_needed_sum
+        self.total_capital_needed_today = needed_today
         self.total_capital_allocated = sum(gr.allocated_capital for gr in self.goal_results)
-        self.capital_gap = max(0.0, self.total_capital_needed - sum(
-            gr.median_terminal for gr in self.goal_results
-        ))
+        self.capital_gap_today = max(0.0, gap_today)
 
         # Warnings
         for gr in self.goal_results:

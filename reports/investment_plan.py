@@ -515,13 +515,13 @@ class InvestmentPlanReport:
         ]
 
         # Plan-level KPIs
-        gap = goal_plan.capital_gap
+        gap = goal_plan.capital_gap_today
         gap_str = f"${gap:,.0f}" if gap > 0 else "Sin déficit"
         kpi_rows = [
-            ["Score del plan", "Capital requerido", "Déficit de capital", "Metas viables (≥65%)"],
+            ["Score del plan", "Capital requerido (hoy)", "Déficit (USD de hoy)", "Metas viables (≥65%)"],
             [
                 f"{goal_plan.plan_feasibility_score:.0f}/100",
-                f"${goal_plan.total_capital_needed:,.0f}",
+                f"${goal_plan.total_capital_needed_today:,.0f}",
                 gap_str,
                 f"{sum(1 for gr in goal_plan.goal_results if gr.prob_success_pct >= 65)}"
                 f"/{len(goal_plan.goal_results)}",

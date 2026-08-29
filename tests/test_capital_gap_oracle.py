@@ -27,6 +27,7 @@ import pytest
 
 from data.product_ux import present_value_usd
 from portfolio.goals import Goal, GoalPlan, GoalResult
+from portfolio.monte_carlo import MonteCarloResult
 
 
 def oracle_present_value(nominal: float, inflation_pct: float, years: float) -> float:
@@ -38,11 +39,13 @@ def _result(name: str, *, today_amount: float, years: int, terminal: float,
             inflation: float = 3.0) -> GoalResult:
     goal = Goal(name=name, target_amount_today=today_amount, horizon_years=years,
                 expected_inflation=inflation)
-    return GoalResult(
-        goal=goal, allocated_capital=0.0, median_terminal=terminal,
-        p10_terminal=terminal, p90_terminal=terminal,
-        prob_success_pct=50.0, target_nominal=goal.target_nominal,
+    mc = MonteCarloResult(
+        n_sims=100, horizon_years=years, initial_value=0.0,
+        annual_withdrawal=0.0, target_value=goal.target_nominal,
     )
+    mc.median_terminal = terminal
+    mc.prob_achieve_target_pct = 50.0
+    return GoalResult(goal=goal, mc_result=mc, allocated_capital=0.0)
 
 
 def _plan(*results: GoalResult) -> GoalPlan:
@@ -73,8 +76,10 @@ class TestTheTotalIsInOneYearsDollars:
         assert near.total_capital_needed_today == pytest.approx(
             far.total_capital_needed_today, rel=1e-9
         )
-        # Same purchasing power today, very different nominal targets.
-        assert far.goal_results[0].target_nominal > near.goal_results[0].target_nominal * 2
+        # Same purchasing power today, different nominal targets: exactly the
+        # twenty extra years of inflation between them, and nothing else.
+        ratio = far.goal_results[0].target_nominal / near.goal_results[0].target_nominal
+        assert ratio == pytest.approx(1.03 ** 20, rel=1e-9)
 
     def test_each_goal_uses_its_own_inflation(self):
         low = _plan(_result("A", today_amount=100_000, years=10, terminal=0.0, inflation=2.0))
