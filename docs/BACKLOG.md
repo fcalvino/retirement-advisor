@@ -52,19 +52,21 @@ una, con oráculos empíricos donde el hallazgo lo permitía.
 
 | Oleada | Total | Cerradas | Abiertas |
 |---|---|---|---|
-| 3 — fórmulas con blast radius | 11 | 4 | 7 |
+| 3 — fórmulas con blast radius | 11 | 7 | 4 |
 | 4 — flujos del motor | 4 | 2 | 2 |
 | 5 — scoring y config | 20 | 2 | 18 |
 | 6 — dos motores de retorno | 2 | 0 | 2 |
 | 7 — UX del dashboard | 2 | 0 | 2 |
-| **Total** | **39** | **8** | **31** |
+| **Total** | **39** | **11** | **28** |
 
 Cerradas: **U3-6** (`a5a63d9`), **U3-11** (`00fb551`, oráculo: sin `payoutRatio` ni
 FFO el score es 4.0 exacto), **U5-20** (`d86f8e9`), **U4-2** y **U4-1** (`9f05443`,
 un PR por la nota U4-1b; oráculos en `tests/test_cash_flow_oracle.py`), **U3-7**
 (escala del moat por modo; oráculo empírico sobre los 164 tickers), **U5-6**
 (`4395455`, el foso deja de pagarse dos veces en μ), **U3-1** (historial corto es
-`None`, no "debajo de la tendencia"). Fuera de las oleadas 3–7,
+`None`, no "debajo de la tendencia"), **U3-3 + U3-4 + U3-5** (`c68769d`, la cadena
+de Graham: `g` por acción, V con `g = 0`, y la tasa `Y` nombrada como proxy).
+Fuera de las oleadas 3–7,
 **U0-2** también cerró — ver `ROADMAP.md`.
 
 ---
@@ -97,20 +99,6 @@ siendo ordenarla con un número inventado.
 el MC, o una calibración explícita de `0.18` contra el universo — o declararlo
 ordinal y dejar de expresarlo en puntos porcentuales.
 **Cuidado:** blast radius sobre toda la asignación, no sólo sobre el ordenamiento.
-
-### U3-3 + U3-4 + U3-5 · La cadena de Graham `P1`
-
-Tres defectos encadenados sobre el mismo número, que termina en
-`require_margin_of_safety` — la puerta que desbloquea STRONG BUY.
-
-| id | defecto | evidencia |
-|---|---|---|
-| U3-5 | `g` es CAGR de **Net Income**, no por acción | `fundamental.py:1198` — con buybacks, EPS CAGR ≠ NI CAGR |
-| U3-3 | con `g = 0` no se produce ningún V | `fundamental.py:691` `if eps > 0 and growth_used > 0`. Oráculo: V(g=0, EPS 5) = **41,56**; el motor devuelve `None` |
-| U3-4 | `Y` congelada en 4,5 % y sin disclaimer | `config.py:99`; `2_Stock_Analysis.py:642-645` imprime "Graham Intrinsic Value" a secas |
-
-**Hacer:** CAGR por acción; `V = EPS × 8.5 × 4.4 / Y` cuando `g = 0` y sin V cuando
-`g < 0`; `Y` inyectable con disclaimer de proxy. **Sin fetch live** — eso es X-04.
 
 ### U3-8 · Dos ROIC, y el impuesto es de otro país `P1`
 
