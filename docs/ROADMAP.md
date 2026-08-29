@@ -10,6 +10,105 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U4-1c — Decidir anual, pagar en doceavos (2026-08-29)
+
+U4-1 mensualizó los aportes y dejó los retiros anuales a propósito, porque la
+estrategia de guardrails **es** una revisión anual. Esta es la mitad que
+faltaba.
+
+### Lo que estaba mal, y lo que la fila no decía
+
+Dos efectos que se sumaban:
+
+* **el lump de diciembre** — el año entero de gasto salía junto en la semana 52,
+  así que ese dinero componía doce meses de más antes de irse. Esto sí estaba en
+  la fila.
+* **el año gratis** — `weeks = [yr * 52 for yr in 1..N]` ponía el primer retiro
+  en la **semana 52**, o sea que el primer año de la jubilación transcurría
+  entero sin que saliera un peso. Esto no estaba, y es la mitad más grande.
+
+### Lo que no cambia: la decisión
+
+El presupuesto se calcula en la primera cuota del año y las once restantes lo
+repiten. Un guardrail recalculado doce veces al año es **otro método**, no el
+mismo mejor pagado — hay un test que falla si los doce pagos de un año dejan de
+ser iguales entre sí, con su anti-cheat al lado exigiendo que entre años sí
+cambien.
+
+`MONTE_CARLO.withdrawal_periods_per_year = 1` reproduce el motor tier2-tier6
+exactamente, y toda la grilla del oráculo corre sobre **las dos cadencias**.
+
+### El efecto NO es uniformemente conservador
+
+Costó un test que afirmaba lo contrario y hubo que reescribirlo.
+
+Con **gasto exógeno** (`fixed_real`) el total del año es un número dado, así que
+adelantarlo sólo puede dejar menos capital:
+
+| escenario | sostiene | año agotamiento | legado mediano |
+|---|---:|---:|---:|
+| fixed_real $40k | 99,28 → 99,17 (−0,11 pp) | 27,0 → 26,5 | **−3,1 %** |
+| fixed_real $60k | 88,58 → 87,28 (**−1,30 pp**) | 23,0 → 22,5 | **−8,3 %** |
+
+Con **gasto endógeno** (`constant_pct`, `guardrails`) el importe sale de la
+riqueza, y repartir el pago obliga a decidir el presupuesto al **inicio** del
+año en vez del final — no se paga en enero con una decisión de diciembre. En un
+mercado que sube, decidir antes da un importe menor:
+
+| escenario | legado mediano |
+|---|---:|
+| constant_pct 4 % / 5 % / 6 % | **+4,2 % / +5,3 % / +6,4 %** |
+| guardrails 4 % / 5 % / 6 % | **+3,0 % / +3,8 % / +4,0 %** |
+
+Hasta la fecha de agotamiento se mueve en las dos direcciones: en el bootstrap
+del MC se adelanta medio año, y en el path determinístico de caída monótona de
+la auditoría D2 se **atrasa** de la semana 208 a la 221 — un lump funde la
+cartera de un golpe, doce cuotas la desangran de a poco. Las dos quedan fijadas.
+
+El caso D1 de la auditoría: **553.133 → 536.748, −2,96 %**.
+
+`ENGINE_VERSION` → `2026.08-tier7`.
+
+### Las referencias se reimplementaron, no se ajustaron
+
+67 tests fallaron al activar la cadencia, y todos por la misma razón: los **tres
+oráculos independientes** codificaban la anual. Ajustarlos al resultado nuevo
+habría congelado el bug — la lección D4 del propio repo, que este archivo cita
+en su regla de mantenimiento.
+
+Se reescribieron **semana a semana** desde la definición:
+`test_withdrawal_oracle._oracle_path`,
+`test_guardrails_label_contract._reference_guardrails` y
+`test_audit_2026_08_repro._correct_sequential`. Una referencia que avanza de a
+un año no puede expresar la cadencia que tiene que validar.
+
+Los valores documentados de la auditoría **no se reemplazaron**: quedan fijados
+bajo su cadencia, con el número nuevo al lado y la dirección exigida entre los
+dos.
+
+### Un clamp que parecía prudente y empeoraba la absorción
+
+La primera versión recortaba cada cuota contra la riqueza disponible. Es peor:
+`cash_flow_units` pisa las unidades a cero, así que pedir de más deja el pozo en
+cero **exacto**, mientras que recortar dejaba una miga de 5e-19. El docstring
+del primitivo ya lo decía —*"absorption is a property of the algebra rather than
+of a defensive branch"* (auditoría D2)— y el recorte volvía a meter esa rama.
+
+Lo destapó la identidad de bits entre los dos entry points, que se rompía en 9
+de 500 paths. Esa identidad se conserva: `fixed_real` divide por las cuotas
+**antes** de aplicar la inflación, igual que `_apply_cash_flows`.
+
+Y la mutación encontró que la propiedad sólo se verificaba **de rebote**, por un
+test de otro archivo que compara dos entry points por una razón distinta. Ahora
+tiene el suyo, con la comparación que la distingue (`== 0.0`, no `<= 1e-9`) y
+sobre un mercado **irregular**: en una curva suave la división da exacta por
+casualidad y el mutante pasaba igual.
+
+Oráculo: `tests/test_withdrawal_cadence_oracle.py`, 13 tests. Las seis
+mutaciones mueren.
+
+---
+
 ## U6-1 — El proxy se ordena, no se cotiza (2026-08-29)
 
 La última fila del Bloque 2, y la que más cambió de forma al medirla.

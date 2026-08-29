@@ -162,17 +162,21 @@ def test_superseded_and_missing_engine_versions_are_stale():
     moved μ again and in both directions: eight tickers were scored on a dividend
     yield that was not theirs, because `rate / price` divides a local-currency
     dividend by a USD price on a LatAm ADR. ABEV's μ comes back down to 9.34 %.
+    U4-1c (tier7) spread the withdrawals across the year: the D1 case drops from
+    553,133 to 536,748 and every saved plan's prob_sustain_real_pct and
+    expected_depletion_year were computed on the annual cadence.
     """
     from config import ENGINE_VERSION
 
-    assert ENGINE_VERSION == "2026.08-tier6"
+    assert ENGINE_VERSION == "2026.08-tier7"
 
     current = PlanSnapshot.from_session(name="actual", opt_result=_fake_opt_result())
     assert current.engine_version == ENGINE_VERSION
     assert not current.is_engine_stale()
 
     for superseded in ("2026.08-tier0", "2026.08-tier1", "2026.08-tier2",
-                       "2026.08-tier3", "2026.08-tier4", "2026.08-tier5"):
+                       "2026.08-tier3", "2026.08-tier4", "2026.08-tier5",
+                       "2026.08-tier6"):
         old = PlanSnapshot.from_session(name="viejo", opt_result=_fake_opt_result())
         old.engine_version = superseded
         assert old.is_engine_stale() is True

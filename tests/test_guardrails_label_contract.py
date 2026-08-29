@@ -36,7 +36,7 @@ from pathlib import Path
 
 import numpy as np
 
-from config import WITHDRAWAL, WithdrawalConfig
+from config import MONTE_CARLO, WITHDRAWAL, WithdrawalConfig
 from data.product_ux import (
     GUARDRAILS_LABEL,
     GUARDRAILS_LABEL_LONG,
@@ -203,35 +203,58 @@ def _reference_guardrails(
     strategy: WithdrawalStrategy,
     horizon_years: int,
     inflation: float,
+    periods: int | None = None,
 ) -> list[float]:
     """The two rules, spelled out from their definition, one path at a time.
 
     Written from the rules rather than from the production expression, so a
     later change of behaviour fails here instead of being frozen in (the D4
     lesson: comparing new code against old code freezes the bug).
+
+    **Semana a semana desde U4-1c.** El gasto ya no sale una vez al año, así que
+    una referencia que avanzara de a un año no podría expresar la cadencia que
+    tiene que validar. La revisión —las dos reglas— sigue siendo **anual** y cae
+    en la primera cuota del año: es cuando el jubilado mira su cartera y fija su
+    presupuesto, no cuando ya lo gastó.
     """
+    if periods is None:
+        periods = MONTE_CARLO.withdrawal_periods_per_year
+    periods = max(1, int(periods))
+
     wr0 = strategy.pct
     ceiling = wr0 * (1.0 + strategy.guardrail_ceiling_band)
     floor = wr0 * (1.0 - strategy.guardrail_floor_band)
 
+    agenda: dict[int, tuple[int, bool]] = {}
+    for yr in range(1, horizon_years + 1):
+        for period in range(1, periods + 1):
+            agenda[(yr - 1) * 52 + round(period * 52 / periods)] = (yr, period == 1)
+
     value = float(path[0])
     spend = wr0
-    withdrawals: list[float] = []
-    for yr in range(1, horizon_years + 1):
-        # Market move over the whole year (the path is weekly), applied to what
-        # is still invested after the previous withdrawal.
-        value *= float(path[yr * 52]) / float(path[(yr - 1) * 52])
-        if yr > 1:
-            spend *= 1.0 + inflation          # unconditional: no no-inflate rule
-        rate = spend / value if value > 0 else float("inf")
-        if rate > ceiling:
-            spend *= 1.0 - strategy.guardrail_cut_pct     # capital preservation
-        elif rate < floor:
-            spend *= 1.0 + strategy.guardrail_raise_pct   # prosperity
-        taken = min(spend, max(value, 0.0))
-        withdrawals.append(taken)
-        value -= taken
-    return withdrawals
+    cuota = 0.0
+    por_año = [0.0] * horizon_years
+
+    for week in range(1, horizon_years * 52 + 1):
+        # Sólo lo que sigue invertido participa del movimiento del mercado.
+        value *= float(path[week]) / float(path[week - 1])
+
+        if week in agenda:
+            yr, es_revision = agenda[week]
+            if es_revision:
+                if yr > 1:
+                    spend *= 1.0 + inflation      # unconditional: no no-inflate rule
+                rate = spend / value if value > 0 else float("inf")
+                if rate > ceiling:
+                    spend *= 1.0 - strategy.guardrail_cut_pct     # capital preservation
+                elif rate < floor:
+                    spend *= 1.0 + strategy.guardrail_raise_pct   # prosperity
+                cuota = spend / periods
+            taken = min(cuota, max(value, 0.0))
+            por_año[yr - 1] += taken
+            value -= taken
+
+    return por_año
 
 
 def _engine_withdrawals(
@@ -243,14 +266,15 @@ def _engine_withdrawals(
         paths, initial_value=1.0, strategy=strategy,
         n_horizon_weeks=horizon_years * 52, inflation_rate=inflation,
     )
-    # At each 52-week mark the engine scales the remainder by (value - w)/value,
-    # so the amount taken is the gap between the pre- and post-withdrawal level.
-    out = []
-    for yr in range(1, horizon_years + 1):
-        idx = yr * 52
-        before = float(after[0, idx - 1]) * (float(path[idx]) / float(path[idx - 1]))
-        out.append(before - float(after[0, idx]))
-    return out
+    # U4-1c: el gasto del año ya no sale entero en la semana 52, así que leer la
+    # caída de esa semana capturaría sólo la última cuota. Se reconstruye lo que
+    # salió cada semana —la baja de *unidades*, valuada al mercado de esa semana—
+    # y se suma por año. Es la misma cantidad que antes, medida de una forma que
+    # no depende de la cadencia.
+    units = after[0] / path
+    salidas = -np.diff(units) * path[1:]
+    salidas = np.where(np.abs(salidas) < 1e-15, 0.0, salidas)
+    return [float(salidas[(yr - 1) * 52:yr * 52].sum()) for yr in range(1, horizon_years + 1)]
 
 
 def _weekly_path(annual_returns: list[float]) -> np.ndarray:
