@@ -278,34 +278,45 @@ class TestUnsustainableStillFires:
 # --------------------------------------------------------------------------- #
 
 class TestThresholdComesFromConfig:
-    @pytest.mark.parametrize("cut,fires", [(60.0, True), (90.0, False)])
+    @pytest.mark.parametrize("cut,fires", [(60.0, True), (95.0, False)])
     def test_moving_the_config_cut_moves_the_risk(self, cut, fires):
+        """U5-4: for a REIT the config knob is the FFO one, not the earnings one."""
         st = _statements_for_payout(80.0)
-        with patch.object(T, "max_payout_ratio", cut):
+        with patch.object(T, "reit_max_payout_ratio", cut):
             result = _analyze("Real Estate", 40e9, st, payoutRatio=2.36)
             assert bool(_payout_risks(_risks(result))) is fires
 
     @pytest.mark.parametrize("ffo_payout", [
-        T.max_payout_ratio - 0.5,
-        T.max_payout_ratio + 0.5,
+        T.reit_max_payout_ratio - 0.5,
+        T.reit_max_payout_ratio + 0.5,
     ])
     def test_score_and_decision_cut_at_the_same_place(self, ffo_payout):
-        """No existe un payout que dispare el warning del score y no el riesgo."""
+        """No existe un payout que dispare el warning del score y no el riesgo.
+
+        U2-6's invariant, re-checked at U5-4's threshold: the cut is now the FFO
+        one for a REIT, and both sites still read exactly the same number.
+        """
         st = _statements_for_payout(ffo_payout)
         result = _analyze("Real Estate", 40e9, st, payoutRatio=2.36)
 
         scored = any("ayout alto" in w for w in result.warnings)
         decided = bool(_payout_risks(_risks(result)))
         assert scored == decided == oracle_says_unsustainable(
-            result.payout_ratio_effective, T.max_payout_ratio
+            result.payout_ratio_effective, T.reit_max_payout_ratio
         )
 
-    def test_the_literal_eighty_is_gone(self):
-        """El corte viejo (80) no puede seguir gobernando nada."""
-        st = _statements_for_payout(78.0)   # entre el corte de config (75) y el literal (80)
-        result = _analyze("Real Estate", 40e9, st, payoutRatio=2.36)
+    def test_no_literal_governs_the_cut(self):
+        """Ni el 80 viejo ni el 75 de las industriales gobiernan a un REIT.
 
-        assert _payout_risks(_risks(result)), "78 % sobre FFO supera el corte de config"
+        78 % sobre FFO está por encima de los dos y **no** debe disparar: la ley
+        obliga a un REIT a distribuir más del 90 % de su renta gravable, así que
+        su corte es el de FFO (U5-4). Un 92 % sí lo supera.
+        """
+        comodo = _analyze("Real Estate", 40e9, _statements_for_payout(78.0), payoutRatio=2.36)
+        assert not _payout_risks(_risks(comodo)), "78 % sobre FFO es normal para un REIT"
+
+        estirado = _analyze("Real Estate", 40e9, _statements_for_payout(92.0), payoutRatio=2.36)
+        assert _payout_risks(_risks(estirado)), "92 % sobre FFO sí supera el corte de FFO"
 
 
 # --------------------------------------------------------------------------- #
@@ -313,13 +324,19 @@ class TestThresholdComesFromConfig:
 # --------------------------------------------------------------------------- #
 
 class TestScoresAreUnchanged:
-    def test_the_dividend_dimension_scores_the_same_as_before(self):
-        """Mismos insumos, misma banda: la persistencia no toca puntos."""
+    def test_the_dividend_dimension_scores_a_reit_on_reit_bands(self):
+        """U2-6 prometía que la persistencia no movía puntos, y no los movió.
+
+        U5-4 sí los mueve, a propósito: con las bandas industriales un payout del
+        70 % sobre FFO caía en la banda media (2 pts) porque ≤40 % es
+        estructuralmente inalcanzable para un REIT. Con la banda de FFO (≤70 %)
+        entra en la superior, que es exactamente lo que esta fila corrige.
+        """
         st = _statements(net_income=1.06e9, depreciation=2.52e9, dividends_paid=-2.5e9)
         result = _analyze("Real Estate", 59e9, st, payoutRatio=2.36)
 
-        # yield 3.0 % en el sweet spot (4) + payout 70 % bajo max_payout_ratio (2)
-        assert result.dividend_score == pytest.approx(6.0)
+        # yield 3.0 % en el sweet spot (4) + payout 70 % en la banda REIT (3)
+        assert result.dividend_score == pytest.approx(7.0)
 
     def test_an_operating_company_is_untouched_end_to_end(self):
         st = _statements(net_income=1.0e9, depreciation=0.2e9, dividends_paid=-0.55e9)

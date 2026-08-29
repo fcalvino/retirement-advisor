@@ -356,8 +356,12 @@ def test_payout_excellent_cut_lives_in_config():
     text = fund.read_text(encoding="utf-8")
     body = text.split("def _score_dividends")[1].split("def ")[0]
     assert "payout or 0.0" not in body
-    assert "T.payout_excellent" in body
+    # U5-4: the cut is still config-driven, but it is now chosen by the basis the
+    # payout was measured on — 40 % of earnings and 40 % of FFO are not the same
+    # claim. The helper is the config read; a literal here would be the defect.
+    assert "payout_excellent_for(" in body
     assert "<= 40" not in body
+    assert "<= 70" not in body
 
 
 def test_omitted_roe_does_not_warn_low_zero():

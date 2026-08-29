@@ -342,12 +342,20 @@ class TestPayoutRiskUsesEffectiveBasis:
         assert not any("may cut dividend" in r for r in risks)
 
     def test_high_ffo_payout_flags_naming_the_basis(self):
-        from config import THRESHOLDS as T
+        """U5-4: a REIT's cut is its own — the FFO band, not the earnings one.
 
+        The invariant this guards is unchanged: a payout above the applicable cut
+        must be flagged, and the message must name the basis it was measured on.
+        Only the cut moved, because 75 % of earnings and 75 % of FFO are not the
+        same claim about a company.
+        """
+        from analysis.fundamental import max_payout_for
+
+        stretched = max_payout_for("ffo") + 10
         risks = self._risks(
             payout_ratio=50.0,
-            ffo_payout_pct=T.max_payout_ratio + 10,
-            payout_ratio_effective=T.max_payout_ratio + 10,
+            ffo_payout_pct=stretched,
+            payout_ratio_effective=stretched,
             payout_basis="ffo",
         )
         assert any("may cut dividend" in r and "FFO" in r for r in risks)
