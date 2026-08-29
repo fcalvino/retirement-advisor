@@ -2,7 +2,8 @@
 Portfolio tracker — records positions and computes performance metrics.
 
 Metrics computed:
-  - Total return, annualized return (IRR/XIRR)
+  - Total return, and an annualised growth of cost → value. **Not an IRR** — see
+    ``ANNUALIZED_RETURN_CAVEAT`` (U5-12). A real money-weighted return is X-02.
   - Sharpe Ratio, ratio retorno/vol bajista (no es Sortino — U1-9)
   - Max Drawdown
   - Portfolio Beta (vs SPY)
@@ -25,6 +26,14 @@ from data.fetcher import get_history, get_info
 
 PORTFOLIO_FILE = DB_PATH.parent / "portfolio.json"
 
+#: What the annualised figure is, in the words a surface can show (U5-12).
+ANNUALIZED_RETURN_CAVEAT = (
+    "Crecimiento anualizado del costo total al valor actual, medido desde la "
+    "**primera compra**. No es un IRR: no pondera cada aporte por su propia fecha, "
+    "así que una compra reciente recibe el mismo tiempo de capitalización que la "
+    "más antigua. Un retorno ponderado por dinero es trabajo aparte (X-02)."
+)
+
 
 @dataclass
 class Position:
@@ -46,6 +55,9 @@ class PortfolioMetrics:
     total_cost: float = 0.0
     total_pnl: float = 0.0
     total_pnl_pct: float = 0.0
+    #: (total_value / total_cost) ** (1/years) − 1, with ``years`` measured from
+    #: the EARLIEST purchase. Not an IRR: it weights no cash flow by its own
+    #: timing (U5-12). See ``ANNUALIZED_RETURN_CAVEAT``.
     annualized_return_pct: float = 0.0
     sharpe_ratio: float = 0.0
     #: (retorno anualizado − Rf) / desvío de las semanas negativas. **Not a
@@ -192,7 +204,9 @@ class Portfolio:
             metrics.total_pnl / metrics.total_cost * 100 if metrics.total_cost > 0 else 0
         )
 
-        # Annualized return — use earliest purchase date as start
+        # Annualised growth of cost → value. NOT an IRR (U5-12): `years` comes
+        # from the earliest purchase, so every dollar is credited with the age of
+        # the oldest one. See ANNUALIZED_RETURN_CAVEAT.
         dates = [
             datetime.fromisoformat(self.positions[s].purchase_date)
             for s in self.positions
@@ -266,7 +280,23 @@ class Portfolio:
     # ------------------------------------------------------------------ #
 
     def _build_equity_curve(self) -> Optional[pd.Series]:
-        """Build a weekly portfolio equity curve using historical prices."""
+        """Weekly equity curve over the window in which every position was held.
+
+        U5-12: this used to multiply five years of prices by ``pos.shares`` — the
+        count as of *now* — for every holding regardless of when it was bought, so
+        a stock bought last month sat in the portfolio's 2021 drawdown at full
+        size. Sharpe, the downside-vol ratio, max drawdown and beta are all read
+        off this series, so the fabricated history reached four metrics at once.
+
+        The window therefore starts at the **latest** purchase date. Shorter is
+        the honest answer, and ``compute_metrics`` already suppresses the metrics
+        when too little of it survives rather than estimating from it.
+
+        Zeroing each position before its own purchase is the other way to keep the
+        share counts honest, and it is worse: a purchase would enter the series as
+        a step change, and a purchase is not a return. Measured on a two-position
+        book it reported 60.8 % volatility against 18.8 %.
+        """
         try:
             curves = []
             for sym, pos in self.positions.items():
@@ -278,10 +308,24 @@ class Portfolio:
             if not curves:
                 return None
             combined = pd.concat(curves, axis=1).sum(axis=1).dropna()
-            return combined
+
+            held_from = self._held_from()
+            if held_from is not None:
+                combined = combined[combined.index >= held_from]
+            return combined if not combined.empty else None
         except Exception as exc:
             logger.error(f"Equity curve error: {exc}")
             return None
+
+    def _held_from(self) -> Optional[pd.Timestamp]:
+        """The date from which every current position was already held."""
+        dates = []
+        for pos in self.positions.values():
+            try:
+                dates.append(pd.Timestamp(datetime.fromisoformat(pos.purchase_date)))
+            except (TypeError, ValueError):
+                return None
+        return max(dates) if dates else None
 
     def _save(self) -> None:
         data = {sym: asdict(pos) for sym, pos in self.positions.items()}
