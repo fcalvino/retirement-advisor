@@ -73,11 +73,17 @@ class TestEveryNetworkedFetchRetries:
         )
 
     def test_the_retry_policy_is_config_driven(self):
-        """Three attempts and a two-second base are a choice, not a constant."""
-        from config import FETCH
+        """Three attempts and a two-second base are a choice, not a constant.
 
-        assert FETCH.max_retries >= 2
-        assert FETCH.retry_base_delay_s > 0
+        Checked on a fresh ``FetchConfig``, not the singleton: the suite's autouse
+        fixture zeroes the backoff on that one so the tests do not spend seven
+        minutes sleeping. What ships is what this asserts.
+        """
+        from config import FetchConfig
+
+        shipped = FetchConfig()
+        assert shipped.max_retries >= 2
+        assert shipped.retry_base_delay_s > 0
         src = (ROOT / "data" / "fetcher.py").read_text(encoding="utf-8")
         body = src.split("def _fetch_with_retry")[1].split("\ndef ")[0]
         assert "FETCH." in body
@@ -162,7 +168,12 @@ class TestATransientFailureIsSurvived:
         assert state["n"] == 2
 
     def test_a_permanent_failure_still_degrades_quietly(self, monkeypatch):
-        """Anti-cheat: retrying must not turn a real outage into a crash."""
+        """Anti-cheat: retrying must not turn a real outage into a crash.
+
+        ``get_financials`` answers ``{}`` when it cannot fetch — the contract it
+        already had, and what ``has_financials=bool(financials)`` reads. Retrying
+        buys attempts, not a different failure mode.
+        """
         from config import FETCH
 
         monkeypatch.setattr(FETCH, "retry_base_delay_s", 0.0)
@@ -172,8 +183,8 @@ class TestATransientFailureIsSurvived:
             raise ConnectionError("down")
 
         monkeypatch.setattr(fetcher.yf, "Ticker", _boom)
-        out = fetcher.get_financials("X")
-        assert out["income_stmt"].empty
+        assert fetcher.get_financials("X") == {}
+        assert fetcher.get_dividends("X").empty
 
 
 if __name__ == "__main__":
