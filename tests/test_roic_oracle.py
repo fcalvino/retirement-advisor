@@ -95,7 +95,7 @@ class TestOneImplementation:
         ).T
 
         from_fundamental = FundamentalAnalyzer()._compute_roic(income, balance)
-        from_moat = MoatAnalyzer()._compute_avg_roic(income, balance)
+        from_moat = MoatAnalyzer()._avg_roic(income, balance)
         assert from_fundamental == pytest.approx(from_moat, rel=1e-9)
 
 

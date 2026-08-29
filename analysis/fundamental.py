@@ -23,6 +23,7 @@ from loguru import logger
 from analysis.moat import MoatAnalyzer, MoatDetail
 from analysis.scoring import ConsistencyDetail, EnhancedScoring, PiotroskiDetail
 from analysis.tailwind import TailwindAnalyzer, TailwindDetail
+from analysis.utils import corporate_tax_rate_pct, roic_pct
 from config import STRATEGY
 from config import THRESHOLDS as T
 from data.fetcher import (
@@ -821,12 +822,12 @@ class FundamentalAnalyzer:
         # invested capital wins when the statements exist; otherwise ROA is
         # the feed proxy. `_safe_float(None) * 100` plus `if roic != 0 else None`
         # collapsed an omitted field and a reported zero into the same None.
-        computed = self._compute_roic(income_stmt, balance_sheet)
-        if computed is not None:
-            roic = computed
-        else:
-            roa_reported = reported_metric(info, "returnOnAssets")
-            roic = roa_reported * 100 if roa_reported is not None else None
+        # U3-8: no ROA fallback. Return on ASSETS and return on INVESTED CAPITAL
+        # have different denominators, so substituting one for the other and
+        # scoring it against the ROIC bands reports a different quantity under
+        # this one's name. Measured over the cached universe, the fallback fired
+        # on 0 of 164 tickers — it was a latent trap, not a live crutch.
+        roic = self._compute_roic(income_stmt, balance_sheet, country=info.get("country"))
         if roic is None:
             result.roic = None
             missing.append("ROIC")
@@ -885,21 +886,26 @@ class FundamentalAnalyzer:
 
         return min(score, 25.0)
 
-    def _compute_roic(self, income_stmt: pd.DataFrame, balance_sheet: pd.DataFrame) -> Optional[float]:
-        """ROIC = NOPAT / (Total Equity + Long-term Debt). Returns %."""
+    def _compute_roic(
+        self,
+        income_stmt: pd.DataFrame,
+        balance_sheet: pd.DataFrame,
+        country: Optional[str] = None,
+    ) -> Optional[float]:
+        """ROIC on the LATEST year — what the company earns on its capital now.
+
+        The formula and the tax rate come from ``analysis.utils`` so this and
+        ``MoatAnalyzer._compute_avg_roic`` cannot drift (U3-8). The window is the
+        difference that stays: this one scores the present, the moat's averages
+        the available years to judge whether it lasts.
+        """
         try:
             if income_stmt.empty or balance_sheet.empty:
                 return None
             ebit = self._row(income_stmt, ["EBIT", "Operating Income"])
-            tax_rate = 0.21  # US corporate tax rate
-            nopat = ebit * (1 - tax_rate)
-
             equity = self._row(balance_sheet, ["Stockholders Equity", "Total Stockholder Equity", "Common Stock Equity"])
             ltd = self._row(balance_sheet, ["Long Term Debt", "Long-Term Debt"])
-            invested_capital = equity + ltd
-            if invested_capital <= 0:
-                return None
-            return float(nopat / invested_capital * 100)
+            return roic_pct(ebit, equity, ltd, corporate_tax_rate_pct(country))
         except Exception:
             return None
 

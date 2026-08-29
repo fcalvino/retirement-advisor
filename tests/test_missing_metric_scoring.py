@@ -97,11 +97,30 @@ def _score_health(info: Dict[str, Any]) -> Tuple[float, FundamentalResult]:
     return score, result
 
 
-def _score_profitability(info: Dict[str, Any]) -> Tuple[float, FundamentalResult]:
+def _score_profitability(
+    info: Dict[str, Any],
+    income_stmt: pd.DataFrame = None,
+    balance_sheet: pd.DataFrame = None,
+) -> Tuple[float, FundamentalResult]:
     result = FundamentalResult(symbol="TEST")
     empty = pd.DataFrame()
-    score = FundamentalAnalyzer()._score_profitability(info, empty, empty, result)
+    score = FundamentalAnalyzer()._score_profitability(
+        info,
+        empty if income_stmt is None else income_stmt,
+        empty if balance_sheet is None else balance_sheet,
+        result,
+    )
     return score, result
+
+
+def _statements(ebit: float) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Minimal statements that yield a computable ROIC of a known sign."""
+    cols = ["2025-12-31 00:00:00"]
+    income = pd.DataFrame({"EBIT": [ebit]}, index=cols).T
+    balance = pd.DataFrame(
+        {"Stockholders Equity": [5000.0], "Long Term Debt": [0.0]}, index=cols
+    ).T
+    return income, balance
 
 
 def _score_dividends(info: Dict[str, Any]) -> Tuple[float, FundamentalResult]:
@@ -372,7 +391,15 @@ def test_reported_zero_net_margin_still_warns():
 
 
 def test_omitted_roic_does_not_warn_low_zero():
-    with_roic, _ = _score_profitability(_info(returnOnAssets=0.20))
+    """Statements are the source since U3-8; ROA is no longer a stand-in.
+
+    The invariant is unchanged and is the reason this file exists: a metric the
+    data never supplied must not walk into the "Low ROIC" branch as if it had
+    been reported as zero. What changed is the source — ``returnOnAssets`` used
+    to be substituted for a missing ROIC and scored under its name.
+    """
+    income, balance = _statements(ebit=1500.0)
+    with_roic, _ = _score_profitability(_info(), income, balance)
     without, result = _score_profitability(_info())
     assert result.roic is None
     assert not any("Low ROIC" in w for w in result.warnings)
@@ -380,11 +407,23 @@ def test_omitted_roic_does_not_warn_low_zero():
     assert with_roic - without == 7.0
 
 
-def test_reported_zero_roic_still_warns():
-    _, result = _score_profitability(_info(returnOnAssets=0.0))
+def test_computed_zero_roic_still_warns():
+    """A company that genuinely earns nothing on its capital is still flagged."""
+    income, balance = _statements(ebit=0.0)
+    _, result = _score_profitability(_info(), income, balance)
     assert result.roic == pytest.approx(0.0)
     assert any("Low ROIC: 0.0%" in w for w in result.warnings)
     assert "ROIC" not in result.notes.get("profitability_missing", "")
+
+
+def test_return_on_assets_is_never_substituted_for_roic():
+    """The U3-8 contract, at the scoring layer.
+
+    A generous ROA next to absent statements must not become a ROIC — different
+    denominator, same field, scored against this one's bands.
+    """
+    _, result = _score_profitability(_info(returnOnAssets=0.20))
+    assert result.roic is None
 
 
 def test_omitted_gross_margin_does_not_warn_thin_zero():
