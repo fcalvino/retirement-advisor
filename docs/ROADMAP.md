@@ -10,6 +10,46 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U3-9 + U3-10 — Cada ratio, un solo año fiscal (2026-08-28)
+
+Cada lado de un ratio se buscaba por separado, con su propio `dropna()`, así que
+cada uno caía en el año que **esa fila** hubiera reportado por última vez. Nada
+verificaba que coincidieran y nada marcaba el resultado cuando no lo hacían.
+
+| ticker | qué mezclaba | antes | ahora |
+|---|---|---:|---:|
+| AAPL | EBIT 2025-09-30 ÷ intereses **2023**-09-30 | 33,8x | **29,1x** |
+| LLY | EBIT 2025 ÷ intereses **2024** | 38,0x | **21,8x** |
+| GOOGL | ingreso neto 2025 + D&A **2022** | — | — |
+| MELI | dividendos **2022** sobre FFO 2025 | — | — |
+
+LLY es la que conviene mirar: mostraba **38,0x contra un 21,8x real**, una
+sobreestimación del 74 % presentada como un hecho.
+
+**`aligned_latest` ancla en vez de descartar, y esa elección es todo el diseño.**
+Negarse a producir el ratio cuando las columnas más nuevas no coinciden habría
+vuelto a romper lo que un arreglo anterior reparó: el `dropna()` se agregó
+justamente para que AAPL y LLY **no perdieran** la cobertura de intereses por una
+última columna en blanco — su docstring lo dice. Retroceder al año compartido más
+reciente conserva la métrica y la vuelve verdadera. Sólo una ausencia real de
+solapamiento no devuelve nada.
+
+El payout del FFO necesitó una segunda pasada: la primera versión alineaba los
+dividendos contra el último ingreso neto, lo que sólo corre el desajuste un paso
+—el FFO quedaba anclado en 2024 y el ingreso neto reportaba hasta 2025—. Ahora
+`_ffo_parts` devuelve el período del que salió el FFO y el payout toma los
+dividendos de **ese** año.
+
+**Alcance medido: 0 scores, 0 acciones y 0 bandas de salud se mueven.** AAPL y LLY
+quedan muy por encima del umbral de 10x en los dos casos, y 0 de los 13 REITs
+cacheados tenían un FFO con años mezclados. Es un número mal en pantalla y una
+trampa esperando a cualquier empresa cuyo ratio quede cerca del borde de una
+banda — no un error de puntaje vivo.
+
+Contrato: `tests/test_fiscal_alignment_oracle.py`.
+
+---
+
 ## U3-8 — Un solo ROIC, gravado donde la empresa tributa (2026-08-28)
 
 El ROIC alimenta la dimensión de calidad (7 puntos) **y** la durabilidad del moat,
