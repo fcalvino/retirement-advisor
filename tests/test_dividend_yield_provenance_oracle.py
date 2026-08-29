@@ -160,8 +160,8 @@ class TestElRateSobrePrecioNoEsInmuneALaMoneda:
 
         ``trailingAnnualDividendRate / price`` y ``trailingAnnualDividendYield``
         son la MISMA magnitud —el importe del dividendo puesto contra el papel—
-        y caen en la misma trampa de moneda: en ITUB dan 37.43 %% y 37.22 %%, en
-        ABEV 24.70 %% y 24.33 %%. Guardar sólo la primera dejaba que la segunda
+        y caen en la misma trampa de moneda: en ITUB dan 37.43 % y 37.22 %, en
+        ABEV 24.70 % y 24.33 %. Guardar sólo la primera dejaba que la segunda
         repusiera el mismo número por la ventana, y la medición mostraba un
         arreglo que no arreglaba casi nada.
 
@@ -171,13 +171,13 @@ class TestElRateSobrePrecioNoEsInmuneALaMoneda:
         por_division = rate / price * 100
         por_fraccion = tay * 100
         assert por_fraccion / dy > 2.0, (
-            f"{sym}: el fixture ya no reproduce el caso — tay*100={por_fraccion:.2f}%% "
-            f"no contradice a dividendYield={dy}%%"
+            f"{sym}: el fixture ya no reproduce el caso — tay*100={por_fraccion:.2f}% "
+            f"no contradice a dividendYield={dy}%"
         )
         got = normalize_dividend_yield_pct(_info(rate, price, dy, avg5, tay))
         assert got == pytest.approx(dy, rel=0.02), (
             f"{sym}: resolvió {got}, y las dos derivadas dicen "
-            f"{por_division:.2f}%% y {por_fraccion:.2f}%%"
+            f"{por_division:.2f}% y {por_fraccion:.2f}%"
         )
 
     def test_sin_segunda_opinion_el_derivado_sigue_ganando(self):
