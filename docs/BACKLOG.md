@@ -157,22 +157,6 @@ son el terreno donde ya nacieron los defectos de arriba.
 Trabajo que ninguna de las tres fuentes cubre, o que cambió de costo desde que se
 escribió.
 
-### N1 · La cotización del dólar es un placeholder que se presenta como dato
-
-U2-5 cerró **la conversión** (deflactar antes de aplicar el spot). Lo que quedó
-abierto y sin dueño es **de dónde sale la cotización**: `ArFxConfig` trae 1000/1200
-pesos por dólar hardcodeados y `USD_ARS_*` no se exporta en ninguna parte del repo,
-así que la "brecha del 20 %" que la UI mostraba era la resta de dos números
-inventados (CONTEXT §8).
-
-La ideación pide "Módulo Doble Moneda" como apuesta grande y diferencial real frente
-a competidores globales. La auditoría lo tocó de costado. Nadie es dueño del
-problema completo.
-
-**Alcance mínimo:** una fuente de FX real o una entrada manual explícita del usuario,
-con `rate_source` describiendo la procedencia de forma que la UI pueda decir "esto lo
-pusiste vos" vs "esto salió de X". Sin eso, cualquier número en pesos es decorativo.
-
 ### N2 · Sacar "segunda fuente de datos" de fuera de alcance
 
 `X-08` clasificó "yfinance como fuente única" como fuera de alcance, y CONTEXT §8 lo
