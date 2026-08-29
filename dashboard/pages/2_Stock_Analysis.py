@@ -683,8 +683,17 @@ if symbol:
         col3.metric("ADX (Trend Power)",f"{tech.adx:.1f}" if tech.adx else "N/A")
 
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric(f"Sobre {TREND_MA_SHORT}", "✅" if tech.above_sma200 else "❌", help=TREND_MA_HELP)
-        col2.metric(f"Sobre {MID_MA_SHORT}", "✅" if tech.above_sma100 else "❌")
+        # Tres estados, no dos: "—" es no tener historial suficiente para la
+        # ventana, que no es lo mismo que cotizar debajo de ella (U3-1).
+        _trend_mark = {True: "✅", False: "❌"}
+        col1.metric(
+            f"Sobre {TREND_MA_SHORT}", _trend_mark.get(tech.above_sma200, "—"),
+            help=TREND_MA_HELP + (
+                "  ·  «—» = la serie de precios es más corta que la ventana, "
+                "así que no hay media que comparar."
+            ),
+        )
+        col2.metric(f"Sobre {MID_MA_SHORT}", _trend_mark.get(tech.above_sma100, "—"))
         col3.metric("MACD Bullish",  "✅" if tech.macd_bullish  else "❌")
         col4.metric("RSI (weekly)", f"{tech.rsi_weekly:.1f}" if tech.rsi_weekly else "N/A")
 

@@ -352,7 +352,7 @@ class RetirementStrategy:
 
         # Technical confirmation for BUY / STRONG BUY (config-first)
         if CFG.require_technical_uptrend and decision.action in ("BUY", "STRONG BUY"):
-            uptrend = tech == "BULLISH" or bool(getattr(technical, "above_sma200", False))
+            uptrend = tech == "BULLISH" or getattr(technical, "above_sma200", None) is True
             if not uptrend:
                 decision.action = "HOLD"
                 decision.confidence = "MEDIUM"
@@ -457,7 +457,7 @@ class RetirementStrategy:
                 )
 
         # Technical context
-        if t.above_sma200:
+        if t.above_sma200 is True:
             decision.rationale.append(f"Price above the {TREND_MA_LABEL_EN} (~3.8y) — long-term uptrend intact")
         if t.golden_cross:
             decision.rationale.append("Golden Cross — momentum confirming")
@@ -484,7 +484,11 @@ class RetirementStrategy:
             decision.risks.append(
                 f"High dividend payout ratio ({payout:.0f}% of {basis_label}) — may cut dividend"
             )
-        if not t.above_sma200:
+        # ``is False``, not ``not``: an unknown trend is not a downtrend. A
+        # company listed two years ago has no 200-week mean to be under, and
+        # filing that as a risk turns the length of its price series into a
+        # statement about its business (U3-1).
+        if t.above_sma200 is False:
             decision.risks.append(f"Price below the {TREND_MA_LABEL_EN} (~3.8y) — long-term downtrend caution")
 
 
