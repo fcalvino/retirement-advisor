@@ -52,12 +52,12 @@ una, con oráculos empíricos donde el hallazgo lo permitía.
 
 | Oleada | Total | Cerradas | Abiertas |
 |---|---|---|---|
-| 3 — fórmulas con blast radius | 11 | 7 | 4 |
+| 3 — fórmulas con blast radius | 11 | 8 | 3 |
 | 4 — flujos del motor | 4 | 2 | 2 |
 | 5 — scoring y config | 20 | 2 | 18 |
 | 6 — dos motores de retorno | 2 | 0 | 2 |
 | 7 — UX del dashboard | 2 | 0 | 2 |
-| **Total** | **39** | **11** | **28** |
+| **Total** | **39** | **12** | **27** |
 
 Cerradas: **U3-6** (`a5a63d9`), **U3-11** (`00fb551`, oráculo: sin `payoutRatio` ni
 FFO el score es 4.0 exacto), **U5-20** (`d86f8e9`), **U4-2** y **U4-1** (`9f05443`,
@@ -65,7 +65,8 @@ un PR por la nota U4-1b; oráculos en `tests/test_cash_flow_oracle.py`), **U3-7*
 (escala del moat por modo; oráculo empírico sobre los 164 tickers), **U5-6**
 (`4395455`, el foso deja de pagarse dos veces en μ), **U3-1** (historial corto es
 `None`, no "debajo de la tendencia"), **U3-3 + U3-4 + U3-5** (`c68769d`, la cadena
-de Graham: `g` por acción, V con `g = 0`, y la tasa `Y` nombrada como proxy).
+de Graham: `g` por acción, V con `g = 0`, y la tasa `Y` nombrada como proxy),
+**U3-8** (`28bab01`, un solo ROIC, con la tasa del país que grava).
 Fuera de las oleadas 3–7,
 **U0-2** también cerró — ver `ROADMAP.md`.
 
@@ -99,18 +100,6 @@ siendo ordenarla con un número inventado.
 el MC, o una calibración explícita de `0.18` contra el universo — o declararlo
 ordinal y dejar de expresarlo en puntos porcentuales.
 **Cuidado:** blast radius sobre toda la asignación, no sólo sobre el ordenamiento.
-
-### U3-8 · Dos ROIC, y el impuesto es de otro país `P1`
-
-`fundamental.py:876` y `moat.py:610` calculan ROIC por separado, ambos con la tasa
-de EE.UU. hardcodeada (`0.21` en uno, `0.79` en el otro), fuera de config. Un ADR
-argentino o brasileño usa 21 % en silencio. Además, `fundamental.py:813-816` cae a
-ROA cuando no puede computar ROIC y lo reporta igual bajo el nombre "ROIC".
-
-ROIC alimenta el moat *y* la dimensión de calidad: el mismo error entra dos veces.
-
-**Hacer:** una implementación; tasa en config; no disfrazar ROA de ROIC.
-**Oráculo:** ADRs AR/BR no usan 21 % en silencio.
 
 ### U3-9 + U3-10 · Ratios armados con dos años fiscales distintos `P1` `P2`
 
