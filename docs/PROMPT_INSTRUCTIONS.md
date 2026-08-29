@@ -38,7 +38,10 @@ Nunca propongas cambios sin haber cargado primero este contexto.
 - [ ] ¿El cambio requiere editar thresholds? → hacerlo en `config.py`, no inline
 - [ ] ¿Agrego una función de dashboard? → usar `@st.cache_data` y pasar params como tuplas
 - [ ] ¿Toco lógica AI? → revisar `analysis/prompts.py` y `analysis/ai_analyzer.py`
-- [ ] ¿Los tests pasan? → `./venv/bin/python3 -m pytest tests/`
+- [ ] ¿Pasan **lint y tests**? → `make check` (es exactamente lo que corre el CI).
+      `pytest` solo no alcanza: el job corre `ruff check .` **antes** que los
+      tests, así que un error de formato aborta el build sin ejecutar un solo
+      test — y en verde local eso no se ve
 - [ ] ¿Actualicé `docs/CONTEXT.md` si el cambio es grande?
 - [ ] ¿Agregué o borré un `.md`? → actualizar la tabla canónica de `docs/INDEX.md`
 
