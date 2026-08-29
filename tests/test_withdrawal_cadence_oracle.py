@@ -276,6 +276,54 @@ class TestLoQueNoPuedeRomperse:
         assert w[primera_cero] <= 1e-9
         assert np.all(w[primera_cero:] <= 1e-9), "el pozo revivió después de agotarse"
 
+    def test_el_pozo_agotado_queda_en_cero_EXACTO(self, cadencia):
+        """No «por debajo de epsilon»: cero exacto.
+
+        La primera versión de este PR recortaba cada cuota contra la riqueza
+        disponible. Parecía prudente y era peor: `cash_flow_units` pisa las
+        unidades a cero, así que pedir de más deja el pozo en cero exacto,
+        mientras que recortar dejaba una miga de 5e-19. El docstring del
+        primitivo ya lo decía — «absorption is a property of the algebra rather
+        than of a defensive branch» (auditoría D2) — y el recorte volvía a meter
+        la rama defensiva.
+
+        Lo destapó de casualidad un test de identidad de bits en otro archivo.
+        Acá queda como la propiedad que es, con la comparación que la distingue:
+        `== 0.0`, no `<= 1e-9`.
+        """
+        # Hace falta un mercado **irregular**: sobre una curva suave la división
+        # `riqueza / mercado` da exacta por casualidad y el recorte no se nota.
+        # El residuo vive donde los valores no son redondos, que es todo mercado
+        # real. Semilla fija — nada de `hash()`, que está aleatorizado por proceso.
+        rng = np.random.default_rng(0)
+        n_weeks = 20 * 52
+        market = np.cumprod(1 + rng.normal(0.001, 0.02, size=(200, n_weeks)), axis=1)
+        market = np.concatenate([np.ones((200, 1)), market], axis=1)
+
+        cadencia(12)
+        paths = apply_withdrawal_strategy(
+            market.copy(), 100_000.0,
+            WithdrawalStrategy.fixed_real(4_000.0), n_weeks, inflation_rate=0.03,
+        )
+
+        agotados = 0
+        for fila in paths:
+            muerto = fila <= 1e-9
+            if not muerto.any():
+                continue
+            agotados += 1
+            cola = fila[int(np.argmax(muerto)):]
+            assert np.all(cola == 0.0), (
+                f"tras agotarse el pozo quedó en {cola.max():.3g} en vez de cero "
+                f"exacto: hay un recorte defensivo donde debería estar el álgebra"
+            )
+        assert agotados > 0, "el escenario dejó de agotar pozos"
+
+    def test_la_cadencia_que_se_shipea_es_mensual(self):
+        """Un jubilado gasta todos los meses. Si alguien vuelve a poner 1 por
+        defecto, que sea un acto consciente y no un merge."""
+        assert MONTE_CARLO.withdrawal_periods_per_year == 12
+
     def test_un_pozo_inicial_de_cero_sigue_siendo_degenerado(self, cadencia):
         cadencia(12)
         market = _mercado(52 * 5)
