@@ -10,6 +10,56 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U5-4 — Un REIT juzgado con bandas de REIT (2026-08-28)
+
+U2-6 arregló **qué** payout se le juzga a un REIT —FFO, no ganancias contables— y
+dejó los umbrales a propósito, diciéndolo en `config.py`: *"REIT-specific bands are
+U5-4's call, not this one's."* Esta es esa decisión.
+
+**Payout.** Bandas de 40 % (excelente) y 75 % (sostenible) son números de empresa
+industrial. Un REIT distribuye más del 90 % de su renta gravable **por ley** y lo
+paga desde el FFO, así que ≤40 % no es raro: es estructuralmente imposible.
+Ninguno de los 13 REITs cacheados alcanzaba la banda superior (el más bajo es
+49 %), y cuatro recibían el aviso *"puede cortar el dividendo"* con payouts
+ordinarios sobre FFO — O 82 %, EXR 81 %, PSA y WPC 78 %. Las bandas de REIT son
+**70/90**, ancladas en lo que la obligación de distribuir hace posible. Son una
+elección de calibración, no un hallazgo empírico, y config lo dice.
+
+**PEG.** El feed lo construye sobre ganancias contables, que la depreciación
+deprime — el mismo error de categoría que P/E vs P/FFO ya había corregido. Las
+lecturas son artefactos: **PLD 128,04**, EQR 16,1, DLR 13,9. Los REITs promediaban
+**0,5 de 7 puntos contra 2,3** del resto. Ahora no se puntúa, y se nombra
+*inaplicable* en vez de *faltante*, porque "no lo buscamos" y "esto no mide nada"
+son afirmaciones distintas. Construir un múltiplo ajustado por crecimiento sobre
+P/FFO requeriría una serie de crecimiento de FFO y una calibración que este
+proyecto todavía no puede fundar — la misma razón que `company_type` da para no
+shipear un scorer bancario.
+
+**Alcance medido sobre 164 tickers: se mueven exactamente 13 scores, y son
+exactamente los 13 REITs.** Cuatro señales cambian, **en las dos direcciones**:
+
+| ticker | score | señal |
+|---|---:|---|
+| O | 66,0 → 68,0 | HOLD → **BUY** |
+| WELL | 67,5 → 68,5 | HOLD → **BUY** |
+| PSA | 54,7 → 56,7 | REDUCE → **HOLD** |
+| WPC | 55,5 → **53,5** | HOLD → **REDUCE** |
+| AMT | 73,5 → **72,5** | (pierde 2 puntos de PEG que cobraba sobre un artefacto) |
+
+WPC y AMT **bajan**: eran los dos únicos que cobraban puntos de PEG, y esos puntos
+estaban construidos sobre ganancias deprimidas. Esto no es un regalo a los REITs.
+
+**El invariante de U2-6 se preserva, no se debilita:** la dimensión de dividendos y
+el riesgo *"may cut dividend"* siguen leyendo un solo número, y ahora los dos lo
+obtienen de `max_payout_for(basis)`. Cuatro de sus tests afirmaban ese invariante a
+través de un corte literal único; ahora lo afirman a través del corte de FFO, y uno
+—que elegía 78 % justamente por estar entre el corte de config y el literal viejo—
+se reescribió para decir lo que ahora es cierto: 78 % sobre FFO es normal, 92 % no.
+
+Contrato: `tests/test_reit_bands_oracle.py`.
+
+---
+
 ## U5-5 — Un ratio que un banco no puede tener no le falta (2026-08-28)
 
 `_QUALITY_KEY_FIELDS` le exigía `debt_equity` y `current_ratio` a toda empresa, sin
