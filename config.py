@@ -449,6 +449,10 @@ class PiotroskiConfig:
     strong_threshold: int = 7
     bonus_strong: float = 12.0
     bonus_good: float = 6.0
+    #: F6 tolerance: share growth up to this % is not counted as dilution. Was a
+    #: literal ``1.02`` inside the check (U5-3); it belongs with the other
+    #: Piotroski cuts so the signal can be tuned without editing the formula.
+    max_dilution_pct: float = 2.0
 
 
 @dataclass
