@@ -10,6 +10,46 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U5-16 — El descuento ARS se aplica por país, no por lista (2026-08-29)
+
+`optimizer.py` tenía `_ARS_TICKERS = {YPF, PAM, CEPU, LOMA, TEO, EDN}` como literal,
+y toda optimización conservadora o moderada multiplicaba esos seis scores por
+`ars_risk_discount`.
+
+**Medido sobre los 167 tickers de los universos shipeados, esa lista es exactamente
+el conjunto que el feed marca `country == "Argentina"`.** O sea que estaba bien — y
+bien **por coincidencia**, no por construcción. Esta fila no era un error de puntaje
+vivo, y queda dicho así en vez de insinuar lo contrario: los mismos seis se
+descuentan antes y después, verificado.
+
+**Fallaba en la única población que no podía enumerar.** Los `custom_tickers` se
+mergean al universo efectivo, así que un usuario que agregara GGAL, BMA, SUPV, BBAR,
+TGS, CRESY o IRS —ninguno shipea en ningún universo— no recibía descuento alguno, y
+el riesgo macro no distingue quién tipeó el símbolo. Los siete quedan alcanzados.
+
+Y una lista mantenida a mano contra un campo que ya existe es **un mecanismo de
+más**: `info["country"]` es lo que reporta el feed, y U3-8 ya había atado la tasa
+impositiva a él dos filas atrás. *"A qué país está expuesta esta empresa"* pasa a
+tener una sola respuesta en el repo.
+
+Llegar ahí exigió que el país efectivamente **llegara**: `FundamentalResult` tenía
+`sector` e `industry` pero no `country`, así que las filas del optimizer nunca lo
+llevaban. Ahora sí, poblado donde se pobla el sector.
+
+**Una fila sin país no se asume expuesta.** Desconocido no es Argentina — la misma
+regla que U3-1 aplicó a una media móvil ausente.
+
+El descuento en sí no se toca: su tamaño, su perilla de config y la exención del
+perfil agresivo siguen igual, cada uno con su test.
+
+Tres tests de `test_optimizer.py` declaraban *"YPF es argentina"* **por el símbolo**,
+que es justo lo que dejó de determinar la exposición. Su sujeto no cambió, así que la
+fixture ahora lleva un país, que es la forma honesta de decirlo.
+
+Contrato: `tests/test_ars_discount_oracle.py`.
+
+---
+
 ## U5-14 — La deriva es desconocida si el plan no se pudo cotizar entero (2026-08-29)
 
 U2-3 le había dado esta regla al detector de alertas, con estas palabras:

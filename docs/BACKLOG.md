@@ -54,10 +54,10 @@ una, con oráculos empíricos donde el hallazgo lo permitía.
 |---|---|---|---|
 | 3 — fórmulas con blast radius | 11 | 10 | 1 |
 | 4 — flujos del motor | 4 | 2 | 2 |
-| 5 — scoring y config | 20 | 8 | 12 |
+| 5 — scoring y config | 20 | 9 | 11 |
 | 6 — dos motores de retorno | 2 | 0 | 2 |
 | 7 — UX del dashboard | 2 | 0 | 2 |
-| **Total** | **39** | **20** | **19** |
+| **Total** | **39** | **21** | **18** |
 
 Cerradas: **U3-6** (`a5a63d9`), **U3-11** (`00fb551`, oráculo: sin `payoutRatio` ni
 FFO el score es 4.0 exacto), **U5-20** (`d86f8e9`), **U4-2** y **U4-1** (`9f05443`,
@@ -74,7 +74,8 @@ de Graham: `g` por acción, V con `g = 0`, y la tasa `Y` nombrada como proxy),
 **U5-4** (`ecb704c`, un REIT juzgado con bandas de REIT),
 **U5-12** (`41ab106`, la curva del tracker cubre lo que se tuvo y el retorno dice
 qué es), **U5-14** (`4dc8fc9`, la deriva es desconocida si el plan no se pudo
-cotizar entero).
+cotizar entero), **U5-16** (`e7bf84e`, el descuento ARS se aplica por país, no
+por lista).
 Fuera de las oleadas 3–7,
 **U0-2** también cerró — ver `ROADMAP.md`.
 
@@ -117,7 +118,6 @@ Nada de acá miente sobre lo que calcula; todo está mal calibrado o mal alcanza
 
 | id | sev | qué | evidencia |
 |---|---|---|---|
-| **U5-16** | P1 | `_ARS_TICKERS = {YPF, PAM, CEPU, LOMA, TEO, EDN}` literal en el módulo; faltan GGAL, BMA, SUPV, BBAR, TGS, CRESY, IRS y cualquier custom | `optimizer.py:45` |
 | **U5-1** | P1 | Piotroski paga `bonus_strong = 12.0` como si fuera calidad de retiro | `config.py:393` |
 | **U5-17** | P2 | El bootstrap nunca sortea la última observación. Oráculo: T=100, BLOCK_SIZE=4 → índice más alto alcanzable **98** | `monte_carlo.py:613` |
 | **U5-2** | P2 | F4 usa `<` estricto: LTD=0 en ambos años da `0 < 0 = False` → fail | `scoring.py:301` |
