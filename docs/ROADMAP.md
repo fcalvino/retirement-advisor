@@ -10,6 +10,45 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U5-17 — El bootstrap alcanza la observación más reciente (2026-08-29)
+
+`_simulate_paths` sorteaba los inicios de bloque con
+`rng.integers(0, T - block_size)`. `integers` **excluye** su cota superior, así que
+los inicios se detenían en `T - block_size - 1` y ningún bloque podía llegar a la
+última barra. La observación que el modelo más obviamente debería usar —la más
+nueva— era la única que nunca usaba.
+
+Y no era sólo la última. La cobertura decaía en toda la cola (1, 2, 3, …, 3, 2, 1,
+**0**) mientras la cabeza sube simétricamente desde 1, así que la ventana quedaba
+**asimétrica sin razón**. El arreglo devuelve la simetría que un block bootstrap no
+circular debería tener: la primera barra la alcanza un solo inicio, y ahora la
+última también.
+
+**Medirlo requirió cuidado.** Mover la cota superior cambia qué valores sortea el
+*mismo* seed, así que una comparación antes/después no distingue un sesgo
+sistemático de una re-aleatorización. Sobre doce semillas por ticker, la dirección
+sigue a si las últimas semanas corrieron por encima o por debajo de la media propia
+de cada uno:
+
+| ticker | últimas 4 semanas | vs su media | la proyección estaba |
+|---|---:|---:|---|
+| **PFE** | +2,76 %/sem | +0,11 % | **6,96 % baja** |
+| KO | +0,66 %/sem | +0,23 % | 0,79 % baja |
+| INTC | +0,18 %/sem | +0,40 % | 0,73 % alta |
+
+PFE es el caso que importa: casi **siete por ciento** de una proyección de retiro
+perdido por un off-by-one, y perdido **hacia abajo** para una empresa cuyo tramo
+reciente fue el mejor que tuvo.
+
+`ENGINE_VERSION` → **`2026.08-tier4`**. Todo plan guardado se ajustó sobre una
+ventana a la que le faltaba su barra más nueva, y el aviso de staleness lo dice. Los
+dos tests de staleness **no** necesitaron edición: se hicieron relativos al
+changelog en tier3 justamente para que un tier nuevo no obligara a tocarlos.
+
+Contrato: `tests/test_bootstrap_coverage_oracle.py`.
+
+---
+
 ## U5-1 — El F-Score dice que mide cambio, no nivel (2026-08-29)
 
 El F-Score de Piotroski son nueve chequeos **año contra año** —¿es esta empresa más

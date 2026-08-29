@@ -159,13 +159,13 @@ def test_superseded_and_missing_engine_versions_are_stale():
     """
     from config import ENGINE_VERSION
 
-    assert ENGINE_VERSION == "2026.08-tier3"
+    assert ENGINE_VERSION == "2026.08-tier4"
 
     current = PlanSnapshot.from_session(name="actual", opt_result=_fake_opt_result())
     assert current.engine_version == ENGINE_VERSION
     assert not current.is_engine_stale()
 
-    for superseded in ("2026.08-tier0", "2026.08-tier1", "2026.08-tier2"):
+    for superseded in ("2026.08-tier0", "2026.08-tier1", "2026.08-tier2", "2026.08-tier3"):
         old = PlanSnapshot.from_session(name="viejo", opt_result=_fake_opt_result())
         old.engine_version = superseded
         assert old.is_engine_stale() is True
