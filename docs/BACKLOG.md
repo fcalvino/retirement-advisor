@@ -54,10 +54,10 @@ una, con oráculos empíricos donde el hallazgo lo permitía.
 |---|---|---|---|
 | 3 — fórmulas con blast radius | 11 | 10 | 1 |
 | 4 — flujos del motor | 4 | 2 | 2 |
-| 5 — scoring y config | 20 | 3 | 17 |
+| 5 — scoring y config | 20 | 4 | 16 |
 | 6 — dos motores de retorno | 2 | 0 | 2 |
 | 7 — UX del dashboard | 2 | 0 | 2 |
-| **Total** | **39** | **15** | **24** |
+| **Total** | **39** | **16** | **23** |
 
 Cerradas: **U3-6** (`a5a63d9`), **U3-11** (`00fb551`, oráculo: sin `payoutRatio` ni
 FFO el score es 4.0 exacto), **U5-20** (`d86f8e9`), **U4-2** y **U4-1** (`9f05443`,
@@ -68,7 +68,8 @@ un PR por la nota U4-1b; oráculos en `tests/test_cash_flow_oracle.py`), **U3-7*
 de Graham: `g` por acción, V con `g = 0`, y la tasa `Y` nombrada como proxy),
 **U3-8** (`28bab01`, un solo ROIC, con la tasa del país que grava),
 **U3-9 + U3-10** (`c2e7f6b`, cada ratio anclado en un solo año fiscal),
-**U5-15** (`070d2a8`, el horizonte anual dura un año y su banda escala con él).
+**U5-15** (`070d2a8`, el horizonte anual dura un año y su banda escala con él),
+**U5-13** (`ca72aa6`, el gap de capital en dólares de un solo año).
 Fuera de las oleadas 3–7,
 **U0-2** también cerró — ver `ROADMAP.md`.
 
@@ -102,14 +103,6 @@ siendo ordenarla con un número inventado.
 el MC, o una calibración explícita de `0.18` contra el universo — o declararlo
 ordinal y dejar de expresarlo en puntos porcentuales.
 **Cuidado:** blast radius sobre toda la asignación, no sólo sobre el ordenamiento.
-
-### U5-13 · `capital_gap` suma dólares de años distintos `P1`
-
-`goals.py:228` resta `median_terminal` (valor en el año N de **cada** meta, cada una
-con su propio N) de `total_capital_needed`. Sumar USD de 2031 con USD de 2046 y
-presentar el resultado como "te falta esto" no es una cifra.
-
-**Hacer:** traer todo a valor presente en una fecha, o no sumar.
 
 ---
 
