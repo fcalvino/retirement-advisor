@@ -34,6 +34,7 @@ from scipy.optimize import minimize
 
 from analysis.moat import classify_moat
 from config import (
+    ARS_RISK,
     OPTIMIZER,
     OPTIMIZER_PROFILES,
     TAILWINDS,
@@ -42,10 +43,25 @@ from config import (
 )
 from data.fetcher import get_history
 
-# Argentine ADR tickers (trade as USD ADRs, but carry ARS macro risk)
-_ARS_TICKERS = {"YPF", "PAM", "CEPU", "LOMA", "TEO", "EDN"}
 # ETF tickers — excluded from optimization (no fundamentals)
 _ETF_TICKERS = {"SPY", "QQQ", "VTI", "BND", "GLD", "SLV", "TLT", "IEF"}
+
+
+def is_ars_exposed(ticker: dict) -> bool:
+    """Whether a row carries the macro risk the ARS discount exists for.
+
+    U5-16: this was a literal set of six ADR symbols. Measured across the 167
+    tickers in the shipped universes that set was exactly the companies the feed
+    marks ``country == "Argentina"`` — right, but right by coincidence. It could
+    not reach the one population it was unable to enumerate: an Argentine ADR a
+    user adds through ``custom_tickers`` (GGAL, BMA, SUPV, BBAR, TGS, CRESY, IRS
+    — none of which ship) got no discount, and the macro risk does not care who
+    typed the symbol.
+
+    A row with no country is **not** assumed exposed: unknown is not Argentina.
+    """
+    country = str(ticker.get("country") or "").strip()
+    return bool(country) and country in tuple(ARS_RISK.exposed_countries)
 
 
 @dataclass
@@ -444,7 +460,7 @@ class PortfolioOptimizer:
         result = []
         for t in tickers:
             t = dict(t)
-            if t["symbol"] in _ARS_TICKERS:
+            if is_ars_exposed(t):
                 original = float(t.get("adjusted_score", 0) or 0)
                 t["adjusted_score"] = original * self.opt.ars_risk_discount
                 t["_ars_discounted"] = True
@@ -976,7 +992,7 @@ class PortfolioOptimizer:
                 moat_score=round(moat, 1),
                 sector=sector,
                 moat_classification=str(t.get("moat_classification", "") or ""),
-                is_ars=sym in _ARS_TICKERS,
+                is_ars=is_ars_exposed(t),
                 score_discounted=bool(t.get("_ars_discounted", False)),
                 tailwind_score=round(float(t.get("tailwind_score", 0.0) or 0.0), 1),
                 tailwind_classification=str(t.get("tailwind_classification", "Neutral") or "Neutral"),

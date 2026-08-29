@@ -16,13 +16,17 @@ from portfolio.optimizer import _ETF_TICKERS, OptimizationResult, PortfolioOptim
 #  Fixtures                                                            #
 # ------------------------------------------------------------------ #
 
-def _ticker(symbol: str, score: float = 65.0, div: float = 2.5, moat: float = 8.0, sector: str = "Technology") -> dict:
+def _ticker(symbol: str, score: float = 65.0, div: float = 2.5, moat: float = 8.0,
+            sector: str = "Technology", country: str = "United States") -> dict:
+    # U5-16: exposure to the ARS discount comes from ``country``, not from the
+    # symbol — a hardcoded list could not reach a ticker the user added by hand.
     return {
         "symbol": symbol,
         "adjusted_score": score,
         "dividend_yield": div,
         "moat_score": moat,
         "sector": sector,
+        "country": country,
     }
 
 
@@ -133,7 +137,8 @@ class TestFilterEligible:
 class TestArsDiscount:
     def test_ars_discount_applied_conservative(self):
         opt = PortfolioOptimizer("conservative")
-        tickers = [_ticker("YPF", score=70.0), _ticker("AAPL", score=70.0)]
+        tickers = [_ticker("YPF", score=70.0, country="Argentina"),
+                   _ticker("AAPL", score=70.0)]
         result = opt._apply_ars_discount(tickers)
         ypf = next(t for t in result if t["symbol"] == "YPF")
         aapl = next(t for t in result if t["symbol"] == "AAPL")
@@ -142,19 +147,19 @@ class TestArsDiscount:
 
     def test_ars_discount_applied_moderate(self):
         opt = PortfolioOptimizer("moderate")
-        tickers = [_ticker("PAM", score=60.0)]
+        tickers = [_ticker("PAM", score=60.0, country="Argentina")]
         result = opt._apply_ars_discount(tickers)
         assert result[0]["adjusted_score"] < 60.0
 
     def test_ars_discount_not_applied_aggressive(self):
         opt = PortfolioOptimizer("aggressive")
-        tickers = [_ticker("YPF", score=70.0)]
+        tickers = [_ticker("YPF", score=70.0, country="Argentina")]
         result = opt._apply_ars_discount(tickers)
         assert result[0]["adjusted_score"] == 70.0
 
     def test_discount_factor_matches_config(self):
         opt = PortfolioOptimizer("conservative")
-        tickers = [_ticker("YPF", score=100.0)]
+        tickers = [_ticker("YPF", score=100.0, country="Argentina")]
         result = opt._apply_ars_discount(tickers)
         expected = 100.0 * OPTIMIZER.ars_risk_discount
         assert abs(result[0]["adjusted_score"] - expected) < 0.01

@@ -486,6 +486,8 @@ if run_now or not has_valid_result:
                 "tailwind_score":          getattr(fund, "tailwind_score", 0.0),
                 "tailwind_classification": getattr(fund, "tailwind_classification", "Neutral"),
                 "sector":              fund.sector or "Unknown",
+                # U5-16: the ARS discount keys off this, not off a hardcoded list.
+                "country":             getattr(fund, "country", "") or "",
                 "company_name":        fund.company_name,
                 "data_quality_level":  (
                     (getattr(fund, "data_quality", None) or {}).get("level")
@@ -1328,6 +1330,8 @@ with tab_compare:
                     "tailwind_score":          getattr(fund, "tailwind_score", 0.0),
                     "tailwind_classification": getattr(fund, "tailwind_classification", "Neutral"),
                     "sector":              fund.sector or "Unknown",
+                # U5-16: the ARS discount keys off this, not off a hardcoded list.
+                "country":             getattr(fund, "country", "") or "",
                     "company_name":        fund.company_name,
                     "data_quality_level":  (
                         (getattr(fund, "data_quality", None) or {}).get("level")
