@@ -233,6 +233,8 @@ def compute_plan_vs_reality(
     rows: List[dict] = []
     weighted_delta_num = 0.0
     weighted_delta_den = 0.0
+    total_weight = 0.0
+    unpriced: List[str] = []
     n_priced = 0
     n_with_baseline = 0
     score_sum = 0.0
@@ -251,8 +253,11 @@ def compute_plan_vs_reality(
             logger.debug(f"plan refresh: price lookup failed for {sym} — {exc}")
             price_now = None
 
+        total_weight += weight
         if price_now is not None:
             n_priced += 1
+        else:
+            unpriced.append(sym)
 
         delta_pct: Optional[float] = None
         if price_then and price_then > 0 and price_now is not None:
@@ -276,9 +281,20 @@ def compute_plan_vs_reality(
 
     rows.sort(key=lambda r: r["weight_pct"], reverse=True)
 
+    # U5-14: the plan's move is unknown unless the whole plan could be priced.
+    # Dividing by the weight we managed to cover rescales the covered part to
+    # 100 %, and it does so in the reassuring direction: a 10 % holding that fell
+    # 40 % while unquotable turned a +1.2 % drift into +5.8 %. That is the same
+    # rule U2-3 already gave the alert detector — "an unpriced position is
+    # unknown, not 0 %" — applied to the other caller of this arithmetic.
+    #
+    # The rows below still carry every symbol and its blank price, so suppressing
+    # the aggregate hides nothing: it removes a number nobody could stand behind
+    # and leaves the evidence for why.
+    covered = weighted_delta_den >= total_weight - 1e-9
     weighted_delta = (
         round(weighted_delta_num / weighted_delta_den, 1)
-        if weighted_delta_den > 0 else None
+        if weighted_delta_den > 0 and covered else None
     )
     gainers = sum(1 for r in rows if r["delta_pct"] is not None and r["delta_pct"] > 0)
     losers = sum(1 for r in rows if r["delta_pct"] is not None and r["delta_pct"] < 0)
@@ -287,6 +303,8 @@ def compute_plan_vs_reality(
         "rows": rows,
         "summary": {
             "weighted_delta_pct": weighted_delta,
+            #: Symbols the lookup could not price — why the drift may be None.
+            "unpriced": sorted(unpriced),
             "n_priced": n_priced,
             "n_total": len(items),
             "n_with_baseline": n_with_baseline,
