@@ -101,27 +101,20 @@ equivocada. Ver `ROADMAP.md`.
 
 ## Bloque 2 — Números que cambian una decisión de compra
 
-### U6-1 · El proxy de retorno del optimizer no está anclado a nada `P1`
+**Vacío.** **U6-1** cerró el 2026-08-29. La fila llamaba «inventado» al proxy del
+optimizer; medido sobre 149 equities, resultó ser lo contrario de inventado y
+peor de lo que decía a la vez: el score **sí** predice el CAGR (p < 0,0001, con
+intercepto −1,43 %, o sea el cero que el motor asume), pero μ no tiene relación
+con el único retorno observable que el motor calcula (correlación **+0,025** con
+el drift del Monte Carlo) y su R² de 0,116 no sostiene el «7,2 % anual» que se
+mostraba. Se cerró por el rótulo: μ queda intacto y el proxy pasa a presentarse
+como índice 0–100. **Recalibrar el `0.18` quedó descartado con evidencia**, no
+por criterio — ver `ROADMAP.md`.
 
-**U5-6 cerró** (`4395455`): el moat ya no se paga dos veces en μ. Queda la mitad
-estructural, que es la que da nombre a la fila: hay **dos motores de retorno** —
-el proxy del optimizer (`score/100 × 0.18` más el dividendo, acotado por
-`er_absolute_cap`) y el del Monte Carlo (historia semanal + haircut del 20 %) — y
-el primero no está atado al segundo ni a nada observable. Que el score de un
-ticker sea 80 no dice que su **atractivo estimado (proxy del optimizer)** sea
-7,2 %; lo dice la constante `0.18`, que nadie calibró contra nada.
-
-Hoy los dos números conviven en la misma pantalla con nombres distintos (U1-1/U1-2
-dejó «Atractivo estimado (proxy)» para uno y «retorno histórico» para el otro), así
-que al menos no se confunden. Pero ordenar una cartera con un proxy inventado sigue
-siendo ordenarla con un número inventado.
-
-**Hacer:** anclar el proxy a algo verificable — el retorno histórico que ya calcula
-el MC, o una calibración explícita de `0.18` contra el universo — o declararlo
-ordinal y dejar de expresarlo en puntos porcentuales.
-**Cuidado:** blast radius sobre toda la asignación, no sólo sobre el ordenamiento.
-
----
+Queda anotado lo que deliberadamente **no** hizo: `er_absolute_cap` sigue en 0,14
+y nadie lo calibró tampoco. Hoy casi no muerde (1 ticker de 150), así que no es
+urgente; si alguna vez se sube el span, el cap pasa a ser la restricción que
+manda y hay que mirarlo. `tests/test_proxy_ordinal_oracle.py` falla si eso pasa.
 
 ## Bloque 3 — Scoring calibrado sobre supuestos falsos
 

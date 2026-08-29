@@ -22,15 +22,23 @@ from dashboard.shared import (
 from data.preferences import UserPreferences
 from data.product_ux import (
     MAX_DD_ESTIMATE_LABEL,
+    PROXY_INDEX_LABEL,
     PROXY_RATIO_HELP,
     PROXY_RATIO_LABEL,
     PROXY_RETURN_HELP,
-    PROXY_RETURN_LABEL,
     max_dd_estimate_help,
+    proxy_attractiveness_index,
 )
 from data.universe_loader import UNIVERSE_META, list_universes, load_universe
 from portfolio.optimizer import PortfolioOptimizer
 from portfolio.tracker import Portfolio
+
+
+def _fmt_idx(expected_return_pct) -> str:
+    """El proxy como índice 0–100 (U6-1). «—» cuando no hay optimización corrida:
+    un plan sin correr no tiene atractivo 0, no tiene atractivo."""
+    idx = proxy_attractiveness_index(expected_return_pct)
+    return "—" if idx is None else f"{idx:.0f}"
 
 # ------------------------------------------------------------------ #
 #  Constants                                                           #
@@ -593,7 +601,7 @@ for w in result.warnings:
 st.markdown(
     f"#### 🎯 En una frase\n"
     f"Esta cartera **{result.profile_name}** tiene un atractivo estimado de "
-    f"**~{result.expected_return_pct:.1f}% anual** (proxy de score, no un pronóstico) "
+    f"**{_fmt_idx(result.expected_return_pct)} de atractivo** (índice relativo 0–100, no una tasa) "
     f"asumiendo una volatilidad de "
     f"**~{result.volatility_pct:.1f}%** (cuánto puede subir y bajar en el camino). "
     f"El detalle de pesos, métricas y cumplimiento de límites está más abajo."
@@ -714,7 +722,7 @@ mc1.metric(
     help="Promedio ponderado del Score Ajustado (fundamentals + moat + dividendo) de todos los activos.",
 )
 mc2.metric(
-    PROXY_RETURN_LABEL, f"{result.expected_return_pct:.1f}%",
+    PROXY_INDEX_LABEL, _fmt_idx(result.expected_return_pct),
     help=(
         PROXY_RETURN_HELP
         + " Desde agosto 2026 este número ya no depende del perfil de riesgo elegido."
@@ -1045,7 +1053,7 @@ with tab_metrics:
 | Métrica | Valor |
 |---|---|
 | Universo | **{_display_universe}** |
-| Atractivo estimado (proxy) | **{result.expected_return_pct:.1f}%** anual |
+| {PROXY_INDEX_LABEL} | **{_fmt_idx(result.expected_return_pct)}** |
 | Volatilidad | **{result.volatility_pct:.1f}%** anual |
 | Ratio atractivo/vol | **{result.sharpe_ratio:.2f}** |
 | {MAX_DD_ESTIMATE_LABEL} | **{_dd_str}** (1 año) |

@@ -183,9 +183,13 @@ def test_canonical_labels_are_defined_once_and_carry_their_qualifier():
 
 
 def test_plan_pdf_and_prompts_use_the_canonical_return_label():
+    """U6-1 movió el vocabulario del proxy de «Atractivo estimado (proxy)» —que
+    se renderizaba en puntos porcentuales— a «Índice de atractivo (0–100)». Lo
+    que este contrato exige no cambió: que la superficie use la constante
+    canónica y no un string suelto. Cambió cuál es la constante."""
     plan = _src("dashboard/pages/12_Plan.py")
     assert '"Retorno esp."' not in plan
-    assert "PROXY_RETURN_SHORT" in plan
+    assert "PROXY_INDEX_SHORT" in plan
 
     ux = _src("data/product_ux.py")
     assert '"Retorno esperado %"' not in ux
@@ -195,7 +199,7 @@ def test_plan_pdf_and_prompts_use_the_canonical_return_label():
                 "analysis/committee_prompts.py"):
         src = _src(rel)
         assert (
-            "atractivo estimado" in src.lower() or "PROXY_RETURN_LABEL" in src
+            "índice de atractivo" in src.lower() or "PROXY_INDEX_LABEL" in src
         ), rel
 
 

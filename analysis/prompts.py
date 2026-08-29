@@ -29,10 +29,11 @@ from typing import Optional
 from data.product_ux import (
     GUARDRAILS_OMISSIONS,
     MAX_DD_ESTIMATE_SHORT,
+    PROXY_INDEX_LABEL,
     PROXY_RATIO_LABEL,
-    PROXY_RETURN_LABEL,
     TREND_MA_LABEL,
     max_dd_estimate_help,
+    proxy_attractiveness_index,
 )
 
 # Argentine ADR tickers — used by equity_decision_prompt (and helpers) for country context
@@ -851,7 +852,7 @@ IDIOMA OBLIGATORIO: Responde SIEMPRE en español. Toda la narrativa, explicacion
 
 **PORTAFOLIO ACTUAL (perfil {profile_name})**
 Activos: {holdings_str}
-{PROXY_RETURN_LABEL}: {expected_return:.1f}% | Volatilidad: {volatility:.1f}% | {PROXY_RATIO_LABEL}: {sharpe:.2f}
+{PROXY_INDEX_LABEL}: {proxy_attractiveness_index(expected_return):.0f} | Volatilidad: {volatility:.1f}% | {PROXY_RATIO_LABEL}: {sharpe:.2f}
 Dividend Yield: {dividend_yield:.1f}%
 
 **PARÁMETROS DE LA SIMULACIÓN MONTE CARLO (block bootstrap 10 años historia real + ajustes conservadores)**
@@ -983,7 +984,7 @@ Rebalance rationale (actual): {rebalance_rationale or "N/D"}
 Alertas/warnings: {warn_str}
 
 **MÉTRICAS DE LA CARTERA OPTIMIZADA (matemática completa)**
-{PROXY_RETURN_LABEL}: {expected_return_pct:.1f}% — proxy de score + dividendo + moat, no un pronóstico de retorno
+{PROXY_INDEX_LABEL}: {proxy_attractiveness_index(expected_return_pct):.0f} — índice relativo de score + dividendo. NO es una tasa: no se capitaliza ni se compara contra un rendimiento
 Volatilidad: {volatility_pct:.1f}%
 {PROXY_RATIO_LABEL}: {sharpe:.2f} — (atractivo − tasa libre de riesgo) / volatilidad histórica, no es un Sharpe
 Div Yield: {dividend_yield_pct:.2f}%
@@ -1245,7 +1246,7 @@ Estás explicando un **plan de retiro guardado** llamado «{plan_name}» (perfil
 Sectores: {sect_str}
 
 **MÉTRICAS DEL PLAN**
-{PROXY_RETURN_LABEL} {float(metrics.get('expected_return_pct', 0)):.1f}% | Volatilidad {float(metrics.get('volatility_pct', 0)):.1f}% | {PROXY_RATIO_LABEL} {float(metrics.get('sharpe_ratio', 0)):.2f}
+{PROXY_INDEX_LABEL} {proxy_attractiveness_index(float(metrics.get('expected_return_pct', 0))):.0f} | Volatilidad {float(metrics.get('volatility_pct', 0)):.1f}% | {PROXY_RATIO_LABEL} {float(metrics.get('sharpe_ratio', 0)):.2f}
 Dividend yield {float(metrics.get('dividend_yield_pct', 0)):.2f}% | Score prom. {float(metrics.get('adjusted_score_avg', 0)):.0f}/100 | {MAX_DD_ESTIMATE_SHORT} {float(metrics.get('max_drawdown_estimate_pct', 0)):.1f}% ({max_dd_estimate_help()})
 
 **COLAS DE VIENTO ESTRUCTURALES SECTOR-PAÍS (curadas)**
