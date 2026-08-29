@@ -1416,6 +1416,17 @@ def decision_explanation(decision: Any, *, max_headline: int = 90) -> dict:
 
 #: kind → "number" | "progress" | "text". `format` follows printf conventions
 #: as Streamlit expects; `%%` renders a literal percent sign.
+#: What the F-Score is, on every surface that shows it (U5-1).
+PIOTROSKI_HELP = (
+    "F-Score de Piotroski (0–9): nueve chequeos **año contra año** — ¿es esta "
+    "empresa más rentable, menos endeudada y más eficiente **que el año pasado**?\n\n"
+    "Mide **cambio, no nivel**: una empresa mediocre que mejoró puntúa alto y una "
+    "excelente que se mantuvo igual puntúa bajo. Piotroski lo diseñó para separar "
+    "ganadores de perdedores entre acciones baratas en un horizonte de **1 año**, "
+    "no para juzgar si algo se puede tener veinte."
+)
+
+
 SCREENER_COLUMN_SPECS: Dict[str, Dict[str, Any]] = {
     "⭐":           {"kind": "text",     "help": "Está en tu watchlist. Se edita desde la barra lateral."},
     "Ticker":      {"kind": "text",     "help": "Símbolo. Tocá la fila para analizarlo."},
@@ -1432,7 +1443,7 @@ SCREENER_COLUMN_SPECS: Dict[str, Dict[str, Any]] = {
     "Consist./15": {"kind": "progress", "format": "%.1f", "min": 0, "max": 15,
                     "help": "Estabilidad histórica de ROE y márgenes (0–15)."},
     "Piotroski/9": {"kind": "progress", "format": "%d",   "min": 0, "max": 9,
-                    "help": "F-Score de Piotroski: 9 chequeos de salud contable (0–9)."},
+                    "help": PIOTROSKI_HELP},
     "Moat/20":     {"kind": "progress", "format": "%.1f", "min": 0, "max": 20,
                     "help": "Ventaja competitiva: cuantitativa (0–12) + IA (0–8)."},
     "Moat":        {"kind": "text",     "help": "Clasificación del foso: Wide / Narrow / Minimal / None."},

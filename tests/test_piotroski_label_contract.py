@@ -51,6 +51,15 @@ _QUALIFIER_RE = re.compile(
     r"yoy|year-over-year|año contra año|interanual|mejora|improvement|cambio", re.IGNORECASE
 )
 
+#: Only lines that DESCRIBE the score are guarded — not the many that merely name
+#: it. "Piotroski" is also a dict key, a dataclass, a field and an import, and a
+#: guard that demanded "año contra año" beside every one of those would force the
+#: qualifier into places it means nothing. What is being protected is the claim a
+#: reader takes away, so the trigger is a line calling it health or quality.
+_DESCRIBES_RE = re.compile(
+    r"salud|calidad|health|quality|chequeos|checks|mide|measures", re.IGNORECASE
+)
+
 _WINDOW = 2
 
 
@@ -74,10 +83,7 @@ def _offenders(paths: list[str]) -> list[str]:
     for rel in paths:
         lines = _src(rel).splitlines()
         for n, line in enumerate(lines):
-            if not _PIOTROSKI_RE.search(line):
-                continue
-            # Only lines that *describe* it, not ones that merely name a column.
-            if not re.search(r"help|:\s*\"|'''|\"\"\"|#|—|:", line):
+            if not (_PIOTROSKI_RE.search(line) and _DESCRIBES_RE.search(line)):
                 continue
             window = "\n".join(lines[max(0, n - _WINDOW): n + _WINDOW + 1])
             if not _QUALIFIER_RE.search(window):

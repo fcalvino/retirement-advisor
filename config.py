@@ -418,6 +418,27 @@ class ConsistencyThresholds:
 
 @dataclass
 class PiotroskiConfig:
+    """Bonus paid for Piotroski's F-Score — nine year-over-year checks.
+
+    **These numbers are the open question of U5-1, and they are unchanged.** The
+    comparison is written down here so whoever calibrates them starts from it:
+
+        Piotroski   0–12   change vs last year, a 1-year value screen
+        moat        0–10   durable competitive advantage
+        consistency 0–15   multi-year stability of ROE / EPS / margins
+
+    The engine pays more for "improved since last year" than for "has a moat", in
+    a product for retirement holdings. Measured on the 150 cached equities, 31 %
+    collect ``bonus_strong`` and **24 cross the BUY threshold on this bonus
+    alone**.
+
+    Whether that is wrong is a calibration question, and this project cannot
+    ground it yet: ``recommendation_outcome`` holds 22 rows, all at the 30-day
+    horizon, and a one-year improvement signal cannot be judged on 30 days. U5-1
+    fixed what could be fixed without outcomes — the description, which called it
+    "salud contable" and read as a level (see ``product_ux.PIOTROSKI_HELP``).
+    """
+
     strong_threshold: int = 7
     bonus_strong: float = 12.0
     bonus_good: float = 6.0

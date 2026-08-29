@@ -6,7 +6,7 @@
 
 El Portfolio Optimizer construye una cartera óptima para retiro combinando tres dimensiones:
 
-1. **Score Ajustado** — calidad fundamental + consistencia + Piotroski + moat
+1. **Score Ajustado** — calidad fundamental + consistencia + Piotroski (mejora año contra año) + moat
 2. **Dividend Yield** — ingreso recurrente en USD
 3. **Moat Score** — ventaja competitiva duradera (0–20)
 
