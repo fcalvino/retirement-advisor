@@ -10,6 +10,52 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## N1 — El oficial sale del mercado, el paralelo lo pone el usuario (2026-08-29)
+
+U2-5 cerró la **conversión** y construyó el vocabulario de procedencia. N1 es de
+dónde salen los números — y las dos patas resultaron necesitar respuestas distintas.
+
+**El oficial es cotizable** como `ARS=X` a través de la dependencia que el proyecto
+ya carga. Estaba en **1.000 pesos/USD inventados contra 1.512 reales** —51 % abajo—
+simplemente porque nadie lo había cableado. `usd_ars_quote` pasa por `get_history`,
+así que comparte caché, TTL y manejo de fallas con todos los demás precios, en vez
+de agregar una segunda forma de hablarle al mismo feed.
+
+**El paralelo no tiene fuente gratuita**, así que es el número del usuario: un campo
+en `UserPreferences`, un input en Settings, fechado al guardar y etiquetado como
+suyo. Eso además vuelve alcanzable el `manual` que config tenía en su vocabulario y
+que nada en el producto podía producir.
+
+La procedencia pasa a ser **por pata**. `source_oficial` y `source_parallel`
+responden por separado, así que la UI puede decir *"oficial del mercado al 28,
+paralelo lo pusiste vos"*. `rate_source` se conserva para las superficies que ya lo
+leen y reporta **la pata más débil**, porque un par está tan respaldado como su
+mitad menos respaldada.
+
+### La regla que sostiene todo
+
+**La brecha exige que las dos patas tengan origen.** Un oficial de mercado contra un
+paralelo placeholder es un número real menos uno inventado — el mismo defecto con
+medio disfraz, y el que este diseño podía introducir más fácilmente.
+
+Y al escribir el test apareció que **ya estaba vivo**: `test_c_c` seteaba sólo
+`USD_ARS_OFICIAL` y afirmaba que la config leía `"env"` con `is_placeholder` en
+False, así que un oficial real de 1450 se comparaba contra un paralelo inventado de
+1200 y **la brecha se mostraba**. Ese test fijaba el medio disfraz; su sujeto —la
+config sabe de dónde salieron sus tasas— sobrevive y ahora sabe más.
+
+Una cotización fallida o no positiva cae al placeholder y lo dice. Inventar
+frescura sería peor que admitir que no la hay, porque una etiqueta `market`
+fabricada es exactamente lo que destraba la brecha.
+
+**Verificado de punta a punta contra la cotización viva:** sin nada cargado → sin
+brecha; oficial de mercado sin paralelo → **sigue** sin brecha; las dos con origen →
++15,7 % con cada pata nombrada.
+
+Contrato: `tests/test_ar_fx_provenance_oracle.py`.
+
+---
+
 ## U5-2 + U5-3 — Dos señales del Piotroski que respondían otra pregunta (2026-08-29)
 
 Las dos eran **latentes** y se cerraron antes de dejar de serlo. Verificado contra

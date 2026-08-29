@@ -1855,28 +1855,51 @@ class ArFxConfig:
     usd_ars_parallel: float = field(
         default_factory=lambda: _rate_or("USD_ARS_PARALLEL", AR_FX_PLACEHOLDER_PARALLEL)
     )
-    # Resolved in __post_init__ when left empty; pass a value to override.
+    # Per-leg provenance (N1). The two legs have different answers: the official
+    # rate is quotable through the dependency the project already has (``ARS=X``),
+    # the parallel one has no free feed and is the user's number. A single label
+    # could not say "official from the market this morning, parallel is what you
+    # typed", which is the sentence the UI needs.
+    #   placeholder — the invented default, never a quote
+    #   env         — the operator exported USD_ARS_*
+    #   manual      — a person entered it
+    #   market      — fetched and dated
+    source_oficial: str = ""
+    source_parallel: str = ""
+    # Resolved in __post_init__ when left empty; pass a value to override. Kept
+    # because existing surfaces read it: it reports the WEAKER of the two legs,
+    # since a pair is only as sourced as its least sourced half.
     rate_source: str = ""
     # Free-form "as of" for the rates (env USD_ARS_ASOF). Empty = unknown.
     rate_asof: str = field(default_factory=lambda: os.getenv("USD_ARS_ASOF", ""))
 
+    #: Weakest first — ``rate_source`` reports the least sourced leg.
+    _SOURCE_RANK = ("placeholder", "env", "manual", "market")
+
     def __post_init__(self) -> None:
-        if self.rate_source:
-            return
         env_of, env_par = _env_rate("USD_ARS_OFICIAL"), _env_rate("USD_ARS_PARALLEL")
-        # What the environment (or, failing that, the placeholders) would have
-        # produced. The label has to describe the values actually held, so a
-        # caller passing its own rates reads "manual" even under a set env.
-        from_env = (
-            AR_FX_PLACEHOLDER_OFICIAL if env_of is None else env_of,
-            AR_FX_PLACEHOLDER_PARALLEL if env_par is None else env_par,
-        )
-        if (float(self.usd_ars_oficial), float(self.usd_ars_parallel)) != from_env:
-            self.rate_source = "manual"
-        elif env_of is not None or env_par is not None:
-            self.rate_source = "env"
-        else:
-            self.rate_source = "placeholder"
+
+        def _leg(value: float, env_value, placeholder: float) -> str:
+            if float(value) != (placeholder if env_value is None else env_value):
+                return "manual"
+            return "placeholder" if env_value is None else "env"
+
+        if not self.source_oficial:
+            self.source_oficial = _leg(
+                self.usd_ars_oficial, env_of, AR_FX_PLACEHOLDER_OFICIAL
+            )
+        if not self.source_parallel:
+            self.source_parallel = _leg(
+                self.usd_ars_parallel, env_par, AR_FX_PLACEHOLDER_PARALLEL
+            )
+        if not self.rate_source:
+            self.rate_source = min(
+                (self.source_oficial, self.source_parallel),
+                key=lambda s: self._SOURCE_RANK.index(s)
+                if s in self._SOURCE_RANK else 0,
+            )
+        return
+
 
     @property
     def is_placeholder(self) -> bool:
@@ -1957,5 +1980,51 @@ COMMITTEE = CommitteeConfig()
 MULTI_SOURCE = MultiSourceConfig()
 MACRO_RAG = MacroRagConfig()
 CHAT = ChatConfig()
+def ar_fx_from_market(
+    *,
+    quote_lookup=None,
+    usd_ars_parallel: float = None,
+    parallel_asof: str = "",
+) -> "ArFxConfig":
+    """Build an :class:`ArFxConfig` with the official leg quoted, the parallel given.
+
+    N1. The official USD/ARS rate is quotable as ``ARS=X`` through the yfinance
+    dependency the project already carries, so leaving it at an invented 1 000
+    against a real 1 512 was a choice nobody made on purpose. The parallel rate
+    has no free feed, so it stays the user's number and is labelled as theirs.
+
+    ``quote_lookup(symbol) -> (rate, asof) | None`` is injected, which keeps this
+    testable offline and keeps ``config`` free of a network import.
+
+    **A lookup that fails or returns nonsense falls back to the placeholder and
+    says so.** Inventing freshness is worse than admitting there is none: the
+    brecha is withheld unless both legs are sourced, and a fabricated "market"
+    label would be exactly what unlocks it.
+    """
+    rate, asof = None, ""
+    if quote_lookup is not None:
+        try:
+            quoted = quote_lookup("ARS=X")
+        except Exception:
+            quoted = None
+        if quoted:
+            candidate, candidate_asof = quoted
+            if candidate and float(candidate) > 0:
+                rate, asof = float(candidate), str(candidate_asof or "")
+
+    kwargs = {}
+    if rate is not None:
+        kwargs.update(usd_ars_oficial=rate, source_oficial="market", rate_asof=asof)
+    else:
+        kwargs.update(source_oficial="placeholder")
+
+    if usd_ars_parallel is not None and float(usd_ars_parallel) > 0:
+        kwargs.update(usd_ars_parallel=float(usd_ars_parallel), source_parallel="manual")
+        if parallel_asof:
+            kwargs["rate_asof"] = (f"{asof} · paralelo {parallel_asof}" if asof
+                                   else f"paralelo {parallel_asof}")
+    return ArFxConfig(**kwargs)
+
+
 AR_FX = ArFxConfig()
 BLACK_LITTERMAN = BlackLittermanConfig()

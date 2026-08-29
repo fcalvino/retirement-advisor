@@ -230,11 +230,24 @@ def test_c_c_config_knows_where_its_rates_came_from(monkeypatch):
     # A caller passing its own rates is neither of the two.
     assert cfg.ArFxConfig(usd_ars_oficial=1100, usd_ars_parallel=1400).rate_source == "manual"
 
+    # N1: provenance is per leg, and the aggregate label reports the WEAKER one.
+    # Setting only the official rate used to make the whole config read "env",
+    # which showed a brecha between a real 1450 and an invented 1200 — one real
+    # number minus one made-up one. Each leg now answers for itself.
     monkeypatch.setenv("USD_ARS_OFICIAL", "1450")
     from_env = cfg.ArFxConfig()
-    assert from_env.rate_source == "env"
-    assert from_env.is_placeholder is False
+    assert from_env.source_oficial == "env"
     assert from_env.usd_ars_oficial == pytest.approx(1450.0)
+    assert from_env.source_parallel == "placeholder"
+    assert from_env.rate_source == "placeholder"
+    assert from_env.is_placeholder is True
+
+    # With both set, the pair is sourced and the brecha means something.
+    monkeypatch.setenv("USD_ARS_PARALLEL", "1800")
+    both = cfg.ArFxConfig()
+    assert both.rate_source == "env"
+    assert both.is_placeholder is False
+
     # ...and the label still describes the values held, not the environment.
     assert cfg.ArFxConfig(usd_ars_oficial=1100, usd_ars_parallel=1400).rate_source == "manual"
 
