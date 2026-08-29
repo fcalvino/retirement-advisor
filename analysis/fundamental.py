@@ -523,12 +523,39 @@ _QUALITY_KEY_FIELDS = (
 )
 
 
+#: Ratios that presuppose a working-capital structure. Absent from a
+#: deposit-taking bank's balance sheet not because the feed dropped them, but
+#: because the company does not have them (U5-5).
+_WORKING_CAPITAL_FIELDS = ("debt_equity", "current_ratio")
+
+
+def inapplicable_quality_fields(balance_sheet) -> tuple:
+    """Quality fields this company structurally cannot have.
+
+    The marker is the absence of ``Current Assets``, not an industry string —
+    the precedent ``_derive_debt_equity`` set and documented, because a label can
+    drift with how a feed spells things and a missing balance-sheet line cannot.
+    Measured on the cached universe it selects exactly the nine banks and nobody
+    else; insurers have no current assets either but do report ``debtToEquity``,
+    so they never reach this path.
+
+    An **absent** balance sheet marks nothing: not knowing is not the same as
+    knowing the ratio does not apply.
+    """
+    if balance_sheet is None or getattr(balance_sheet, "empty", True):
+        return ()
+    if "Current Assets" in balance_sheet.index:
+        return ()
+    return _WORKING_CAPITAL_FIELDS
+
+
 def compute_data_quality(
     result: "FundamentalResult",
     *,
     freshness_hours: Optional[float] = None,
     has_financials: bool = True,
     config=None,
+    not_applicable: tuple = (),
 ) -> Dict[str, Any]:
     """Assess how complete/fresh the underlying yfinance data is for a ticker.
 
@@ -568,7 +595,12 @@ def compute_data_quality(
             "warnings": warnings,
         }
 
-    missing = [f for f in _QUALITY_KEY_FIELDS if getattr(result, f, None) is None]
+    # U5-5: a field the company structurally cannot have is neither missing nor
+    # checked. Leaving it in the numerator spent a bank's whole tolerance on two
+    # phantoms; leaving it in the denominator would still tell the reader the app
+    # looked for something that was never there to find.
+    checked = [f for f in _QUALITY_KEY_FIELDS if f not in set(not_applicable)]
+    missing = [f for f in checked if getattr(result, f, None) is None]
     n_missing = len(missing)
 
     if not has_financials:
@@ -587,7 +619,7 @@ def compute_data_quality(
         "level": level,
         "missing_fields": missing,
         "n_missing": n_missing,
-        "n_checked": len(_QUALITY_KEY_FIELDS),
+        "n_checked": len(checked),
         "freshness_hours": round(freshness_hours, 1) if freshness_hours is not None else None,
         "stale": stale,
         "warnings": warnings,
@@ -815,6 +847,7 @@ class FundamentalAnalyzer:
             result,
             freshness_hours=get_info_age_hours(symbol),
             has_financials=bool(financials),
+            not_applicable=inapplicable_quality_fields(balance_sheet),
         )
         # Multi-source badge (P0.1): fold SEC/yfinance reconciliation into the
         # same data_quality dict. Best-effort; never rewrites scored metrics.

@@ -10,6 +10,50 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U5-5 — Un ratio que un banco no puede tener no le falta (2026-08-28)
+
+`_QUALITY_KEY_FIELDS` le exigía `debt_equity` y `current_ratio` a toda empresa, sin
+conciencia de qué clase de empresa era. Un banco que toma depósitos no tiene
+ninguno de los dos en el sentido que esas bandas suponen: no tiene estructura de
+capital de trabajo, y `Total Debt / Equity` omite los depósitos, que son su
+financiamiento principal.
+
+**Corrección al enunciado del backlog.** La fila decía *"un banco no puede alcanzar
+calidad de datos buena"*, y eso **no es lo que pasa**: 9 de los 11 bancos cacheados
+**sí** llegan a "good", porque `partial_missing_fields` es 3 y les faltan 2. El
+defecto real es más silencioso:
+
+- cada banco gastaba permanentemente **2 de sus 3 campos de tolerancia** en ratios
+  que estructuralmente no puede tener, así que **un solo hueco genuino lo tiraba a
+  "partial"** donde una industrial necesitaba tres. BSAC es el caso vivo —un
+  `revenue_cagr_5y` realmente ausente más los dos fantasmas— y es el único ticker
+  que este PR mueve: **partial → good**, listando ahora sólo el hueco que de verdad
+  tiene;
+- `missing_fields` se renderiza al usuario, así que la app le decía que a nueve
+  bancos les faltaban dos métricas cuando no les faltaba nada.
+
+**El marcador es estructural, no una etiqueta**: la ausencia de `Current Assets` en
+el balance. Es el precedente que `_derive_debt_equity` ya había fijado y
+documentado —*"a diferencia de un string de industria, no puede derivar según cómo
+lo escriba un feed"*— y sobre el universo cacheado selecciona exactamente a los
+nueve bancos y a nadie más. Las aseguradoras tampoco tienen activos corrientes pero
+sí reportan `debtToEquity`, así que nunca llegan a ese camino. Un balance
+**ausente** no marca nada: no saber no es lo mismo que saber que el ratio no aplica.
+
+Los campos exentos salen también del **denominador**. Dejarlos en `n_checked`
+seguiría diciéndole al lector que la app fue a buscar algo que nunca estuvo ahí.
+
+**Alcance medido sobre 164 tickers: 0 scores, 0 acciones y 0 confianzas se mueven.**
+El único cambio es el badge de BSAC. `data_quality` **sí** condiciona decisiones vía
+`apply_data_quality_policy`, así que valía verificarlo en vez de asumirlo.
+
+Esto **no** construye un scorer bancario: X-01 sigue fuera de alcance, y un test
+verifica que la exención nunca llegue a las dimensiones de puntaje.
+
+Contrato: `tests/test_bank_data_quality_oracle.py`.
+
+---
+
 ## U5-13 — El gap de capital, en dólares de un solo año (2026-08-28)
 
 `compute_aggregates` sumaba el `target_nominal` de cada meta —el monto necesario
