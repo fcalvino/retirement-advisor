@@ -645,11 +645,25 @@ def _suggested_book_structure(cfg: PersonalBookConfig) -> str:
 
 
 def _overall_concentration_justification(cfg: PersonalBookConfig) -> str:
-    w = cfg
+    """Cómo decide el sizer, dicho como decide de verdad (U5-11).
+
+    Esta frase anunciaba «Ponderación de la lógica de sizing: calidad+moat+
+    tailwind 45%, valoración+technical 20%, tu convicción 20%, contexto 15%».
+    No existe tal ponderación: ``_decide_sizing`` es una cascada de gates duros
+    —el primero que dispara decide— y los cuatro campos que interpolaba no los
+    leía ningún gate. Los ejes son reales; el reparto en porcentajes no lo era.
+    """
     return (
-        f"Ponderación de la lógica de sizing: calidad+moat+tailwind {w.weight_quality_moat_tailwind}%, "
-        f"valoración+technical {w.weight_valuation_technical}%, tu convicción {w.weight_user_conviction}%, "
-        f"contexto de tamaño+riesgo del libro {w.weight_book_context_risk}%. "
+        f"Cómo se decide el tamaño: no es un promedio ponderado sino una cascada — "
+        f"gana el primer criterio que dispara. Primero, si la tesis está rota "
+        f"(score < {cfg.sell_all_score:.0f} o moat 'None') se sale, sin importar el resto. "
+        f"Después, si el peso supera el techo práctico de "
+        f"{cfg.max_practical_concentration_single_name:.0f}% se reduce igual, sin importar la "
+        f"convicción declarada. Recién ahí se pregunta si el nombre es elegible para 'core', y "
+        f"eso exige las cuatro cosas a la vez: score ≥ "
+        f"{cfg.min_score_for_core_concentration:.0f}, moat Wide o Narrow, viento de cola o "
+        f"margen de seguridad, y convicción HIGH tuya — con datos que no sean de calidad pobre. "
+        f"Sólo entonces el peso actual elige entre acumular, holdear o recortar. "
         "Como libro personal individual (no fondo, hedge fund ni mandato institucional) tenés "
         "libertad de concentración extrema: sin límites por emisor, sin redenciones forzadas, sin "
         "comités de riesgo ni career risk. Esa libertad es tu ventaja competitiva — usala sólo "

@@ -254,16 +254,30 @@ class TestExpectedReturns:
 # ------------------------------------------------------------------ #
 
 class TestCleanDivYield:
+    """U5-10: the ceiling is ``THRESHOLDS.max_plausible_dividend_yield_pct``, the
+    same one ``normalize_dividend_yield_pct`` grades against. It used to be a
+    literal 15.0 here, 15 pp below the scorer's — so a 20 % yield was paid for in
+    the score and silently zeroed in μ."""
+
     @pytest.mark.parametrize("raw,expected", [
         (3.5, 3.5),
         (0.0, 0.0),
         (15.0, 15.0),
-        (15.1, 0.0),   # over cap
-        (50.0, 0.0),   # yfinance garbage
+        (15.1, 15.1),  # plausible for the scorer, so no longer dropped here
+        (30.0, 30.0),  # exactly the ceiling
+        (30.1, 0.0),   # over the ceiling
+        (50.0, 0.0),   # yfinance garbage (SCHD once reported "313%")
         (-1.0, 0.0),   # negative
     ])
     def test_capping(self, raw, expected):
         assert PortfolioOptimizer._clean_div_yield(raw) == expected
+
+    def test_the_ceiling_is_the_one_the_scorer_uses(self):
+        from config import THRESHOLDS
+
+        ceiling = THRESHOLDS.max_plausible_dividend_yield_pct
+        assert PortfolioOptimizer._clean_div_yield(ceiling) == ceiling
+        assert PortfolioOptimizer._clean_div_yield(ceiling + 0.1) == 0.0
 
 
 # ------------------------------------------------------------------ #

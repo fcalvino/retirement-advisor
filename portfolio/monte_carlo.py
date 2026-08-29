@@ -175,7 +175,6 @@ class MonteCarloSimulator:
               If None, equal-weight allocation is used.
     """
 
-    BLOCK_SIZE = 4          # weeks per bootstrap block
     HISTORY_PERIOD = "10y"  # how much price history to fetch
     PERCENTILES = [5, 10, 25, 50, 75, 90, 95]
 
@@ -196,6 +195,19 @@ class MonteCarloSimulator:
         # conservative adjustments (vol_adjustment, mean_haircut from config).
         self.vol_scale = vol_scale
         self.return_scale = return_scale
+
+    @property
+    def block_size(self) -> int:
+        """Weeks per bootstrap block, from config (U5-10).
+
+        This was a class constant ``BLOCK_SIZE = 4`` while
+        ``MONTE_CARLO.block_size_weeks = 4`` sat in config being read by nobody.
+        Same value, so nothing moved — but the config field looked like the knob
+        and editing it was a silent no-op, which is worse than not having one.
+        A property rather than a constant because config is mutated in-process
+        by the sensitivity lab and the measurement harness.
+        """
+        return int(MONTE_CARLO.block_size_weeks)
 
     # ------------------------------------------------------------------ #
     #  Public API                                                          #
@@ -663,7 +675,7 @@ class MonteCarloSimulator:
         """
         rng = rng if rng is not None else self._rng
         T = len(port_hist)
-        block_size = self.BLOCK_SIZE
+        block_size = self.block_size
         # U5-17: ``+ 1`` because ``rng.integers`` excludes its upper bound. Without
         # it starts stopped at ``T - block_size - 1``, so no block could reach the
         # last observation and the ones before it were drawn by fewer starts than

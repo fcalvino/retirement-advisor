@@ -38,6 +38,7 @@ from config import (
     OPTIMIZER,
     OPTIMIZER_PROFILES,
     TAILWINDS,
+    THRESHOLDS,
     VIEW_WEIGHTS,
     ProfileConfig,
 )
@@ -469,8 +470,20 @@ class PortfolioOptimizer:
 
     @staticmethod
     def _clean_div_yield(raw: float) -> float:
-        """Cap suspicious dividend yields — yfinance sometimes returns bad data (>15%)."""
-        return raw if 0 <= raw <= 15.0 else 0.0
+        """Drop implausible dividend yields — yfinance mixes units across its
+        dividend fields, so a "313 %" yield is a unit error, not an opportunity.
+
+        U5-10: the ceiling was a literal 15.0 here and
+        ``THRESHOLDS.max_plausible_dividend_yield_pct`` (30.0) in
+        ``normalize_dividend_yield_pct``. One question, two answers 15 pp apart:
+        a 20 % yield was scored by the fundamental engine and silently rewritten
+        to 0.0 by the optimizer, so the same company was paid for its dividend
+        in the score and not in μ. Both now read the same number, and the
+        scorer's is the one that survives — it is the one that *logs* the
+        discard instead of blanking the value without a trace.
+        """
+        ceiling = THRESHOLDS.max_plausible_dividend_yield_pct
+        return raw if 0 <= raw <= ceiling else 0.0
 
     # ------------------------------------------------------------------ #
     #  Profile-aware candidate selection (Fase C)                          #
@@ -653,7 +666,8 @@ class PortfolioOptimizer:
             tailwind = float(t.get("tailwind_score", 0) or 0)
 
             # Normalised components → annualised return proxies
-            score_ret = (score / 100) * 0.18        # max ~18% from score
+            span = self.opt.score_return_span        # U5-9: was a literal 0.18
+            score_ret = (score / 100) * span
             div_ret = div / 100                      # dividend yield as-is
 
             composite = (
@@ -661,7 +675,7 @@ class PortfolioOptimizer:
                 + views.dividend * div_ret
             )
             if TAILWINDS.enabled and tailwind != 0.0:
-                composite += TAILWINDS.optimizer_er_tilt * (tailwind / 10.0) * 0.18
+                composite += TAILWINDS.optimizer_er_tilt * (tailwind / 10.0) * span
             # P2 audit D4: hard ceiling so score-proxy μ stays economically plausible
             cap = float(getattr(self.opt, "er_absolute_cap", 0.0) or 0.0)
             if cap > 0:

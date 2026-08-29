@@ -1098,9 +1098,9 @@ class FundamentalAnalyzer:
 
         # Quick Ratio (3 pts)
         qr = _safe_float(info.get("quickRatio"))
-        if qr >= 1.5:
+        if qr >= T.min_quick_ratio_good:
             score += 3
-        elif qr >= 1.0:
+        elif qr >= T.min_quick_ratio_ok:
             score += 2
         elif qr > 0:
             score += 1
@@ -1411,9 +1411,9 @@ class FundamentalAnalyzer:
             fcf_latest = fcf_series.iloc[0]
             fcf_yield = fcf_latest / market_cap * 100
             result.fcf_yield = round(fcf_yield, 2)
-            if fcf_yield >= 4:
+            if fcf_yield >= T.fcf_yield_excellent:
                 score += 3
-            elif fcf_yield >= 2:
+            elif fcf_yield >= T.fcf_yield_good:
                 score += 2
             elif fcf_yield > 0:
                 score += 1

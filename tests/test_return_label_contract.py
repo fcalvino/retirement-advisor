@@ -108,7 +108,12 @@ def living_docs() -> list[str]:
 _RETURN_RE = re.compile(r"retorno esp|expected return", re.IGNORECASE)
 _QUALIFIER_RE = re.compile(r"proxy|atractivo|históric|historic", re.IGNORECASE)
 _SHARPE_RE = re.compile(r"Sharpe")
-_SHARPE_QUALIFIER_RE = re.compile(r"ratio|hist|realizad", re.IGNORECASE)
+#: ``realized`` alongside ``realizad``: the sweep covers ``config.py``, whose
+#: docstrings are in English, and "the realized Sharpe of the backtest" is the
+#: qualifier this contract asks for — it just was not spelled in Spanish. Both
+#: stems are listed in full rather than shortened to ``realiz``, which would let
+#: an unrelated "se realiza el cálculo" qualify a bare Sharpe by accident.
+_SHARPE_QUALIFIER_RE = re.compile(r"ratio|hist|realizad|realized", re.IGNORECASE)
 #: "Sharpe Ratio" must not qualify itself, and neither may the identifiers that
 #: hold the number (``sharpe_ratio``, ``sortino_ratio``): the qualifier has to be
 #: something a person reads ("ratio proxy", "histórico", "REALIZADO").

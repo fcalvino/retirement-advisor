@@ -10,6 +10,111 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U5-9 + U5-10 + U5-11 — Un número, una casa (2026-08-29)
+
+Tres filas del backlog, un solo defecto: config y código en desacuerdo sobre
+dónde vive un número. Se trabajaron juntas porque el arreglo de una destapa el
+terreno de la siguiente.
+
+### Lo primero fue verificar qué seguía vivo
+
+**U5-9 estaba vencida en más de la mitad.** Enumeraba ocho literales; cinco ya
+no existían, centralizados por filas posteriores que se trabajaron antes que
+ésta:
+
+| literal de U5-9 | estado real al abrirla |
+|---|---|
+| `0.21`/`0.79` del tax, `moat.py:626` | **cerrado** — U3-8 (`28bab01`): `TAXES.corporate_tax_rate_pct` + `analysis/utils.roic_pct`. `moat.py:626` ya no es el tax: es `roic_spread_good` |
+| F6 `1.02` | **cerrado** — U5-3 (`d1aba8f`): `PIOTROSKI.max_dilution_pct` |
+| MaxDD `1.5` | **cerrado** — U1-10: `OPTIMIZER.max_dd_vol_multiple` |
+| payout `80` | **cerrado** — U5-4 (`ecb704c`): `max_payout_ratio` / `reit_max_payout_ratio` |
+| `0.05` de μ | **cerrado** — es `TAILWINDS.optimizer_er_tilt` |
+| `0.18` de μ | vivo — `optimizer.py:656,664` |
+| quick `1.5`/`1.0` | vivo — `fundamental.py:1101,1103` |
+| FCF `4`/`2` | vivo — `fundamental.py:1414,1416` |
+
+Los tres vivos se mudaron 1:1 a `OPTIMIZER.score_return_span`,
+`THRESHOLDS.min_quick_ratio_good/_ok` y `THRESHOLDS.fcf_yield_excellent/_good`.
+**Cero tickers se mueven por esta parte.**
+
+### U5-10 fue la cara cara
+
+Las tres declaraciones de la tasa libre de riesgo seguían ahí, con las líneas
+corridas (402→463, 694→878, 491→663), en dos unidades y con dos valores.
+`config.RISK_FREE` las unifica en 4,5 % —el valor que dos de las tres ya
+usaban— y expone las dos unidades como vistas derivadas, porque el 100× que las
+separa es exactamente el error que comete una unificación a mano.
+
+**La fila decía que no movía un número. Movía dos cosas, y una fuerte.**
+
+1. El hurdle del spread de ROIC del moat sube 0,5 pp. Medido con
+   `scripts/measure_score_impact.py` sobre los 164 tickers cacheados contra un
+   baseline previo: **6 pierden entre 0,2 y 0,6 puntos** de `adjusted_score`
+   (VLO, NFLX, CLX, PFE, SPGI, DOV), **ninguna señal cambia**.
+2. **Los dos techos de yield.** «Este yield no puede ser real» valía 15 % en
+   `PortfolioOptimizer._clean_div_yield` y 30 % en el scorer. Un yield entre
+   ambos se puntuaba como bueno *y* se borraba de μ al mismo tiempo — la misma
+   empresa cobraba por su dividendo en el score y no en el atractivo. Dos
+   tickers del universo viven ahí:
+
+   | ticker | yield | μ antes | μ ahora |
+   |---|---:|---:|---:|
+   | ABEV | 24,70 % | 7,65 % | **14,00 %** (toca el cap) |
+   | BSBR | 18,55 % | 3,60 % | **9,16 %** |
+
+   Sobrevive el techo del scorer porque es el que **loguea** el descarte en vez
+   de blanquear el valor sin dejar rastro. Si 30 % resulta permisivo, ahora es
+   una línea de config.
+
+Dos vecinos de la misma fila:
+
+- `MONTE_CARLO.block_size_weeks` no lo leía nadie — el simulador usaba su propia
+  constante de clase `BLOCK_SIZE`, así que editar el campo de config era un
+  no-op silencioso. Ahora es una property que lee config; mismo valor, y el
+  Monte Carlo queda **byte-idéntico** (verificado por checksum de
+  `_simulate_paths` contra el código previo).
+- Los **dos caps de sector no se tocaron**: `THRESHOLDS.max_sector_pct` (higiene
+  de cartera, `allocation.py`) y `ProfileConfig.max_sector_pct` (constraint del
+  optimizer por perfil) miden cosas distintas y los dos se leen.
+
+`ENGINE_VERSION` → `2026.08-tier5`, con su entrada en `ENGINE_CHANGELOG`.
+
+### U5-11 fue la dirección contraria
+
+No un número sin casa, sino cuatro campos con casa que nadie visitaba.
+`weight_quality_moat_tailwind = 45` y sus tres hermanos se interpolaban en un
+f-string que la página de Portfolio le muestra al usuario como *«Ponderación de
+la lógica de sizing»*. `_decide_sizing` no pondera nada: es una cascada donde
+gana el primer gate que dispara. Medido antes de tocar nada — con los cuatro
+puestos en 90/5/3/2 las recomendaciones salían **idénticas**.
+
+Se borran en vez de ponerse en 0 (un 0 se lee como feature apagada, y no había
+feature) y la frase pasa a describir la cascada real. **Ningún número se mueve
+acá**: era una etiqueta que prometía una fórmula inexistente.
+
+### Los tests que se rompieron eran señal
+
+Cuatro, y los cuatro valían la pena:
+
+- `test_cost_of_equity_label_contract` atrapó que `COST_OF_EQUITY_HELP` tenía el
+  «4 %» escrito a mano — el mismo defecto, en la copy. Ahora lee `MOAT`.
+- `test_moat_roic` fijaba `Ke = 4 + erp` a mano. Se reescribió relativo al hurdle
+  que el motor reporta, que es lo que lo vuelve un test del spread y no una
+  segunda copia de la tasa.
+- `test_optimizer::TestCleanDivYield` fijaba el techo viejo de 15.
+- `test_return_label_contract` barrió `config.py` y encontró un «Sharpe» sin
+  calificar en el docstring nuevo. El calificador estaba, en inglés: se agregó
+  `realized` junto a `realizad`, ambos completos y no acortados a `realiz`, que
+  dejaría que un «se realiza el cálculo» calificara un Sharpe pelado.
+
+Oráculo: `tests/test_config_single_home_oracle.py`. Ninguno de sus tests grepea
+un literal — un arreglo que moviera el número a config y siguiera leyendo el
+literal pasaría un grep, así que cada test mueve la perilla y exige que la
+respuesta del motor se mueva con ella. Verificado por mutación: revertir cada
+uno de los siete arreglos mata su test.
+
+---
+
 ## N2 (mitad barata) — Todo fetch de red reintenta (2026-08-29)
 
 CONTEXT §8 arrastraba *"no hay retry automático"* como limitación conocida. Esa

@@ -47,7 +47,58 @@ DB_PATH = DB_DIR / "retirement_advisor.db"
 #                   newest bar; the size and sign of the error depend on how that
 #                   stretch compared with the ticker's own mean (measured: PFE
 #                   6.96 % low, INTC 0.73 % high).
-ENGINE_VERSION = "2026.08-tier4"
+#   2026.08-tier5 — U5-9/U5-10: dos números que el motor usaba dejaron de estar
+#                   escritos dos veces. (a) La tasa libre de riesgo era 4.0 en
+#                   MOAT y 4.5 en BACKTEST/OPTIMIZER; unificada en 4.5, el
+#                   hurdle del spread de ROIC sube 0.5 pp y 6 de 164 tickers
+#                   pierden entre 0.2 y 0.6 puntos de adjusted_score (ninguna
+#                   señal cambia). (b) El techo de "este yield no puede ser
+#                   real" era 15 % en el optimizer y 30 % en el scorer, así que
+#                   un yield entre ambos se puntuaba y se borraba de μ a la vez:
+#                   ABEV (24.7 %) pasa de μ 7.65 % a 14.00 % y BSBR (18.55 %)
+#                   de 3.60 % a 9.16 %. Los planes guardados bajo tier0-tier4
+#                   tienen asignaciones que descartaban ese dividendo.
+#                   El Monte Carlo es byte-idéntico (verificado por checksum).
+ENGINE_VERSION = "2026.08-tier5"
+
+
+@dataclass(frozen=True)
+class RiskFreeConfig:
+    """The annual risk-free rate — declared once, in both units (U5-10).
+
+    Three places used to declare this same quantity, in two units, with two
+    values that nobody chose:
+
+      * ``BacktestConfig.risk_free_rate = 0.045``  — the realized Sharpe of the
+        backtest, measured on an actual equity curve
+      * ``OptimizerConfig.risk_free_rate = 0.045`` — the attractiveness/vol ratio
+        (a proxy numerator over a historical denominator; never a Sharpe)
+      * ``MoatConfig.risk_free_proxy_pct = 4.0``   — the cost-of-equity hurdle
+        the ROIC spread is scored against (U1-4)
+
+    All three are "what a 10Y Treasury pays", so at most one of the two values
+    could be right, and the 50 bp gap between them was drift rather than a
+    decision — no comment, commit or doc ever defended the 4.0.
+
+    **Why both units live here instead of one.** The two spellings differ by
+    100×, which is exactly the mistake a hand-unification makes: a 4.5 % hurdle
+    silently becoming 450 %. Keeping ``annual_fraction`` and ``annual_pct`` as
+    two derived views of one number means a caller picks a unit rather than
+    performing a conversion, and the two can never disagree.
+
+    Frozen: this is the anchor the other three read, not a knob to tune at
+    runtime. Changing the rate is a one-line edit here that moves every consumer
+    together, which is the whole point.
+    """
+
+    annual_pct: float = 4.5
+
+    @property
+    def annual_fraction(self) -> float:
+        return self.annual_pct / 100.0
+
+
+RISK_FREE = RiskFreeConfig()
 
 
 @dataclass
@@ -77,6 +128,11 @@ class FundamentalThresholds:
 
     min_current_ratio_good: float = 2.0
     min_current_ratio_ok: float = 1.5
+
+    # U5-9: these two were spelled inside `_score_financial_health`'s branch,
+    # the only bands in a 20-point dimension whose seven siblings all read here.
+    min_quick_ratio_good: float = 1.5   # ≥ → 3 pts
+    min_quick_ratio_ok: float = 1.0     # ≥ → 2 pts
 
     min_interest_coverage_excellent: float = 10.0
     min_interest_coverage_good: float = 5.0
@@ -138,6 +194,11 @@ class FundamentalThresholds:
 
     fcf_growth_excellent: float = 10.0
     fcf_growth_good: float = 5.0
+
+    # U5-9: the FCF dimension read config for its growth half (above) and two
+    # literals for its yield half, three lines apart in the same function.
+    fcf_yield_excellent: float = 4.0   # % of market cap — ≥ → 3 pts
+    fcf_yield_good: float = 2.0        # ≥ → 2 pts
 
     # --- Dividend Quality (10 pts total) ---
     div_yield_sweet_spot_low: float = 1.5   # % — below = growth stock
@@ -460,7 +521,7 @@ class BacktestConfig:
     default_period_years: int = 5
     default_top_n: int = 10
     default_benchmark: str = "SPY"
-    risk_free_rate: float = 0.045       # 4.5% annual (10Y Treasury proxy)
+    risk_free_rate: float = RISK_FREE.annual_fraction   # 10Y Treasury proxy (U5-10)
     min_history_weeks: int = 52         # minimum weeks of price data required
     results_max_saved: int = 10         # cap saved backtest files shown in UI
     default_rebalance_freq: str = "annual"  # "annual" | "quarterly" | "monthly" | "buy_and_hold"
@@ -660,7 +721,11 @@ class MoatConfig:
     ai_cache_only: bool = False
     # ROIC − cost-of-equity-proxy spread scoring (D5; name kept per U1-4)
     use_roic_wacc_spread: bool = True
-    risk_free_proxy_pct: float = 4.0
+    # U5-10: was a separate 4.0 — the same Treasury proxy as BACKTEST and
+    # OPTIMIZER, spelled 50 bp lower for no recorded reason. Raising it to the
+    # shared 4.5 lifts every sector's hurdle by half a point; the measured
+    # effect on the cached universe is in the PR that unified them.
+    risk_free_proxy_pct: float = RISK_FREE.annual_pct
     default_sector_erp_pct: float = 5.0
     sector_erp_pct: dict = field(default_factory=lambda: {
         "Technology": 5.0,
@@ -875,7 +940,7 @@ class OptimizerConfig:
                               (measured on the market series, see U2-2).
     """
     default_profile: str = "conservative"
-    risk_free_rate: float = 0.045
+    risk_free_rate: float = RISK_FREE.annual_fraction   # U5-10
     price_history_years: int = 2
     frontier_points: int = 300
     min_weight_pct: float = 1.0
@@ -885,6 +950,11 @@ class OptimizerConfig:
     price_fetch_max_workers: int = 6
     er_absolute_cap: float = 0.14
     max_dd_vol_multiple: float = 1.5
+    # U5-9: the span that turns a 0–100 score into an annual return proxy —
+    # `score/100 × 0.18`. It IS μ's scale, and it was the one term in the
+    # expression with no name and no home. U6-1 is the row that asks whether
+    # 0.18 is the right number; this only gives it somewhere to be argued with.
+    score_return_span: float = 0.18
 
 
 @dataclass
@@ -1459,12 +1529,12 @@ class PersonalBookConfig:
     wide_moat_bonus_for_concentration: bool = True
     default_conviction: str = "MEDIUM"
 
-    # Ponderación documentada de los 4 ejes de decisión (suma 100). Se muestra en
-    # la UI y se referencia en las justificaciones para transparencia total.
-    weight_quality_moat_tailwind: int = 45
-    weight_valuation_technical: int = 20
-    weight_user_conviction: int = 20
-    weight_book_context_risk: int = 15
+    # U5-11: acá vivían cuatro campos —45/20/20/15— descritos como "ponderación
+    # de los 4 ejes de decisión". `_decide_sizing` no pondera nada: es una
+    # cascada de gates duros (tesis rota → techo práctico → elegibilidad core →
+    # peso), y ningún gate leía estos números. Medido: con los cuatro puestos en
+    # 90/5/3/2 las recomendaciones salían idénticas. Se borran en vez de
+    # ponerse en 0, porque un 0 se lee como "feature apagada" y no había feature.
 
     def as_dict(self) -> dict:
         return {
@@ -1483,10 +1553,6 @@ class PersonalBookConfig:
             "require_user_high_conviction_for_over_15pct": self.require_user_high_conviction_for_over_15pct,
             "wide_moat_bonus_for_concentration": self.wide_moat_bonus_for_concentration,
             "default_conviction": self.default_conviction,
-            "weight_quality_moat_tailwind": self.weight_quality_moat_tailwind,
-            "weight_valuation_technical": self.weight_valuation_technical,
-            "weight_user_conviction": self.weight_user_conviction,
-            "weight_book_context_risk": self.weight_book_context_risk,
         }
 
 

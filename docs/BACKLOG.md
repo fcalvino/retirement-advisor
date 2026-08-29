@@ -54,10 +54,10 @@ una, con oráculos empíricos donde el hallazgo lo permitía.
 |---|---|---|---|
 | 3 — fórmulas con blast radius | 11 | 10 | 1 |
 | 4 — flujos del motor | 4 | 2 | 2 |
-| 5 — scoring y config | 20 | 13 | 7 |
+| 5 — scoring y config | 20 | 16 | 4 |
 | 6 — dos motores de retorno | 2 | 0 | 2 |
 | 7 — UX del dashboard | 2 | 0 | 2 |
-| **Total** | **39** | **25** | **14** |
+| **Total** | **39** | **28** | **11** |
 
 Cerradas: **U3-6** (`a5a63d9`), **U3-11** (`00fb551`, oráculo: sin `payoutRatio` ni
 FFO el score es 4.0 exacto), **U5-20** (`d86f8e9`), **U4-2** y **U4-1** (`9f05443`,
@@ -78,7 +78,9 @@ cotizar entero), **U5-16** (`e7bf84e`, el descuento ARS se aplica por país, no
 por lista), **U5-1** (el F-Score dice que mide cambio interanual; el bonus queda
 como fila de calibración, ver abajo), **U5-17** (`3472dc4`, el bootstrap alcanza la
 observación más reciente), **U5-2 + U5-3** (`d1aba8f`, dos señales del Piotroski
-que respondían otra pregunta).
+que respondían otra pregunta),
+**U5-9 + U5-10 + U5-11** (un número, una casa — y cinco de los ocho literales de
+U5-9 ya no existían al abrirla).
 Fuera de las oleadas 3–7,
 **U0-2** también cerró — ver `ROADMAP.md`.
 
@@ -134,8 +136,6 @@ son el terreno donde ya nacieron los defectos de arriba.
 | id | sev | qué | evidencia |
 |---|---|---|---|
 | **U3-7b** | P2 | El Optimizer sigue normalizando el moat por `/20` para rankear (`:483`, `:509`), así que una fila sin IA —cuyo techo real es 12— queda sistemáticamente peor rankeada por no haber sido enriquecida, no por la empresa. U3-7 arregló las **etiquetas**; esto es el mismo supuesto de escala única en los **pesos**. Se dejó afuera de U3-7 a propósito; `:625`, el tercer `/20`, desapareció con U5-6 al quitarse el término de moat de μ | `optimizer.py:483,509` |
-| **U5-9** | P2 | Literales que deberían estar en config, movidos 1:1 y byte-idénticos: `0.18`/`0.05` de μ, `0.21`/`0.79` del tax, FCF 4/2, quick 1.5/1.0, F6 1.02, MaxDD 1.5, payout 80 | `optimizer.py:623,625`, `fundamental.py:882`, `moat.py:626` |
-| **U5-10** | P2 | La tasa libre de riesgo vive en tres lugares con dos valores: `config.py:402` (0.045), `:694` (0.045), `:491` (`risk_free_proxy_pct = 4.0`). Más `BLOCK_SIZE` muerto, dos techos de yield y dos caps de sector | |
 | **U5-18** | P2 | 15 `utcnow` vivos entre relojes UTC-naive y local-naive: `data/cache.py` (6), `analysis/track_record.py` (8), `track_record_scorer.py` (1). Afecta la edad del dato y el dedup por día | |
 | **U3-1b** | P3 | `sma200_slope_pct` tiene la misma forma que tenía `above_sma200` antes de U3-1: es `float = 0.0`, así que "no hay ventana suficiente" y "la media está plana" son el mismo valor. Consecuencia acotada pero real: el gate D15 de `technical.py:266` (`or result.sma200_slope_pct >= 0`) concede el bonus por sobreventa a un ticker cuya pendiente nadie pudo medir. Se dejó afuera de U3-1 para no mezclar dos campos en un PR de tipos | `technical.py:35,266` |
 | **U3-2** | P2 | ATR y ADX usan `ewm(span=period)` en vez del suavizado de Wilder `alpha=1/period`. El RSI (`:300`) ya está bien — son los únicos dos que quedaron | `technical.py:329,353-358` |
@@ -144,7 +144,6 @@ son el terreno donde ya nacieron los defectos de arriba.
 | **U4-3** | P2 | La palanca "Inflación" del tornado bumpea `withdrawal_growth_rate`; sin retiros activos el swing es exactamente 0 y el rótulo queda igual | `sensitivity.py:105-110` |
 | **U4-4** | P2 | La longevidad solo trunca: `cap_week = min(longevity*52, n_cols-1)`. Vivir 5 años más no puede alargar la simulación | `decumulation.py:300` |
 | **U5-7** | P2 | El docstring promete "Conservative: age / Aggressive: age − 10"; la función no toma perfil y siempre devuelve `min(age, 80)` | `config.py:360-362` |
-| **U5-11** | P2 | `weight_quality_moat_tailwind = 45` y sus tres hermanos nunca se leen: solo se interpolan en un f-string | `config.py:1266` → `personal_sizer.py:648` |
 | **U5-19** | P3 | Black-Litterman documenta Π como "CAPM equilibrium **excess** returns" mientras las views `q` son retornos totales | `black_litterman.py:83` |
 | **U7-1** | P3 | `preset_gap` se evalúa en cada rerun contra los widgets actuales, así que sacar un valor a mano dispara "ese filtro no se aplicó", que es falso | `1_Screener.py:663` |
 | **U7-2** | P3 | Vaciar el multiselect "Fuente" muestra **todas** las filas en vez de ninguna | `13_Track_Record.py:86` |
