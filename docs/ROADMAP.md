@@ -10,6 +10,83 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U5-18 — Un solo reloj, y un día que es el del usuario (2026-08-29)
+
+### Lo que la fila decía, y lo que había
+
+Dos correcciones antes del arreglo.
+
+**El conteo.** No eran 15 `utcnow` en tres archivos: eran **31 en seis**.
+`alerts/store.py` tenía 12 y ni figuraba en la fila; `analysis/macro_rag.py`
+tres y `dashboard/pages/8_Alertas.py` uno.
+
+**No había ningún cruce de relojes activo.** La fila decía «afecta la edad del
+dato», y la edad del dato **estaba bien calculada**: cada módulo era
+internamente consistente — `data/cache.py` escribe y lee en UTC,
+`screener_store.py` escribe y lee en local, `last_refreshed_at` se sella y se
+mide con el mismo reloj. Dos relojes en un mismo SQLite son un peligro latente,
+no una resta mal hecha, y decirlo importa para no vender el PR como algo que no
+es.
+
+### Lo que sí estaba mal: el día
+
+`TrackRecordStore._exists_today` cortaba a las 00:00 **UTC**. Para un usuario en
+UTC−3 eso hace que el «día» corra de 21:00 a 21:00 local, así que el dedup
+funcionaba perfecto en sus propios términos y dejaba pasar los que importan.
+Medido sobre las 397 filas reales de `recommendation_log`:
+
+| regla | duplicados |
+|---|---:|
+| (símbolo, acción, día **UTC**) | **0** |
+| (símbolo, acción, día **LOCAL**) | **80** |
+
+```
+AAPL BUY, día local 2026-08-23:  09:32  y  21:12
+                      en UTC:    23 12:32 y 24 00:12
+```
+
+Simulando las dos reglas en orden cronológico sobre la base real: el corte UTC
+admite 394 filas, el local admite 317. **77 filas —el 19,4 % de la muestra— son
+la misma recomendación repetida en el mismo día del usuario.**
+
+Y eso pega donde más duele. CONTEXT §8 ya decía que *«149 recomendaciones del
+mismo día no son 149 datos independientes — comparten el movimiento del mercado
+de ese día»*: el track record es el único juez que el motor tiene sobre sí mismo,
+y una quinta parte de su muestra eran repeticiones.
+
+### Las dos decisiones del arreglo
+
+`data/clock.py` es el reloj único, y separa dos cosas que se confundían:
+
+* **se guarda en UTC**, porque es inequívoco — no tiene horario de verano, no
+  salta si el usuario viaja y ordena bien. **No se migra nada**: toda fila ya
+  escrita conserva su significado y el arreglo actúa de acá en adelante.
+* **el día se corta en local**, porque «uno por día» es un concepto humano. La
+  conversión es de ida y vuelta (UTC → local → medianoche → UTC) en vez de
+  restar un offset fijo: restar horas a mano se rompe dos veces al año en
+  cualquier país con horario de verano, y se rompe en silencio. Hay una mutación
+  que verifica exactamente eso.
+
+### La deprecación, de paso
+
+`datetime.utcnow()` está deprecado desde Python 3.12. La suite emitía **167
+advertencias** y ahora emite **11, ninguna de datetime** — las restantes son de
+pandas y dateutil.
+
+Los tests entran en el barrido a propósito: uno que llama al reloj deprecado se
+rompe el día que Python lo saque, y dejarlos afuera habría sido hacer la mitad
+del trabajo y llamarla completa.
+
+Oráculo: `tests/test_clock_oracle.py`, 13 tests. El corte se verifica por ida y
+vuelta —convertirlo a hora local tiene que dar exactamente medianoche— en vez de
+leer la implementación, y el duplicado real medido en la base se reproduce como
+caso. Las seis mutaciones mueren.
+
+`ENGINE_VERSION` **no se bumpea**: no se mueve ningún número de ningún plan
+guardado.
+
+---
+
 ## U4-1c — Decidir anual, pagar en doceavos (2026-08-29)
 
 U4-1 mensualizó los aportes y dejó los retiros anuales a propósito, porque la
