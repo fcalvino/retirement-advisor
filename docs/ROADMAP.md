@@ -10,6 +10,47 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U5-14 — La deriva es desconocida si el plan no se pudo cotizar entero (2026-08-29)
+
+U2-3 le había dado esta regla al detector de alertas, con estas palabras:
+
+> *"se niega a correr del todo cuando cualquier posición no tiene precio usable:
+> una posición sin cotizar es **desconocida**, no 0 %, y tratarla como 0 deflacta
+> el total e infla el peso de todas las demás."*
+
+`compute_plan_vs_reality` —el **otro** camino, el que alimenta
+`PLAN_HEALTH_DEGRADATION`— nunca recibió ese gate. Dividía el movimiento ponderado
+por la suma de los pesos **que logró cotizar**, reescalando en silencio la parte
+cubierta del plan al 100 %. El docstring de `drift_breakdown` ya decía que excluir
+un precio faltante es tarea del caller; un caller la hizo y el otro no.
+
+**La dirección es lo que lo vuelve grave.** Sobre un plan de cuatro posiciones donde
+una del 10 % cae 40 % y no se puede cotizar:
+
+| | deriva reportada |
+|---|---:|
+| real, todo cotizado | **+1,20 %** |
+| renormalizada al 90 % cubierto | **+5,78 %** |
+
+El desplome no sólo desaparece: el número se mueve hacia **lo tranquilizador**, y es
+una métrica de salud. El plan se reporta derivando *menos* justo en el momento en que
+una parte dejó de ser rastreable.
+
+`weighted_delta_pct` pasa a ser `None` salvo que el plan entero se haya cotizado, y
+el resumen incorpora `unpriced` para que una superficie pueda decir cuál símbolo y
+por qué. **Suprimir el agregado no esconde nada**: las filas siguen listando todos
+los símbolos con su precio en blanco, así que lo que se quita es un número que nadie
+podía sostener, no la evidencia.
+
+`compute_longitudinal_drift` ya filtraba los `None` de la tendencia, así que aguas
+abajo no hizo falta cambiar nada — verificado en vez de asumido, incluido que un plan
+que nadie puede cotizar **no** queda marcado como degradado: la ausencia de evidencia
+no puede convertirse en evidencia de deterioro.
+
+Contrato: `tests/test_plan_health_coverage_oracle.py`.
+
+---
+
 ## U5-12 — La curva del tracker cubre lo que se tuvo (2026-08-29)
 
 Dos defectos sobre el módulo que juzga la cartera propia del usuario.
