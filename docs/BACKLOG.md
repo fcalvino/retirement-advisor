@@ -238,6 +238,21 @@ priorizarlo:
 
 ## Cómo mantener este archivo
 
+- **Verificá la fila antes de creerle.** Una fila es una hipótesis escrita en un
+  momento, no un enunciado del defecto: describe lo que alguien vio, con el
+  código de ese día. El primer paso de cualquier fila es medir si sigue siendo
+  cierta — y en las cinco que se cerraron el 2026-08-29 **ninguna lo era del
+  todo**, siempre para el lado que no se esperaba:
+
+  | fila | lo que decía | lo que había |
+  |---|---|---|
+  | U5-9 | 8 literales sin centralizar | 5 ya estaban cerrados por filas posteriores |
+  | U5-18 | 15 `utcnow`, «afecta la edad del dato» | 31 en seis archivos, y la edad **estaba bien calculada** |
+  | U6-1 | el proxy es «inventado» | el score sí predice retorno (p<0,0001); el defecto era el formato |
+  | U4-1c | el lump de diciembre | también el primer año entero sin gastar, que era la mitad más grande |
+  | N5 | *(no existía)* | apareció midiendo si bajar un techo, y el techo era la perilla equivocada |
+
+  Empezar a arreglar sin medir produce el arreglo de la fila, no el del defecto.
 - Una fila se cierra cuando su **oráculo** pasa, no cuando el código "parece bien".
   Ver CONTEXT §5: *"tests del motor = oráculo, no auto-consistencia"*.
 - Al cerrar una fila, moverla a [`ROADMAP.md`](ROADMAP.md) con su commit.
