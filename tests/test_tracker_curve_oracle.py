@@ -133,12 +133,20 @@ class TestTheCurveOnlyCoversWhatWasHeld:
 
 class TestTheReturnIsNamedForWhatItIs:
     def test_the_module_no_longer_advertises_an_irr(self):
+        """Promising one and denying one are different; only the promise is out.
+
+        Banning the word outright would forbid the disclaimer too, and the
+        disclaimer is the fix — the same shape U1-9 used for the Sortino line
+        two rows above it in this very docstring.
+        """
         from pathlib import Path
 
         src = (Path(__file__).resolve().parents[1] / "portfolio" /
                "tracker.py").read_text(encoding="utf-8")
         header = src.split('"""')[1]
-        assert "IRR" not in header and "XIRR" not in header
+        assert "(IRR/XIRR)" not in header
+        assert "XIRR" not in header
+        assert "Not an IRR" in header
 
     def test_the_field_says_it_ignores_when_the_money_arrived(self):
         from portfolio.tracker import ANNUALIZED_RETURN_CAVEAT
