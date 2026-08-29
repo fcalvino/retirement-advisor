@@ -158,18 +158,21 @@ def test_superseded_and_missing_engine_versions_are_stale():
     flat zero into real numbers. U5-9/U5-10 (tier5) moved μ: the moat's ROIC
     hurdle rose half a point when the risk-free rate stopped being declared
     twice, and a dividend yield between 15 % and 30 % stopped being scored and
-    discarded at the same time — ABEV's μ goes from 7.65 % to 14.00 %.
+    discarded at the same time — ABEV's μ goes from 7.65 % to 14.00 %. N5 (tier6)
+    moved μ again and in both directions: eight tickers were scored on a dividend
+    yield that was not theirs, because `rate / price` divides a local-currency
+    dividend by a USD price on a LatAm ADR. ABEV's μ comes back down to 9.34 %.
     """
     from config import ENGINE_VERSION
 
-    assert ENGINE_VERSION == "2026.08-tier5"
+    assert ENGINE_VERSION == "2026.08-tier6"
 
     current = PlanSnapshot.from_session(name="actual", opt_result=_fake_opt_result())
     assert current.engine_version == ENGINE_VERSION
     assert not current.is_engine_stale()
 
     for superseded in ("2026.08-tier0", "2026.08-tier1", "2026.08-tier2",
-                       "2026.08-tier3", "2026.08-tier4"):
+                       "2026.08-tier3", "2026.08-tier4", "2026.08-tier5"):
         old = PlanSnapshot.from_session(name="viejo", opt_result=_fake_opt_result())
         old.engine_version = superseded
         assert old.is_engine_stale() is True

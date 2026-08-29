@@ -226,27 +226,68 @@ def normalize_dividend_yield_pct(
     div_yield: Optional[float] = None
     source = ""
 
-    # 1. Derived from the definition — immune to the feed's unit choices.
+    #: El único campo que yfinance calcula por su cuenta y publica en porcentaje.
+    #: No se construye dividiendo un importe por un precio, así que es el único
+    #: que no puede caer en la trampa de moneda de abajo.
+    reported_pct = _safe_float(info.get("dividendYield"))
+
+    # 1 y 2 — la familia DERIVADA: el importe del dividendo puesto contra el
+    # papel, sea dividiéndolo por el precio o expresado ya como fracción de él.
+    #
+    # Se prefiere porque es la definición misma del yield y no depende de cómo el
+    # feed eligió sus unidades. El docstring decía "immune to the feed's unit
+    # choices", y es cierto — pero no es inmune a sus elecciones de MONEDA, que
+    # es otra cosa (N5). En un ADR latinoamericano el dividendo se declara en
+    # moneda local y el precio cotiza en USD: la división queda dimensionalmente
+    # limpia y numéricamente mal. Lo mismo con un ADR de ratio distinto de 1:1, y
+    # con un spin-off registrado como distribución (HON). Medido sobre el
+    # universo cacheado: 8 de 164, 7 de ellos ADRs LatAm, TEO llegando a 94.73 %
+    # contra el 0.31 % que reporta el feed.
+    #
+    # LAS DOS van juntas y se contrastan juntas: `trailingAnnualDividendYield`
+    # arrastra la misma corrupción que `trailingAnnualDividendRate / price` — en
+    # ITUB dan 37.22 % y 37.43 %, en ABEV 24.33 % y 24.70 %. Guardar sólo la
+    # primera dejaba que la segunda entrara por la ventana con el mismo número.
     annual_rate = _safe_float(info.get("trailingAnnualDividendRate"))
     price = _safe_float(info.get("currentPrice") or info.get("regularMarketPrice"))
+    tay = _safe_float(info.get("trailingAnnualDividendYield"))
+
+    derived: Optional[float] = None
     if annual_rate > 0 and price > 0:
-        div_yield = annual_rate / price * 100
+        derived = annual_rate / price * 100
         source = "trailingAnnualDividendRate/price"
+    elif tay > 0:
+        derived = tay * 100
+        source = "trailingAnnualDividendYield"
 
-    # 2. Documented as a fraction of price.
-    if div_yield is None:
-        tay = _safe_float(info.get("trailingAnnualDividendYield"))
-        if tay > 0:
-            div_yield = tay * 100
-            source = "trailingAnnualDividendYield"
+    # El contraste. La derivada sólo pierde cuando el campo independiente la
+    # desmiente por más de `dividend_yield_crosscheck_ratio`, y ese corte no está
+    # calibrado: las dos poblaciones no se solapan (122 tickers por debajo de
+    # 1.04x, 8 por encima de 3.12x, nada en el medio). Donde coinciden — los
+    # otros 122 — gana la derivada y su valor no se mueve, porque es más precisa
+    # que el redondeo del feed.
+    if derived is not None:
+        ratio_cap = float(getattr(config, "dividend_yield_crosscheck_ratio", 2.0))
+        if reported_pct > 0 and derived / reported_pct > ratio_cap:
+            msg = (
+                f"Yield derivado descartado por contradictorio: {source} da "
+                f"{derived:.2f}% contra {reported_pct:.2f}% de dividendYield "
+                f"({derived / reported_pct:.1f}× el tope de {ratio_cap:g}×) — típico "
+                f"de un ADR cuyo dividendo se declara en otra moneda que su precio."
+            )
+            logger.warning(msg)
+            if warnings is not None:
+                warnings.append(msg)
+            derived = None          # y con ella toda la familia: 1 y 2 quedan fuera
+        else:
+            div_yield = derived
 
-    # 3. Already a percent — must NOT be multiplied. This is the step the old
-    #    code got wrong, and the one ETFs and bond funds actually land on.
-    if div_yield is None:
-        dy = _safe_float(info.get("dividendYield"))
-        if dy > 0:
-            div_yield = dy
-            source = "dividendYield"
+    # 3. Ya viene en porcentaje — NO se multiplica. Es el paso que el código viejo
+    #    hacía mal (SCHD 3.13% → 313%) y donde aterrizan los ETFs y los bonos.
+    #    Desde N5 es además el que gana cuando desmiente a la familia derivada.
+    if div_yield is None and reported_pct > 0:
+        div_yield = reported_pct
+        source = "dividendYield"
 
     if div_yield is None or div_yield <= 0:
         return None
@@ -1453,8 +1494,47 @@ class FundamentalAnalyzer:
         payout, result.payout_basis = effective_payout_pct(result)
         result.payout_ratio_effective = payout
 
-        # Non-dividend stocks: neutral (growth companies reinvest instead)
+        # N5: "no se pudo medir" y "no paga" son dos estados, no uno.
+        #
+        # `normalize_dividend_yield_pct` devuelve None en los dos casos y el
+        # `or 0.0` de arriba los fundía: una empresa que reparte pero cuyo yield
+        # el feed no dejó calcular caía acá y cobraba el crédito por reinvertir,
+        # con una nota que le decía al usuario que no paga dividendos. Itaú,
+        # Telecom Argentina y Vale —tres pagadores reales— lo hacían.
+        #
+        # El desempate no es una heurística: si el feed reporta un importe de
+        # dividendo o una tasa, la empresa reparte, y eso es independiente de que
+        # se haya podido expresar como porcentaje del precio. Mismo criterio que
+        # U3-1: la ausencia de medición no es una medición de ausencia.
         if div_yield == 0:
+            # Los tres campos son de los ÚLTIMOS DOCE MESES o del momento, así
+            # que valen cero para quien no reparte hoy. `lastDividendValue` queda
+            # deliberadamente afuera: es el registro del último dividendo que la
+            # empresa pagó alguna vez, no una señal de que siga pagando. Adobe lo
+            # trae en 0.0065 con fecha 2005-03-24 y no reparte desde entonces;
+            # MELI 2017, PAM 2012, YPF 2019. Incluirlo convertía «pagó una vez»
+            # en «paga», que es este mismo defecto en el sentido contrario —
+            # medido: le sacaba los 3 puntos a 6 empresas que sí son growth.
+            reparte = any(
+                _safe_float(info.get(k)) > 0
+                for k in (
+                    "trailingAnnualDividendRate",
+                    "trailingAnnualDividendYield",
+                    "dividendYield",
+                )
+            )
+            if reparte:
+                # Sin crédito por reinvertir: no reinvierte. Tampoco se castiga
+                # con las bandas de yield, que necesitan el número que falta.
+                result.notes["dividend"] = (
+                    "Paga dividendo pero no se pudo medir el yield — esta dimensión "
+                    "suma 0, no se estima"
+                )
+                result.warnings.append(
+                    "Yield desconocido pese a que la empresa reparte: el dividendo "
+                    "no puntúa en ninguna dirección"
+                )
+                return score
             score += 3  # partial credit — not a flaw for growth stocks
             result.notes["dividend"] = "No dividend — growth company reinvests FCF"
             return score

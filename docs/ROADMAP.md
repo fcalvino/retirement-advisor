@@ -10,6 +10,118 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## N5 — Un yield que no era el de la empresa (2026-08-29)
+
+Apareció contestando otra pregunta. Después de mergear el PR #42 quedaba abierto
+si el techo de yield unificado en 30 % era demasiado permisivo para μ, porque
+dejaba entrar el 24,7 % de ABEV. La respuesta fue que **el techo era la perilla
+equivocada**: el número al que se le aplicaba no era el yield de la empresa.
+
+### El dato que dio vuelta la pregunta
+
+Los campos del feed se contradicen entre sí. Para ABEV, `dividendYield` dice
+5,64 % y `fiveYearAvgDividendYield` 5,19 %; `trailingAnnualDividendRate / price`
+—el que el motor prefería— da 24,70 %.
+
+No es un caso aislado. Sobre los 164 tickers cacheados, **8 tickers**, 7 de
+ellos ADRs latinoamericanos:
+
+| sym | país | motor usaba | feed dice | ratio |
+|---|---|---:|---:|---:|
+| TEO | Argentina | 94,73 % | 0,31 % | **305×** |
+| SBS | Brasil | 12,78 % | 0,63 % | 20× |
+| ITUB | Brasil | 37,43 % | 2,19 % | 17× |
+| VALE | Brasil | 36,94 % | 8,12 % | 4,6× |
+| ABEV | Brasil | 24,70 % | 5,64 % | 4,4× |
+| BAP | Perú | 13,00 % | 3,72 % | 3,5× |
+| HON | EE.UU. | 4,37 % | 1,27 % | 3,4× |
+| BSBR | Brasil | 18,55 % | 5,95 % | 3,1× |
+
+El docstring del paso 1 lo justificaba como *"immune to the feed's unit
+choices"*. Es cierto para **unidades** y falso para **monedas**: en un ADR
+latinoamericano el dividendo se declara en moneda local y el precio cotiza en
+USD, así que la división queda dimensionalmente limpia y numéricamente mal. Lo
+mismo con un ADR de ratio distinto de 1:1, y con un spin-off registrado como
+distribución (HON, la única que no es de moneda).
+
+### Por qué el corte no es una calibración
+
+Sobre los 130 tickers que traen los tres campos, el ratio
+`(rate/price) / dividendYield` separa **dos poblaciones que no se tocan**:
+
+    122 tickers  < 1,04×     sanos
+      0 tickers  1,04–3,12×  banda vacía
+      8 tickers  ≥ 3,12×     corruptos
+
+Y un tercer campo arbitra: `fiveYearAvgDividendYield` le da la razón a
+`dividendYield` en **8 de 8** casos disputados. No se prefiere un campo por
+gusto — un testigo independiente coincide con uno de los dos, siempre. El corte
+quedó en 2,0, en el centro de la banda vacía, y un test falla si se corre a un
+borde.
+
+### La segunda cara: un None que se contaba como un cero
+
+Cuando el yield superaba el techo la función devolvía `None`, y su docstring
+decía *"a loud None beats a confident wrong number"*. No era loud aguas abajo:
+`_score_dividends` hacía `or 0.0`, caía en la rama `div_yield == 0` y pagaba
+**+3 puntos** de crédito por reinvertir con la nota *"No dividend — growth
+company reinvests FCF"*. **Itaú, Telecom Argentina y Vale** —tres pagadores
+reales— le decían al usuario que no pagan. Misma forma que U3-1.
+
+El comentario de `fundamental.py:181` documentaba el defecto sin verlo:
+*"dividend_yield is deliberately excluded: None is legitimate for growth
+stocks"*.
+
+### Medido
+
+Scores, contra baseline previo sobre 164 tickers: **6 se mueven**, entre −2 y
++4, **ninguna señal cambia**.
+
+μ —que el harness no mide, porque μ no es un score— **8 de 164**, en las dos
+direcciones:
+
+| | | | | |
+|---|---:|---|---:|
+| ABEV | −4,66 pp | VALE | +2,44 pp |
+| BSBR | −3,78 pp | ITUB | +0,66 pp |
+| SBS | −3,64 pp | TEO | +0,09 pp |
+| BAP | −2,78 pp | | |
+| HON | −0,93 pp | | |
+
+Los dos primeros **revierten con precisión la regresión que introdujo tier5**:
+subir el techo del optimizer de 15 a 30 sacó un guard accidental. Aquel literal
+`15.0` estaba mal por la razón que se dijo —config duplicada— y bien por
+casualidad, porque tapaba este input corrupto. Los tres de la derecha suben
+porque su yield se descartaba a cero.
+
+`ENGINE_VERSION` → `2026.08-tier6`. **El techo no se tocó**: con el input sano
+ningún yield real del universo se le acerca, así que pasa a ser un guard de
+último recurso y su valor deja de importar.
+
+### Dos errores que el ciclo atrapó, y que quedaron fijados
+
+1. **Un falso positivo, en espejo del defecto.** El primer desempate incluía
+   `lastDividendValue` como evidencia de que la empresa reparte. Es el registro
+   del último dividendo pagado **alguna vez**: Adobe lo trae con fecha 2005,
+   MELI 2017, PAM 2012. Le sacaba los +3 a 6 growth genuinas. Lo destapó la
+   medición, que mostró 9 tickers movidos donde debían ser 3.
+2. **El cross-check guardaba media familia.** `trailingAnnualDividendYield`
+   arrastra la misma corrupción que la división y entraba por la ventana con el
+   mismo número — ABEV bajaba de 24,70 % a 24,33 %, o sea nada. También lo
+   destapó la medición.
+
+Y la verificación por mutación encontró un tercero, en el oráculo: el mutante
+que reproduce el error 2 **sobrevivía con los 31 tests en verde**, porque los
+fixtures omitían `trailingAnnualDividendYield` y el mutante caía en el vacío en
+vez de reponer el número malo. El test se ponía verde por una ausencia del
+fixture. Corregido: los fixtures pasan los cinco campos reales, y un test nuevo
+verifica que sigan reproduciendo el caso.
+
+Oráculo: `tests/test_dividend_yield_provenance_oracle.py`, 39 tests. Las cinco
+mutaciones mueren.
+
+---
+
 ## U5-9 + U5-10 + U5-11 — Un número, una casa (2026-08-29)
 
 Tres filas del backlog, un solo defecto: config y código en desacuerdo sobre
