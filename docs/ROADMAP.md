@@ -10,6 +10,51 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U5-12 — La curva del tracker cubre lo que se tuvo (2026-08-29)
+
+Dos defectos sobre el módulo que juzga la cartera propia del usuario.
+
+**Prometía un IRR que nunca tuvo.** El encabezado anunciaba *"annualized return
+(IRR/XIRR)"*, y la palabra `irr` aparecía **exactamente una vez** en el módulo: en
+esa línea. Lo que se calcula es `(total_value / total_cost) ** (1/years) − 1`, con
+`years` tomado de la **primera** compra de todo el portafolio. Un IRR pondera cada
+flujo por su propia fecha; esto no pondera ninguno, así que 99.000 dólares
+invertidos ayer reciben la antigüedad de una posición de 1.000 de hace cinco años.
+Un retorno ponderado por dinero es X-02 y está fuera de alcance, así que el arreglo
+es la etiqueta — el mismo patrón que U1-9 ya había usado **dos líneas más arriba en
+este mismo docstring**, para el ratio que no es un Sortino.
+
+**La curva le daba a cada posición cinco años de historia a su tamaño de hoy.**
+`_build_equity_curve` multiplicaba cinco años de precios por `pos.shares` —el conteo
+de *ahora*— sin importar la fecha de compra, así que una acción comprada el mes
+pasado aparecía en el drawdown de 2021 a tamaño completo. De esa serie salen
+**cuatro** métricas: Sharpe, ratio bajista, máximo drawdown y beta; una sola
+historia fabricada llegaba a las cuatro.
+
+Sobre una cartera corriente de dos posiciones —KO desde siempre, NVDA comprada hace
+tres meses:
+
+| | curva fabricada | ventana real |
+|---|---:|---:|
+| Sharpe | 1,04 | **1,91** |
+| máximo drawdown | −20,3 % | **−3,2 %** |
+
+La curva ahora arranca en la **última fecha de compra**, así que toda posición que
+figura estuvo efectivamente en cartera durante toda la ventana. Verificado de punta
+a punta: esa misma cartera da 13 semanas y Sharpe 1,91, y moviendo la compra a hace
+tres días la ventana se reduce a nada y las métricas **se suprimen en vez de
+estimarse**.
+
+**Poner en cero cada posición antes de su compra** es la otra forma de mantener
+honestos los conteos, y es peor: la compra entraría en la serie como un escalón, y
+una compra no es un retorno. Medido, esa alternativa reporta **60,8 % de volatilidad
+contra 18,8 %**. Tiene test propio, porque es el arreglo equivocado obvio y el
+próximo que pase va a intentarlo.
+
+Contrato: `tests/test_tracker_curve_oracle.py`.
+
+---
+
 ## U5-4 — Un REIT juzgado con bandas de REIT (2026-08-28)
 
 U2-6 arregló **qué** payout se le juzga a un REIT —FFO, no ganancias contables— y
