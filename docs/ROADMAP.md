@@ -10,6 +10,42 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U5-15 — El horizonte anual dura un año (2026-08-28)
+
+Dos defectos sobre la única evidencia que el motor tiene de sus propias
+recomendaciones.
+
+**El horizonte "anual" duraba 8,3 meses.** `horizons_days` traía `(30, 90, 252)` y
+el docstring describía el 252 como *"≈ 12 trading months"*, mientras el scorer hace
+aritmética de calendario pura: `rec.created_at + timedelta(days=horizon)`. 252 es
+la cantidad de días **de trading** de un año, así que el número era correcto en una
+unidad que el código nunca usó. Ahora es 365, y el docstring dice días de calendario
+sin decir "trading months" en la misma frase.
+
+**Una sola banda de HOLD servía para todos los horizontes.** `hold_band_pct = 5.0`
+decidía si mantener fue lo correcto tanto a 30 días como a un año. La dispersión
+crece con la **raíz cuadrada del tiempo**, así que una banda calibrada para un mes
+es demasiado angosta para un año: casi cualquier acción se mueve más de 5 % en doce
+meses, de modo que un HOLD quedaba mal calificado **por el paso del tiempo, no por
+la decisión**. Las bandas pasan a ser por horizonte —5,0 / 8,7 / 17,4— con el valor
+de 30 días conservado como ancla shipeada y los otros escalados desde él por √t.
+
+Esos dos números derivados son una **elección de calibración, no un hallazgo
+empírico**, y la config lo dice: la muestra es demasiado joven para zanjarlos. Decir
+cuál es cuál es el punto — las bandas de P/FFO llevan la misma advertencia por la
+misma razón.
+
+**Por qué éste era el momento, medido sobre la base viva:** sólo el horizonte de 30
+días fue puntuado alguna vez (**22 resultados**) y la recomendación más antigua tiene
+**73 días**, así que nada se calificó nunca a 90 ni a 252. Recalificados contra las
+bandas nuevas, **0 de los 22 cambian** — la banda de 30 días queda intacta por
+construcción. El costo de migración es cero hoy y crece con cada mes que los
+horizontes sigan mal, que es justamente el argumento que el backlog daba para esta fila.
+
+Contrato: `tests/test_track_record_horizon_oracle.py`.
+
+---
+
 ## U3-9 + U3-10 — Cada ratio, un solo año fiscal (2026-08-28)
 
 Cada lado de un ratio se buscaba por separado, con su propio `dropna()`, así que

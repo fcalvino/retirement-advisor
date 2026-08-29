@@ -1420,10 +1420,26 @@ class TrackRecordConfig:
     nunca hardcodear números en módulos de análisis).
 
     Fields:
-      horizons_days        — horizons (in calendar days) at which each
-                             recommendation is scored. 252 ≈ 12 trading months.
+      horizons_days        — horizons, in CALENDAR days, at which each
+                             recommendation is scored. The scorer adds
+                             ``timedelta(days=h)`` to the log date, so this must
+                             be calendar days and nothing else. It used to hold
+                             252 — the number of *trading* days in a year —
+                             described as "≈ 12 trading months", which made the
+                             annual horizon last 8.3 months (U5-15).
       benchmark            — symbol used as the comparison benchmark.
-      hold_band_pct        — for HOLD recommendations, a hit means the ticker's
+      hold_band_pct_by_horizon — the HOLD band per horizon. One band for every
+                             horizon graded a month and a year the same way, and
+                             dispersion grows with the square root of time: at
+                             ±5 % almost any equity is outside the band over
+                             twelve months, so a HOLD was close to automatically
+                             wrong at the long horizon (U5-15). The 30-day value
+                             is the shipped, calibrated anchor; the others are
+                             scaled from it by √t and are a calibration choice,
+                             not an empirical finding — the sample is far too
+                             young to settle them (22 outcomes, all at 30 days).
+      hold_band_pct        — fallback for a horizon not listed above. For HOLD
+                             recommendations, a hit means the ticker's
                              absolute return stayed within ±this band (i.e. "hold"
                              was the right call — no big move missed/avoided).
       min_confidence_for_calibration — confidence levels tracked for calibration.
@@ -1431,9 +1447,14 @@ class TrackRecordConfig:
       dedupe_same_day      — collapse repeated (symbol, action) logs within the
                              same UTC day so a refresh loop doesn't inflate counts.
     """
-    horizons_days: tuple = (30, 90, 252)
+    horizons_days: tuple = (30, 90, 365)
     benchmark: str = "SPY"
     hold_band_pct: float = 5.0
+    hold_band_pct_by_horizon: dict = field(default_factory=lambda: {
+        30: 5.0,     # shipped anchor
+        90: 8.7,     # 5.0 × √(90/30)
+        365: 17.4,   # 5.0 × √(365/30)
+    })
     min_confidence_for_calibration: tuple = ("HIGH", "MEDIUM", "LOW")
     enabled: bool = True
     dedupe_same_day: bool = True
@@ -1447,6 +1468,7 @@ class TrackRecordConfig:
             "horizons_days": list(self.horizons_days),
             "benchmark": self.benchmark,
             "hold_band_pct": self.hold_band_pct,
+            "hold_band_pct_by_horizon": dict(self.hold_band_pct_by_horizon),
             "enabled": self.enabled,
             "dedupe_same_day": self.dedupe_same_day,
             "bullish_actions": list(self.bullish_actions),
