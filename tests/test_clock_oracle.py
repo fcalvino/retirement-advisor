@@ -39,7 +39,9 @@ Sin red, sin Streamlit.
 
 from __future__ import annotations
 
+import os
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -49,6 +51,37 @@ import pytest
 from data.clock import local_day_start_utc, utc_now
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+#: Zonas donde se verifica la propiedad. La lista existe porque la primera
+#: versión de este archivo **codificaba UTC−3, la del autor**, y pasaba en su
+#: máquina y fallaba en CI, que corre en UTC. Un verde que depende de dónde se
+#: corre no es evidencia — la misma razón por la que este repo prohíbe `hash()`
+#: en tests. Se incluye UTC a propósito: es el caso donde el corte local y el
+#: UTC coinciden y el arreglo no debe hacer nada.
+ZONAS = [
+    ("America/Argentina/Buenos_Aires", -3),
+    ("Asia/Tokyo", +9),
+    ("UTC", 0),
+    ("Asia/Kolkata", +5.5),          # offset de media hora, el que rompe los atajos
+]
+
+
+@pytest.fixture
+def zona():
+    """Fija la zona horaria del proceso y la restaura después."""
+    previa = os.environ.get("TZ")
+
+    def _set(nombre: str):
+        os.environ["TZ"] = nombre
+        time.tzset()
+
+    yield _set
+    if previa is None:
+        os.environ.pop("TZ", None)
+    else:
+        os.environ["TZ"] = previa
+    time.tzset()
 
 
 # --------------------------------------------------------------------------- #
@@ -150,15 +183,50 @@ class TestElDiaEsElDelUsuario:
         b = local_day_start_utc(base + timedelta(seconds=1))
         assert a == b
 
-    def test_el_caso_real_que_el_dia_utc_dejaba_pasar(self):
-        """El duplicado medido en la base, reproducido: AAPL BUY el 2026-08-23 a
-        las 09:32 y a las 21:12 hora local. En UTC caen en días distintos —23 y
-        24— y por eso el dedup no lo atrapó. Con el día local tienen que caer
-        del mismo lado del corte."""
+    def test_el_caso_real_que_el_dia_utc_dejaba_pasar(self, zona):
+        """El duplicado medido en la base, reproducido con la zona **fijada**.
+
+        AAPL BUY el 2026-08-23 a las 09:32 y a las 21:12 hora de Buenos Aires.
+        En UTC caen en días distintos —23 y 24— y por eso el dedup no lo atrapó.
+        Con el día local tienen que caer del mismo lado del corte.
+        """
+        zona("America/Argentina/Buenos_Aires")
         manana_utc = datetime(2026, 8, 23, 12, 32)     # 09:32 local en UTC−3
         noche_utc = datetime(2026, 8, 24, 0, 12)       # 21:12 local del MISMO día
         assert manana_utc.date() != noche_utc.date(), "el caso ya no reproduce el defecto"
         assert local_day_start_utc(manana_utc) == local_day_start_utc(noche_utc)
+
+    @pytest.mark.parametrize("nombre,offset", ZONAS)
+    def test_la_medianoche_local_es_medianoche_en_toda_zona(self, zona, nombre, offset):
+        """La propiedad, comprobada donde el offset no es cero, donde es cero, y
+        donde es de media hora."""
+        zona(nombre)
+        inicio = local_day_start_utc(datetime(2026, 8, 23, 12, 32))
+        local = inicio.replace(tzinfo=timezone.utc).astimezone()
+        assert (local.hour, local.minute) == (0, 0), (
+            f"{nombre}: el corte cae a las {local.hour:02d}:{local.minute:02d} local"
+        )
+
+    @pytest.mark.parametrize("nombre,offset", ZONAS)
+    def test_el_corte_separa_los_dias_de_esa_zona_y_no_los_de_utc(self, zona, nombre, offset):
+        """Lo que el arreglo hace, dicho como propiedad y no como caso.
+
+        Dos instantes están del mismo lado del corte si y sólo si caen en el
+        mismo día **de esa zona**. En UTC eso coincide con el día UTC, y por eso
+        UTC está en la lista: es el caso donde el arreglo no cambia nada.
+        """
+        zona(nombre)
+        base = datetime(2026, 8, 23, 12, 0)
+        for horas in range(0, 48, 3):
+            otro = base + timedelta(hours=horas)
+            mismo_dia_local = (
+                local_day_start_utc(base) == local_day_start_utc(otro)
+            )
+            dia_local_base = base.replace(tzinfo=timezone.utc).astimezone().date()
+            dia_local_otro = otro.replace(tzinfo=timezone.utc).astimezone().date()
+            assert mismo_dia_local == (dia_local_base == dia_local_otro), (
+                f"{nombre}: {base} vs {otro} — el corte no coincide con el día local"
+            )
 
 
 # --------------------------------------------------------------------------- #
@@ -175,9 +243,10 @@ def _decision(symbol="AAPL", action="BUY"):
 
 class TestElDedupUsaElDiaDelUsuario:
 
-    def test_dos_corridas_del_mismo_dia_local_dejan_una_sola_fila(self, monkeypatch):
+    def test_dos_corridas_del_mismo_dia_local_dejan_una_sola_fila(self, monkeypatch, zona):
         """De punta a punta: la mañana y la noche del mismo día local, aunque el
-        día UTC cambie en el medio."""
+        día UTC cambie en el medio. Con la zona fijada, no la de quien corra."""
+        zona("America/Argentina/Buenos_Aires")
         import analysis.track_record as tr
 
         store = tr.TrackRecordStore(db_path=":memory:")
@@ -194,8 +263,9 @@ class TestElDedupUsaElDiaDelUsuario:
             f"día local — es el duplicado que infla la muestra del track record"
         )
 
-    def test_dos_dias_locales_distintos_dejan_dos_filas(self, monkeypatch):
+    def test_dos_dias_locales_distintos_dejan_dos_filas(self, monkeypatch, zona):
         """Anti-cheat: el arreglo aprieta un límite, no apaga el registro."""
+        zona("America/Argentina/Buenos_Aires")
         import analysis.track_record as tr
 
         store = tr.TrackRecordStore(db_path=":memory:")
