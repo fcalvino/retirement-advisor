@@ -10,6 +10,57 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## N2 (mitad barata) — Todo fetch de red reintenta (2026-08-29)
+
+CONTEXT §8 arrastraba *"no hay retry automático"* como limitación conocida. Esa
+frase estaba desactualizada, y la verdad era más rara: `_fetch_with_retry` existía
+y hacía lo correcto, pero protegía **dos de los cuatro** fetchers.
+
+| fetcher | reintentaba |
+|---|---|
+| `get_info` | sí |
+| `get_history` | sí |
+| `get_financials` | **no** → ahora sí |
+| `get_dividends` | **no** → ahora sí |
+
+Los dos desprotegidos no eran la mitad inofensiva. Una falla transitoria en
+`get_financials` devuelve estados vacíos, y la cadena desde ahí es corta y
+completamente silenciosa:
+
+    estados vacíos → has_financials=False → calidad "poor"
+                   → apply_data_quality_policy degrada BUY a HOLD
+
+**Una llamada HTTP con hipo, en un camino que ya sabía sobrevivir a llamadas HTTP
+con hipo, cambiaba lo que el producto recomienda.**
+
+`get_dividends` distingue *"el feed contestó, y la respuesta es que no paga
+dividendos"* de *"la llamada falló"*: no pagar no es un error y no se reintenta.
+
+La política se muda a `config.FETCH` — cuánto esperar a un ticker con hipo depende
+de cuántos tickers le queden a la corrida.
+
+### Lo que costó, y lo que destapó
+
+La suite pasó de **23 s a 7m26** — una regresión que introduje y tuve que perseguir.
+Los tests llegan al camino de retry aunque crean haberlo mockeado:
+`data_sources.YFinanceSource` importa `get_financials` **localmente**, así que
+`patch("analysis.fundamental.get_financials")` no lo intercepta, y con un ticker
+sintético no hay entrada de caché que lo sirva. Esa llamada **siempre** fallaba;
+antes fallaba instantáneamente, y ahora dormía 6 s.
+
+Su propio comentario dice que espera un cache hit porque `analyze` ya lo trajo — o
+sea que en producción es una **llamada de red redundante** cada vez que la caché
+falla. Queda anotado como **N2b**, no arreglado acá.
+
+La suite recibe un fixture autouse que pone el backoff en cero —lo irrelevante en
+tests es la demora, no el reintento— y vuelve a 24 s. Mi propio test entró en
+conflicto con mi propio fixture al afirmar que el delay del singleton es positivo;
+ahora verifica un `FetchConfig` fresco, así que comprueba lo que se shipea.
+
+Contrato: `tests/test_fetch_retry_oracle.py`.
+
+---
+
 ## N1 — El oficial sale del mercado, el paralelo lo pone el usuario (2026-08-29)
 
 U2-5 cerró la **conversión** y construyó el vocabulario de procedencia. N1 es de
