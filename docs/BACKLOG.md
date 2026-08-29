@@ -54,10 +54,10 @@ una, con oráculos empíricos donde el hallazgo lo permitía.
 |---|---|---|---|
 | 3 — fórmulas con blast radius | 11 | 10 | 1 |
 | 4 — flujos del motor | 4 | 2 | 2 |
-| 5 — scoring y config | 20 | 11 | 9 |
+| 5 — scoring y config | 20 | 13 | 7 |
 | 6 — dos motores de retorno | 2 | 0 | 2 |
 | 7 — UX del dashboard | 2 | 0 | 2 |
-| **Total** | **39** | **23** | **16** |
+| **Total** | **39** | **25** | **14** |
 
 Cerradas: **U3-6** (`a5a63d9`), **U3-11** (`00fb551`, oráculo: sin `payoutRatio` ni
 FFO el score es 4.0 exacto), **U5-20** (`d86f8e9`), **U4-2** y **U4-1** (`9f05443`,
@@ -77,7 +77,8 @@ qué es), **U5-14** (`4dc8fc9`, la deriva es desconocida si el plan no se pudo
 cotizar entero), **U5-16** (`e7bf84e`, el descuento ARS se aplica por país, no
 por lista), **U5-1** (el F-Score dice que mide cambio interanual; el bonus queda
 como fila de calibración, ver abajo), **U5-17** (`3472dc4`, el bootstrap alcanza la
-observación más reciente).
+observación más reciente), **U5-2 + U5-3** (`d1aba8f`, dos señales del Piotroski
+que respondían otra pregunta).
 Fuera de las oleadas 3–7,
 **U0-2** también cerró — ver `ROADMAP.md`.
 
@@ -121,8 +122,6 @@ Nada de acá miente sobre lo que calcula; todo está mal calibrado o mal alcanza
 | id | sev | qué | evidencia |
 |---|---|---|---|
 | **U5-1b** | P2 | El bonus de Piotroski (0–12) pesa **más que el del moat (0–10)** en un producto de retiro: paga más por «mejoró contra el año pasado» que por «tiene una ventaja durable». Medido sobre 150 equities: 31 % cobra `bonus_strong` y **24 cruzan el umbral de BUY sólo por ese bonus**. U5-1 arregló la etiqueta; recalibrar necesita outcomes que no existen (22 filas, todas a 30 días, y una señal a 1 año no se juzga en 30). Reabrir cuando el track record tenga horizontes largos | `config.py` `PiotroskiConfig` |
-| **U5-2** | P2 | F4 usa `<` estricto: LTD=0 en ambos años da `0 < 0 = False` → fail | `scoring.py:301` |
-| **U5-3** | P2 | F6 cae a `"Common Stock"` (importe en USD, no cantidad de acciones); tolerancia `1.02` hardcodeada | `scoring.py:273,317` |
 | **U5-8** | P2 | No pagar dividendo (+3) puntúa más que pagar un yield bajo (+2) | `_score_dividends` |
 
 ---

@@ -10,6 +10,45 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U5-2 + U5-3 — Dos señales del Piotroski que respondían otra pregunta (2026-08-29)
+
+Las dos eran **latentes** y se cerraron antes de dejar de serlo. Verificado contra
+un baseline previo de los 164 tickers cacheados: **0 scores y 0 acciones se mueven**.
+
+**U5-2 — una empresa sin deuda reprobaba el chequeo de apalancamiento.** F4
+pregunta si la razón deuda-de-largo-plazo sobre activos **bajó**, con un `<`
+estricto. Sin deuda de largo plazo en ninguno de los dos años eso da `0 < 0 =
+False` y se pierde el punto. Una empresa no puede reducir lo que no tiene, y
+apalancamiento cero no es una falta de mejora: es **el mejor estado posible** de lo
+que se está midiendo.
+
+El `<` estricto **se queda en todo lo demás**, porque mantener la deuda plana en
+30 % de los activos genuinamente no es una mejora, y eso es lo que pregunta el
+F_LEVER original. Sólo se exime el caso degenerado, y **tomar deuda desde cero
+sigue reprobando**.
+
+**U5-3 — el chequeo de dilución podía comparar dólares.** F6 leía
+`["Ordinary Shares Number", "Share Issued", "Common Stock"]`, y el tercero es un
+**importe en moneda**, no una cantidad de acciones:
+
+| ticker | acciones | Common Stock | ratio |
+|---|---:|---:|---:|
+| AAPL | 14.773.260.000 | 93.568.000.000 | 6,33 |
+| KO | 4.301.608.845 | 1.760.000.000 | 0,41 |
+
+Magnitudes distintas **y en direcciones opuestas**, así que el fallback ni siquiera
+habría fallado de forma consistente — comparar el valor par año contra año no dice
+nada sobre dilución. El fallback se fue: sin una cuenta real de acciones la señal no
+tiene respuesta y lo dice. Nunca corrió, porque `Ordinary Shares Number` está en
+**150 de 150** balances cacheados, que es justamente lo que vuelve barato el momento.
+
+La tolerancia de ±2 % pasa de literal dentro de la comparación a
+`PIOTROSKI.max_dilution_pct`.
+
+Contrato: `tests/test_piotroski_signals_oracle.py`.
+
+---
+
 ## U5-17 — El bootstrap alcanza la observación más reciente (2026-08-29)
 
 `_simulate_paths` sorteaba los inicios de bloque con
