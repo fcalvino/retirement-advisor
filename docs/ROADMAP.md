@@ -10,6 +10,48 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U5-1 — El F-Score dice que mide cambio, no nivel (2026-08-29)
+
+El F-Score de Piotroski son nueve chequeos **año contra año** —¿es esta empresa más
+rentable, menos endeudada y más eficiente **que el año pasado**?— diseñados para
+separar ganadores de perdedores entre acciones baratas en un horizonte de **1 año**.
+Mide **cambio, no nivel**: una empresa mediocre que mejoró puntúa alto y una
+excelente que se mantuvo igual puntúa bajo.
+
+El screener lo describía como *"9 chequeos de salud contable"*, que se lee como un
+nivel —y como algo durable— en la pantalla donde la mayoría lo encuentra. La ficha
+de Stock Analysis ya decía "YoY"; el help de la columna no, ni el README ni
+`portfolio_optimizer.md`. Un solo `PIOTROSKI_HELP` los sirve a todos.
+
+**Verificado: 0 scores y 0 acciones se mueven.** Los 13 que difieren del último
+baseline son los 13 REITs de U5-4, que mergeó después de tomarlo — chequeado, no
+asumido.
+
+### La calibración queda abierta, con su evidencia
+
+Esta fila **no** cierra la pregunta de fondo, que se reabre como **U5-1b**:
+
+| componente | paga | qué mide |
+|---|---:|---|
+| Piotroski | 0–**12** | mejora contra el año pasado |
+| moat | 0–**10** | ventaja competitiva durable |
+| consistencia | 0–15 | estabilidad multi-año |
+
+El motor paga **más** por «mejoró desde el año pasado» que por «tiene un foso», en
+un producto de retiro. Medido sobre 150 equities: **31 %** cobra `bonus_strong` y
+**24 cruzan el umbral de BUY sólo por ese bonus**.
+
+Si eso está mal es una pregunta de calibración, y este proyecto todavía no puede
+fundarla: `recommendation_outcome` tiene 22 filas, **todas a 30 días**, y una señal
+pensada a 1 año no se juzga en 30. U5-1 arregló lo que se podía arreglar sin
+outcomes —la descripción— y dejó los pesos escritos uno al lado del otro en
+`PiotroskiConfig` para que quien retome empiece por la comparación.
+
+Contrato: `tests/test_piotroski_label_contract.py`, con el mismo barrido de docs
+vivos que las otras seis guardas de vocabulario.
+
+---
+
 ## U5-16 — El descuento ARS se aplica por país, no por lista (2026-08-29)
 
 `optimizer.py` tenía `_ARS_TICKERS = {YPF, PAM, CEPU, LOMA, TEO, EDN}` como literal,

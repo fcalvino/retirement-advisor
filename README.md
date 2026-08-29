@@ -28,7 +28,7 @@ Retirement Advisor es el **sistema operativo de un plan de retiro**, no solo un 
 
 **Research y motor**
 - **Análisis fundamental** en 5 dimensiones (rentabilidad, salud financiera, valuación, crecimiento, dividendos)
-- **Consistency Score + Piotroski F-Score** para calidad contable
+- **Consistency Score** (estabilidad multi-año) + **Piotroski F-Score** (mejora contable año contra año)
 - **Economic Moat** cuantitativo + evaluación cualitativa por AI
 - **Análisis técnico** (SMA de 200 semanas ~3,8 años — no la clásica de 200 días —, RSI, MACD, ADX, Bollinger) sobre barras semanales de 10 años — cálculo local con NumPy/Pandas, sin librería de indicadores
 - **Decisión AI** con razonamiento en lenguaje natural (Claude, GPT-4o, Grok o Nous)
