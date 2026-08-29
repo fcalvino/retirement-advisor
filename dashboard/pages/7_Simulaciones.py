@@ -34,10 +34,10 @@ from dashboard.shared import (
     withdrawal_to_tuple,
 )
 from data.product_ux import (
+    PROXY_INDEX_LABEL,
     PROXY_RATIO_HELP,
     PROXY_RATIO_LABEL,
     PROXY_RETURN_HELP,
-    PROXY_RETURN_LABEL,
     ar_dual_context,
     contribution_inputs,
     mc_has_cash_flows,
@@ -45,6 +45,7 @@ from data.product_ux import (
     pot_growth_delta,
     pot_growth_help,
     pot_growth_pct,
+    proxy_attractiveness_index,
 )
 from portfolio.goals import (
     GOAL_TYPE_ICONS,
@@ -68,6 +69,22 @@ st.caption(
     "su resistencia ante crisis históricas. "
     "💵 Valores en USD. Esta simulación es orientativa, no una garantía de resultados."
 )
+
+
+
+def _fmt_idx(expected_return_pct) -> str:
+    """El proxy como índice 0–100 (U6-1). «—» cuando no hay optimización corrida:
+    un plan sin correr no tiene atractivo 0, no tiene atractivo."""
+    idx = proxy_attractiveness_index(expected_return_pct)
+    return "—" if idx is None else f"{idx:.0f}"
+
+
+def _fmt_idx_delta(a, b) -> str | None:
+    """Delta entre dos índices de atractivo, en puntos de índice."""
+    ia, ib = proxy_attractiveness_index(a), proxy_attractiveness_index(b)
+    if ia is None or ib is None:
+        return None
+    return f"{ia - ib:+.0f} vs base"
 
 # ------------------------------------------------------------------ #
 #  Personal profile → smart defaults (onboarding — Fase A)            #
@@ -1598,9 +1615,9 @@ with tab_goals:
                 delta_color="inverse",
             )
             _mc2.metric(
-                PROXY_RETURN_LABEL,
-                f"{_goal_res.expected_return_pct:.1f}%",
-                delta=f"{_goal_res.expected_return_pct - _base_res.expected_return_pct:+.1f}% vs base" if _base_res else None,
+                PROXY_INDEX_LABEL,
+                _fmt_idx(_goal_res.expected_return_pct),
+                delta=_fmt_idx_delta(_goal_res.expected_return_pct, _base_res.expected_return_pct) if _base_res else None,
                 help=PROXY_RETURN_HELP,
             )
             _mc3.metric(

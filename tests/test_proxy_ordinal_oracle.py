@@ -64,9 +64,12 @@ USER_FACING = [
 
 #: `expected_return_pct` interpolado y seguido de un signo de porcentaje, con o
 #: sin espacio. Es la forma exacta que este PR elimina de las pantallas.
+#: `[^}\n]*` es lo que impide cruzar otra llave: sin eso el barrido tomaba el
+#: `%` de la volatilidad tres interpolaciones más adelante y marcaba como
+#: infractora una línea ya corregida.
 _PROXY_AS_PCT_RE = re.compile(
-    r"expected_return(?:_pct)?[^\n]*?\}\s*%|"          # f"{...expected_return_pct:.1f}%"
-    r"expected_return(?:_pct)?[^\n]*?\}\s*anual",      # ...} anual
+    r"expected_return(?:_pct)?[^}\n]*\}\s*%|"          # f"{...expected_return_pct:.1f}%"
+    r"expected_return(?:_pct)?[^}\n]*\}\s*anual",      # ...} anual
 )
 
 
@@ -185,30 +188,49 @@ class TestLaMedicionQueJustificaNoRecalibrar:
     está medida, y lo que la medición dice es que recalibrarla no sirve. Estos
     tests fijan ese razonamiento contra el código, no contra un comentario."""
 
-    def test_recalibrar_el_span_sin_subir_el_cap_aplana_la_vista(self):
-        """El argumento, ejecutable: con el span calibrado a la pendiente medida
-        (0,417) casi todo el universo choca contra `er_absolute_cap` y el desvío
-        de μ NO mejora. Medido: 95 de 150 tickers en el cap, desvío 1,45 pp →
-        1,41 pp."""
-        import numpy as np
+    def test_con_el_span_calibrado_el_score_mediano_ya_choca_contra_el_cap(self):
+        """El argumento contra recalibrar, en una sola afirmación verificable.
 
+        Con el span llevado a la pendiente medida (0,417), el score a partir del
+        cual μ satura ``er_absolute_cap`` cae **por debajo del score medio del
+        universo** (69,5 sobre las 149 equities cacheadas). O sea: más de la
+        mitad de los candidatos quedaría pegada al mismo techo, indistinguible
+        entre sí. Recalibrar sin subir el cap no afila la vista, la **aplana** —
+        medido sobre el universo real, 95 de 150 tickers contra el cap y el
+        desvío de μ pasando de 1,45 pp a 1,41 pp.
+
+        Si algún día se sube el cap, este test falla y obliga a rehacer el
+        razonamiento en vez de dejarlo escrito en un comentario que envejece.
+        """
         from config import VIEW_WEIGHTS as V
 
-        scores = np.linspace(20, 100, 150)
-        divs = np.full(150, 2.0)
-        cap = OPTIMIZER.er_absolute_cap
+        SCORE_MEDIO_DEL_UNIVERSO = 69.5      # 149 equities cacheadas, 2026-08-29
+        span_calibrado = 0.2083 / V.score
 
-        def mu(span):
-            raw = V.score * (scores / 100) * span + V.dividend * (divs / 100)
-            return np.minimum(raw, cap), (raw > cap).sum()
+        # score al que μ satura, con dividendo 0 (el caso más favorable al span)
+        score_de_saturacion = (
+            OPTIMIZER.er_absolute_cap / (V.score * span_calibrado) * 100
+        )
+        assert score_de_saturacion < SCORE_MEDIO_DEL_UNIVERSO, (
+            f"con span {span_calibrado:.3f} el cap satura recién en score "
+            f"{score_de_saturacion:.1f}, por encima del medio del universo "
+            f"({SCORE_MEDIO_DEL_UNIVERSO}) — el argumento para no recalibrar "
+            f"hay que rehacerlo"
+        )
 
-        actual, n_cap_actual = mu(0.18)
-        calib, n_cap_calib = mu(0.2083 / V.score)
+    def test_con_el_span_actual_el_cap_casi_no_muerde(self):
+        """La contracara, que es la que hace del cap un guard y no una perilla:
+        con el 0,18 vigente el cap sólo alcanza a un ticker del universo, así que
+        hoy no está comprimiendo nada."""
+        from config import VIEW_WEIGHTS as V
 
-        assert n_cap_calib > n_cap_actual * 10, (n_cap_actual, n_cap_calib)
-        assert calib.std() <= actual.std(), (
-            f"calibrar aumentó la dispersión ({actual.std():.4f} → {calib.std():.4f}); "
-            f"si eso pasa, el argumento para no recalibrar hay que rehacerlo"
+        score_de_saturacion = (
+            OPTIMIZER.er_absolute_cap / (V.score * OPTIMIZER.score_return_span) * 100
+        )
+        assert score_de_saturacion > 100, (
+            f"el cap satura en score {score_de_saturacion:.1f}: ya está mordiendo "
+            f"dentro del rango de scores posible, y el proxy está más comprimido "
+            f"de lo que este PR asume"
         )
 
     def test_el_intercepto_cero_del_motor_es_el_que_se_midio(self):

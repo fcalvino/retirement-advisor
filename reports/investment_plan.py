@@ -52,11 +52,20 @@ from data.product_ux import (
     GUARDRAILS_OMISSIONS,
     POT_CAGR_LABEL,
     POT_GROWTH_LABEL,
+    PROXY_INDEX_LABEL,
     PROXY_RATIO_LABEL,
     mc_has_cash_flows,
+    proxy_attractiveness_index,
 )
 from reports.pdf_utils import chart_to_image as _chart_to_image
 from reports.pdf_utils import make_header_footer
+
+
+def _fmt_idx(expected_return_pct) -> str:
+    """El proxy como índice 0–100 (U6-1). «—» cuando no hay optimización corrida:
+    un plan sin correr no tiene atractivo 0, no tiene atractivo."""
+    idx = proxy_attractiveness_index(expected_return_pct)
+    return "—" if idx is None else f"{idx:.0f}"
 
 # ------------------------------------------------------------------ #
 #  Brand colours — same palette as alerts/reporter.py                  #
@@ -391,7 +400,7 @@ class InvestmentPlanReport:
         n_goals = len(goal_plan.goal_results) if goal_plan else 0
         plan_score = f"{goal_plan.plan_feasibility_score:.0f}/100" if goal_plan else "—"
         n_tickers = len(opt_result.tickers) if opt_result else 0
-        exp_ret = f"{opt_result.expected_return_pct:.1f}%" if opt_result else "—"
+        exp_ret = _fmt_idx(opt_result.expected_return_pct) if opt_result else "—"
 
         kpi_data = [
             ["Metas planificadas", "Score del plan", "Tickers en cartera", "Atractivo (proxy)"],
@@ -453,7 +462,7 @@ class InvestmentPlanReport:
             rows.append(["Retiro anual", f"${withdrawal:,.0f}"])
         rows.append(["Inflación estimada", f"{inflation:.1f}%"])
         if opt_result:
-            rows.append(["Atractivo estimado (proxy)", f"{opt_result.expected_return_pct:.1f}%"])
+            rows.append([PROXY_INDEX_LABEL, _fmt_idx(opt_result.expected_return_pct)])
             rows.append(["Volatilidad estimada",       f"{opt_result.volatility_pct:.1f}%"])
             rows.append([PROXY_RATIO_LABEL,            f"{opt_result.sharpe_ratio:.2f}"])
             rows.append(["Dividend yield",             f"{opt_result.dividend_yield_pct:.1f}%"])
@@ -633,7 +642,7 @@ class InvestmentPlanReport:
         kpi_rows = [
             ["Atractivo (proxy)", "Volatilidad", "Ratio atr./vol", "Div. Yield", "Moat Avg", "Tickers"],
             [
-                f"{opt_result.expected_return_pct:.1f}%",
+                _fmt_idx(opt_result.expected_return_pct),
                 f"{opt_result.volatility_pct:.1f}%",
                 f"{opt_result.sharpe_ratio:.2f}",
                 f"{opt_result.dividend_yield_pct:.1f}%",
@@ -698,7 +707,7 @@ class InvestmentPlanReport:
                 t.symbol,
                 (t.symbol[:28]),
                 f"{t.weight_pct:.1f}%",
-                f"{t.expected_return_pct:.1f}%",
+                _fmt_idx(t.expected_return_pct),
                 f"{t.volatility_pct:.1f}%",
                 f"{t.dividend_yield_pct:.1f}%",
                 getattr(t, "moat_classification", "—") or "—",

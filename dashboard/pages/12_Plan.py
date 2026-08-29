@@ -45,11 +45,12 @@ from data.plan_context import activate_plan, compute_alignment_trades, deactivat
 from data.plan_store import PlanSnapshot, _slugify, plan_store, unique_plan_id
 from data.product_ux import (
     MAX_DD_ESTIMATE_SHORT,
+    PROXY_INDEX_SHORT,
     PROXY_RATIO_HELP,
     PROXY_RATIO_LABEL,
     PROXY_RETURN_HELP,
-    PROXY_RETURN_SHORT,
     max_dd_estimate_help,
+    proxy_attractiveness_index,
 )
 from data.universe_loader import UNIVERSE_META
 
@@ -67,6 +68,14 @@ st.caption(
     "Monte Carlo + narrativa, todo guardable como un escenario nombrado. "
     "💵 Valores en USD. Esta herramienta es educativa, no es asesoramiento financiero."
 )
+
+
+def _fmt_idx(expected_return_pct) -> str:
+    """El proxy como índice 0–100 (U6-1). «—» cuando no hay optimización corrida:
+    un plan sin correr no tiene atractivo 0, no tiene atractivo."""
+    idx = proxy_attractiveness_index(expected_return_pct)
+    return "—" if idx is None else f"{idx:.0f}"
+
 render_assumptions_disclaimer()   # Item 1: radical transparency of assumptions
 st.caption(f"📒 {track_record_home_line()}")  # backlog 15
 
@@ -122,7 +131,7 @@ def _session_mc_params() -> dict:
 
 def _metrics_row(metrics: dict) -> None:
     c = st.columns(6)
-    c[0].metric(PROXY_RETURN_SHORT, f"{metrics.get('expected_return_pct', 0):.1f}%",
+    c[0].metric(PROXY_INDEX_SHORT, _fmt_idx(metrics.get('expected_return_pct')),
                 help=PROXY_RETURN_HELP)
     c[1].metric("Volatilidad", f"{metrics.get('volatility_pct', 0):.1f}%")
     c[2].metric(PROXY_RATIO_LABEL, f"{metrics.get('sharpe_ratio', 0):.2f}",
@@ -1087,7 +1096,7 @@ else:
                 st.markdown(f"**🗺️ {p.name}**" + ("  🎯 _Activo_" if _is_active else ""))
                 st.caption(
                     f"{p.profile_name or '—'} · {p.n_positions} pos · "
-                    f"Atractivo {p.metrics.get('expected_return_pct', 0):.1f}% · "
+                    f"Atractivo {_fmt_idx(p.metrics.get('expected_return_pct'))} · "
                     f"Ratio {p.metrics.get('sharpe_ratio', 0):.2f} · "
                     f"{p.updated_at[:10]}"
                 )

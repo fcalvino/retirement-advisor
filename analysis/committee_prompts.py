@@ -28,8 +28,9 @@ from data.product_ux import (
     DOWNSIDE_RATIO_LABEL,
     POT_CAGR_LABEL,
     POT_GROWTH_LABEL,
+    PROXY_INDEX_LABEL,
     PROXY_RATIO_LABEL,
-    PROXY_RETURN_LABEL,
+    proxy_attractiveness_index,
 )
 
 AGENT_JSON_SCHEMA = (
@@ -44,6 +45,14 @@ AGENT_JSON_SCHEMA = (
     "Nunca uses inglés en los valores de texto.\n"
 )
 
+
+
+
+def _fmt_idx(expected_return_pct) -> str:
+    """El proxy como índice 0–100 (U6-1). «—» cuando no hay optimización corrida:
+    un plan sin correr no tiene atractivo 0, no tiene atractivo."""
+    idx = proxy_attractiveness_index(expected_return_pct)
+    return "—" if idx is None else f"{idx:.0f}"
 
 def _eps_growth_label(fund) -> str:
     """Honest name for the earnings-growth figure (see analysis/fundamental.py)."""
@@ -228,7 +237,7 @@ def portfolio_committee_context_block(ctx: dict) -> str:
         lines += [
             "",
             "--- Riesgo/retorno del MODELO (proyección de un plan propuesto) ---",
-            f"{PROXY_RETURN_LABEL}: {_fmt_pct(g('expected_return_pct'))} anual — proxy de "
+            f"{PROXY_INDEX_LABEL}: {_fmt_idx(g('expected_return_pct'))} — índice relativo de "
             "score + dividendo + moat, no un pronóstico de retorno.",
             f"Volatilidad: {_fmt_pct(g('volatility_pct'))} · {PROXY_RATIO_LABEL}: "
             f"{_num(g('sharpe_ratio'))} — (atractivo − tasa libre de riesgo) / volatilidad "

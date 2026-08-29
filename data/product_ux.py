@@ -31,10 +31,67 @@ from config import MOAT
 PROXY_RETURN_LABEL = "Atractivo estimado (proxy)"
 PROXY_RETURN_SHORT = "Atractivo est."
 PROXY_RETURN_HELP = (
-    "Proxy anual construido con score + dividendo + moat, no un pronóstico. "
+    "Proxy construido con score + dividendo, no un pronóstico. "
     "Sirve para ordenar y comparar carteras entre sí; la proyección de patrimonio "
     "la da el Monte Carlo, que parte de la historia real de precios."
 )
+
+# --------------------------------------------------------------------------- #
+#  El proxy se ordena, no se cotiza (U6-1)                                    #
+# --------------------------------------------------------------------------- #
+#  ``OptimizationResult.expected_return_pct`` se mostraba como «7,2 % anual».
+#  Medido sobre las 149 equities cacheadas con ≥5 años de historia semanal, ese
+#  formato promete tres cosas que el número no tiene:
+#
+#    * **exactitud** — su correlación con el drift del Monte Carlo, el único
+#      retorno observable que el motor calcula, es **+0,025**;
+#    * **precisión** — R² de 0,116 contra el CAGR realizado, y un rango p10–p90
+#      de 3,4 pp contra los 19 pp que abarca el CAGR real;
+#    * **una unidad** — «% anual» invita a sumarlo, capitalizarlo o compararlo
+#      contra el rendimiento de un plazo fijo, y no es ninguna de esas cosas.
+#
+#  Lo que la medición **sí** validó es la estructura: el score predice el CAGR
+#  con la pendiente del signo correcto (p < 0,0001) y con intercepto −1,43 %, o
+#  sea el cero que el motor asume. Por eso U6-1 se cierra por el lado del
+#  rótulo y no del número — μ queda intacto, porque Black-Litterman lo necesita
+#  en unidades de retorno y porque recalibrarlo contra diez años de historia
+#  sería hornear hindsight (ver ``tests/test_proxy_ordinal_oracle.py``).
+#
+#  El índice es ``μ / er_absolute_cap × 100``: una transformación **estrictamente
+#  monótona**, así que todo ordenamiento se conserva y ninguna decisión de
+#  cartera cambia. El 100 es el cap del motor, no un redondeo elegido aparte.
+
+PROXY_INDEX_LABEL = "Índice de atractivo (0–100)"
+PROXY_INDEX_SHORT = "Atractivo"
+PROXY_INDEX_HELP = (
+    "Escala relativa de 0 a 100 para **ordenar y comparar** candidatos y carteras "
+    "de este modelo entre sí. **No es una tasa**: no se capitaliza, no se compara "
+    "contra un plazo fijo y no proyecta patrimonio — eso lo hace el Monte Carlo, "
+    "que parte de la historia real de precios. Sale del score y del dividendo; "
+    "100 es el techo que el motor le permite a un solo activo."
+)
+
+
+def proxy_attractiveness_index(
+    expected_return_pct: Optional[float],
+    config=None,
+) -> Optional[float]:
+    """``expected_return_pct`` (proxy) mapeado a un índice 0–100 (U6-1).
+
+    Estrictamente monótona en μ, así que **el orden no cambia** — es el mismo
+    ranking que usa el optimizer, descrito sin prometer una tasa anual.
+
+    ``None`` entra y sale como ``None``: un plan sin optimización corrida no
+    tiene atractivo 0, no tiene atractivo (misma regla que U3-1/U5-14).
+    """
+    if expected_return_pct is None:
+        return None
+    if config is None:
+        from config import OPTIMIZER as config  # noqa: N811 — singleton default
+    cap_pct = float(getattr(config, "er_absolute_cap", 0.14)) * 100.0
+    if cap_pct <= 0:
+        return None
+    return max(0.0, min(100.0, float(expected_return_pct) / cap_pct * 100.0))
 
 PROXY_RATIO_LABEL = "Ratio atractivo/vol"
 PROXY_RATIO_HELP = (
@@ -939,7 +996,7 @@ def _plan_field_map(snap: Any) -> Dict[str, Any]:
 _COMPARE_LABELS = {
     "profile": "Perfil de riesgo",
     "n_positions": "Posiciones",
-    "expected_return_pct": f"{PROXY_RETURN_LABEL} %",
+    "expected_return_pct": PROXY_INDEX_LABEL,
     "volatility_pct": "Volatilidad %",
     "sharpe_ratio": PROXY_RATIO_LABEL,
     "dividend_yield_pct": "Div. yield %",
