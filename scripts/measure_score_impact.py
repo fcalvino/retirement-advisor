@@ -146,6 +146,11 @@ def measure_symbol(symbol: str, ai_config=None) -> Optional[Dict[str, Any]]:
         "debt_equity": fund.debt_equity,
         "data_quality": dq.get("level"),
         "technical_signal": tech.signal,
+        # U3-2 reads these: ATR and ADX are the numbers under measurement, and
+        # ``adx`` in particular decides a gate (``>= 25``) that the signal above
+        # only reports the aggregate of.
+        "adx": tech.adx,
+        "atr_pct": tech.atr_pct,
         "action": decision.action,
         "confidence": decision.confidence,
         "blocked": decision.blocked,
@@ -202,7 +207,27 @@ def render_comparison(before: Dict[str, Any], after: Dict[str, Any]) -> str:
 
     sig = [(s, before[s]["action"], after[s]["action"])
            for s in common if before[s]["action"] != after[s]["action"]]
-    lines.append(f"- Con la señal modificada: **{len(sig)}**\n")
+    lines.append(f"- Con la señal modificada: **{len(sig)}**")
+
+    # The technical leg reaches ``action`` only through the BULLISH/NEUTRAL/
+    # BEARISH bucket, so a change that moves ADX or ATR without flipping the
+    # bucket would be invisible above. U3-2 needs it visible: the ADX gate is
+    # its own decision (``technical.py`` ``adx >= 25`` pays +5) and the notes at
+    # :166/:168 are read by the user.
+    tech_sig = [(s, before[s].get("technical_signal"), after[s].get("technical_signal"))
+                for s in common
+                if before[s].get("technical_signal") != after[s].get("technical_signal")]
+    lines.append(f"- Con la señal **técnica** modificada: **{len(tech_sig)}**")
+
+    def _gate(row) -> Optional[bool]:
+        v = row.get("adx")
+        return bool(v >= 25) if isinstance(v, (int, float)) else None
+
+    gate = [(s, before[s].get("adx"), after[s].get("adx"))
+            for s in common
+            if _gate(before[s]) is not None and _gate(after[s]) is not None
+            and _gate(before[s]) != _gate(after[s])]
+    lines.append(f"- Que cruzan el gate de ADX 25: **{len(gate)}**\n")
 
     if moved:
         lines.append("## Deltas por ticker\n")
@@ -219,6 +244,18 @@ def render_comparison(before: Dict[str, Any], after: Dict[str, Any]) -> str:
             lines.append(
                 f"| {sym} | {b['adjusted_score']} | {a['adjusted_score']} | {d:+g} | {dims} | {action} |"
             )
+
+    if tech_sig:
+        lines.append("\n## Cambios de señal técnica\n")
+        for sym, old_s, new_s in tech_sig:
+            b, a = before[sym].get("adx"), after[sym].get("adx")
+            lines.append(f"- **{sym}**: {old_s} → {new_s} (ADX {b} → {a})")
+
+    if gate:
+        lines.append("\n## Cruces del gate de ADX 25 (+5 al score técnico)\n")
+        for sym, b, a in gate:
+            side = "entra" if (a or 0) >= 25 else "sale"
+            lines.append(f"- **{sym}**: {b} → {a} — {side}")
 
     if sig:
         lines.append("\n## Cambios de señal\n")

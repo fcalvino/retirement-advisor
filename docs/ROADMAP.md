@@ -10,6 +10,116 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U3-2 — ATR y ADX con el suavizado que dicen usar (2026-08-29)
+
+### El defecto
+
+`_atr` y `_adx` suavizaban con `ewm(span=period)`, que es `alpha = 2/(period+1)`.
+Wilder —quien definió los dos indicadores— usa `alpha = 1/period`. Con el
+`period=14` del módulo eso es **0,0714 contra 0,1333**: el motor promediaba con
+un suavizado casi el doble de reactivo que el del indicador cuyo nombre estaba
+publicando. El RSI (`technical.py:304`) ya lo hacía bien desde siempre, así que
+la referencia correcta vivía en el mismo archivo, doce líneas más arriba.
+
+### La fila citaba tres sitios; son cuatro, y uno no mueve nada
+
+La fila decía `technical.py:329,353-358`. Verificado contra `main`:
+
+| sitio | qué suaviza | ¿mueve el número? |
+|---|---|---|
+| `_atr` | el True Range publicado en `atr_pct` | **sí** |
+| `_adx` TR | el denominador de las dos patas DI | **no — se cancela** |
+| `_adx` +DM | la pata alcista | **sí** |
+| `_adx` −DM | la pata bajista | **sí** |
+| `_adx` DX | el ADX mismo | **sí** |
+
+Dos correcciones a la fila, en direcciones opuestas. El suavizado final del DX
+**no estaba en el rango citado**, y es el que produce el número que lee el gate
+de `:274`. Y el del TR dentro de `_adx`, que sí estaba citado, **no puede mover
+el resultado**: `DI± = 100·S(DM±)/S(TR)` y `DX = 100·|DI⁺−DI⁻|/(DI⁺+DI⁻)`, así
+que `S(TR)` es factor común y se va — verificado, bit-idéntico en tres de las
+cuatro series de prueba y a 1e-15 en la cuarta. Se corrigió igual, porque es la
+formulación del libro, y hay un test que **fija la cancelación** para que el
+mutante sobreviviente de ese sitio no se lea como un agujero de cobertura.
+
+### Medido sobre los 164 tickers cacheados
+
+| | antes | después |
+|---|---:|---:|
+| Cruzan el gate `adx >= 25` (+5 al score técnico) | **105** (64,0 %) | **69** (42,1 %) |
+| ADX mediana | 27,8 | 22,4 |
+| ADX media | 31,3 | 24,2 |
+| Nota «weak/ranging» (`adx < 15`, `:168`) | 4 | **25** |
+
+**48 tickers cruzan el gate**: 43 salen y 5 entran (ABEV, BSAC, GS, PLD, TXN).
+El ADX baja en 141 de 164 y sube en 22 — hasta −29,2 puntos (ITW 43,5 → 22,4;
+MA 42,0 → 22,2; SWK 40,7 → 24,0). Que baje casi siempre no es casualidad: el
+suavizado nervioso deja que los picos del DX sobrevivan al promedio, así que el
+motor venía leyendo tendencia fuerte donde Wilder lee un mercado lateral.
+
+**Y acá la fila también se quedaba corta al revés.** Decía «ATR y ADX son
+sistemáticamente más nerviosos». Para el ADX es exacto. Para el ATR **no**: se
+mueve en 163 de 164 tickers pero en las dos direcciones (85 bajan, 78 suben,
+entre −30,4 % y +15,0 %) y la mediana de `atr_pct` queda en 5,60 → 5,63. Es
+esperable: el ATR es un nivel, y cambiar el retardo del promedio lo corre para
+donde vaya el precio; el ADX es un cociente doblemente suavizado, y ahí el
+exceso de reactividad tiene un signo.
+
+### Lo que no se movió, dicho explícitamente
+
+**0 scores y 0 acciones.** Ningún `adjusted_score` cambia y ninguna decisión de
+compra/venta cambia. Una sola señal técnica se da vuelta —**CMG**, BULLISH →
+NEUTRAL, con ADX 25,6 → 19,6— y ni siquiera esa mueve la acción, porque la
+escalera de `strategy.py:316` admite BULLISH **y** NEUTRAL para STRONG BUY.
+
+Eso no vuelve el arreglo cosmético: el ADX es un número que el usuario ve en
+`2_Stock_Analysis.py:687`, que entra en los dos prompts de IA
+(`prompts.py:458,696`) y que decide +5 puntos del score técnico en 48 tickers.
+Lo que dice es que hoy el score técnico está lejos de sus umbrales
+(`>= 30` BULLISH / `<= -20` BEARISH) en casi toda la muestra, así que mover 5
+puntos rara vez alcanza para cambiar de bucket.
+
+### `ENGINE_VERSION` no se bumpea
+
+Verificado, no asumido, por los dos lados. **Estructural:** `portfolio/optimizer.py`
+no menciona `technical`, `full_analysis` ni `.action` en ninguna línea — el μ, la
+covarianza y el Monte Carlo nunca ven un ADX. `personal_sizer` sí mira la pata
+técnica, pero lee RSI, `above_sma200` y `price_vs_52w_high_pct`, no ADX ni ATR.
+**Empírico:** la corrida de `measure_score_impact.py --compare` da 0 scores y 0
+acciones movidas sobre 164 tickers. Nada de lo que un `PlanSnapshot` persiste
+—`allocation`, `metrics`, `mc_summary`— depende de estos dos números.
+
+### El oráculo
+
+`tests/test_wilder_smoothing_oracle.py`, 22 tests. **No busca la palabra `span`**:
+un grep verifica que alguien escribió lo que se le pidió, no que el número esté
+bien, y pasaría en verde sobre un `rolling` roto. En su lugar hay una
+implementación de referencia independiente, escrita desde la definición con el
+bucle lento `avg = (avg*(n-1) + x)/n`, y el motor se mide contra ella (CONTEXT §5).
+
+Verificado por mutación — cada sitio revertido a `span` por separado:
+
+| mutante | resultado |
+|---|---|
+| `_atr` → span | **7 tests rojos** |
+| `_adx` TR → span | 22 verdes — correcto, se cancela (hay un test que lo fija) |
+| `_adx` +DM → span | **5 rojos** |
+| `_adx` −DM → span | **5 rojos** |
+| `_adx` DX → span | **6 rojos** |
+| **MACD → Wilder** (anti-cheat) | **5 rojos** |
+
+El anti-cheat importa: el MACD de `:315-318` usa `span` y **eso está bien** —un
+MACD se define con EMA, no con Wilder—. Sin ese test, el próximo que barra el
+archivo reemplazando cada `span` por `alpha=1/n` rompería el MACD en silencio
+mientras «terminaba» esta fila.
+
+De paso, `scripts/measure_score_impact.py` ahora registra `adx` y `atr_pct` y
+reporta cambios de **señal técnica** y **cruces del gate de ADX 25** — antes sólo
+miraba `action`, así que un cambio del tamaño de éste habría salido como
+«0 señales modificadas».
+
+---
+
 ## U5-18 — Un solo reloj, y un día que es el del usuario (2026-08-29)
 
 ### Lo que la fila decía, y lo que había

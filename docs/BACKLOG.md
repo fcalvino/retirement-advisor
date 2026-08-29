@@ -52,12 +52,12 @@ una, con oráculos empíricos donde el hallazgo lo permitía.
 
 | Oleada | Total | Cerradas | Abiertas |
 |---|---|---|---|
-| 3 — fórmulas con blast radius | 11 | 10 | 1 |
+| 3 — fórmulas con blast radius | 11 | 11 | 0 |
 | 4 — flujos del motor | 4 | 2 | 2 |
 | 5 — scoring y config | 20 | 16 | 4 |
 | 6 — dos motores de retorno | 2 | 0 | 2 |
 | 7 — UX del dashboard | 2 | 0 | 2 |
-| **Total** | **39** | **28** | **11** |
+| **Total** | **39** | **29** | **10** |
 
 Cerradas: **U3-6** (`a5a63d9`), **U3-11** (`00fb551`, oráculo: sin `payoutRatio` ni
 FFO el score es 4.0 exacto), **U5-20** (`d86f8e9`), **U4-2** y **U4-1** (`9f05443`,
@@ -84,7 +84,9 @@ conservador — ver `ROADMAP.md`),
 **U5-18** (un solo reloj; la edad del dato estaba bien y el defecto era el día del
 dedup — 19,4 % de la muestra del track record eran repeticiones),
 **U5-9 + U5-10 + U5-11** (un número, una casa — y cinco de los ocho literales de
-U5-9 ya no existían al abrirla).
+U5-9 ya no existían al abrirla),
+**U3-2** (ATR y ADX con el suavizado de Wilder; 48 de 164 tickers cruzan el gate
+de ADX 25 y la fila se quedaba corta en los dos sentidos — ver `ROADMAP.md`).
 Fuera de las oleadas 3–7,
 **U0-2** también cerró — ver `ROADMAP.md`.
 
@@ -140,7 +142,6 @@ son el terreno donde ya nacieron los defectos de arriba.
 |---|---|---|---|
 | **U3-7b** | P2 | El Optimizer sigue normalizando el moat por `/20` para rankear (`:483`, `:509`), así que una fila sin IA —cuyo techo real es 12— queda sistemáticamente peor rankeada por no haber sido enriquecida, no por la empresa. U3-7 arregló las **etiquetas**; esto es el mismo supuesto de escala única en los **pesos**. Se dejó afuera de U3-7 a propósito; `:625`, el tercer `/20`, desapareció con U5-6 al quitarse el término de moat de μ | `optimizer.py:483,509` |
 | **U3-1b** | P3 | `sma200_slope_pct` tiene la misma forma que tenía `above_sma200` antes de U3-1: es `float = 0.0`, así que "no hay ventana suficiente" y "la media está plana" son el mismo valor. Consecuencia acotada pero real: el gate D15 de `technical.py:266` (`or result.sma200_slope_pct >= 0`) concede el bonus por sobreventa a un ticker cuya pendiente nadie pudo medir. Se dejó afuera de U3-1 para no mezclar dos campos en un PR de tipos | `technical.py:35,266` |
-| **U3-2** | P2 | ATR y ADX usan `ewm(span=period)` en vez del suavizado de Wilder `alpha=1/period`. El RSI (`:300`) ya está bien — son los únicos dos que quedaron | `technical.py:329,353-358` |
 | **U4-5** | P2 | La pestaña principal de Simulaciones **no puede** simular un aporte: su único widget de flujo es "Retiro anual" con `min_value=0`, así que la pantalla que contesta "¿llego?" no representa que alguien ahorre. El motor acepta `annual_contribution` desde tier2 y `contribution_inputs` ya resuelve el número; falta la palanca | `7_Simulaciones.py:195-204` |
 | **U4-3** | P2 | La palanca "Inflación" del tornado bumpea `withdrawal_growth_rate`; sin retiros activos el swing es exactamente 0 y el rótulo queda igual | `sensitivity.py:105-110` |
 | **U4-4** | P2 | La longevidad solo trunca: `cap_week = min(longevity*52, n_cols-1)`. Vivir 5 años más no puede alargar la simulación | `decumulation.py:300` |
@@ -251,6 +252,7 @@ priorizarlo:
   | U6-1 | el proxy es «inventado» | el score sí predice retorno (p<0,0001); el defecto era el formato |
   | U4-1c | el lump de diciembre | también el primer año entero sin gastar, que era la mitad más grande |
   | N5 | *(no existía)* | apareció midiendo si bajar un techo, y el techo era la perilla equivocada |
+  | U3-2 | 3 suavizados del ADX, «ATR y ADX más nerviosos» | 4 sitios, uno de ellos **no puede** mover el número; y el ATR no tiene sesgo de signo, sólo el ADX |
 
   Empezar a arreglar sin medir produce el arreglo de la fila, no el del defecto.
 - Una fila se cierra cuando su **oráculo** pasa, no cuando el código "parece bien".
