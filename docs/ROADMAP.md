@@ -10,6 +10,46 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U5-13 — El gap de capital, en dólares de un solo año (2026-08-28)
+
+`compute_aggregates` sumaba el `target_nominal` de cada meta —el monto necesario
+**en el año objetivo de esa meta**— y le restaba la suma de los `median_terminal`,
+también cada uno en su propio año. Un auto en 2031 y un retiro en 2051 se sumaban
+y el resultado se mostraba como *"te falta esto"*, sin ningún año adosado a la cifra.
+
+Dólares nominales de años distintos no son la misma unidad, así que su suma no es
+una cantidad. Y el error corre para un solo lado: cuanto más lejos la meta, más
+sobrestima su objetivo nominal inflado el esfuerzo real. Medido de punta a punta
+sobre un plan plausible —auto a 5 años, casa a 12, retiro a 25:
+
+| | mezclando años | USD de hoy |
+|---|---:|---:|
+| capital requerido | 1.923.665 | **980.000** |
+| gap de capital | 1.018.479 | **498.997** |
+
+El requerido nominal sobrestimaba un **96 %**.
+
+Cada meta se deflacta en sus propios términos —su horizonte, su
+`expected_inflation`— y recién entonces se suma, vía `product_ux.present_value_usd`,
+que ya era la única implementación de `nominal / (1+i)**n` para la superficie de
+producto.
+
+**Deflactar antes de sumar es la parte que importa** y tiene test propio: netear
+primero los nominales deja que un excedente en dólares de 2051 cancele un faltante
+en dólares de 2031. El faltante por meta además se pisa en cero antes de
+descontarse, así que una meta sobrefondeada aporta cero y no crédito.
+
+Los campos se **renombran** a `total_capital_needed_today` y `capital_gap_today` en
+vez de cambiar de significado calladamente bajo el nombre viejo: un número cuyo
+nombre no dice su unidad es exactamente cómo éste sobrevivió, y el repo ya trata
+una etiqueta engañosa como el defecto (U1-1, U1-5, U1-6). No se persistían ni se
+testeaban, así que no hubo migración; las dos superficies ahora dicen "USD de hoy"
+en vez de dejarle el año al lector.
+
+Contrato: `tests/test_capital_gap_oracle.py`.
+
+---
+
 ## U5-15 — El horizonte anual dura un año (2026-08-28)
 
 Dos defectos sobre la única evidencia que el motor tiene de sus propias
