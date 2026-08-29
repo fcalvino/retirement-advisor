@@ -167,6 +167,31 @@ class TestATransientFailureIsSurvived:
         assert len(fetcher.get_dividends("X")) == 2
         assert state["n"] == 2
 
+    def test_paying_no_dividends_is_an_answer_not_a_failure(self, monkeypatch):
+        """A company that pays nothing must not be asked three times.
+
+        The distinction costs nothing to hold and everything to lose: an empty
+        series is the feed answering, and retrying it would triple the network
+        cost of every non-paying ticker in a screener run for no information.
+        """
+        from config import FETCH
+
+        monkeypatch.setattr(FETCH, "retry_base_delay_s", 0.0)
+        monkeypatch.setattr(fetcher.cache, "get", lambda *a, **k: None)
+        monkeypatch.setattr(fetcher.cache, "set", lambda *a, **k: None)
+
+        state = {"n": 0}
+
+        class _Ticker:
+            def __init__(self, symbol):
+                state["n"] += 1
+
+            dividends = pd.Series(dtype=float)
+
+        monkeypatch.setattr(fetcher.yf, "Ticker", _Ticker)
+        assert fetcher.get_dividends("X").empty
+        assert state["n"] == 1, "un 'no paga dividendos' no se reintenta"
+
     def test_a_permanent_failure_still_degrades_quietly(self, monkeypatch):
         """Anti-cheat: retrying must not turn a real outage into a crash.
 
