@@ -477,6 +477,27 @@ class CryptoMoatConfig:
 
 
 @dataclass
+class ArsRiskConfig:
+    """Which countries carry the ARS-style macro discount, and nothing else.
+
+    The optimizer used to hold six ADR symbols in a literal set (U5-16). Measured
+    across all 167 tickers in the shipped universes, that set was exactly the
+    companies the feed marks ``country == "Argentina"`` — so it was right, and
+    right by coincidence rather than by construction.
+
+    It missed the one population it could not enumerate: ``custom_tickers`` merge
+    into the effective universe, so an Argentine ADR a user adds by hand (GGAL,
+    BMA, SUPV, BBAR, TGS, CRESY, IRS — none of which ship) received no discount.
+    The macro risk does not care who typed the symbol.
+
+    Keyed off the same ``info["country"]`` that ``TaxConfig`` uses, so "which
+    country is this company exposed to" has one answer in this codebase.
+    """
+
+    exposed_countries: tuple = ("Argentina",)
+
+
+@dataclass
 class TaxConfig:
     """Statutory corporate income-tax rates, by the country that levies them.
 
@@ -1883,6 +1904,7 @@ PIOTROSKI = PiotroskiConfig()
 BACKTEST = BacktestConfig()
 MOAT = MoatConfig()
 TAXES = TaxConfig()
+ARS_RISK = ArsRiskConfig()
 CRYPTO_MOAT = CryptoMoatConfig()
 OPTIMIZER = OptimizerConfig()
 REPORT = ReportConfig()

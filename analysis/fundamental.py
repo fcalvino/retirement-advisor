@@ -43,6 +43,9 @@ class FundamentalResult:
     company_name: str = ""
     sector: str = ""
     industry: str = ""
+    #: As the feed reports it. Drives the corporate tax rate (U3-8) and the
+    #: ARS macro discount (U5-16) — one field, one answer.
+    country: str = ""
     market_cap: float = 0.0
     current_price: float = 0.0
 
@@ -719,6 +722,7 @@ class FundamentalAnalyzer:
 
         # Basic info
         result.company_name = info.get("longName", symbol)
+        result.country = info.get("country", "") or ""
         from config import SECTOR_MAP
         _etf_tickers    = set(SECTOR_MAP.get("ETF", []))
         _crypto_tickers = set(SECTOR_MAP.get("Crypto", []))
