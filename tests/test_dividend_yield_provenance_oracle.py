@@ -46,19 +46,23 @@ from analysis.fundamental import (
 )
 
 # --------------------------------------------------------------------------- #
-#  Los 8 casos reales, tal como los trae la caché (2026-08-29)                 #
-#  sym, rate, price, dividendYield, fiveYearAvgDividendYield, país             #
+#  Los 8 casos reales, con los cinco campos tal como los trae la caché         #
+#  (2026-08-29). `tay` va incluido A PROPÓSITO: los fixtures que lo omitían    #
+#  dejaban pasar la mutación «guardá sólo rate/price» — el paso 2 caía en el   #
+#  vacío en vez de reponer el mismo número corrupto, y el test se volvía       #
+#  verde por una ausencia del fixture y no por el arreglo.                     #
+#  sym, rate, price, trailingAnnualDividendYield, dividendYield, 5yAvg, país   #
 # --------------------------------------------------------------------------- #
 
 CORRUPTOS = [
-    ("TEO",  13.632, 14.390, 0.31, 6.78, "Argentina"),
-    ("SBS",  0.6640, 5.1950, 0.63, 1.79, "Brazil"),
-    ("ITUB", 2.9550, 7.8950, 2.19, 4.32, "Brazil"),
-    ("VALE", 5.4770, 14.825, 8.12, 9.33, "Brazil"),
-    ("ABEV", 0.7300, 2.9550, 5.64, 5.19, "Brazil"),
-    ("BAP",  50.000, 384.57, 3.72, 3.02, "Peru"),
-    ("HON",  9.4000, 215.24, 1.27, 2.10, "United States"),
-    ("BSBR", 1.0710, 5.7750, 5.95, 6.75, "Brazil"),
+    ("TEO",  13.632, 14.390, 0.98568330, 0.31, 6.78, "Argentina"),
+    ("SBS",  0.6640, 5.1950, 0.12504707, 0.63, 1.79, "Brazil"),
+    ("ITUB", 2.9550, 7.8950, 0.37216625, 2.19, 4.32, "Brazil"),
+    ("VALE", 5.4770, 14.825, 0.37233177, 8.12, 9.33, "Brazil"),
+    ("ABEV", 0.7300, 2.9550, 0.24333334, 5.64, 5.19, "Brazil"),
+    ("BAP",  50.000, 384.57, 0.12922235, 3.72, 3.02, "Peru"),
+    ("HON",  9.4000, 215.24, 0.04265166, 1.27, 2.10, "United States"),
+    ("BSBR", 1.0710, 5.7750, 0.18433735, 5.95, 6.75, "Brazil"),
 ]
 
 #: Tickers donde los tres campos coinciden: el paso 1 es genuinamente el más
@@ -71,12 +75,14 @@ SANOS = [
 ]
 
 
-def _info(rate=None, price=None, dy=None, avg5=None):
+def _info(rate=None, price=None, dy=None, avg5=None, tay=None):
     d = {}
     if rate is not None:
         d["trailingAnnualDividendRate"] = rate
     if price is not None:
         d["currentPrice"] = price
+    if tay is not None:
+        d["trailingAnnualDividendYield"] = tay
     if dy is not None:
         d["dividendYield"] = dy
     if avg5 is not None:
@@ -91,13 +97,13 @@ def _info(rate=None, price=None, dy=None, avg5=None):
 
 class TestElRateSobrePrecioNoEsInmuneALaMoneda:
 
-    @pytest.mark.parametrize("sym,rate,price,dy,avg5,pais", CORRUPTOS)
+    @pytest.mark.parametrize("sym,rate,price,tay,dy,avg5,pais", CORRUPTOS)
     def test_no_devuelve_el_numero_que_los_otros_dos_campos_desmienten(
-        self, sym, rate, price, dy, avg5, pais
+        self, sym, rate, price, tay, dy, avg5, pais
     ):
         """El defecto, aislado: dos campos coinciden y el motor cree al tercero."""
         derivado = rate / price * 100
-        got = normalize_dividend_yield_pct(_info(rate, price, dy, avg5))
+        got = normalize_dividend_yield_pct(_info(rate, price, dy, avg5, tay))
 
         assert got is not None, f"{sym}: descartar no es medir"
         assert got == pytest.approx(dy, rel=0.02), (
@@ -106,9 +112,9 @@ class TestElRateSobrePrecioNoEsInmuneALaMoneda:
             f"El derivado rate/price da {derivado:.2f}% — {derivado / dy:.1f}x."
         )
 
-    @pytest.mark.parametrize("sym,rate,price,dy,avg5,pais", CORRUPTOS)
+    @pytest.mark.parametrize("sym,rate,price,tay,dy,avg5,pais", CORRUPTOS)
     def test_el_promedio_de_cinco_anios_le_da_la_razon_al_feed(
-        self, sym, rate, price, dy, avg5, pais
+        self, sym, rate, price, tay, dy, avg5, pais
     ):
         """El testigo independiente. Esto no es parte del arreglo: es el hecho
         sobre los datos que vuelve defendible preferir ``dividendYield``. Si
@@ -144,6 +150,34 @@ class TestElRateSobrePrecioNoEsInmuneALaMoneda:
         assert 1.10 < corte < 3.00, (
             f"el corte {corte} salió de la banda vacía 1.04x-3.12x: o los datos "
             f"cambiaron o el número se eligió por otra razón que hay que escribir"
+        )
+
+    @pytest.mark.parametrize("sym,rate,price,tay,dy,avg5,pais", CORRUPTOS)
+    def test_se_descarta_la_familia_entera_no_solo_la_division(
+        self, sym, rate, price, tay, dy, avg5, pais
+    ):
+        """El intento fallido que este PR hizo primero, fijado como test.
+
+        ``trailingAnnualDividendRate / price`` y ``trailingAnnualDividendYield``
+        son la MISMA magnitud —el importe del dividendo puesto contra el papel—
+        y caen en la misma trampa de moneda: en ITUB dan 37.43 %% y 37.22 %%, en
+        ABEV 24.70 %% y 24.33 %%. Guardar sólo la primera dejaba que la segunda
+        repusiera el mismo número por la ventana, y la medición mostraba un
+        arreglo que no arreglaba casi nada.
+
+        Sin este test la mutación «guardá sólo rate/price» sobrevive: los
+        fixtures que omitían ``tay`` la dejaban pasar.
+        """
+        por_division = rate / price * 100
+        por_fraccion = tay * 100
+        assert por_fraccion / dy > 2.0, (
+            f"{sym}: el fixture ya no reproduce el caso — tay*100={por_fraccion:.2f}%% "
+            f"no contradice a dividendYield={dy}%%"
+        )
+        got = normalize_dividend_yield_pct(_info(rate, price, dy, avg5, tay))
+        assert got == pytest.approx(dy, rel=0.02), (
+            f"{sym}: resolvió {got}, y las dos derivadas dicen "
+            f"{por_division:.2f}%% y {por_fraccion:.2f}%%"
         )
 
     def test_sin_segunda_opinion_el_derivado_sigue_ganando(self):
