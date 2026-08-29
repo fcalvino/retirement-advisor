@@ -40,7 +40,14 @@ DB_PATH = DB_DIR / "retirement_advisor.db"
 #                   were overweighted against the engine's own valuation. μ
 #                   falls 0.50 pp on average; plans saved under tier0-tier2 hold
 #                   allocations tilted toward moat.
-ENGINE_VERSION = "2026.08-tier3"
+#   2026.08-tier4 — U5-17: the block bootstrap could not draw the most recent
+#                   observation and under-sampled the ones before it, so every
+#                   projection leaned on the older part of the history. Plans
+#                   saved under tier0-tier3 were fitted to a window missing its
+#                   newest bar; the size and sign of the error depend on how that
+#                   stretch compared with the ticker's own mean (measured: PFE
+#                   6.96 % low, INTC 0.73 % high).
+ENGINE_VERSION = "2026.08-tier4"
 
 
 @dataclass

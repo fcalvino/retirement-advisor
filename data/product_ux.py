@@ -1803,6 +1803,12 @@ ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
         "así que las empresas con foso ancho quedaban sobreponderadas respecto de lo que "
         "el propio motor dice que valen. La cartera sugerida puede cambiar.",
     ),
+    (
+        "2026.08-tier4",
+        "La simulación nunca sorteaba la observación más reciente del historial y "
+        "sub-muestreaba las anteriores, así que se apoyaba de más en la parte vieja de "
+        "la ventana. Volvé a simular para usar el historial completo.",
+    ),
 )
 
 
