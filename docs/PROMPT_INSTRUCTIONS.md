@@ -42,6 +42,12 @@ Nunca propongas cambios sin haber cargado primero este contexto.
       `pytest` solo no alcanza: el job corre `ruff check .` **antes** que los
       tests, así que un error de formato aborta el build sin ejecutar un solo
       test — y en verde local eso no se ve
+- [ ] ¿El cambio toca fechas, horas o "por día"? → correr también
+      **`TZ=UTC make test`**. El CI corre en UTC y tu máquina probablemente no:
+      un test que hereda la zona del entorno pasa acá y falla allá, y el verde
+      local deja de ser evidencia. Es el mismo defecto que el repo ya prohíbe
+      con `hash()` (CONTEXT §5), pero más silencioso, porque el reloj parece
+      parte del problema y no del setup. Costó una vuelta de CI en U5-18
 - [ ] ¿Actualicé `docs/CONTEXT.md` si el cambio es grande?
 - [ ] ¿Agregué o borré un `.md`? → actualizar la tabla canónica de `docs/INDEX.md`
 
