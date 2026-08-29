@@ -32,6 +32,7 @@ import pandas as pd
 from loguru import logger
 from scipy.optimize import minimize
 
+from analysis.moat import classify_moat
 from config import (
     OPTIMIZER,
     OPTIMIZER_PROFILES,
@@ -57,6 +58,9 @@ class TickerAllocation:
     adjusted_score: float
     moat_score: float
     sector: str
+    # The label the engine already computed, carried rather than re-derived: the
+    # scale depends on whether the AI layer ran, and this row cannot tell (U3-7).
+    moat_classification: str = ""
     is_ars: bool = False
     score_discounted: bool = False
     # Sector-country structural tailwind (Idea 2) — defaults keep backward compat
@@ -519,11 +523,16 @@ class PortfolioOptimizer:
         result = []
         for a in core:
             rescaled = round(a.weight_pct / total_w * 100.0, 1)
-            moat_label = ""
-            if a.moat_score >= 14:
-                moat_label = "Wide Moat · "
-            elif a.moat_score >= 8:
-                moat_label = "Narrow Moat · "
+            # U3-7: this used to hardcode `>= 14` on the 0–20 scale, over rows
+            # that in the Optimizer path usually come without AI — where the
+            # quantitative tramo caps at 12, so "Wide Moat" was unreachable and
+            # this screen disagreed with every other one about the same ticker.
+            # Prefer the label the engine computed; classify only as a fallback,
+            # and then on the quant-only scale, which is what a bare score is.
+            _moat_class = a.moat_classification or classify_moat(
+                a.moat_score, ai_available=False
+            )
+            moat_label = f"{_moat_class} Moat · " if _moat_class in ("Wide", "Narrow") else ""
             div_note = f"Div {a.dividend_yield_pct:.1f}% · " if a.dividend_yield_pct >= 1.0 else ""
             _twc = getattr(a, "tailwind_classification", "Neutral")
             tw_note = ""
@@ -960,6 +969,7 @@ class PortfolioOptimizer:
                 adjusted_score=round(score, 1),
                 moat_score=round(moat, 1),
                 sector=sector,
+                moat_classification=str(t.get("moat_classification", "") or ""),
                 is_ars=sym in _ARS_TICKERS,
                 score_discounted=bool(t.get("_ars_discounted", False)),
                 tailwind_score=round(float(t.get("tailwind_score", 0.0) or 0.0), 1),

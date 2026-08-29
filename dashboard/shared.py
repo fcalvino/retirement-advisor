@@ -268,14 +268,21 @@ def data_quality_badge(dq: dict | None) -> str:
     return label
 
 
-def _moat_badge_html(classification: str, score: float, bonus: float) -> str:
-    """HTML badge colored by moat classification for st.markdown()."""
+def _moat_badge_html(
+    classification: str, score: float, bonus: float, scale_max: float = 20.0
+) -> str:
+    """HTML badge colored by moat classification for st.markdown().
+
+    ``scale_max`` is 20 with the AI layer and 12 without it (U3-7). A quant-only
+    score printed as "/20" reads as a weak result rather than a short ruler.
+    """
     color = _MOAT_COLOR.get(classification, "#888")
     emoji = _MOAT_EMOJI.get(classification, "⚪")
     return (
         f'<span style="background:{color}22;border:1px solid {color};color:{color};'
         f'padding:3px 12px;border-radius:14px;font-weight:700;font-size:0.9em;">'
-        f'{emoji} {classification} Moat &nbsp;·&nbsp; {score:.1f}/20 &nbsp;·&nbsp; +{bonus:.1f} pts</span>'
+        f'{emoji} {classification} Moat &nbsp;·&nbsp; {score:.1f}/{scale_max:.0f} '
+        f'&nbsp;·&nbsp; +{bonus:.1f} pts</span>'
     )
 
 

@@ -496,6 +496,21 @@ class MoatConfig:
     wide_threshold: float = 14.0
     narrow_threshold: float = 8.0
     minimal_threshold: float = 4.0
+    # Quant-only mode (U3-7). The thresholds above live on the 0–20 scale that
+    # only exists once the AI layer has run; the quantitative tramo tops out at
+    # 12, so measured across the 164-ticker cached universe NOT ONE ticker could
+    # ever be Wide without AI. These are the thresholds for that shorter ruler.
+    #
+    # They are not the 0–20 set rescaled by 12/20 (that would be 8.4/4.8/2.4).
+    # Proportional rescaling agrees with the AI-on label on only 58 % of the
+    # universe, because a strong quantitative moat predicts a strong qualitative
+    # one rather than being independent of it. Fitted against the AI-on label
+    # instead, these reach 86 % with no error larger than one step, and they err
+    # conservative: 16 understatements against 7 overstatements, and 2 false
+    # Wide out of 13. Reproduce with `scripts/measure_score_impact.py --matrix`.
+    quant_only_wide_threshold: float = 11.0
+    quant_only_narrow_threshold: float = 6.5
+    quant_only_minimal_threshold: float = 2.5
     max_bonus: float = 10.0
     ai_cache_ttl_hours: int = 168
     # Offline measurement (U0-2). When True a cache miss returns the
