@@ -34,7 +34,13 @@ DB_PATH = DB_DIR / "retirement_advisor.db"
 #                   longer discards its savings. Plans saved under tier0/tier1
 #                   with contributions understate the final capital; those with
 #                   no initial capital reported it as zero, at 0 % probability.
-ENGINE_VERSION = "2026.08-tier2"
+#   2026.08-tier3 — U5-6: the optimizer's μ paid a moat twice — once through the
+#                   adjusted_score that already contains the moat bonus, and
+#                   again through a term of its own — so wide-moat companies
+#                   were overweighted against the engine's own valuation. μ
+#                   falls 0.50 pp on average; plans saved under tier0-tier2 hold
+#                   allocations tilted toward moat.
+ENGINE_VERSION = "2026.08-tier3"
 
 
 @dataclass
@@ -670,15 +676,27 @@ class ViewWeightConfig:
     ``ProfileConfig.risk_aversion`` (δ) and through the SLSQP constraints
     (max position, max volatility, dividend floor, sector caps).
 
-    Must sum to 1.0. Defaults mirror the previous moderate profile, so a
-    moderate investor's numbers move least.
+    **There is no moat weight, and it is not an omission (U5-6).** A third term
+    used to add the moat directly, but ``adjusted_score`` already contains the
+    moat bonus — ``min(moat_total × 0.5, MOAT.max_bonus)``, added in
+    ``FundamentalAnalyzer.analyze`` — so the moat was paid twice and the
+    optimizer overweighted wide-moat companies relative to what the rest of the
+    engine says they are worth. The moat now reaches μ exactly once, through the
+    score, which is where the engine decided what it was worth.
+
+    **These two no longer sum to 1.0, deliberately.** Renormalising them to
+    0.625/0.375 would keep the sum tidy and undo the fix: it inflates the moat
+    contribution that legitimately survives inside the score along with
+    everything else. Measured over the 150 cached equities, that would RAISE μ by
+    1.24 pp, against the 0.50 pp the duplicate removal takes off. They are
+    per-component scalers, not shares of a whole; ``OptimizerConfig``'s
+    ``er_absolute_cap`` is what keeps the total economically plausible.
     """
     score: float = 0.50       # weight of adjusted_score in the view
     dividend: float = 0.30    # weight of dividend yield in the view
-    moat: float = 0.20        # weight of moat score in the view
 
     def as_dict(self) -> dict:
-        return {"score": self.score, "dividend": self.dividend, "moat": self.moat}
+        return {"score": self.score, "dividend": self.dividend}
 
 
 VIEW_WEIGHTS = ViewWeightConfig()

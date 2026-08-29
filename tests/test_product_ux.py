@@ -580,17 +580,28 @@ class TestEngineStalenessReasons:
         assert engine_staleness_reasons(ENGINE_VERSION) == []
 
     def test_a_tier1_plan_is_not_told_its_withdrawals_were_wrong(self):
-        from data.product_ux import engine_staleness_reasons
+        from data.product_ux import ENGINE_CHANGELOG, engine_staleness_reasons
 
         reasons = engine_staleness_reasons("2026.08-tier1")
-        assert len(reasons) == 1
+        # Everything after tier1, and nothing from tier0 or before. Counted
+        # against the changelog rather than a literal, so adding a tier does not
+        # need this number edited — only the substance below is the contract.
+        assert len(reasons) == len(ENGINE_CHANGELOG) - 2
         assert "monto fijo en vez de capital" not in " ".join(reasons)
         assert "aportes" in reasons[0]
 
     def test_an_older_plan_is_told_everything_that_changed_after_it(self):
-        from data.product_ux import engine_staleness_reasons
+        from data.product_ux import ENGINE_CHANGELOG, engine_staleness_reasons
 
-        assert len(engine_staleness_reasons("2026.08-tier0")) == 2
+        assert len(engine_staleness_reasons("2026.08-tier0")) == len(ENGINE_CHANGELOG) - 1
+
+    def test_each_tier_is_told_strictly_less_than_the_one_before_it(self):
+        """A newer plan can never owe more explanations than an older one."""
+        from data.product_ux import ENGINE_CHANGELOG, engine_staleness_reasons
+
+        counts = [len(engine_staleness_reasons(v)) for v, _ in ENGINE_CHANGELOG]
+        assert counts == sorted(counts, reverse=True)
+        assert counts[-1] == 0
 
     def test_an_unsigned_plan_predates_the_changelog_so_all_of_it_applies(self):
         from data.product_ux import ENGINE_CHANGELOG, engine_staleness_reasons

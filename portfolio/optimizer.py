@@ -604,8 +604,15 @@ class PortfolioOptimizer:
         """
         Composite expected-return *view* per ticker (Black-Litterman views).
 
-        Blends adjusted_score, dividend_yield and moat_score using the global
+        Blends adjusted_score and dividend_yield using the global
         ``VIEW_WEIGHTS`` — deliberately NOT the profile's preference weights.
+
+        The moat is NOT a third term (U5-6). ``adjusted_score`` already carries
+        the moat bonus the engine assigned it, so adding a moat term paid the
+        same advantage twice and overweighted wide-moat companies against the
+        engine's own valuation of them. Removing it moved μ by −0.50 pp on
+        average across the 150 cached equities and turned over 2 names in the
+        top 20. The moat still reaches μ — once, through the score.
 
         An asset's expected return is a property of the asset, not of who is
         looking at it. Until the 2026-08 audit this used ``cfg.score_weight``
@@ -614,29 +621,28 @@ class PortfolioOptimizer:
         through ``cfg.risk_aversion`` (the δ of the BL equilibrium prior) and
         through the SLSQP constraints, which is where preference belongs.
 
-        A small explicit sector-country tailwind tilt (Idea 2) is added on top:
-        the tailwind bonus already flows in via adjusted_score; this term
-        (TAILWINDS.optimizer_er_tilt, max ≈ ±0.9% annual at score ±10) gives
-        structural outlooks a light direct ER expression. Set the config to 0
-        to disable. Neutral tickers (score 0) are unaffected.
+        The sector-country tailwind (Idea 2) IS a second expression of something
+        already inside adjusted_score, and unlike the moat term that is
+        deliberate and bounded: ``TAILWINDS.optimizer_er_tilt`` caps it at
+        ≈ ±0.9% annual at score ±10, versus the ±1.0% the moat term added
+        unbounded by any such intent. It is opt-out (set the config to 0) and
+        neutral tickers are unaffected. The difference that matters is that this
+        one is a declared tilt with a knob, not an accounting error.
         """
         views = VIEW_WEIGHTS
         mu = []
         for t in tickers:
             score = float(t.get("adjusted_score", 0) or 0)
             div = self._clean_div_yield(float(t.get("dividend_yield", 0) or 0))
-            moat = float(t.get("moat_score", 0) or 0)
             tailwind = float(t.get("tailwind_score", 0) or 0)
 
             # Normalised components → annualised return proxies
             score_ret = (score / 100) * 0.18        # max ~18% from score
             div_ret = div / 100                      # dividend yield as-is
-            moat_ret = (moat / 20) * 0.05            # max ~5% from moat (Wide moat)
 
             composite = (
                 views.score * score_ret
                 + views.dividend * div_ret
-                + views.moat * moat_ret
             )
             if TAILWINDS.enabled and tailwind != 0.0:
                 composite += TAILWINDS.optimizer_er_tilt * (tailwind / 10.0) * 0.18

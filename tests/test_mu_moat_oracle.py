@@ -109,7 +109,7 @@ class TestTheWeightsSayWhatTheyAre:
         Scaling 0.50/0.30 to 0.625/0.375 keeps the sum at 1, but it inflates the
         moat contribution that legitimately survives inside the score along with
         everything else: measured over the cached universe, μ would have RISEN
-        by 1.26 pp, against the 0.50 pp the duplicate removal takes off.
+        by 1.24 pp, against the 0.50 pp the duplicate removal takes off.
         """
         assert VIEW_WEIGHTS.score == pytest.approx(0.50)
         assert VIEW_WEIGHTS.dividend == pytest.approx(0.30)
