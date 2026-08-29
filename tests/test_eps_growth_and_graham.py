@@ -133,7 +133,14 @@ class TestOracles:
 
 class TestGrowthSource:
     def test_statements_win_over_the_quarterly_figure(self):
-        """Both available ⇒ the compounded rate is what gets reported."""
+        """Both available ⇒ the compounded rate is what gets reported.
+
+        ``_income_stmt`` carries only a Net Income row, so since U3-5 this
+        exercises the labelled *fallback*: per-share growth is preferred when the
+        statement has ``Diluted EPS``, which is the shipped path and is covered in
+        ``tests/test_graham_chain_oracle.py``. The rate itself is unchanged — what
+        moved is that the source now says which series it came from.
+        """
         result = _analyze(
             {"earningsGrowth": 2.94},                      # +294% YoY, the old winner
             _income_stmt([90.0, 80.0, 65.0, 50.0]),        # 3-year window
@@ -141,7 +148,7 @@ class TestGrowthSource:
         expected = oracle_cagr(50.0, 90.0, 3) * 100
         assert result.eps_cagr_5y == pytest.approx(expected, abs=0.1)
         assert result.eps_cagr_years == 3
-        assert result.eps_growth_source == "statement_cagr"
+        assert result.eps_growth_source == "net_income_cagr"
 
     def test_quarterly_figure_survives_as_a_labelled_fallback(self):
         result = _analyze({"earningsGrowth": 0.12}, _income_stmt(None))
@@ -159,7 +166,7 @@ class TestGrowthSource:
         expected = oracle_cagr(85.0, 40.0, 3) * 100
         assert result.eps_cagr_5y == pytest.approx(expected, abs=0.1)
         assert result.eps_cagr_5y < 0
-        assert result.eps_growth_source == "statement_cagr"
+        assert result.eps_growth_source == "net_income_cagr"   # no per-share row here
 
     @pytest.mark.parametrize("cagr_pct,expected_points", [
         (T.eps_cagr_excellent + 5, 7.0),
@@ -175,8 +182,13 @@ class TestGrowthSource:
         assert result.growth_score == expected_points
 
     def test_label_names_the_window(self):
+        """And names the series, since U3-5 made the two distinguishable.
+
+        Calling a net-income rate "EPS CAGR" is the U3-5 defect surviving in the
+        one case where per-share data genuinely is not available.
+        """
         statements = _analyze({}, _income_stmt([90.0, 80.0, 65.0, 50.0]))
-        assert eps_growth_label(statements) == "EPS CAGR 3Y"
+        assert eps_growth_label(statements) == "Crec. ganancia neta 3Y"
 
 
 # --------------------------------------------------------------------------- #

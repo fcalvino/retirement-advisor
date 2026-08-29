@@ -100,8 +100,9 @@ class TestFlatEarningsAreStillValued:
 
         assert result.eps_cagr_5y == pytest.approx(0.0, abs=0.05)
         assert result.graham_value is not None
+        # The engine rounds to cents on purpose, so compare at that resolution.
         assert result.graham_value == pytest.approx(
-            oracle_graham_value(5.0, 0.0, THRESHOLDS.graham_aaa_yield_pct), rel=1e-6
+            oracle_graham_value(5.0, 0.0, THRESHOLDS.graham_aaa_yield_pct), abs=0.01
         )
 
     def test_shrinking_earnings_still_produce_no_value(self):
@@ -171,7 +172,8 @@ class TestGrowthIsPerShare:
     def test_net_income_is_the_fallback_not_the_source(self):
         """A statement without a per-share row must still yield something."""
         result = _analyze(
-            eps=5.0, income_stmt=_income_stmt(net_income=[1200.0, 1100.0, 1000.0]),
+            eps=5.0,
+            income_stmt=_income_stmt(net_income=[1400.0, 1300.0, 1200.0, 1100.0, 1000.0]),
         )
         assert result.eps_cagr_5y is not None
         assert result.eps_growth_source == "net_income_cagr"

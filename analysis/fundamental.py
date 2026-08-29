@@ -407,6 +407,11 @@ def eps_growth_label(result: Any) -> str:
     years = int(getattr(result, "eps_cagr_years", 0) or 0)
     if source == "yoy":
         return "Crec. ganancias YoY (1 trim.)"
+    if source == "net_income_cagr":
+        # The statement had no per-share row, so this is the company's earnings
+        # growing, not the holder's. Naming it "EPS" would be the U3-5 defect
+        # surviving in the one case where it is still unavoidable.
+        return f"Crec. ganancia neta {years}Y" if years else "Crec. ganancia neta"
     if years:
         return f"EPS CAGR {years}Y"
     return "EPS CAGR"
@@ -688,7 +693,14 @@ class FundamentalAnalyzer:
         y_aaa = float(getattr(_TH, "graham_aaa_yield_pct", 4.5) or 4.5)
         if y_aaa <= 0:
             y_aaa = 4.5
-        if eps > 0 and growth_used > 0:
+        # U3-3: ``>= 0``, not ``> 0``. Graham assigned 8.5 as the multiple for a
+        # company that does not grow, so g = 0 is an ordinary case with a defined
+        # value (EPS 5 → 41.56 at Y 4.5), not a hole. Refusing to price it hid
+        # exactly the profile a retirement portfolio is built from: stable,
+        # profitable, not growing. A DECLINING company still gets no value — the
+        # formula is not a valuation there, and the multiple itself turns
+        # negative below g = −4.25.
+        if eps > 0 and growth_used >= 0:
             graham = eps * (8.5 + 2 * growth_used) * 4.4 / y_aaa
             result.graham_value = round(graham, 2)
             if result.current_price > 0:
@@ -1192,14 +1204,33 @@ class FundamentalAnalyzer:
         # The statements are the honest source: a rate compounded over the window the
         # data actually supports, with the window reported alongside. The quarterly
         # figure survives only as a labelled fallback (`eps_cagr_years == 1`).
-        ni_series = self._extract_annual_series(income_stmt, ["Net Income"])
-        ni_cagr, ni_years = compute_cagr_available(
-            ni_series, target_years=T.cagr_target_years, min_years=T.cagr_min_years
+        # U3-5: per SHARE, which is the growth a holder actually receives. Net
+        # income and EPS are different rates whenever the share count moves:
+        # buybacks make per-share earnings grow faster than earnings, and an
+        # issuance makes them grow slower — and reading net income alone reports
+        # the second as no change at all. Measured over the cached universe, 80
+        # of 137 tickers differ upward and 24 downward, some flipping sign, which
+        # is what decides whether a Graham value exists. `Diluted EPS` is present
+        # in every cached statement; net income stays as a labelled fallback.
+        eps_series = self._extract_annual_series(income_stmt, ["Diluted EPS", "Basic EPS"])
+        eps_cagr, eps_years = compute_cagr_available(
+            eps_series, target_years=T.cagr_target_years, min_years=T.cagr_min_years
         )
-        if ni_cagr is not None:
+        ni_cagr, ni_years = (None, 0)
+        if eps_cagr is None:
+            ni_series = self._extract_annual_series(income_stmt, ["Net Income"])
+            ni_cagr, ni_years = compute_cagr_available(
+                ni_series, target_years=T.cagr_target_years, min_years=T.cagr_min_years
+            )
+
+        if eps_cagr is not None:
+            result.eps_cagr_5y = round(eps_cagr * 100, 1)
+            result.eps_cagr_years = eps_years
+            result.eps_growth_source = "statement_cagr"
+        elif ni_cagr is not None:
             result.eps_cagr_5y = round(ni_cagr * 100, 1)
             result.eps_cagr_years = ni_years
-            result.eps_growth_source = "statement_cagr"
+            result.eps_growth_source = "net_income_cagr"
         else:
             yoy = _safe_float(info.get("earningsGrowth")) * 100
             if yoy > 0:

@@ -1733,6 +1733,39 @@ def guided_empty_state(
 # --------------------------------------------------------------------------- #
 
 # --------------------------------------------------------------------------- #
+#  Graham value — the rate behind it is named (U3-4)                          #
+# --------------------------------------------------------------------------- #
+
+def graham_value_help(thresholds: Any = None) -> str:
+    """Explain the Graham value, including the rate nobody was quoting.
+
+    ``V = EPS × (8.5 + 2g) × 4.4 / Y``. The ``4.4`` is the AAA corporate yield of
+    Graham's period and ``Y`` the yield today, so the ratio rebases his multiple
+    onto the current cost of money. But ``Y`` here is a **frozen proxy** in
+    config, not a live rate: printing "Graham Intrinsic Value" with no mention of
+    it invites the reader to treat a number that moves with interest rates as if
+    it did not. Fetching AAA live is out of scope (X-04); saying which number is
+    being used is not.
+    """
+    from config import THRESHOLDS as _TH
+
+    cfg = thresholds if thresholds is not None else _TH
+    y = float(getattr(cfg, "graham_aaa_yield_pct", 4.5) or 4.5)
+    g_cap = float(getattr(cfg, "graham_max_growth_pct", 15.0) or 15.0)
+    return (
+        "Valor intrínseco por la fórmula revisada de Graham (1974): "
+        "**V = EPS × (8,5 + 2g) × 4,4 / Y**.\n\n"
+        f"· **Y = {y:g} %** es un **proxy fijo** del rendimiento de bonos corporativos "
+        "AAA, tomado de la configuración — no una tasa en vivo. Si las tasas de hoy "
+        "difieren, este valor se mueve en sentido inverso y esta pantalla no se entera.\n\n"
+        f"· **g** es el crecimiento por acción, topeado en {g_cap:g} % para la fórmula.\n\n"
+        "· Con **g = 0** la fórmula sigue definida (multiplicador 8,5): una empresa "
+        "estable y rentable que no crece **sí** tiene valor. Con g < 0 no se publica "
+        "ninguno."
+    )
+
+
+# --------------------------------------------------------------------------- #
 #  Why a saved plan is stale (U6-2) — one entry per engine tier               #
 # --------------------------------------------------------------------------- #
 
