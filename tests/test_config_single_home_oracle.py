@@ -42,7 +42,6 @@ from config import (
 from portfolio.optimizer import PortfolioOptimizer
 from portfolio.personal_sizer import analyze_personal_book
 
-
 # --------------------------------------------------------------------------- #
 #  Helpers                                                                     #
 # --------------------------------------------------------------------------- #
