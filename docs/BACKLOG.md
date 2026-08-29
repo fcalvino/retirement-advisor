@@ -54,10 +54,10 @@ una, con oráculos empíricos donde el hallazgo lo permitía.
 |---|---|---|---|
 | 3 — fórmulas con blast radius | 11 | 10 | 1 |
 | 4 — flujos del motor | 4 | 2 | 2 |
-| 5 — scoring y config | 20 | 2 | 18 |
+| 5 — scoring y config | 20 | 3 | 17 |
 | 6 — dos motores de retorno | 2 | 0 | 2 |
 | 7 — UX del dashboard | 2 | 0 | 2 |
-| **Total** | **39** | **14** | **25** |
+| **Total** | **39** | **15** | **24** |
 
 Cerradas: **U3-6** (`a5a63d9`), **U3-11** (`00fb551`, oráculo: sin `payoutRatio` ni
 FFO el score es 4.0 exacto), **U5-20** (`d86f8e9`), **U4-2** y **U4-1** (`9f05443`,
@@ -67,7 +67,8 @@ un PR por la nota U4-1b; oráculos en `tests/test_cash_flow_oracle.py`), **U3-7*
 `None`, no "debajo de la tendencia"), **U3-3 + U3-4 + U3-5** (`c68769d`, la cadena
 de Graham: `g` por acción, V con `g = 0`, y la tasa `Y` nombrada como proxy),
 **U3-8** (`28bab01`, un solo ROIC, con la tasa del país que grava),
-**U3-9 + U3-10** (`c2e7f6b`, cada ratio anclado en un solo año fiscal).
+**U3-9 + U3-10** (`c2e7f6b`, cada ratio anclado en un solo año fiscal),
+**U5-15** (`070d2a8`, el horizonte anual dura un año y su banda escala con él).
 Fuera de las oleadas 3–7,
 **U0-2** también cerró — ver `ROADMAP.md`.
 
@@ -101,18 +102,6 @@ siendo ordenarla con un número inventado.
 el MC, o una calibración explícita de `0.18` contra el universo — o declararlo
 ordinal y dejar de expresarlo en puntos porcentuales.
 **Cuidado:** blast radius sobre toda la asignación, no sólo sobre el ordenamiento.
-
-### U5-15 · El horizonte anual del track record dura 8,3 meses `P1`
-
-`track_record_scorer.py:122` hace `timedelta(days=252)` — 252 días **calendario**,
-o sea ~8,3 meses. `config.py:1307` lo describe como "252 ≈ 12 trading months". Además
-`hold_band_pct = 5.0` es la misma banda para el horizonte de 30 días y el de 252.
-
-Esto está en la banda 3 del criterio: no cambia una compra de hoy, pero corrompe la
-única evidencia que el motor tiene sobre sí mismo, y esa evidencia solo crece con el
-tiempo. Cada mes que pasa sin arreglarlo es un mes de muestra contaminada.
-
-**Hacer:** 252 días de trading o ~365 calendario, explícito; bandas por horizonte.
 
 ### U5-13 · `capital_gap` suma dólares de años distintos `P1`
 
