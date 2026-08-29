@@ -10,6 +10,58 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U3-3 + U3-4 + U3-5 — La cadena de Graham (2026-08-28)
+
+Tres defectos encadenados sobre `graham_value`, que termina en
+`require_margin_of_safety` — la puerta que desbloquea STRONG BUY. Un error acá no
+matiza una pantalla: cambia lo que el producto dice que hay que comprar.
+
+**U3-5 — `g` era el crecimiento de la empresa, no el del accionista.** Salía del
+CAGR de *Net Income*, bajo un campo llamado `eps_cagr_5y` y una etiqueta que decía
+"EPS CAGR". Son números distintos cada vez que se mueve la cantidad de acciones, y
+esa diferencia **es** el punto: es el crecimiento que el tenedor efectivamente
+recibe. `Diluted EPS` está en todos los estados cacheados, así que la serie pasa a
+ser la de por acción; Net Income queda como fallback con etiqueta propia —llamarlo
+"EPS CAGR" sería este mismo defecto sobreviviendo en el único caso donde es
+inevitable.
+
+Lo que eso destapó, medido:
+
+| ticker | NI CAGR | EPS CAGR | qué pasaba |
+|---|---:|---:|---|
+| O | +6,8 % | **−6,3 %** | REIT que crece emitiendo acciones |
+| EXR | +4,2 % | **−10,5 %** | ídem |
+| MDT | +8,5 % | **−1,1 %** | dilución |
+| MET | −13,8 % | **+18,5 %** | recompras en un tramo flojo |
+
+O y EXR **hacen crecer sus ganancias y las achican por acción**. El motor puntuaba
+lo primero llamándolo lo segundo, así que valuaba un crecimiento que esos tenedores
+nunca recibieron. O baja de BUY a HOLD por esto.
+
+**U3-3 — una empresa que no crece no tenía valor.** `if eps > 0 and growth_used > 0`
+no producía nada, aunque Graham definió el 8,5 justamente como el múltiplo de una
+empresa que no crece: `V = EPS × 8,5 × 4,4 / Y`, que da 41,56 con EPS 5. Estable,
+rentable y sin crecer es el arquetipo de una tenencia de retiro, y era el único
+perfil que la valuación se negaba a poner en precio. Una empresa **en declive**
+sigue sin valor: ahí la fórmula no es una valuación, y su múltiplo se vuelve
+negativo por debajo de `g = −4,25`.
+
+**U3-4 — la tasa detrás del número no se nombraba.** `Y` es un proxy congelado del
+4,5 % del rendimiento AAA, y toda superficie imprimía "Graham Intrinsic Value" sin
+mencionarlo, invitando a leer como fijo un número que se mueve al revés que las
+tasas. `graham_value_help` nombra la tasa, la cita **desde config** y dice que es un
+proxy. Traer el AAA en vivo sigue fuera de alcance (X-04) — decir qué número se está
+usando no lo necesita.
+
+**Alcance medido sobre 164 tickers:** 17 scores se mueven, todos en la dimensión de
+crecimiento; 4 señales cambian (ADP y AMX a STRONG BUY, AXP a BUY, O a HOLD). Los
+valores de Graham van de 102 a 101: tres empresas ganan uno que siempre debieron
+tener (HON, MET, TMO) y cuatro pierden uno que nunca debieron tener (EXR, LTM, MDT, O).
+
+Contrato: `tests/test_graham_chain_oracle.py`.
+
+---
+
 ## U3-1 — No saber la tendencia no es saber que baja (2026-08-28)
 
 `above_sma200` era un `bool` con default `False`, y `_compute_trend` caía a `False`

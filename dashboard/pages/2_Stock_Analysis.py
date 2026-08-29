@@ -26,6 +26,7 @@ from data.product_ux import (
     MID_MA_SHORT,
     TREND_MA_HELP,
     TREND_MA_SHORT,
+    graham_value_help,
     roic_sustained_help,
 )
 from data.universe_loader import load_universe
@@ -665,7 +666,10 @@ if symbol:
             if fund.graham_value:
                 st.divider()
                 col1, col2 = st.columns(2)
-                col1.metric("Graham Intrinsic Value", f"${fund.graham_value:.2f}")
+                col1.metric(
+                    "Graham Intrinsic Value", f"${fund.graham_value:.2f}",
+                    help=graham_value_help(),
+                )
                 if fund.margin_of_safety_pct is not None:
                     delta_color = "normal" if fund.margin_of_safety_pct > 0 else "inverse"
                     col2.metric(
