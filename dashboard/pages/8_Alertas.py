@@ -13,6 +13,7 @@ from alerts.reporter import ReportGenerator
 from alerts.store import AlertSeverity, AlertType, alert_store
 from config import ALERTS
 from dashboard.shared import _fetch_universe_parallel, _get_ai_config
+from data.clock import utc_now
 
 # ------------------------------------------------------------------ #
 #  Mark alerts as read when user visits this page                      #
@@ -459,7 +460,7 @@ with tab_mutes:
                 st.write(_TYPE_LABEL_SHORT.get(m.alert_type, m.alert_type))
             with col_c:
                 if m.expires_at:
-                    remaining = m.expires_at - datetime.datetime.utcnow()
+                    remaining = m.expires_at - utc_now()
                     days_left = max(0, remaining.days)
                     st.write(f"Expira en {days_left}d ({m.expires_at.strftime('%d/%m/%Y')})")
                 else:

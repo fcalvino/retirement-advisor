@@ -81,6 +81,8 @@ observación más reciente), **U5-2 + U5-3** (`d1aba8f`, dos señales del Piotro
 que respondían otra pregunta),
 **U4-1c** (el jubilado gasta todos los meses; el efecto no resultó uniformemente
 conservador — ver `ROADMAP.md`),
+**U5-18** (un solo reloj; la edad del dato estaba bien y el defecto era el día del
+dedup — 19,4 % de la muestra del track record eran repeticiones),
 **U5-9 + U5-10 + U5-11** (un número, una casa — y cinco de los ocho literales de
 U5-9 ya no existían al abrirla).
 Fuera de las oleadas 3–7,
@@ -137,7 +139,6 @@ son el terreno donde ya nacieron los defectos de arriba.
 | id | sev | qué | evidencia |
 |---|---|---|---|
 | **U3-7b** | P2 | El Optimizer sigue normalizando el moat por `/20` para rankear (`:483`, `:509`), así que una fila sin IA —cuyo techo real es 12— queda sistemáticamente peor rankeada por no haber sido enriquecida, no por la empresa. U3-7 arregló las **etiquetas**; esto es el mismo supuesto de escala única en los **pesos**. Se dejó afuera de U3-7 a propósito; `:625`, el tercer `/20`, desapareció con U5-6 al quitarse el término de moat de μ | `optimizer.py:483,509` |
-| **U5-18** | P2 | 15 `utcnow` vivos entre relojes UTC-naive y local-naive: `data/cache.py` (6), `analysis/track_record.py` (8), `track_record_scorer.py` (1). Afecta la edad del dato y el dedup por día | |
 | **U3-1b** | P3 | `sma200_slope_pct` tiene la misma forma que tenía `above_sma200` antes de U3-1: es `float = 0.0`, así que "no hay ventana suficiente" y "la media está plana" son el mismo valor. Consecuencia acotada pero real: el gate D15 de `technical.py:266` (`or result.sma200_slope_pct >= 0`) concede el bonus por sobreventa a un ticker cuya pendiente nadie pudo medir. Se dejó afuera de U3-1 para no mezclar dos campos en un PR de tipos | `technical.py:35,266` |
 | **U3-2** | P2 | ATR y ADX usan `ewm(span=period)` en vez del suavizado de Wilder `alpha=1/period`. El RSI (`:300`) ya está bien — son los únicos dos que quedaron | `technical.py:329,353-358` |
 | **U4-5** | P2 | La pestaña principal de Simulaciones **no puede** simular un aporte: su único widget de flujo es "Retiro anual" con `min_value=0`, así que la pantalla que contesta "¿llego?" no representa que alguien ahorre. El motor acepta `annual_contribution` desde tier2 y `contribution_inputs` ya resuelve el número; falta la palanca | `7_Simulaciones.py:195-204` |

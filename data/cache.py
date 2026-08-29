@@ -1,7 +1,7 @@
 """SQLite cache layer for API responses. Avoids hammering yfinance."""
 
 import json
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any, Optional
 
 from loguru import logger
@@ -10,6 +10,7 @@ from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from sqlalchemy.pool import NullPool
 
 from config import CACHE_TTL_HOURS, DB_PATH
+from data.clock import utc_now
 
 
 class Base(DeclarativeBase):
@@ -21,7 +22,7 @@ class CacheEntry(Base):
 
     key = Column(String, primary_key=True)
     data = Column(Text, nullable=False)
-    cached_at = Column(DateTime, default=datetime.utcnow)
+    cached_at = Column(DateTime, default=utc_now)
 
 
 class DataCache:
@@ -38,7 +39,7 @@ class DataCache:
             entry: Optional[CacheEntry] = session.get(CacheEntry, key)
             if entry is None:
                 return None
-            if datetime.utcnow() - entry.cached_at > self.ttl:
+            if utc_now() - entry.cached_at > self.ttl:
                 session.delete(entry)
                 session.commit()
                 return None
@@ -57,9 +58,9 @@ class DataCache:
             existing = session.get(CacheEntry, key)
             if existing:
                 existing.data = serialized
-                existing.cached_at = datetime.utcnow()
+                existing.cached_at = utc_now()
             else:
-                session.add(CacheEntry(key=key, data=serialized, cached_at=datetime.utcnow()))
+                session.add(CacheEntry(key=key, data=serialized, cached_at=utc_now()))
             session.commit()
 
     def get_age_hours(self, key: str) -> Optional[float]:
@@ -73,7 +74,7 @@ class DataCache:
             entry: Optional[CacheEntry] = session.get(CacheEntry, key)
             if entry is None or entry.cached_at is None:
                 return None
-            return (datetime.utcnow() - entry.cached_at).total_seconds() / 3600.0
+            return (utc_now() - entry.cached_at).total_seconds() / 3600.0
 
     def keys_with_prefix(self, prefix: str) -> list[str]:
         """Every cached key starting with *prefix*, ignoring TTL.
@@ -96,7 +97,7 @@ class DataCache:
 
     def get_stats(self) -> dict:
         """Return live cache statistics for display in Settings."""
-        now = datetime.utcnow()
+        now = utc_now()
         try:
             with self._Session() as session:
                 total   = session.query(CacheEntry).count()

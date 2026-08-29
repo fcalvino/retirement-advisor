@@ -7,12 +7,13 @@ injection into the committee Macro Strategist prompt.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 
 from analysis.committee_prompts import macro_strategist_prompt
 from analysis.macro_rag import MacroDoc, MacroRagStore, macro_query_for
+from data.clock import utc_now
 
 
 @pytest.fixture
@@ -21,7 +22,7 @@ def store():
 
 
 def _today(offset_days=0):
-    return (datetime.utcnow() - timedelta(days=offset_days)).strftime("%Y-%m-%d")
+    return (utc_now() - timedelta(days=offset_days)).strftime("%Y-%m-%d")
 
 
 def _seed(store):
