@@ -175,18 +175,25 @@ def test_stock_analysis_labels_come_from_the_constants():
 
 
 # --------------------------------------------------------------------------- #
-#  no_hacer — U1-3 relabels; it does not spend U3-1                            #
+#  no_hacer — U1-3 relabels; it does not move the window                       #
 # --------------------------------------------------------------------------- #
 
 
-def test_window_and_nan_handling_are_untouched():
-    """The CSV forbids relabel + window change in one PR, and U3-1 stays open."""
+def test_the_window_is_untouched():
+    """The CSV forbids relabel + window change in one PR. The window is the point.
+
+    This guard also used to freeze ``above_sma200: bool = False``, with a note
+    saying U3-1 would make it ``Optional[bool]`` so a short history reads
+    "unknown" instead of "below trend", and that until then the shipped default
+    had to stay. U3-1 did exactly that, so the freeze is lifted and the tri-state
+    contract now lives in ``tests/test_trend_unknown_oracle.py``.
+
+    What U1-3 actually protects — 200 **weekly** bars, not 200 days — is
+    unchanged and asserted here and below.
+    """
     tech = _src("analysis/technical.py")
     assert "price.rolling(200).mean()" in tech, "la ventana de 200 barras se movió"
-    # U3-1 will make this `Optional[bool]` so a short history reads "unknown"
-    # instead of "below trend". Until then the default must stay as shipped.
-    assert "above_sma200: bool = False" in tech
-    assert TechnicalResult(symbol="X").above_sma200 is False
+    assert TechnicalResult(symbol="X").above_sma200 is None
 
 
 def _reference_sma_at(values: list[float], window: int, pos: int) -> float:

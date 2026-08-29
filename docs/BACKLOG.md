@@ -52,18 +52,19 @@ una, con oráculos empíricos donde el hallazgo lo permitía.
 
 | Oleada | Total | Cerradas | Abiertas |
 |---|---|---|---|
-| 3 — fórmulas con blast radius | 11 | 3 | 8 |
+| 3 — fórmulas con blast radius | 11 | 4 | 7 |
 | 4 — flujos del motor | 4 | 2 | 2 |
 | 5 — scoring y config | 20 | 2 | 18 |
 | 6 — dos motores de retorno | 2 | 0 | 2 |
 | 7 — UX del dashboard | 2 | 0 | 2 |
-| **Total** | **39** | **7** | **32** |
+| **Total** | **39** | **8** | **31** |
 
 Cerradas: **U3-6** (`a5a63d9`), **U3-11** (`00fb551`, oráculo: sin `payoutRatio` ni
 FFO el score es 4.0 exacto), **U5-20** (`d86f8e9`), **U4-2** y **U4-1** (`9f05443`,
 un PR por la nota U4-1b; oráculos en `tests/test_cash_flow_oracle.py`), **U3-7**
 (escala del moat por modo; oráculo empírico sobre los 164 tickers), **U5-6**
-(`4395455`, el foso deja de pagarse dos veces en μ). Fuera de las oleadas 3–7,
+(`4395455`, el foso deja de pagarse dos veces en μ), **U3-1** (historial corto es
+`None`, no "debajo de la tendencia"). Fuera de las oleadas 3–7,
 **U0-2** también cerró — ver `ROADMAP.md`.
 
 ---
@@ -96,21 +97,6 @@ siendo ordenarla con un número inventado.
 el MC, o una calibración explícita de `0.18` contra el universo — o declararlo
 ordinal y dejar de expresarlo en puntos porcentuales.
 **Cuidado:** blast radius sobre toda la asignación, no sólo sobre el ordenamiento.
-
-### U3-1 · Historial corto se lee como "debajo de la tendencia" `P1`
-
-`technical.py:35` declara `above_sma200: bool = False` y `:112` cae a `False` cuando
-la media es NaN. **Oráculo corrido:** una serie de 108 semanas devuelve
-`above_sma200 = False` — indistinguible de un precio realmente por debajo de la media
-de 200 semanas. Y `strategy.py:487` (`if not t.above_sma200`) degrada la acción por
-eso.
-
-Un ticker con menos de ~3,8 años de historia queda castigado por no tener historia.
-
-**Hacer:** `above_sma200 = None` cuando `len < ventana`; no degradar un BUY sin
-`decisive_reason`.
-**No hacer:** relabel y recálculo juntos — U1-3 ya eligió relabel, la ventana no se toca.
-**Oráculo:** serie de 108w → `None`, no `False`.
 
 ### U3-3 + U3-4 + U3-5 · La cadena de Graham `P1`
 
@@ -207,6 +193,7 @@ son el terreno donde ya nacieron los defectos de arriba.
 | **U5-9** | P2 | Literales que deberían estar en config, movidos 1:1 y byte-idénticos: `0.18`/`0.05` de μ, `0.21`/`0.79` del tax, FCF 4/2, quick 1.5/1.0, F6 1.02, MaxDD 1.5, payout 80 | `optimizer.py:623,625`, `fundamental.py:882`, `moat.py:626` |
 | **U5-10** | P2 | La tasa libre de riesgo vive en tres lugares con dos valores: `config.py:402` (0.045), `:694` (0.045), `:491` (`risk_free_proxy_pct = 4.0`). Más `BLOCK_SIZE` muerto, dos techos de yield y dos caps de sector | |
 | **U5-18** | P2 | 15 `utcnow` vivos entre relojes UTC-naive y local-naive: `data/cache.py` (6), `analysis/track_record.py` (8), `track_record_scorer.py` (1). Afecta la edad del dato y el dedup por día | |
+| **U3-1b** | P3 | `sma200_slope_pct` tiene la misma forma que tenía `above_sma200` antes de U3-1: es `float = 0.0`, así que "no hay ventana suficiente" y "la media está plana" son el mismo valor. Consecuencia acotada pero real: el gate D15 de `technical.py:266` (`or result.sma200_slope_pct >= 0`) concede el bonus por sobreventa a un ticker cuya pendiente nadie pudo medir. Se dejó afuera de U3-1 para no mezclar dos campos en un PR de tipos | `technical.py:35,266` |
 | **U3-2** | P2 | ATR y ADX usan `ewm(span=period)` en vez del suavizado de Wilder `alpha=1/period`. El RSI (`:300`) ya está bien — son los únicos dos que quedaron | `technical.py:329,353-358` |
 | **U4-1c** | P2 | U4-1 mensualizó los aportes; los **retiros** siguen anuales a propósito (`guardrails` *es* una revisión anual). Un jubilado gasta todos los meses, así que el lump de diciembre sobrestima el pozo que sobrevive. Decidir anual, pagar en doceavos — `MONTE_CARLO.withdrawal_periods_per_year` ya existe. Mueve `prob_sustain_real_pct` y `expected_depletion_year` de todo plan de retiro guardado → otro bump de `ENGINE_VERSION` | `decumulation.py`, `config.py` |
 | **U4-5** | P2 | La pestaña principal de Simulaciones **no puede** simular un aporte: su único widget de flujo es "Retiro anual" con `min_value=0`, así que la pantalla que contesta "¿llego?" no representa que alguien ahorre. El motor acepta `annual_contribution` desde tier2 y `contribution_inputs` ya resuelve el número; falta la palanca | `7_Simulaciones.py:195-204` |

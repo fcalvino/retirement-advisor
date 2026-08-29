@@ -10,6 +10,52 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U3-1 — No saber la tendencia no es saber que baja (2026-08-28)
+
+`above_sma200` era un `bool` con default `False`, y `_compute_trend` caía a `False`
+cuando la media móvil daba NaN. Una empresa listada hace menos de ~3,8 años
+reportaba **exactamente lo mismo** que una que cotiza debajo de su media de largo
+plazo, y cuatro consumidores leían el segundo significado: `strategy` anotaba el
+riesgo *"long-term downtrend caution"*, `personal_sizer` abría una ventana de
+"agregar en debilidad", los dos prompts le afirmaban al LLM *"precio DEBAJO de la
+media"*, y la ficha del ticker mostraba ❌. Ninguna de esas era una conclusión
+sobre la empresa: eran conclusiones sobre el largo de su serie de precios.
+
+Las tres banderas de tendencia pasan a `Optional[bool]` y todos los lectores usan
+`is True` / `is False` — la convención que `macd_bullish`, un campo más abajo,
+seguía desde siempre.
+
+**Poner `None` era la mitad chica.** `not None` es `True`, así que el sizer habría
+seguido marcando debilidad; y `bool(None)` es `False`, así que dos call sites que
+coercionaban a través de un dict habrían dado vuelta el default optimista de
+`personal_sizer` justo cuando no se sabe nada. Las dos coerciones se fueron.
+
+La línea del prompt tenía el mismo defecto por duplicado: el MACD usaba la misma
+forma `x if flag else y` sobre un campo que es `Optional` desde siempre, así que un
+MACD desconocido se le reportaba al modelo como bajista. Un helper `_tristate`
+sirve a los dos, y la redacción conserva `de la {TREND_MA_LABEL}` intacto para que
+la guarda de U1-3 pase **sin editarla**.
+
+**Medido sobre el universo cacheado: 0 acciones, 0 scores y 0 señales técnicas se
+mueven.** Una bandera desconocida ya aportaba 0 puntos a la señal, así que este PR
+cambia lo que el motor **dice**, no lo que calcula — más la única conducta que
+estaba mal: LTM (108 barras) sigue marcado como debilidad técnica, pero ahora por
+la razón real (17,3 % debajo de su máximo de 52 semanas) en vez de también por una
+inventada. Un ticker de historia corta cerca de sus máximos ya no se marca.
+
+`test_window_and_nan_handling_are_untouched` congelaba `above_sma200: bool = False`
+con una nota que decía que U3-1 lo haría `Optional` y que *hasta entonces* el
+default debía quedarse. Ese "hasta entonces" llegó: el congelamiento se levanta y el
+test conserva lo que U1-3 realmente protege —que la ventana sigue siendo de 200
+barras **semanales**— con un nombre que lo dice.
+
+Quedó afuera a propósito, abierto como **U3-1b**: `sma200_slope_pct` tiene la misma
+forma (`float = 0.0`, donde "sin ventana" y "plana" son el mismo valor).
+
+Contrato: `tests/test_trend_unknown_oracle.py`.
+
+---
+
 ## U5-6 — El foso se paga una sola vez en μ (2026-08-28)
 
 `optimizer._expected_returns` armaba μ como `score_ret + div_ret + moat_ret`, pero

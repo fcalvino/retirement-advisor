@@ -29,10 +29,13 @@ class TechnicalResult:
     signal_strength: int = 0         # -100 to +100
     current_price: float = 0.0
 
-    # Trend
-    above_sma50: bool = False
-    above_sma100: bool = False
-    above_sma200: bool = False
+    # Trend. ``None`` means the window is longer than the price series, which is
+    # NOT the same as trading below the average (U3-1) — a company listed two
+    # years ago has no 200-week mean to be under. Read them with ``is True`` /
+    # ``is False``, the convention ``macd_bullish`` below already follows.
+    above_sma50: Optional[bool] = None
+    above_sma100: Optional[bool] = None
+    above_sma200: Optional[bool] = None
     sma200_slope_pct: float = 0.0     # % change of the 200-week SMA over last 26 weeks
     golden_cross: bool = False        # 50-week SMA > 200-week SMA, recently crossed
     death_cross: bool = False
@@ -107,9 +110,10 @@ class TechnicalAnalyzer:
         sma100 = price.rolling(100).mean()
         sma200 = price.rolling(200).mean()
 
-        result.above_sma50 = last > float(sma50.iloc[-1]) if not pd.isna(sma50.iloc[-1]) else False
-        result.above_sma100 = last > float(sma100.iloc[-1]) if not pd.isna(sma100.iloc[-1]) else False
-        result.above_sma200 = last > float(sma200.iloc[-1]) if not pd.isna(sma200.iloc[-1]) else False
+        # NaN means the series is shorter than the window: unknown, not below.
+        result.above_sma50 = last > float(sma50.iloc[-1]) if not pd.isna(sma50.iloc[-1]) else None
+        result.above_sma100 = last > float(sma100.iloc[-1]) if not pd.isna(sma100.iloc[-1]) else None
+        result.above_sma200 = last > float(sma200.iloc[-1]) if not pd.isna(sma200.iloc[-1]) else None
 
         # 200-week SMA slope — is the long-term trend rising?
         if not pd.isna(sma200.iloc[-1]) and not pd.isna(sma200.iloc[-26]):
@@ -236,11 +240,11 @@ class TechnicalAnalyzer:
         score = 0
 
         # Trend weight = 50%
-        if result.above_sma200:
+        if result.above_sma200 is True:
             score += 25
-        if result.above_sma100:
+        if result.above_sma100 is True:
             score += 10
-        if result.above_sma50:
+        if result.above_sma50 is True:
             score += 5
         if result.sma200_slope_pct > 2:
             score += 10
@@ -259,7 +263,7 @@ class TechnicalAnalyzer:
             elif rsi < 30:
                 # D15: oversold is only a positive for L/T retirement entries
                 # when the secular trend is still intact (not a value trap).
-                if result.above_sma200 or result.sma200_slope_pct >= 0:
+                if result.above_sma200 is True or result.sma200_slope_pct >= 0:
                     score += 10
             elif rsi > 75:
                 score -= 15       # overbought

@@ -119,6 +119,21 @@ def _macro_factors_output_spec(for_moat: bool = False, for_portfolio: bool = Fal
     return shape
 
 
+def _tristate(flag, yes: str, no: str, unknown: str = "SIN DATO") -> str:
+    """Render an ``Optional[bool]`` without inventing the third case (U3-1).
+
+    ``"ENCIMA" if flag else "DEBAJO"`` tells the model a company listed two years
+    ago trades *below* a 200-week average it does not have — and the model has no
+    way to tell that apart from a real downtrend. The same shape applied to MACD,
+    which has been ``Optional`` all along.
+    """
+    if flag is True:
+        return yes
+    if flag is False:
+        return no
+    return unknown
+
+
 def _eps_growth_label(fund) -> str:
     """Name the earnings-growth figure honestly inside the prompt.
 
@@ -438,8 +453,8 @@ Alertas: {", ".join(fund.warnings) if fund.warnings else "ninguna"}
 
 --- ANÁLISIS TÉCNICO (barras semanales) ---
 Señal: {tech.signal} (fuerza: {tech.signal_strength:+d}/100)
-Tendencia: precio {"ENCIMA" if tech.above_sma200 else "DEBAJO"} de la {TREND_MA_LABEL} | Pendiente 26 semanas: {tech.sma200_slope_pct:+.1f}%
-Momentum: RSI={fmt(tech.rsi_weekly)} | MACD={"alcista" if tech.macd_bullish else "bajista"} | ADX={fmt(tech.adx)}
+Tendencia: precio {_tristate(tech.above_sma200, "ENCIMA", "DEBAJO", "SIN HISTORIAL PARA MEDIR SU POSICIÓN RESPECTO")} de la {TREND_MA_LABEL} | Pendiente 26 semanas: {tech.sma200_slope_pct:+.1f}%
+Momentum: RSI={fmt(tech.rsi_weekly)} | MACD={_tristate(tech.macd_bullish, "alcista", "bajista", "sin dato")} | ADX={fmt(tech.adx)}
 Contexto: {tech.price_vs_52w_high_pct:+.1f}% desde 52w high | {tech.price_vs_52w_low_pct:+.1f}% desde 52w low
 Alertas técnicas: {", ".join(tech.warnings) if tech.warnings else "ninguna"}
 
@@ -676,8 +691,8 @@ Alertas: {warnings_str}
 {moat_section}
 --- ANÁLISIS TÉCNICO (barras semanales) ---
 Señal: {tech.signal} (fuerza: {tech.signal_strength:+d}/100)
-Tendencia: precio {"ENCIMA" if tech.above_sma200 else "DEBAJO"} de la {TREND_MA_LABEL} | Pendiente 26 semanas: {tech.sma200_slope_pct:+.1f}%
-Momentum: RSI={fmt(tech.rsi_weekly)} | MACD={"alcista" if tech.macd_bullish else "bajista"} | ADX={fmt(tech.adx)}
+Tendencia: precio {_tristate(tech.above_sma200, "ENCIMA", "DEBAJO", "SIN HISTORIAL PARA MEDIR SU POSICIÓN RESPECTO")} de la {TREND_MA_LABEL} | Pendiente 26 semanas: {tech.sma200_slope_pct:+.1f}%
+Momentum: RSI={fmt(tech.rsi_weekly)} | MACD={_tristate(tech.macd_bullish, "alcista", "bajista", "sin dato")} | ADX={fmt(tech.adx)}
 Contexto: {tech.price_vs_52w_high_pct:+.1f}% desde 52w high | {tech.price_vs_52w_low_pct:+.1f}% desde 52w low
 
 --- CONTEXTO DE RIESGO (OBJETIVO) ---

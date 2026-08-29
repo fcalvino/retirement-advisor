@@ -1313,7 +1313,9 @@ def cached_personal_book_analysis(
             "margin_of_safety_pct": getattr(fund, "margin_of_safety_pct", None),
             "data_quality_level": (dq.get("level") if isinstance(dq, dict) else "good") or "good",
             "rsi_weekly": getattr(tech, "rsi_weekly", None),
-            "above_sma200": bool(getattr(tech, "above_sma200", True)),
+            # Sin bool(): None significa "sin historial", y coercionarlo lo
+            # convertiría en "debajo de la media" (U3-1).
+            "above_sma200": getattr(tech, "above_sma200", True),
             "sma200_slope_pct": getattr(tech, "sma200_slope_pct", 0.0),
             "price_vs_52w_high_pct": getattr(tech, "price_vs_52w_high_pct", 0.0),
             "retirement_action": getattr(decision, "action", "HOLD"),
