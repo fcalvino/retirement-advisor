@@ -733,6 +733,14 @@ class MoatConfig:
     wide_threshold: float = 14.0
     narrow_threshold: float = 8.0
     minimal_threshold: float = 4.0
+
+    # U3-7b: los dos techos de la escala del moat, explícitos. El total con IA
+    # corre 0–20 (cuantitativo 0–12 + IA 0–8) y sin ella es el tramo
+    # cuantitativo solo. Estaban implícitos en un `/20` hardcodeado en el
+    # Optimizer, que con una población sin IA —las 150 equities cacheadas, todas
+    # bajo 12— dejaba al término de moat pesando el 60 % de `moat_weight`.
+    quant_max_score: float = 12.0
+    ai_max_score: float = 8.0
     # Quant-only mode (U3-7). The thresholds above live on the 0–20 scale that
     # only exists once the AI layer has run; the quantitative tramo tops out at
     # 12, so measured across the 164-ticker cached universe NOT ONE ticker could
