@@ -72,13 +72,29 @@ def _row(hit: bool, excess: float, action="BUY", confidence="MEDIUM"):
     }
 
 
-#: La muestra real del 2026-08-30, reducida a lo que las métricas leen: 11 filas,
-#: 5 aciertos, y los excesos que dan media +3,21 con desvío 10,21.
+#: La muestra real del 2026-08-30, con los excesos tal como están en la base —
+#: no una aproximación. El primer intento de este fixture inventaba valores y su
+#: docstring decía que reproducían la muestra: daban media −0,72 contra el +3,21
+#: real. Un fixture que miente sobre lo que representa es la misma clase de
+#: defecto que estos tests existen para atrapar.
+#: n=11, 5 aciertos, media +3,2127, desvío 10,21.
 MUESTRA_REAL = [
-    _row(True, 13.7), _row(True, 10.2), _row(True, 8.1), _row(True, 4.4),
-    _row(True, 1.9), _row(False, 0.4), _row(False, -1.2), _row(False, -3.8),
-    _row(False, -6.1), _row(False, -12.0), _row(False, -23.5),
+    _row(False, 11.31), _row(False, 13.72), _row(True, 4.4), _row(True, 1.39),
+    _row(False, 9.48), _row(True, 4.07), _row(True, 8.59), _row(False, 8.59),
+    _row(False, -23.52), _row(False, -3.32), _row(True, 0.63),
 ]
+
+
+def test_el_fixture_reproduce_la_muestra_real():
+    """Guarda sobre el fixture: si deja de reproducir la muestra medida, los
+    números de todo este archivo dejan de significar lo que dicen."""
+    import statistics
+
+    ex = [r["excess_return_pct"] for r in MUESTRA_REAL]
+    assert len(MUESTRA_REAL) == 11
+    assert sum(1 for r in MUESTRA_REAL if r["hit"]) == 5
+    assert sum(ex) / len(ex) == pytest.approx(3.2127, abs=1e-3)
+    assert statistics.stdev(ex) == pytest.approx(10.21, abs=0.01)
 
 
 def _banda_de_referencia(valores: list[float]) -> float:
@@ -116,14 +132,15 @@ class TestSummaryStatsTraeSusBandas:
     def test_la_banda_del_exceso_coincide_con_la_referencia(self):
         s = summary_stats(MUESTRA_REAL)
         esperada = _banda_de_referencia([r["excess_return_pct"] for r in MUESTRA_REAL])
-        assert s["excess_band_pct"] == pytest.approx(esperada, rel=1e-6)
+        # `mean_with_band` publica con 4 decimales; se compara a esa precisión.
+        assert s["excess_band_pct"] == pytest.approx(esperada, abs=5e-5)
 
     def test_la_banda_del_acierto_se_calcula_sobre_los_ceros_y_unos(self):
         """Una tasa de acierto es la media de una variable 0/1, así que su banda
         sale de los mismos datos — no de los excesos, que es otra magnitud."""
         s = summary_stats(MUESTRA_REAL)
         esperada = _banda_de_referencia([1.0 if r["hit"] else 0.0 for r in MUESTRA_REAL])
-        assert s["hit_rate_band"] == pytest.approx(esperada, rel=1e-6)
+        assert s["hit_rate_band"] == pytest.approx(esperada, abs=5e-5)
 
     def test_sobre_la_muestra_real_las_dos_son_inconclusas(self):
         """El hecho que motiva la fila: con n=11 ninguna de las dos concluye.

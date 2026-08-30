@@ -394,16 +394,44 @@ def summary_stats(rows: List[dict]) -> dict:
     ``n_benchmark_missing`` rows whose benchmark could not be priced. When nothing
     has a benchmark, ``mean_excess_pct`` is None — the honest answer is "—", not
     "+0.0 % vs the market".
+
+    U7-3: los dos números vienen con su banda, en la misma forma que
+    ``hit_rate_by_action`` ya usaba. Sin eso el titular afirmaba en indicativo lo
+    que la tabla doce líneas más abajo etiquetaba «sin señal» — dos estándares en
+    la misma pantalla. Medido sobre la muestra real (n=11) el 2026-08-30: acierto
+    45,5 % con banda ±35,1 pp, o sea un intervalo de 10,4 a 80,5 que contiene el
+    50 % de una moneda al aire; exceso +3,21 con banda ±6,86, que contiene el cero.
+
+    La banda de la **tasa de acierto** no la calculaba nadie y es la más ancha de
+    todas. Se computa sobre los ceros y unos, porque una tasa de acierto es la
+    media de una variable binaria — no sobre los excesos, que son otra magnitud.
+    ``hit_rate_inconclusive`` es True cuando el intervalo contiene 0,5: un modelo
+    indistinguible de tirar una moneda.
     """
     scored = _gradable(rows)
     n = len(scored)
     excesses = _known_excesses(rows)
     missing = sum(1 for r in rows if r.get("benchmark_missing"))
     hits = sum(1 for r in scored if r["hit"])
+
+    excess_stats = mean_with_band(excesses)
+    hit_stats = mean_with_band([1.0 if r["hit"] else 0.0 for r in scored])
+    hit_band = hit_stats["band"]
+
     return {
         "n": n,
         "n_excess": len(excesses),
         "n_benchmark_missing": missing,
         "overall_hit_rate": (round(hits / n, 4) if n else None),
         "mean_excess_pct": (round(sum(excesses) / len(excesses), 4) if excesses else None),
+        "excess_band_pct": excess_stats["band"],
+        "inconclusive": excess_stats["inconclusive"],
+        "hit_rate_band": hit_band,
+        # No es ``mean_with_band``'s ``inconclusive``: aquel pregunta si el
+        # intervalo contiene el CERO, y una tasa de acierto de cero no es la
+        # hipótesis nula interesante. La moneda al aire sí.
+        "hit_rate_inconclusive": (
+            True if hit_band is None or not n
+            else abs(hits / n - 0.5) <= hit_band
+        ),
     }

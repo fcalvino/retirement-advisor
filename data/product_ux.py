@@ -1054,6 +1054,39 @@ def deep_compare_plans(plan_a: Any, plan_b: Any) -> dict:
 #  15 — Track record one-liner                                                #
 # --------------------------------------------------------------------------- #
 
+# --------------------------------------------------------------------------- #
+#  Promediar y capitalizar no son la misma pregunta (U7-3)                    #
+# --------------------------------------------------------------------------- #
+#  La página de Track Record mostraba dos agregaciones de los MISMOS datos, las
+#  dos bien calculadas, y sacaba de ellas conclusiones de signo opuesto:
+#
+#      titular (media aritmética de excesos)  +3,21 %   -> «le ganó al mercado»
+#      gráfico (capital capitalizado)         0,9134 vs 1,0307 del benchmark
+#                                                       -> el modelo pierde
+#
+#  Con un desvío de 10,2 sobre un rango de −23,5 a +13,7, el arrastre de
+#  volatilidad da vuelta la conclusión: promediar y capitalizar responden
+#  preguntas distintas. Es la misma familia que `median_cagr_pct` (CONTEXT §8) y
+#  se resuelve igual que U1-1/U1-2 — nombres que no se confundan.
+
+EXCESS_MEAN_LABEL = "Exceso medio por recomendación"
+EXCESS_MEAN_HELP = (
+    "**Promedia** el exceso sobre el benchmark de cada recomendación, una por una, "
+    "sin capitalizar. Responde «cuánto le sacó al mercado la recomendación típica». "
+    "Puede dar de **signo distinto** al capital acumulado: promediar y capitalizar "
+    "no son la misma operación, y con retornos dispersos el promedio puede ser "
+    "positivo mientras el capital cae."
+)
+
+EQUITY_CURVE_LABEL = "Capital acumulado"
+EQUITY_CURVE_HELP = (
+    "**Capitaliza** las recomendaciones una tras otra, como si cada una hubiera "
+    "sido una posición. Responde «en qué terminó un peso que siguió todas las "
+    "señales». Puede dar de **signo distinto** al exceso medio, porque una pérdida "
+    "grande pesa más al componer que al promediar."
+)
+
+
 def track_record_one_liner(
     summary: Optional[Mapping[str, Any]] = None,
     *,
@@ -1070,10 +1103,22 @@ def track_record_one_liner(
     hit = summary.get("overall_hit_rate")
     excess = summary.get("mean_excess_pct")
     parts = [f"Track record ({n} señales, {horizon_label})"]
+
+    # U7-3: la misma regla que el titular de la página. Un porcentaje sin su
+    # banda invita a una conclusión que la muestra no sostiene: con n=11 el
+    # intervalo del acierto va de 10 % a 80 %.
     if hit is not None:
-        parts.append(f"acierto direccional {float(hit)*100:.0f}%")
+        parts.append(
+            "acierto direccional sin señal todavía"
+            if summary.get("hit_rate_inconclusive")
+            else f"acierto direccional {float(hit)*100:.0f}%"
+        )
     if excess is not None:
-        parts.append(f"exceso medio vs {benchmark_label} {float(excess):+.1f} pp")
+        parts.append(
+            f"exceso medio vs {benchmark_label} sin señal todavía"
+            if summary.get("inconclusive")
+            else f"exceso medio vs {benchmark_label} {float(excess):+.1f} pp"
+        )
 
     # Optional BUY-focused honesty
     if by_action:
@@ -1081,7 +1126,7 @@ def track_record_one_liner(
             block = by_action.get(key) or by_action.get(key.replace(" ", "_"))
             if block and block.get("n"):
                 hr = block.get("hit_rate")
-                if hr is not None:
+                if hr is not None and not block.get("inconclusive"):
                     parts.append(f"{key} {float(hr)*100:.0f}% hit (n={block['n']})")
                 break
 
