@@ -10,6 +10,145 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U5-18d — Las 53 filas de fixture salen del track record (2026-08-30)
+
+### Qué se decidió y por qué no fue lo mismo que U5-18b
+
+N6 cortó la sangría; quedaban **53 filas de 470** que la suite había escrito y
+**11 outcomes** puntuados sobre ellas. U5-18b había resuelto un caso parecido
+—deduplicar en lectura, no borrar— con el argumento de que «el motor emitió esas
+filas; que las haya emitido por un bug no las vuelve falsas, las vuelve el
+registro de un bug».
+
+**Ese argumento no aplica acá, y la palabra que lo decide es *emitió*.** Las 80
+duplicadas de U5-18b salieron de `full_analysis` sobre datos de mercado reales,
+en un momento real, y el usuario pudo haberlas visto: el defecto era **contarlas
+dos veces**, y colapsar corrige el conteo sin editar el hecho. Acá no hay hecho.
+El `adjusted_score: 72.0` es un literal en `tests/test_alert_engine.py`, la señal
+salió de un `store.seed(...)` y ningún precio se consultó — por eso las 53 tienen
+`price_at_rec` NULL. Colapsar no alcanzaría porque no hay una fila legítima
+detrás. El log de recomendaciones no es donde se documenta un bug de testing; eso
+vive en git.
+
+**Pero eso tampoco autoriza borrar.** Se marcan: `source='test_fixture'` sobre 53
+ids, y las lecturas las excluyen. Mientras nada se borre, un error en la lista es
+reversible y la contaminación sigue siendo medible.
+
+### La regla: se enumeran los ids, nunca se shipea el patrón
+
+Las 53 comparten rationale (`"Alerta de oportunidad: entró con señal …"`),
+`source='rule_based'` y `price_at_rec` NULL, así que un `WHERE` con esa firma
+parece la solución limpia. Es la peor posible:
+
+- El rationale lo escribe `alerts/engine.py:521` y el source sale de `:528`. Los
+  dos son **código de producción**: una corrida real del alert engine produce una
+  fila **byte-idéntica** en las tres columnas, el precio NULL incluido (el loop de
+  alertas no tiene precio, y el scorer lo resuelve en memoria sin persistirlo).
+- `source='rule_based'` tampoco distingue: `2_Stock_Analysis.py:180` lo escribe
+  cada vez que el usuario analiza un ticker con la IA apagada.
+- Un patrón sobre `'%Alerta%'` **ya barrería una fila real**: la id 166 (CME,
+  `source=screener`), que lleva esa palabra en un rationale legítimo.
+
+La firma acierta 53/53 **hoy** por un accidente histórico: `alert_snapshots` tiene
+**0 filas**, o sea que el alert engine nunca completó una corrida real contra esta
+base (un arranque en frío guarda un baseline por ticker antes de poder disparar
+nada). Eso es un hecho sobre el pasado, no una regla sobre el futuro. Lo único
+cierto es que el conjunto está **cerrado**: la última fixture es la id 470 y desde
+PR #50 la suite no puede escribir. Un `WHERE` por patrón se dispararía solo el
+primer día que el scheduler corra de verdad, sobre exactamente las filas que el
+path de alertas existe para producir, y sin un error que lo avise.
+
+### Lo que cambió, medido sobre la base
+
+`scripts/mark_test_fixture_rows.py --apply` corrido el 2026-08-30. Nada se borró:
+470 filas y 22 outcomes antes y después; sólo cambió `source` en 53 filas.
+
+| | antes | ahora |
+|---|---:|---:|
+| Recomendaciones logueadas | 470 | **417** |
+| Evaluadas a 30 días | 22 | **11** |
+| Tasa de acierto | 68,2 % | **45,5 %** |
+| Exceso medio vs benchmark | +6,29 | **+3,21** |
+| equity modelo / benchmark | 2,572 / 1,124 | **0,913 / 1,031** |
+| STRONG BUY | n=4, 100 %, `inconclusive=False` | **no existe** |
+| BUY, exceso medio | +4,08 | **−1,40** |
+| pendientes de puntuar a 30 d | 445 | **406** |
+
+**La corrección no le baja el número al motor: le da vuelta el signo.** El
+producto mostraba el modelo convirtiendo $1 en $2,57 contra un mercado que hizo
+$1,12; el registro real es el modelo **perdiendo 8,7 %** mientras el mercado gana
+3,1 %. Y las cuatro STRONG BUY puntuadas eran las cuatro fixtures: sacadas, no
+queda ninguna — el producto presentaba como concluyente (`inconclusive=False`) una
+fila cuya muestra entera era salida de un fixture.
+
+`include_fixtures=True` devuelve el 470 / 68,2 % / 2,572 exacto: la auditoría de
+lo que pasó sigue disponible, que es la razón de marcar en vez de borrar.
+
+### Dónde va el filtro
+
+Tres sitios de query, con `include_fixtures: bool = False`:
+
+| sitio | por qué |
+|---|---|
+| `get_pending_scoring` | el único con vencimiento: impedía que las 42 restantes se puntuaran de a 3 por día hábil desde el 2026-09-08 |
+| `get_scored_rows` | antes del filtro «Fuente» de la página, así `test_fixture` no llega a ninguna métrica ni aparece como opción seleccionable |
+| `get_recommendations` | el titular «Recomendaciones logueadas» contaba 470 donde hay 417 |
+
+**No se compone con `collapse_same_local_day`.** Son dos preguntas —«¿cuántas
+veces se contó esto?» contra «¿esto es una recomendación?»— y fusionarlas
+repetiría el pecado original de U5-18, que U5-18b tardó un PR entero en desarmar.
+Un test fija la ortogonalidad en las dos direcciones.
+
+**Los 11 outcomes no se tocaron.** Caen con su fila por el join que
+`get_scored_rows` ya hacía. El precio, explícito: `select count(*) from
+recommendation_outcome` sigue diciendo 22, y por eso toda lectura tiene que
+joinear.
+
+### El oráculo y la mutación
+
+`tests/test_track_record_fixture_exclusion_oracle.py`. Los 22 outcomes medidos
+entran como literales, así que los números de arriba están fijados por el test y
+no dependen de la base.
+
+| mutante | lo ve |
+|---|---|
+| la lista de ids reemplazada por el patrón | `test_the_decoy_row_survives` |
+| sin exclusión en `get_pending_scoring` | `test_get_pending_scoring_excludes_fixtures` |
+| sin exclusión en `get_scored_rows` | `test_get_scored_rows_excludes_fixtures` |
+| sin exclusión en `get_recommendations` | `test_get_recommendations_excludes_fixtures` |
+| la exclusión colgada del flag del collapse | `test_exclusion_is_orthogonal_to_the_collapse` |
+| `!=` en vez de `is_distinct_from` | `test_a_row_with_no_source_stays_visible` |
+
+Los dos últimos tests los escribió la mutación. El de NULL estuvo **verde por
+accidente** en su primera versión: pasarle `source=None` al constructor no produce
+un NULL, porque la columna tiene `default="rule_based"` y SQLAlchemy lo aplica —
+hay que forzarlo con un `UPDATE`. Sin eso el mutante sobrevivía con el test puesto.
+
+El guard AST de U5-18b detectó al script de migración como lector nuevo del log
+crudo y rompió `make check`; entró al allowlist con su razón — trabaja sobre la
+fila, no sobre la muestra, así que colapsar escondería filas que tiene que editar.
+
+### Efecto colateral: una medición publicada estaba hecha sobre las fixtures
+
+CONTEXT §8 decía «con n=4 y n=13 el ruido es ±5,5 puntos y la diferencia observada
+de +6,3 es indistinguible de cero». Los tres números reproducen exacto contra la
+base (n=4, n=13, +6,32) y por eso nadie lo vio — pero el grupo de STRONG BUY eran
+**4 de 4 fixtures**, y el +29,0 % del rango que la misma línea citaba también. La
+conclusión sobrevivió por casualidad; el enunciado honesto es más fuerte: esa
+comparación **todavía no se puede hacer**. Corregido, junto con U5-1b, que citaba
+«22 filas» de muestra para recalibrar el bonus de Piotroski — son 11.
+
+### Lo que este PR deliberadamente NO hizo
+
+Sin aviso en la UI: apenas entra el filtro el número deja de estar mal, y la
+contaminación estaba en su máximo (50 % de los outcomes) y se diluye sola a ~11 %
+para fin de septiembre, cuando entren las 406 filas reales pendientes. Una
+superficie para una ventana de cuatro semanas es trabajo que hay que borrar
+después. Y quedó abierta **N6c**: `alert_cooldowns` tiene 2 filas de `TEST1` del
+2026-05-24 — misma causa, otra tabla, dos meses antes.
+
+---
+
 ## N6 — La suite de tests escribía en el track record del usuario (2026-08-30)
 
 ### El defecto
