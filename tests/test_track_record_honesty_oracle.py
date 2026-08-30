@@ -199,7 +199,11 @@ USER_FACING = [
 _AFIRMA_RE = re.compile(r"(overall_hit_rate|mean_excess_pct)[^}\n]*\}")
 #: Lo que vuelve honesta a esa línea: que la banda o el flag aparezcan cerca.
 _MITIGA_RE = re.compile(r"band|inconclusive|sin señal|sin_senal", re.IGNORECASE)
-_CONTEXTO = 6
+#: UNA línea a cada lado, no seis. Con una ventana ancha el `help=` contiguo
+#: —que legítimamente nombra la banda— tapaba al titular de al lado, y la
+#: mutación «la página vuelve a afirmar el porcentaje sin banda» sobrevivía al
+#: barrido. La guarda de una afirmación vive pegada a ella, no en el vecindario.
+_CONTEXTO = 1
 
 
 class TestNingunaPantallaAfirmaSinSuBanda:
@@ -211,7 +215,7 @@ class TestNingunaPantallaAfirmaSinSuBanda:
             for n, linea in enumerate(lineas):
                 if not _AFIRMA_RE.search(linea):
                     continue
-                ventana = "\n".join(lineas[max(0, n - _CONTEXTO): n + _CONTEXTO])
+                ventana = "\n".join(lineas[max(0, n - _CONTEXTO): n + _CONTEXTO + 1])
                 if not _MITIGA_RE.search(ventana):
                     malos.append(f"{rel}:{n + 1}: {linea.strip()}")
         assert not malos, (
@@ -226,6 +230,29 @@ class TestNingunaPantallaAfirmaSinSuBanda:
         assert _AFIRMA_RE.search("f\"{stats['mean_excess_pct']:+.1f}%\"")
         assert not _AFIRMA_RE.search("stats['overall_hit_rate'] is not None")
         assert _MITIGA_RE.search("if s['hit_rate_inconclusive']:")
+
+    def test_el_barrido_atrapa_una_afirmacion_pelada_pegada_a_un_help_honesto(self):
+        """El caso exacto que dejaba pasar una ventana ancha.
+
+        Un `help=` contiguo nombra la banda legítimamente; si el barrido mira
+        seis líneas alrededor, ese help tapa a la métrica de al lado y la
+        afirmación pelada pasa. La guarda tiene que estar pegada.
+        """
+        malo = [
+            'm3.metric(',
+            '    "Tasa de acierto",',
+            "    f\"{stats['overall_hit_rate'] * 100:.0f}%\",",
+            '    help=(',
+            "        f\"margen de ±{_hr_band * 100:.0f} puntos\"",
+            '    ),',
+        ]
+        n_malo = 2
+        ventana = "\n".join(malo[max(0, n_malo - _CONTEXTO): n_malo + _CONTEXTO + 1])
+        assert _AFIRMA_RE.search(malo[n_malo])
+        assert not _MITIGA_RE.search(ventana), (
+            "la ventana sigue siendo tan ancha que el help de al lado tapa la "
+            "afirmación pelada"
+        )
 
 
 # --------------------------------------------------------------------------- #
