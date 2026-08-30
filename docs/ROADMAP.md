@@ -10,6 +10,96 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## N6 — La suite de tests escribía en el track record del usuario (2026-08-30)
+
+### El defecto
+
+`AlertEngine._log_opportunity` (`alerts/engine.py:512`) importa el **singleton de
+módulo** `track_record_store`, que apunta a `config.DB_PATH`. El fixture `store`
+de `tests/test_alert_engine.py` reemplaza el store de *alertas*, no el del track
+record, así que correr la suite escribía recomendaciones reales en la base del
+usuario. Apareció midiendo U5-18b.
+
+### La fila subestimaba el daño, y del lado que importa
+
+Decía «3 filas durante un PR, contaminación futura». Medido el 2026-08-30 sobre
+`data/db/retirement_advisor.db` en read-only: **53 filas de 470 (11,3 %)**, todas
+con el rationale `"Alerta de oportunidad: entró con señal …"`, `source=rule_based`
+y `price_at_rec` NULL. **18 lotes en 16 días locales**, del 19 de junio al 30 de
+agosto, siempre AAPL/BUY, MSFT/BUY y XOM/STRONG BUY. Un lote por día porque el
+dedup de U5-18 colapsa el resto; el 23 y el 28 de agosto la suite corrió dos
+veces cruzando las 21:00 local y quedaron 6 — de ahí salen 6 de los 80
+duplicados de U5-18b.
+
+**No era contaminación futura: ya estaba puntuada.** De los 22 outcomes
+scoreados, 11 son estas filas.
+
+| | n | hit rate | exceso medio |
+|---|---:|---:|---:|
+| lo que publica el producto | 22 | **68,2 %** | +6,29 |
+| las que escribió la suite | 11 | 90,9 % | +9,36 |
+| las que el motor emitió | 11 | **45,5 %** | +3,21 |
+
+**+22,7 pp inflados a favor del motor**, sobre el único juez que el motor tiene
+sobre sí mismo. Las otras 42 no cumplieron los 30 días todavía: sin cortar la
+sangría el sesgo crecía solo.
+
+**Y eran cuatro tests, no tres.** Instrumentando `log_recommendation` bloqueada:
+`test_signal_upgrade_fires_alert` (AAPL), `test_surge_with_buy_signal_fires`
+(MSFT), `test_new_buy_entry_fires_opportunity` y
+`test_opportunity_strong_buy_with_space` (XOM). El cuarto lo colapsa el dedup del
+día — por eso aterrizaban 3 filas y no 4. Y el primero no es un test de
+oportunidad: es el de cambio de señal, que al cruzar a BUY dispara el path igual.
+Reproducido contra una **copia** de la base: 467 → 470 corriendo sólo ese archivo.
+
+### El arreglo (`0ef727b`, oráculo en `63d82e7`)
+
+`tests/conftest.py` apunta el track record a `:memory:` **en tiempo de import**:
+el singleton y también el `DB_PATH` del módulo, para que un caller que construya
+su propio store tampoco caiga en la base del usuario.
+
+- **Por qué no inyectar el store en `AlertEngine`.** Es más explícito, pero cubre
+  un solo caller y son siete los que alcanzan el mismo singleton —
+  `track_record_scorer` y `dashboard/shared.py` entre ellos, los dos con camino de
+  `log_recommendation`—. Cada caller nuevo tendría que acordarse.
+- **Por qué en tiempo de import y no como fixture.** Medido: con la misma
+  redirección escrita como fixture autouse, la suite completa deja
+  `analysis.track_record_scorer.track_record_store` apuntado a la base del
+  usuario. Un fixture corre *después* de la colección, y el scorer se liga el
+  singleton en su propio namespace cuando lo importan durante la colección.
+
+### El oráculo
+
+`tests/test_track_record_isolation_oracle.py` no cuenta filas: dentro de la misma
+suite el import ya pasó, el dedup esconde todo lote posterior al primero del día,
+y una escritura real dejaría el daño hecho aunque el test la detecte. Fija la
+propiedad —bajo pytest ningún módulo resuelve un `TrackRecordStore` a `DB_PATH`—
+y la verifica sobre el camino de producción entero, espiando a qué base habría
+escrito **sin escribirla**, así que corre en rojo sin tocar nada.
+
+Mutación: tres formas de romperlo, tres tests distintos que las ven.
+
+| mutante | lo ve |
+|---|---|
+| sólo el singleton, sin el `DB_PATH` del módulo | `test_the_module_default_is_not_the_users_database` |
+| la misma redirección como fixture autouse (suite completa) | `test_no_imported_module_holds_a_store_on_the_users_database` |
+| `_log_opportunity` deja de loguear (verde vacío) | `test_opportunity_alert_never_resolves_to_the_users_database` |
+
+### Lo que este PR deliberadamente NO hizo
+
+No tocó las 53 filas ya escritas ni los 11 outcomes. Qué hacer con ellas es una
+decisión aparte, abierta como **N6b** en `BACKLOG.md`: tiene la forma de U5-18b
+con una diferencia que manda —aquellas eran recomendaciones que el motor **sí**
+emitió, contadas dos veces; éstas nunca lo fueron, así que colapsar en lectura
+no alcanza porque no hay una fila legítima detrás—.
+
+`make check` y `TZ=UTC make test` en verde (2367 passed, 1 skipped), con la base
+en 470 filas y 22 outcomes antes y después. La suite completa, medida contra una
+copia, no escribe en ninguna otra tabla (`cache`, `alert_*`, `macro_docs` quedan
+idénticas).
+
+---
+
 ## U3-2 — ATR y ADX con el suavizado que dicen usar (2026-08-29)
 
 ### El defecto

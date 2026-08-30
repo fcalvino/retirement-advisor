@@ -179,33 +179,51 @@ trajo. Cuando la caché falla, es una segunda llamada de red redundante — invi
 hasta que el retry la volvió cara (la suite pasó de 23 s a 7m26). Vale arreglarlo
 junto con el fallback.
 
-### N6 · La suite de tests escribe en el track record de producción
+### N6b · Qué hacer con las 53 filas que escribió la suite
 
-Apareció midiendo U5-18b: correr `make check` **agrega filas reales** a
-`recommendation_log`. Verificado el 2026-08-30 — el log pasó de 467 a 470 filas
-durante este PR, y las tres son AAPL/BUY, MSFT/BUY y XOM/STRONG BUY con
-`source=rule_based` y el rationale `"Alerta de oportunidad: entró con señal …"`.
+**La sangría está cortada** (`63d82e7` + `0ef727b`, ver `ROADMAP.md`): la suite
+ya no escribe. Queda abierto qué hacer con lo que dejó, y no es cosmético.
 
-El camino: `AlertEngine._log_opportunity` (`alerts/engine.py:512`) importa el
-**singleton de módulo** `track_record_store`, que apunta a `DB_PATH`. El fixture
-`store` de `tests/test_alert_engine.py` reemplaza el store de *alertas*, no el del
-track record, así que los tres tests que disparan alertas de oportunidad
-(`:176`, `:188`, y el de MSFT) escriben en la base del usuario.
+**Los números de N6 estaban mal, y para el lado que importa.** La fila decía «3
+filas durante un PR, contaminación futura». Medido el 2026-08-30 sobre la base,
+en read-only:
 
-**No es cosmético.** Son filas falsas en el único juez que el motor tiene sobre
-sí mismo: el scorer las va a puntuar a los 30 días y su resultado va a entrar en
-el hit rate como si fueran recomendaciones que el motor emitió. Y ya dejaron
-rastro: de los 80 pares duplicados que motivaron U5-18b, **6 son estos** —los
-únicos con `price_at_rec` en `NULL`, del 23 y del 28 de agosto, que son los días
-en que la suite corrió dos veces cruzando el límite de las 21:00 local.
+| | |
+|---|---|
+| filas escritas por la suite | **53** de 470 (**11,3 %**) |
+| cómo se identifican | rationale `"Alerta de oportunidad: entró con señal …"`, `source=rule_based`, `price_at_rec` NULL — las 53 cumplen las tres |
+| cuándo | 18 lotes en **16 días locales** distintos, del 2026-06-19 al 2026-08-30 |
+| qué | siempre AAPL/BUY, MSFT/BUY y XOM/STRONG BUY |
 
-Arreglo probable: inyectar el store en `AlertEngine` como ya se hace con el de
-alertas, o un fixture autouse que apunte el singleton a `:memory:` durante la
-suite. Lo segundo es más barato y cubre a cualquier otro caller que aparezca.
+Un lote por día porque el dedup de U5-18 colapsa el resto; el 23 y el 28 de
+agosto la suite corrió dos veces cruzando las 21:00 local y quedaron 6 — de ahí
+salen 6 de los 80 duplicados de U5-18b.
 
-**Las filas ya escritas no se borran** — mismo criterio que U5-18b: la base está
-gitignoreada y el registro de lo que pasó vale más que la prolijidad. Se
-identifican solas por el rationale.
+**No es contaminación futura: ya está puntuada.** De los 22 outcomes scoreados,
+**11 son estas filas**:
+
+| | n | hit rate | exceso medio |
+|---|---:|---:|---:|
+| lo que publica el producto | 22 | **68,2 %** | +6,29 |
+| las que escribió la suite | 11 | 90,9 % | +9,36 |
+| las que el motor emitió | 11 | **45,5 %** | +3,21 |
+
+El producto publica 68,2 % de acierto sobre el único juez que el motor tiene
+sobre sí mismo; sobre recomendaciones reales va 45,5 %. **+22,7 pp inflados a
+favor del motor.** Y las otras 42 todavía no cumplieron los 30 días: sin este
+arreglo el sesgo crecía solo.
+
+**La decisión.** Tiene la misma forma que la de U5-18b —la base está
+gitignoreada y el registro de lo que pasó vale más que la prolijidad, así que
+borrar no es obvio— con **una diferencia que manda**: aquellas eran
+recomendaciones que el motor **sí** emitió, contadas dos veces; éstas **nunca lo
+fueron**. Colapsar en lectura no alcanza acá: no hay una fila legítima detrás.
+Las opciones vivas son excluirlas en lectura por la firma de las tres columnas,
+marcarlas con un `source` propio, o borrar las 53 filas y sus 11 outcomes. La
+primera y la segunda conservan la evidencia; la tercera no.
+
+Ojo con el orden si se toma junto con **U5-18c**: las dos cambian qué entra al
+scorer, y aplicar una sin la otra deja dos políticas conviviendo.
 
 ### N3 · Accesibilidad y tema
 
@@ -285,6 +303,7 @@ priorizarlo:
   | U4-1c | el lump de diciembre | también el primer año entero sin gastar, que era la mitad más grande |
   | N5 | *(no existía)* | apareció midiendo si bajar un techo, y el techo era la perilla equivocada |
   | U3-2 | 3 suavizados del ADX, «ATR y ADX más nerviosos» | 4 sitios, uno de ellos **no puede** mover el número; y el ATR no tiene sesgo de signo, sólo el ADX |
+  | N6 | 3 filas en un PR, «contaminación futura» | 53 filas en 16 días, y **ya puntuadas**: 11 de los 22 outcomes, +22,7 pp de hit rate inflado |
 
   Empezar a arreglar sin medir produce el arreglo de la fila, no el del defecto.
 - Una fila se cierra cuando su **oráculo** pasa, no cuando el código "parece bien".

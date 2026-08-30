@@ -1,13 +1,48 @@
 """Shared fixtures for the Retirement Advisor test suite.
 
-Data-shaped, with one exception: an autouse fixture that zeroes the network retry
-backoff. See ``no_retry_backoff``.
+Data-shaped, with two exceptions: an autouse fixture that zeroes the network
+retry backoff (see ``no_retry_backoff``) and the import-time redirection of the
+track record away from the user's database (see below).
 """
 
 from __future__ import annotations
 
 import pandas as pd
 import pytest
+
+import analysis.track_record as _track_record
+
+# ------------------------------------------------------------------ #
+#  Track record: the suite never writes to the user's database (N6)    #
+# ------------------------------------------------------------------ #
+#
+# ``AlertEngine._log_opportunity`` imports the module-level singleton
+# ``track_record_store``, which points at ``config.DB_PATH``. The ``store``
+# fixture of ``test_alert_engine.py`` replaces the *alert* store, not this one,
+# so every test that fires an opportunity alert logged a real recommendation
+# into the user's track record: 53 of its 470 rows as of 2026-08-30, and 11 of
+# its 22 scored outcomes — which published a 68,2 % hit rate where the engine's
+# own recommendations score 45,5 %.
+#
+# Two shapes were available. Injecting the store into ``AlertEngine`` (the way
+# the alert store already is) is more explicit, but it only covers that one
+# caller: six other call sites reach the same singleton — ``track_record_scorer``
+# and ``dashboard/shared.py`` among them, both with a ``log_recommendation``
+# path — and each new one would have to remember. This covers every caller,
+# present and future, which is what a leak into the user's data warrants.
+#
+# It runs at import time, not as an autouse fixture, and that is the whole
+# point: a fixture runs *after* collection, and ``analysis.track_record_scorer``
+# binds ``track_record_store`` into its own namespace when it is imported during
+# collection. A fixture would leave that binding pointed at the user's database.
+#
+# Patching ``DB_PATH`` inside the module — not just the singleton — is what
+# covers the caller that constructs its own store instead of importing this one.
+# ``tests/test_track_record_isolation_oracle.py`` fails if any of this regresses.
+_track_record.track_record_store._engine.dispose()  # release the user's file
+_track_record.DB_PATH = ":memory:"
+_track_record.track_record_store = _track_record.TrackRecordStore()
+
 
 # ------------------------------------------------------------------ #
 #  Financial statement fixtures                                        #
