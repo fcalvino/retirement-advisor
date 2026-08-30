@@ -262,6 +262,44 @@ class TestTheThreeQuerySites:
         fuentes = {r["source"] for r in store.get_scored_rows(30)}
         assert _fixture_source() not in fuentes
 
+    def test_a_row_with_no_source_stays_visible(self):
+        """`NULL != 'x'` es NULL en SQL, no True.
+
+        Escrito con `!=`, el filtro haría desaparecer de **todas** las lecturas a
+        cualquier fila con `source` nulo — la columna es nullable y
+        `log_recommendation` acepta el `source` que le pasen. Un filtro que oculta
+        recomendaciones reales es exactamente el defecto que este PR evita, y sería
+        de la misma familia silenciosa. Lo encontró la mutación: sin este test,
+        cambiar `is_distinct_from` por `!=` no rompía nada.
+        """
+        store = TrackRecordStore(":memory:")
+        with store._Session() as s:
+            s.add(RecommendationLog(
+                id=1, symbol="INTU", action="BUY",
+                price_at_rec=100.0, rationale="[]", created_at=datetime(2026, 6, 1, 12, 0, 0),
+            ))
+            s.commit()
+            # El NULL se fuerza con un UPDATE: pasar ``source=None`` al constructor
+            # no alcanza, porque la columna tiene ``default="rule_based"`` y
+            # SQLAlchemy lo aplica cuando el valor es None al insertar. Sin esto el
+            # test parece verde y no prueba nada — lo detectó la mutación.
+            s.query(RecommendationLog).filter(RecommendationLog.id == 1).update(
+                {"source": None}
+            )
+            s.commit()
+            assert s.get(RecommendationLog, 1).source is None
+        # Los pendientes se piden ANTES de puntuar: una fila ya puntuada sale de
+        # `get_pending_scoring` por su outcome, y el test estaría midiendo eso.
+        assert [r.id for r in store.get_recommendations()] == [1]
+        assert [r.id for r in store.get_pending_scoring(
+            30, now=datetime(2026, 8, 30, 12, 0, 0)
+        )] == [1]
+
+        store.save_outcome(rec_id=1, horizon_days=30, price_at_horizon=110.0,
+                           return_pct=10.0, benchmark_return_pct=1.0,
+                           excess_return_pct=9.0, hit=True)
+        assert [r["rec_id"] for r in store.get_scored_rows(30)] == [1]
+
     def test_exclusion_is_orthogonal_to_the_collapse(self):
         """Dos preguntas distintas, dos flags. No se fusionan (pecado de U5-18)."""
         store = _seed_store()
@@ -369,18 +407,29 @@ class TestTheIdentificationRule:
             s.commit()
 
         report = mig.mark_fixture_rows(store, dry_run=False)
-        assert report["marked"] == 53
 
+        # Los señuelos se revisan ANTES del conteo, a propósito: si se barren, el
+        # conteo también falla, pero con un «54 == 53» que no dice qué pasó. Este
+        # defecto es invisible en producción; el test no puede serlo también.
         with store._Session() as s:
             decoy = s.get(RecommendationLog, 9001)
             cme = s.get(RecommendationLog, 9002)
-            assert decoy.source == "rule_based", "se barrió una corrida real del alert engine"
-            assert cme.source == "screener", "se barrió la fila real que lleva «Alerta»"
+            assert decoy.source == "rule_based", (
+                "se barrió una corrida REAL del alert engine — su firma "
+                "(rationale, source, price NULL) es idéntica a la de las fixtures, "
+                "así que la selección no puede ser por patrón"
+            )
+            assert cme.source == "screener", (
+                "se barrió la fila real que lleva «Alerta» en un rationale legítimo "
+                "(la id 166 de la base, CME/screener)"
+            )
             marcadas = {
                 r.id for r in s.query(RecommendationLog)
                 .filter(RecommendationLog.source == _fixture_source()).all()
             }
+
         assert marcadas == set(EXPECTED_IDS)
+        assert report["marked"] == 53
 
     def test_dry_run_is_the_default_and_writes_nothing(self):
         mig = _load_migration()

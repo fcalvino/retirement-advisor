@@ -484,6 +484,14 @@ LECTORES_DIRECTOS_PERMITIDOS = {
         "propósito: deduplicarlo escondería que el motor repitió. Las cinco "
         "métricas de la misma página sí pasan por get_scored_rows."
     ),
+    ("scripts/mark_test_fixture_rows.py", "RecommendationLog"): (
+        "U5-18d: marca 53 filas por id enumerado. Trabaja sobre la fila, no sobre "
+        "la muestra —le pone `source='test_fixture'` a cada una—, así que colapsar "
+        "sería directamente incorrecto: escondería filas que tiene que tocar. Es la "
+        "misma razón por la que `13_Track_Record.py` lee crudo el conteo, del otro "
+        "lado: acá el crudo no es la respuesta a una pregunta estadística, es el "
+        "objeto que se edita."
+    ),
 }
 
 
