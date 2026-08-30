@@ -82,7 +82,10 @@ que respondían otra pregunta),
 **U4-1c** (el jubilado gasta todos los meses; el efecto no resultó uniformemente
 conservador — ver `ROADMAP.md`),
 **U5-18** (un solo reloj; la edad del dato estaba bien y el defecto era el día del
-dedup — 19,4 % de la muestra del track record eran repeticiones),
+dedup — **20,7 %** de la muestra del track record eran repeticiones: 80 filas de
+las 386 escritas con la regla vieja. El 19,4 % que decía antes salía de mezclar
+dos bases; re-derivado el 2026-08-30, ver CONTEXT §8) y **U5-18b** (esas 80 se
+deduplican en **lectura**, no borrando: `get_scored_rows(collapse_same_day=True)`),
 **U5-9 + U5-10 + U5-11** (un número, una casa — y cinco de los ocho literales de
 U5-9 ya no existían al abrirla),
 **U3-2** (ATR y ADX con el suavizado de Wilder; 48 de 164 tickers cruzan el gate
@@ -149,6 +152,7 @@ son el terreno donde ya nacieron los defectos de arriba.
 | **U5-19** | P3 | Black-Litterman documenta Π como "CAPM equilibrium **excess** returns" mientras las views `q` son retornos totales | `black_litterman.py:83` |
 | **U7-1** | P3 | `preset_gap` se evalúa en cada rerun contra los widgets actuales, así que sacar un valor a mano dispara "ese filtro no se aplicó", que es falso | `1_Screener.py:663` |
 | **U7-2** | P3 | Vaciar el multiselect "Fuente" muestra **todas** las filas en vez de ninguna | `13_Track_Record.py:86` |
+| **U5-18c** | P3 | `get_pending_scoring` lee el log **crudo**, no la vista deduplicada, así que el scorer va a puntuar las 80 duplicadas y escribir ~80 outcomes que `get_scored_rows` después descarta. No rompe ningún número —la lectura los filtra, ver U5-18b— pero gasta lookups de red y ensucia `recommendation_outcome`. Se dejó **deliberadamente** fuera de U5-18b: cambia lo que el motor **escribe**, no lo que lee, y eso es una decisión aparte. Ojo con el orden si se toma: colapsar el pending sin colapsar la lectura dejaría de nuevo dos políticas conviviendo | `track_record.py:get_pending_scoring` |
 | **U0-3** | P3 | CONTEXT §8 (a)(b) describen como abiertos dos defectos ya cerrados | |
 
 ---
@@ -174,6 +178,34 @@ elegir entre dos fuentes distintas son trabajos distintos.
 trajo. Cuando la caché falla, es una segunda llamada de red redundante — invisible
 hasta que el retry la volvió cara (la suite pasó de 23 s a 7m26). Vale arreglarlo
 junto con el fallback.
+
+### N6 · La suite de tests escribe en el track record de producción
+
+Apareció midiendo U5-18b: correr `make check` **agrega filas reales** a
+`recommendation_log`. Verificado el 2026-08-30 — el log pasó de 467 a 470 filas
+durante este PR, y las tres son AAPL/BUY, MSFT/BUY y XOM/STRONG BUY con
+`source=rule_based` y el rationale `"Alerta de oportunidad: entró con señal …"`.
+
+El camino: `AlertEngine._log_opportunity` (`alerts/engine.py:512`) importa el
+**singleton de módulo** `track_record_store`, que apunta a `DB_PATH`. El fixture
+`store` de `tests/test_alert_engine.py` reemplaza el store de *alertas*, no el del
+track record, así que los tres tests que disparan alertas de oportunidad
+(`:176`, `:188`, y el de MSFT) escriben en la base del usuario.
+
+**No es cosmético.** Son filas falsas en el único juez que el motor tiene sobre
+sí mismo: el scorer las va a puntuar a los 30 días y su resultado va a entrar en
+el hit rate como si fueran recomendaciones que el motor emitió. Y ya dejaron
+rastro: de los 80 pares duplicados que motivaron U5-18b, **6 son estos** —los
+únicos con `price_at_rec` en `NULL`, del 23 y del 28 de agosto, que son los días
+en que la suite corrió dos veces cruzando el límite de las 21:00 local.
+
+Arreglo probable: inyectar el store en `AlertEngine` como ya se hace con el de
+alertas, o un fixture autouse que apunte el singleton a `:memory:` durante la
+suite. Lo segundo es más barato y cubre a cualquier otro caller que aparezca.
+
+**Las filas ya escritas no se borran** — mismo criterio que U5-18b: la base está
+gitignoreada y el registro de lo que pasó vale más que la prolijidad. Se
+identifican solas por el rationale.
 
 ### N3 · Accesibilidad y tema
 
