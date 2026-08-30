@@ -10,6 +10,12 @@ Tables (same DB as cache/alerts):
   recommendation_log      — one row per recommendation emitted to the user
   recommendation_outcome  — deferred scoring of each (rec, horizon) pair
 
+"Una recomendación por día" se decide en dos lugares y con **una sola** regla
+(``same_local_day_key``): ``_exists_today`` la aplica al escribir, y
+``collapse_same_local_day`` la aplica al leer, sobre las filas que la regla vieja
+—día UTC, pre-U5-18— alcanzó a dejar entrar. El log crudo no se toca: es el
+registro de lo que el motor efectivamente emitió.
+
 Design notes (project conventions):
   - Config-driven: horizons, benchmark and dedupe behaviour come from
     ``config.TRACK_RECORD`` — never hardcoded here.
@@ -116,6 +122,78 @@ class RecommendationOutcome(_Base):
 #: cortaba a las 00:00 **UTC**. Para un usuario en UTC−3 eso hacía que el "día"
 #: del dedup corriera de 21:00 a 21:00 local, y dejaba entrar 80 de 394 filas
 #: que eran la misma recomendación repetida en el mismo día del usuario.
+
+
+# --------------------------------------------------------------------------- #
+#  "Una recomendación por día" — la regla, en un solo lugar                    #
+# --------------------------------------------------------------------------- #
+
+def same_local_day_key(symbol: str, action: str, created_at: datetime) -> tuple:
+    """La identidad de «la misma recomendación, el mismo día».
+
+    Existe para que la escritura y la lectura no puedan derivar. U5-18 arregló el
+    corte del día en el write-side (``_exists_today``) pero **no migró nada**, y
+    no podía: las filas que la regla vieja dejó entrar siguen en la base. Así que
+    la lectura tiene que aplicar la misma regla sobre lo ya escrito, y la única
+    forma de garantizar que sea *la misma* es que haya una sola.
+
+    Los tres componentes importan. El día se corta en **local** porque "uno por
+    día" es un concepto humano (ver ``data.clock``); el símbolo se normaliza a
+    mayúsculas porque es como lo guarda ``log_recommendation``; y la acción entra
+    tal cual, porque un BUY y un HOLD del mismo ticker el mismo día son dos
+    recomendaciones distintas, no una repetida.
+    """
+    return (
+        str(symbol or "").upper(),
+        str(action or ""),
+        local_day_start_utc(created_at),
+    )
+
+
+def collapse_same_local_day(rows: List[dict]) -> List[dict]:
+    """Una fila por ``(símbolo, acción, día local)``: sobrevive la **primera**.
+
+    Puro. ``rows`` son los dicts que produce ``TrackRecordStore.get_scored_rows``.
+
+    **Por qué la primera y no la última.** Es la que el write-side ya elige:
+    ``_exists_today`` rechaza la *posterior* ("already logged today"). Quedarse
+    con la última mezclaría dos políticas de selección en la misma muestra —las
+    filas escritas después de U5-18 seleccionadas por una regla y las anteriores
+    por otra—, que es exactamente la clase de defecto que U5-18 cerró. El precio
+    no decide: medido sobre los 74 pares reales que lo tienen, ``price_at_rec`` es
+    **idéntico** dentro del par (sale de ``get_history(interval="1d")`` cacheado,
+    así que las dos corridas del mismo día leen el mismo cierre). Lo que sí
+    difiere es ``created_at``: los 80 pares cruzan el límite de día UTC, de modo
+    que la última lleva una fecha del día siguiente para algo que el usuario vio
+    el día anterior, y su horizonte (``created_at + 30d``) cae contra otro cierre.
+
+    **Por qué esto en vez de borrar las filas.** Borrar es irreversible —la base
+    está gitignoreada— y edita el registro de lo que el motor efectivamente
+    emitió: emitió esas filas. Colapsar en lectura corrige lo que se cuenta y deja
+    intacto lo que pasó.
+
+    Una fila **sin fecha** pasa entera en vez de desaparecer: no pertenece a
+    ningún día, y asignarle uno sería inventarlo (la misma regla que
+    ``data.clock.hours_since``). El orden de entrada se preserva.
+    """
+    ganadores: dict = {}
+    for idx, row in enumerate(rows):
+        created = row.get("created_at")
+        if created is None:
+            continue
+        key = same_local_day_key(row.get("symbol"), row.get("action"), created)
+        # Desempate por ``rec_id`` para que dos filas con el mismo instante elijan
+        # siempre la misma, y por índice para que el resultado no dependa de un
+        # ``rec_id`` ausente.
+        rank = (created, row.get("rec_id") or 0, idx)
+        if key not in ganadores or rank < ganadores[key][0]:
+            ganadores[key] = (rank, idx)
+
+    conservados = {idx for _, idx in ganadores.values()}
+    return [
+        row for idx, row in enumerate(rows)
+        if row.get("created_at") is None or idx in conservados
+    ]
 
 
 #: Metrics worth keeping per company type, as ``(attribute, key)``. Deliberately
@@ -325,14 +403,23 @@ class TrackRecordStore:
             return None
 
     def _exists_today(self, symbol: str, action: str) -> bool:
-        today = local_day_start_utc(utc_now())
+        """¿Ya se logueó esta recomendación en el día **local** de hoy?
+
+        Los tres términos del filtro salen de ``same_local_day_key``, no de un
+        ``local_day_start_utc`` propio. Es deliberado: la lectura
+        (``collapse_same_local_day``) aplica esa misma clave sobre lo ya escrito,
+        y una sola definición es lo único que impide que las dos reglas deriven.
+        ``tests/test_track_record_dedupe_read_oracle.py`` las ejercita con los
+        mismos datos en cuatro zonas horarias y exige que decidan lo mismo.
+        """
+        symbol_key, action_key, day_start = same_local_day_key(symbol, action, utc_now())
         with self._Session() as s:
             return (
                 s.query(RecommendationLog.id)
                 .filter(
-                    RecommendationLog.symbol == symbol,
-                    RecommendationLog.action == action,
-                    RecommendationLog.created_at >= today,
+                    RecommendationLog.symbol == symbol_key,
+                    RecommendationLog.action == action_key,
+                    RecommendationLog.created_at >= day_start,
                 )
                 .first()
                 is not None
@@ -442,8 +529,32 @@ class TrackRecordStore:
             s.commit()
 
     # joined view, handy for the dashboard
-    def get_scored_rows(self, horizon_days: int) -> List[dict]:
-        """Recommendations joined with their outcome at ``horizon_days``."""
+    def get_scored_rows(self, horizon_days: int, *, collapse_same_day: bool = True) -> List[dict]:
+        """Recommendations joined with their outcome at ``horizon_days``.
+
+        ``collapse_same_day`` deja una fila por ``(símbolo, acción, día local)``
+        —la primera— vía ``collapse_same_local_day``. Es **el** punto por donde
+        pasan las cinco métricas de la página, así que el default prendido las
+        corrige sin tocar a los dos consumidores (``13_Track_Record.py`` y
+        ``shared.py``).
+
+        Hoy es un no-op y lo será por unas semanas: la vista se arma desde
+        ``recommendation_outcome``, y ninguna de las 80 duplicadas del log tiene
+        outcome porque ninguna cumplió los 30 días. Cuando venzan deja de serlo, y
+        lo que más se mueve no es el ``n`` sino ``equity_curve``, que **compone**:
+        cada fila multiplica el capital, así que una duplicada aplica dos veces el
+        mismo retorno — y el sesgo es asimétrico a favor del motor, porque el
+        modelo compone más rápido que el benchmark y la brecha se ensancha sola.
+
+        ``collapse_same_day=False`` devuelve el crudo. No es un detalle: es la
+        auditoría de lo que el motor realmente emitió, y es justo lo que borrar
+        las filas sacaría para siempre. Es keyword-only para que no se confunda
+        con el horizonte.
+
+        No depende de ``TRACK_RECORD.dedupe_same_day``: ese flag gobierna qué se
+        **escribe**. El log ya contiene filas escritas con una regla que no rige
+        más, así que la lectura tiene que colapsar igual.
+        """
         with self._Session() as s:
             recs = {r.id: r for r in s.query(RecommendationLog).all()}
             outs = (
@@ -475,7 +586,7 @@ class TrackRecordStore:
                         "benchmark_missing": bool(o.benchmark_missing),
                     }
                 )
-            return rows
+            return collapse_same_local_day(rows) if collapse_same_day else rows
 
 
 # Module-level singleton (mirrors alerts.store.alert_store)
