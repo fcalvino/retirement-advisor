@@ -131,7 +131,7 @@ Nada de acá miente sobre lo que calcula; todo está mal calibrado o mal alcanza
 
 | id | sev | qué | evidencia |
 |---|---|---|---|
-| **U5-1b** | P2 | El bonus de Piotroski (0–12) pesa **más que el del moat (0–10)** en un producto de retiro: paga más por «mejoró contra el año pasado» que por «tiene una ventaja durable». Medido sobre 150 equities: 31 % cobra `bonus_strong` y **24 cruzan el umbral de BUY sólo por ese bonus**. U5-1 arregló la etiqueta; recalibrar necesita outcomes que no existen (22 filas, todas a 30 días, y una señal a 1 año no se juzga en 30). Reabrir cuando el track record tenga horizontes largos | `config.py` `PiotroskiConfig` |
+| **U5-1b** | P2 | El bonus de Piotroski (0–12) pesa **más que el del moat (0–10)** en un producto de retiro: paga más por «mejoró contra el año pasado» que por «tiene una ventaja durable». Medido sobre 150 equities: 31 % cobra `bonus_strong` y **24 cruzan el umbral de BUY sólo por ese bonus**. U5-1 arregló la etiqueta; recalibrar necesita outcomes que no existen — y son **menos** de los que esta fila creía: de las 22 puntuadas, 11 las escribió la suite (U5-18d), así que la muestra real es **11**, todas a 30 días, y una señal a 1 año no se juzga en 30. Reabrir cuando el track record tenga horizontes largos | `config.py` `PiotroskiConfig` |
 | **U5-8** | P2 | No pagar dividendo (+3) puntúa más que pagar un yield bajo (+2) | `_score_dividends` |
 
 ---
@@ -152,7 +152,7 @@ son el terreno donde ya nacieron los defectos de arriba.
 | **U5-19** | P3 | Black-Litterman documenta Π como "CAPM equilibrium **excess** returns" mientras las views `q` son retornos totales | `black_litterman.py:83` |
 | **U7-1** | P3 | `preset_gap` se evalúa en cada rerun contra los widgets actuales, así que sacar un valor a mano dispara "ese filtro no se aplicó", que es falso | `1_Screener.py:663` |
 | **U7-2** | P3 | Vaciar el multiselect "Fuente" muestra **todas** las filas en vez de ninguna | `13_Track_Record.py:86` |
-| **U5-18c** | P3 | `get_pending_scoring` lee el log **crudo**, no la vista deduplicada, así que el scorer va a puntuar las 80 duplicadas y escribir ~80 outcomes que `get_scored_rows` después descarta. No rompe ningún número —la lectura los filtra, ver U5-18b— pero gasta lookups de red y ensucia `recommendation_outcome`. Se dejó **deliberadamente** fuera de U5-18b: cambia lo que el motor **escribe**, no lo que lee, y eso es una decisión aparte. Ojo con el orden si se toma: colapsar el pending sin colapsar la lectura dejaría de nuevo dos políticas conviviendo | `track_record.py:get_pending_scoring` |
+| **U5-18c** | P3 | `get_pending_scoring` lee el log **crudo**, no la vista deduplicada, así que el scorer va a puntuar las 80 duplicadas y escribir ~80 outcomes que `get_scored_rows` después descarta. No rompe ningún número —la lectura los filtra, ver U5-18b— pero gasta lookups de red y ensucia `recommendation_outcome`. Se dejó **deliberadamente** fuera de U5-18b: cambia lo que el motor **escribe**, no lo que lee, y eso es una decisión aparte. Ojo con el orden si se toma: colapsar el pending sin colapsar la lectura dejaría de nuevo dos políticas conviviendo. Y va **después** de **U5-18d** — al revés, el scorer gasta 39 lookups puntuando fixtures que después hay que excluir | `track_record.py:get_pending_scoring` |
 | **U0-3** | P3 | CONTEXT §8 (a)(b) describen como abiertos dos defectos ya cerrados | |
 
 ---
@@ -179,51 +179,76 @@ trajo. Cuando la caché falla, es una segunda llamada de red redundante — invi
 hasta que el retry la volvió cara (la suite pasó de 23 s a 7m26). Vale arreglarlo
 junto con el fallback.
 
-### N6b · Qué hacer con las 53 filas que escribió la suite
+### U5-18d · Aplicar la migración que marca las 53 filas de fixture
 
-**La sangría está cortada** (`63d82e7` + `0ef727b`, ver `ROADMAP.md`): la suite
-ya no escribe. Queda abierto qué hacer con lo que dejó, y no es cosmético.
+**El código ya está** (`a9a4430` + `51bcaa1`, ver `ROADMAP.md`): las tres
+lecturas excluyen `source='test_fixture'`. **Falta correr el `--apply`**, que es
+deliberadamente manual: el error caro de este paso es marcar una fila real, y
+desaparecería en silencio de todas las lecturas.
 
-**Los números de N6 estaban mal, y para el lado que importa.** La fila decía «3
-filas durante un PR, contaminación futura». Medido el 2026-08-30 sobre la base,
-en read-only:
+```bash
+./venv/bin/python3 scripts/mark_test_fixture_rows.py            # revisar
+./venv/bin/python3 scripts/mark_test_fixture_rows.py --apply    # escribir
+```
 
-| | |
-|---|---|
-| filas escritas por la suite | **53** de 470 (**11,3 %**) |
-| cómo se identifican | rationale `"Alerta de oportunidad: entró con señal …"`, `source=rule_based`, `price_at_rec` NULL — las 53 cumplen las tres |
-| cuándo | 18 lotes en **16 días locales** distintos, del 2026-06-19 al 2026-08-30 |
-| qué | siempre AAPL/BUY, MSFT/BUY y XOM/STRONG BUY |
+El dry-run imprime las 53 con id, símbolo, acción, `created_at`, `source` actual,
+precio y si tienen outcome. Aborta sin escribir si algún id no tiene hoy
+`source='rule_based'`. Es idempotente. Verificado sobre una **copia** de la base:
 
-Un lote por día porque el dedup de U5-18 colapsa el resto; el 23 y el 28 de
-agosto la suite corrió dos veces cruzando las 21:00 local y quedaron 6 — de ahí
-salen 6 de los 80 duplicados de U5-18b.
+| | antes | después |
+|---|---:|---:|
+| Recomendaciones logueadas | 470 | **417** |
+| Evaluadas a 30 días | 22 | **11** |
+| Tasa de acierto | 68,2 % | **45,5 %** |
+| Exceso medio | +6,29 | **+3,21** |
+| equity modelo / benchmark | 2,572 / 1,124 | **0,913 / 1,031** |
+| STRONG BUY | n=4, 100 %, `inconclusive=False` | **no existe** |
+| BUY, exceso medio | +4,08 | **−1,40** |
 
-**No es contaminación futura: ya está puntuada.** De los 22 outcomes scoreados,
-**11 son estas filas**:
+La corrección no le baja el número al motor: **le da vuelta el signo**. El
+producto muestra el modelo convirtiendo $1 en $2,57 contra un mercado que hizo
+$1,12; el registro real es el modelo perdiendo 8,7 % mientras el mercado gana
+3,1 %. Las cuatro STRONG BUY puntuadas eran las cuatro fixtures.
 
-| | n | hit rate | exceso medio |
-|---|---:|---:|---:|
-| lo que publica el producto | 22 | **68,2 %** | +6,29 |
-| las que escribió la suite | 11 | 90,9 % | +9,36 |
-| las que el motor emitió | 11 | **45,5 %** | +3,21 |
+**Por qué no aplica el argumento de U5-18b.** La palabra que carga el peso es
+*emitió*: las 80 duplicadas salieron de `full_analysis` sobre datos de mercado
+reales y el defecto era **contarlas dos veces**. Acá no hay hecho que preservar
+—el `adjusted_score: 72.0` es un literal del test, la señal salió de un
+`store.seed` y ningún precio se consultó—, así que colapsar no alcanza: no hay
+una fila legítima detrás. Se marca en vez de borrar por otra razón: mientras
+nada se borre, un error en la lista es **reversible** (las 53 tenían
+`source='rule_based'`) y la contaminación sigue siendo medible.
 
-El producto publica 68,2 % de acierto sobre el único juez que el motor tiene
-sobre sí mismo; sobre recomendaciones reales va 45,5 %. **+22,7 pp inflados a
-favor del motor.** Y las otras 42 todavía no cumplieron los 30 días: sin este
-arreglo el sesgo crecía solo.
+**Lo que no se puede romper: se enumeran los ids, nunca se shipea el patrón.** El
+rationale y `source='rule_based'` los produce `alerts/engine.py:521,528`, que es
+código de producción — una corrida real del alert engine escribe una fila
+byte-idéntica en las tres columnas de la firma. La firma acierta 53/53 hoy sólo
+porque `alert_snapshots` tiene **0 filas**: el alert engine nunca completó una
+corrida real contra esta base. Y un `LIKE '%Alerta%'` ya barrería la id 166 (CME,
+`source=screener`). `test_the_decoy_row_survives` falla si alguien cambia la
+lista por el patrón.
 
-**La decisión.** Tiene la misma forma que la de U5-18b —la base está
-gitignoreada y el registro de lo que pasó vale más que la prolijidad, así que
-borrar no es obvio— con **una diferencia que manda**: aquellas eran
-recomendaciones que el motor **sí** emitió, contadas dos veces; éstas **nunca lo
-fueron**. Colapsar en lectura no alcanza acá: no hay una fila legítima detrás.
-Las opciones vivas son excluirlas en lectura por la firma de las tres columnas,
-marcarlas con un `source` propio, o borrar las 53 filas y sus 11 outcomes. La
-primera y la segunda conservan la evidencia; la tercera no.
+**Orden**: esto va **antes** que U5-18c. Al revés, el scorer gasta 39 lookups de
+red produciendo outcomes que después hay que excluir.
 
-Ojo con el orden si se toma junto con **U5-18c**: las dos cambian qué entra al
-scorer, y aplicar una sin la otra deja dos políticas conviviendo.
+### N6c · La suite también dejó filas en la tabla de alertas
+
+Misma clase de filtración que N6, otra tabla, y no se tocó en U5-18d.
+`alert_cooldowns` tiene **2 filas del símbolo `TEST1`**, del 2026-05-24
+(`AlertType.SIGNAL_CHANGE:TEST1` y `AlertType.SCORE_DROP:TEST1`), escritas
+cuando algún test usó el `alert_store` real en vez de un doble.
+
+Es **mucho** más leve que N6: ningún número que el usuario ve sale de
+`alert_cooldowns`, y un cooldown de un símbolo que no existe no silencia nada.
+Pero vale por lo que dice — la fuga no fue un incidente del track record, fue un
+patrón: dos tablas, dos meses de diferencia, la misma causa (un singleton de
+módulo alcanzable desde la suite). El fixture autouse de N6 cubre el track
+record; el `alert_store` sigue expuesto por el mismo camino.
+
+Verificar primero si el agujero sigue abierto —`alerts/store.py:321` es otro
+singleton de módulo, y `test_alert_engine.py` usa `FakeAlertStore`, pero puede
+haber otros tests que no—. Si sigue abierto, cerrarlo vale más que limpiar las
+dos filas.
 
 ### N3 · Accesibilidad y tema
 

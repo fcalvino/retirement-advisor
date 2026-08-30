@@ -16,6 +16,11 @@ Tables (same DB as cache/alerts):
 —día UTC, pre-U5-18— alcanzó a dejar entrar. El log crudo no se toca: es el
 registro de lo que el motor efectivamente emitió.
 
+Y hay una segunda pregunta, distinta de aquélla y con su propio flag: **si la
+fila es una recomendación**. 53 filas del log las escribió la suite de tests
+(N6); están marcadas con ``source = FIXTURE_SOURCE`` y las tres lecturas las
+excluyen por default. Tampoco se borran — pero el motivo no es el de U5-18b.
+
 Design notes (project conventions):
   - Config-driven: horizons, benchmark and dedupe behaviour come from
     ``config.TRACK_RECORD`` — never hardcoded here.
@@ -61,7 +66,9 @@ class RecommendationLog(_Base):
     confidence        = Column(String, default="MEDIUM")  # HIGH | MEDIUM | LOW
     fundamental_score = Column(Float, default=0.0)
     technical_signal  = Column(String, default="")
-    source            = Column(String, default="rule_based")  # rule_based | ai | committee
+    # rule_based | ai | committee | screener | scheduler, y ``test_fixture``
+    # para una fila que **nunca fue una recomendación** (U5-18d, ver FIXTURE_SOURCE).
+    source            = Column(String, default="rule_based")
     price_at_rec      = Column(Float, nullable=True)
     rationale         = Column(Text, default="")          # JSON-encoded list[str]
     plan_id           = Column(String, nullable=True)
@@ -194,6 +201,43 @@ def collapse_same_local_day(rows: List[dict]) -> List[dict]:
         row for idx, row in enumerate(rows)
         if row.get("created_at") is None or idx in conservados
     ]
+
+
+# --------------------------------------------------------------------------- #
+#  Filas que no son recomendaciones (U5-18d)                                   #
+# --------------------------------------------------------------------------- #
+
+#: ``source`` de una fila que **nunca fue una recomendación**: salida de un
+#: fixture de la suite que se filtró a la base del usuario (N6, ver `ROADMAP.md`).
+#:
+#: **No es el caso de U5-18b y por eso no se resuelve igual.** Aquellas 80
+#: duplicadas salieron de ``full_analysis`` sobre datos de mercado reales: el
+#: motor las emitió, el defecto era contarlas dos veces, y ``collapse_same_local_day``
+#: arregla el conteo sin editar el hecho. Acá no hay hecho que preservar — el
+#: score salió de un literal en un test y ningún precio se consultó—, así que
+#: colapsar no alcanza: no hay una fila legítima detrás.
+#:
+#: **Y por eso tampoco se identifican por su firma.** El rationale
+#: ``"Alerta de oportunidad: …"`` y ``source="rule_based"`` los produce
+#: ``alerts/engine.py``, que es código de producción: una corrida real del alert
+#: engine escribe una fila byte-idéntica en las tres columnas, ``price_at_rec``
+#: NULL incluido. Un ``WHERE`` por patrón acá barrería filas reales el primer día
+#: que el scheduler corra de verdad, en silencio. Las 53 se marcan **una vez**,
+#: por id enumerado, desde ``scripts/mark_test_fixture_rows.py``; el código sólo
+#: conoce el marcador, nunca el patrón.
+FIXTURE_SOURCE = "test_fixture"
+
+
+def _visible_rows(query, include_fixtures: bool):
+    """Saca del query las filas marcadas como fixture.
+
+    ``is_distinct_from`` y no ``!=`` porque en SQL ``NULL != 'x'`` es NULL, no
+    True: una fila con ``source`` nulo desaparecería de toda lectura. Compila a
+    ``IS NOT`` en SQLite.
+    """
+    if include_fixtures:
+        return query
+    return query.filter(RecommendationLog.source.is_distinct_from(FIXTURE_SOURCE))
 
 
 #: Metrics worth keeping per company type, as ``(attribute, key)``. Deliberately
@@ -435,9 +479,16 @@ class TrackRecordStore:
         symbol: Optional[str] = None,
         source: Optional[str] = None,
         limit: Optional[int] = None,
+        include_fixtures: bool = False,
     ) -> List[RecommendationLog]:
+        """Filas del log. Las marcadas ``FIXTURE_SOURCE`` no salen (U5-18d).
+
+        Sin esto el titular «Recomendaciones logueadas» de `13_Track_Record.py`
+        cuenta 470 donde hay 417. ``include_fixtures=True`` es la puerta de
+        auditoría, misma forma que ``get_scored_rows(collapse_same_day=False)``.
+        """
         with self._Session() as s:
-            q = s.query(RecommendationLog)
+            q = _visible_rows(s.query(RecommendationLog), include_fixtures)
             if symbol:
                 q = q.filter(RecommendationLog.symbol == symbol.upper())
             if source:
@@ -447,7 +498,13 @@ class TrackRecordStore:
                 q = q.limit(limit)
             return list(q.all())
 
-    def get_pending_scoring(self, horizon_days: int, now: Optional[datetime] = None) -> List[RecommendationLog]:
+    def get_pending_scoring(
+        self,
+        horizon_days: int,
+        now: Optional[datetime] = None,
+        *,
+        include_fixtures: bool = False,
+    ) -> List[RecommendationLog]:
         """Recommendations old enough for ``horizon_days`` that lack a *complete* outcome.
 
         An outcome written without its benchmark (U2-4) is not done — it carries a
@@ -455,6 +512,12 @@ class TrackRecordStore:
         benchmark lookup is usually transient, so those rows stay pending and a
         later run completes them in place (``save_outcome`` upserts). The cost is
         one cached lookup of the benchmark per run.
+
+        **De los tres sitios de U5-18d, éste es el único con vencimiento.** Es lo
+        que cambia lo que el motor *escribe*: sin la exclusión, las 42 fixtures que
+        todavía no cumplieron 30 días se van puntuando de a 3 por día hábil desde
+        el 2026-09-08 y cada una agrega un outcome más al sesgo. Los otros dos
+        sitios corrigen lo que se lee y pueden esperar; éste no.
         """
         now = now or utc_now()
         from datetime import timedelta
@@ -471,7 +534,7 @@ class TrackRecordStore:
                 .all()
             }
             q = (
-                s.query(RecommendationLog)
+                _visible_rows(s.query(RecommendationLog), include_fixtures)
                 .filter(RecommendationLog.created_at <= cutoff)
                 .order_by(RecommendationLog.created_at)
             )
@@ -529,8 +592,29 @@ class TrackRecordStore:
             s.commit()
 
     # joined view, handy for the dashboard
-    def get_scored_rows(self, horizon_days: int, *, collapse_same_day: bool = True) -> List[dict]:
+    def get_scored_rows(
+        self,
+        horizon_days: int,
+        *,
+        collapse_same_day: bool = True,
+        include_fixtures: bool = False,
+    ) -> List[dict]:
         """Recommendations joined with their outcome at ``horizon_days``.
+
+        ``include_fixtures`` gobierna una pregunta **distinta** de la de
+        ``collapse_same_day`` y por eso son dos flags y no uno: aquélla es
+        «¿cuántas veces se contó esto?», ésta es «¿esto es una recomendación?».
+        Fusionarlas repetiría el pecado original de U5-18 —una regla haciendo dos
+        trabajos— que U5-18b tardó un PR entero en desarmar. Son ortogonales: con
+        el collapse apagado las fixtures siguen afuera, y pedirlas no depende de
+        cómo esté el collapse.
+
+        Los 11 outcomes de las fixtures **no se tocan**: caen solos, porque la
+        vista se arma desde ``recommendation_outcome`` y el ``if r is None`` de
+        abajo descarta el outcome cuyo ``rec_id`` ya no resuelve. El precio, dicho
+        explícito: ``select count(*) from recommendation_outcome`` va a seguir
+        diciendo 22. Por eso **toda lectura tiene que joinear** — quien consulte la
+        tabla de outcomes sola obtiene el número contaminado.
 
         ``collapse_same_day`` deja una fila por ``(símbolo, acción, día local)``
         —la primera— vía ``collapse_same_local_day``. Es **el** punto por donde
@@ -556,7 +640,10 @@ class TrackRecordStore:
         más, así que la lectura tiene que colapsar igual.
         """
         with self._Session() as s:
-            recs = {r.id: r for r in s.query(RecommendationLog).all()}
+            recs = {
+                r.id: r
+                for r in _visible_rows(s.query(RecommendationLog), include_fixtures).all()
+            }
             outs = (
                 s.query(RecommendationOutcome)
                 .filter(RecommendationOutcome.horizon_days == horizon_days)

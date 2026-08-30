@@ -88,7 +88,7 @@ Mutación: tres formas de romperlo, tres tests distintos que las ven.
 ### Lo que este PR deliberadamente NO hizo
 
 No tocó las 53 filas ya escritas ni los 11 outcomes. Qué hacer con ellas es una
-decisión aparte, abierta como **N6b** en `BACKLOG.md`: tiene la forma de U5-18b
+decisión aparte, abierta como **U5-18d** en `BACKLOG.md`: tiene la forma de U5-18b
 con una diferencia que manda —aquellas eran recomendaciones que el motor **sí**
 emitió, contadas dos veces; éstas nunca lo fueron, así que colapsar en lectura
 no alcanza porque no hay una fila legítima detrás—.
