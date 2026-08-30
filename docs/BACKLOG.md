@@ -81,6 +81,7 @@ observación más reciente), **U5-2 + U5-3** (`d1aba8f`, dos señales del Piotro
 que respondían otra pregunta),
 **U4-1c** (el jubilado gasta todos los meses; el efecto no resultó uniformemente
 conservador — ver `ROADMAP.md`),
+**U7-3** (el titular del track record dejó de afirmar lo que n=11 no sostiene),
 **U5-18** (un solo reloj; la edad del dato estaba bien y el defecto era el día del
 dedup — **20,7 %** de la muestra del track record eran repeticiones: 80 filas de
 las 386 escritas con la regla vieja. El 19,4 % que decía antes salía de mezclar
