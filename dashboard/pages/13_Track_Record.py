@@ -16,6 +16,7 @@ from analysis.track_record_scorer import (
     summary_stats,
 )
 from config import TRACK_RECORD
+from data.product_ux import EXCESS_MEAN_HELP, EXCESS_MEAN_LABEL
 
 st.title("📒 Track Record")
 st.caption(
@@ -94,17 +95,38 @@ stats = summary_stats(rows)
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Recomendaciones logueadas", len(all_recs))
 m2.metric("Evaluadas a este horizonte", stats["n"])
+# U7-3: cada número con su banda. Sin ella el titular afirmaba en indicativo lo
+# que la tabla de más abajo etiquetaba «sin señal» — dos estándares en la misma
+# pantalla. Con n=11 el intervalo del acierto va de 10 % a 80 %.
+_hr_band = stats.get("hit_rate_band")
 m3.metric(
     "Tasa de acierto",
-    f"{stats['overall_hit_rate'] * 100:.0f}%" if stats["overall_hit_rate"] is not None else "—",
-)
-m4.metric(
-    "Exceso medio vs benchmark",
-    f"{stats['mean_excess_pct']:+.1f}%" if stats["mean_excess_pct"] is not None else "—",
+    "sin señal" if stats.get("hit_rate_inconclusive") or stats["overall_hit_rate"] is None
+    else f"{stats['overall_hit_rate'] * 100:.0f}%",
     help=(
-        f"Promedio sobre las {stats['n_excess']} recomendaciones que tienen un exceso medido. "
-        "Una recomendación cuyo benchmark no se pudo cotizar no entra: sin el dato del "
-        "mercado no hay exceso que promediar."
+        f"{stats['overall_hit_rate'] * 100:.0f} % sobre {stats['n']} recomendaciones, "
+        f"con un margen de ±{_hr_band * 100:.0f} puntos: el intervalo va de "
+        f"{(stats['overall_hit_rate'] - _hr_band) * 100:.0f} % a "
+        f"{(stats['overall_hit_rate'] + _hr_band) * 100:.0f} %. Contiene el 50 % de tirar "
+        "una moneda, así que todavía no distingue al motor del azar."
+        if stats.get("hit_rate_inconclusive") and _hr_band is not None
+        else "Proporción de recomendaciones que resultaron acertadas al horizonte elegido."
+    ),
+)
+_ex_band = stats.get("excess_band_pct")
+m4.metric(
+    EXCESS_MEAN_LABEL,
+    "sin señal" if stats.get("inconclusive") or stats["mean_excess_pct"] is None
+    else f"{stats['mean_excess_pct']:+.1f}%",
+    help=(
+        EXCESS_MEAN_HELP
+        + f" Promedio sobre las {stats['n_excess']} recomendaciones con exceso medido; "
+        "una cuyo benchmark no se pudo cotizar no entra."
+        + (
+            f" Hoy da {stats['mean_excess_pct']:+.1f} % con un margen de ±{_ex_band:.1f}, "
+            "así que el intervalo contiene el cero."
+            if stats.get("inconclusive") and _ex_band is not None else ""
+        )
     ),
 )
 
@@ -126,6 +148,15 @@ if stats["n"] > 0 and stats["overall_hit_rate"] is not None:
         _verdict = (
             f"De las **{stats['n']}** recomendaciones evaluables a este horizonte, "
             f"acertó el **{_hr:.0f}%**."
+        )
+    elif stats.get("inconclusive") or stats.get("hit_rate_inconclusive"):
+        # U7-3: con la muestra actual ninguna de las dos cifras se distingue del
+        # azar, así que la línea dice eso en vez de un veredicto que el n no banca.
+        _verdict = (
+            f"Con **{stats['n']}** recomendaciones evaluadas todavía no alcanza para "
+            f"concluir nada: el acierto ({_hr:.0f}%) es indistinguible de tirar una "
+            f"moneda y el exceso ({_ex:+.1f}%) es indistinguible de cero. No es que el "
+            "motor ande mal ni bien — es que la muestra aún no lo dice."
         )
     else:
         _beat = "le ganó al" if _ex >= 0 else "quedó por debajo del"
@@ -154,7 +185,11 @@ if stats["n"] == 0:
 # ------------------------------------------------------------------ #
 
 st.subheader("🎯 Calibración por nivel de confianza")
-st.caption("Un modelo bien calibrado acierta más cuando dice HIGH que cuando dice LOW.")
+st.caption(
+    "Un modelo bien calibrado acierta más cuando dice HIGH que cuando dice LOW. "
+    "**La comparación sólo vale si los dos niveles tienen muestra**: una fila con "
+    "N=0 no dice que el modelo falle ahí, dice que todavía no emitió ninguna."
+)
 
 calib = calibration_by_confidence(rows)
 calib_df = pd.DataFrame(

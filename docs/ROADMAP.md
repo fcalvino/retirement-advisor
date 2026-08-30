@@ -349,6 +349,83 @@ miraba `action`, así que un cambio del tamaño de éste habría salido como
 
 ---
 
+## U7-3 — El titular deja de afirmar lo que la muestra no sostiene (2026-08-30)
+
+Con el track record limpio (U5-18b, U5-18d), su lectura honesta es que **no se
+puede concluir nada**. Tres superficies concluían igual.
+
+### Lo medido
+
+| | valor | banda | intervalo | |
+|---|---:|---:|---|---|
+| tasa de acierto | 45,5 % | ±35,1 pp | [10,4 , 80,5] | contiene el 50 % de una moneda |
+| exceso medio | +3,21 | ±6,86 | [−3,65 , +10,07] | contiene el cero |
+
+n=11. El intervalo del acierto va de «pésimo» a «excelente». Eso **no** dice que
+el motor pierda: dice que la muestra no permite saberlo, que es otra cosa y es
+la que hay que decir. Ningún corte alcanza — BUY 6, HOLD 5, ai 6, committee 5,
+MEDIUM 9, LOW 2, **HIGH 0**.
+
+### Tres defectos
+
+**(1) La misma página sostenía dos estándares.** La tabla por acción mostraba
+«Margen ±» y decía «sin señal», porque `hit_rate_by_action` enriquecía cada
+bloque con `excess_band_pct` e `inconclusive`. Doce líneas más arriba el titular
+afirmaba en indicativo, porque `summary_stats` **no devolvía bandas**. Ahora
+salen de ahí y las dos superficies las consumen del mismo lugar.
+
+La banda de la **tasa de acierto** no la calculaba nadie, es la más ancha de
+todas y es la que se muestra más grande. Se computa sobre los ceros y unos
+—una tasa de acierto es la media de una variable binaria— y su hipótesis nula
+**no es la de `mean_with_band`**: aquella pregunta si el intervalo contiene el
+cero, y un acierto de cero no es lo interesante. `hit_rate_inconclusive`
+pregunta si contiene 0,5.
+
+**(2) El titular y el gráfico se contradecían en el signo.** El titular decía
+«le ganó al mercado por +3,2 %» mientras el gráfico de la misma pantalla mostraba
+el modelo en 0,9134 contra 1,0307 del benchmark. **Los dos bien calculados**: uno
+promedia excesos, el otro los capitaliza, y con desvío 10,2 sobre un rango de
+−23,5 a +13,7 el arrastre de volatilidad da vuelta la conclusión. Vocabulario
+canónico en `product_ux` (`EXCESS_MEAN_LABEL` / `EQUITY_CURVE_LABEL`), mismo
+remedio que U1-1/U1-2, y los dos help avisan que pueden discrepar en signo.
+
+**(3) Una categoría sin observaciones no calibra.** El caption invitaba a
+comparar HIGH contra LOW; HIGH tiene n=0.
+
+### Lo que muestra ahora
+
+    Tasa de acierto   sin señal   (help: 45 % ± 35 pp, de 10 % a 80 %)
+    Exceso medio      sin señal   (help: +3,2 ± 6,9, contiene el cero)
+    veredicto         «Con 11 recomendaciones todavía no alcanza para concluir
+                      nada … No es que el motor ande mal ni bien — es que la
+                      muestra aún no lo dice.»
+
+El número no se esconde: sigue en el help. Se deja de **afirmar**.
+
+**No se toca el motor** y **no se bumpea `ENGINE_VERSION`**.
+
+### Dos errores míos que el ciclo atrapó
+
+**Un fixture que mentía.** El primero que escribí inventaba los excesos y su
+docstring decía que reproducían la muestra real: daban media −0,72 contra el
++3,21 medido. Reemplazado por los valores de la base, con un test que falla si
+dejan de reproducirla.
+
+**Un barrido que miraba tan lejos que no veía.** La mutación más importante —«la
+página vuelve a afirmar el porcentaje sin banda»— sobrevivía: con una ventana de
+±6 líneas, el `help=` contiguo nombra la banda legítimamente y tapaba a la
+métrica de al lado. Y al apretarla a ±1 apareció un segundo error, de aritmética:
+el slice `[n − C : n + C]` incluye C líneas antes y **ninguna después**, así que
+la primera línea del help dejó de ver su propia banda. Las dos corregidas, con un
+test que fija el caso exacto que se escapaba.
+
+Oráculo: `tests/test_track_record_honesty_oracle.py`, 17 tests. La banda de
+referencia se escribe desde la definición (Student's t) y **no** importa
+`mean_with_band`: si el motor y la referencia comparten implementación, el test
+no valida nada. Las seis mutaciones mueren.
+
+---
+
 ## U5-18 — Un solo reloj, y un día que es el del usuario (2026-08-29)
 
 ### Lo que la fila decía, y lo que había
