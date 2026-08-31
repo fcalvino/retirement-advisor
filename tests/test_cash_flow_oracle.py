@@ -349,14 +349,26 @@ class TestTheBasisIsAnImplementationDetail:
 
 
 class TestContributionUnitsContract:
-    """Simulaciones and Metas must ask for the same money.
+    """Simulaciones y Metas tienen que pedirle al mismo ahorrista la misma plata.
 
-    They cannot be compared as rendered numbers: the main Monte Carlo tab has
-    no contribution widget at all (its only cash-flow input is a withdrawal
-    floored at zero), while Metas asks for a yearly figure seeded from a
-    monthly profile. So the contract is asserted where it can be true — one
-    pure helper owning the ×12, and both surfaces reading it.
+    U4-1 puso el ×12 en un solo lugar —``contribution_inputs``— porque cada
+    pantalla hacía el suyo y el mismo ahorrista salía cotizado distinto según
+    dónde mirara.
+
+    Cuando se escribió este contrato la pestaña principal **no tenía widget de
+    aporte**: su único input de flujo era un retiro con piso en cero, así que la
+    pantalla que contesta «¿llego?» no podía representar que alguien ahorre
+    (U4-5). Ahora lo tiene, y el contrato se extiende a ella: la palanca escribe
+    el ahorro en la unidad que el helper lee, y la corrida lo resuelve con el
+    helper en vez de multiplicar por su cuenta.
     """
+
+    PAGE = "dashboard/pages/7_Simulaciones.py"
+
+    def _page(self) -> str:
+        from pathlib import Path
+
+        return Path(self.PAGE).read_text(encoding="utf-8")
 
     def test_the_helper_converts_in_one_place(self):
         from data.product_ux import contribution_inputs
@@ -367,21 +379,137 @@ class TestContributionUnitsContract:
         assert resolved["source"]
 
     def test_no_surface_multiplies_savings_by_twelve_on_its_own(self):
-        from pathlib import Path
-
-        page = Path("dashboard/pages/7_Simulaciones.py").read_text(encoding="utf-8")
-        assert "contribution_inputs" in page
+        assert "contribution_inputs" in self._page()
 
     def test_no_surface_reads_a_session_key_no_widget_writes(self):
-        """``annual_contribution`` is read from session state but never written.
+        """``annual_contribution`` se leía de session state y ningún widget lo
+        escribía. Una clave que nadie escribe resuelve siempre a su fallback, que
+        es un cero silencioso disfrazado de input del usuario."""
+        assert 'st.session_state.get("annual_contribution")' not in self._page()
 
-        A key nothing writes always resolves to its fallback, which is a silent
-        zero wearing the costume of a user input.
+    # -- U4-5: la palanca de la pestaña principal ---------------------- #
+
+    def test_la_pestania_principal_tiene_una_palanca_de_aporte(self):
+        """El defecto: el único widget de flujo era un retiro con piso en cero.
+
+        La clave del widget tiene que ser la que ``contribution_inputs`` lee como
+        primera opción, o el número quedaría escrito donde nadie lo busca.
         """
-        from pathlib import Path
+        page = self._page()
+        assert 'key="monthly_savings"' in page, (
+            "no hay palanca de aporte con la clave que el helper lee"
+        )
 
-        page = Path("dashboard/pages/7_Simulaciones.py").read_text(encoding="utf-8")
-        assert 'st.session_state.get("annual_contribution")' not in page
+    def test_la_corrida_principal_recibe_el_aporte(self):
+        """Que el widget exista no alcanza: el número tiene que llegar al motor.
+
+        Se mira la llamada a ``cached_monte_carlo`` y no cualquier aparición de
+        ``annual_contribution=`` en la página — la palanca de «cuánto me falta»
+        ya pasaba uno, así que un `in page` a secas pasa sobre el código roto.
+        """
+        import re
+
+        page = self._page()
+        llamadas = [
+            m for m in re.finditer(r"cached_monte_carlo\((.*?)\n\s*\)", page, re.S)
+        ]
+        assert llamadas, "no se encontró la llamada al motor"
+        assert any("annual_contribution" in m.group(1) for m in llamadas), (
+            "ninguna llamada a cached_monte_carlo pasa annual_contribution: la "
+            "palanca sería decorativa"
+        )
+
+    def test_el_aporte_de_la_corrida_sale_del_helper_y_no_de_una_cuenta_propia(self):
+        """La restricción que U4-1 dejó: nadie multiplica por doce por su cuenta.
+
+        No se mide por proximidad —una ventana de líneas marca código legítimo
+        cuando la asignación y el uso quedan lejos, y tapa al culpable cuando
+        quedan cerca (la lección de U7-3)—. Se mide por la propiedad: todo valor
+        pasado como ``annual_contribution`` tiene que ser un nombre que en algún
+        lado se asignó desde ``contribution_inputs``, o un cero literal.
+        """
+        import re
+
+        page = self._page()
+        del_helper = set(
+            re.findall(r"(\w+)\s*=\s*contribution_inputs\(", page)
+        )
+        assert del_helper, "nadie resuelve el ahorro con el helper"
+
+        pasados = re.findall(r"annual_contribution\s*=\s*([^,\n]+)", page)
+        assert pasados, "la corrida no pasa el aporte"
+        for expr in pasados:
+            expr = expr.strip().rstrip(",").strip()
+            ok = (
+                any(nombre in expr for nombre in del_helper)
+                or re.fullmatch(r"(float\()?0(\.0)?\)?", expr)
+                or "contribution_inputs" in expr
+                # Metas construye su Goal con el aporte que el usuario tipeó en
+                # ESE formulario, que es otro número y tiene su propio widget.
+                or "new_contribution" in expr
+                or "goal." in expr
+            )
+            assert ok, (
+                f"`annual_contribution={expr}` no salió de contribution_inputs: "
+                f"si alguien hace su propio ×12, dos pantallas vuelven a "
+                f"cotizarle plata distinta al mismo ahorrista"
+            )
+
+    def test_la_pagina_no_hace_su_propia_conversion_mensual_anual(self):
+        """Barrido: ningún ×12 ni ÷12 sobre el ahorro fuera del helper."""
+        import re
+
+        ofensas = [
+            f"{n + 1}: {l.strip()}"
+            for n, l in enumerate(self._page().splitlines())
+            if re.search(r"(monthly_savings|ahorro)\w*\s*[*/]\s*12", l, re.IGNORECASE)
+        ]
+        assert not ofensas, (
+            "la página convierte el ahorro por su cuenta:\n  " + "\n  ".join(ofensas)
+        )
+
+
+class TestSinAporteCargadoNadaSeMueve:
+    """El alcance del cambio, medido: una corrida sin ahorro es la de siempre."""
+
+    HORIZON = 15
+    RATE = 0.06
+
+    def _run(self, contribution: float):
+        sim = MonteCarloSimulator(["AAPL"], seed=11)
+        with patch(
+            "portfolio.monte_carlo.get_history",
+            side_effect=lambda *a, **k: _flat_history(self.RATE),
+        ):
+            return sim.run(
+                horizon_years=self.HORIZON,
+                n_sims=200,
+                initial_value=100_000.0,
+                annual_withdrawal=0.0,
+                annual_contribution=contribution,
+            )
+
+    def test_un_aporte_de_cero_deja_el_terminal_intacto(self):
+        """Lo que el helper devuelve cuando no hay ahorro cargado es 0.0, y con
+        0.0 el motor tiene que dar exactamente lo de antes."""
+        from data.product_ux import contribution_inputs
+
+        assert contribution_inputs()["annual"] == 0.0
+        assert self._run(0.0).median_terminal == pytest.approx(
+            100_000.0 * _index(self.RATE, self.HORIZON)[-1], rel=1e-9
+        )
+
+    def test_con_aporte_la_proyeccion_si_se_mueve(self):
+        """Anti-cheat: que no se mueva sin aporte no puede ser porque el
+        parámetro se ignore."""
+        sin = self._run(0.0).median_terminal
+        con = self._run(6_000.0).median_terminal
+        assert con > sin
+
+        esperado = oracle_monthly_contribution_sequence(
+            _index(self.RATE, self.HORIZON), 100_000.0, 6_000.0, self.HORIZON
+        )
+        assert con == pytest.approx(esperado, rel=1e-9)
 
 
 if __name__ == "__main__":
