@@ -101,6 +101,8 @@ y **U5-18d** (las 53 filas de fixture salen de las tres lecturas por
 benchmark — ver `ROADMAP.md`),
 **U5-9 + U5-10 + U5-11** (un número, una casa — y cinco de los ocho literales de
 U5-9 ya no existían al abrirla),
+**U5-8** (la fila no era cierta: de 143 pagadores sólo 6 quedan debajo del
+techo del no-pagador, y **ninguno es una equity de yield bajo** — ver `ROADMAP.md`),
 **U3-2** (ATR y ADX con el suavizado de Wilder; 48 de 164 tickers cruzan el gate
 de ADX 25 y la fila se quedaba corta en los dos sentidos — ver `ROADMAP.md`).
 Fuera de las oleadas 3–7,
@@ -145,7 +147,6 @@ Nada de acá miente sobre lo que calcula; todo está mal calibrado o mal alcanza
 | id | sev | qué | evidencia |
 |---|---|---|---|
 | **U5-1b** | P2 | El bonus de Piotroski (0–12) pesa **más que el del moat (0–10)** en un producto de retiro: paga más por «mejoró contra el año pasado» que por «tiene una ventaja durable». Medido sobre 150 equities: 31 % cobra `bonus_strong` y **24 cruzan el umbral de BUY sólo por ese bonus**. U5-1 arregló la etiqueta; recalibrar necesita outcomes que no existen — y son **menos** de los que esta fila creía: de las 22 puntuadas, 11 las escribió la suite (U5-18d), así que la muestra real es **11**, todas a 30 días, y una señal a 1 año no se juzga en 30. Reabrir cuando el track record tenga horizontes largos | `config.py` `PiotroskiConfig` |
-| **U5-8** | P2 | No pagar dividendo (+3) puntúa más que pagar un yield bajo (+2) | `_score_dividends` |
 
 ---
 
@@ -163,6 +164,7 @@ son el terreno donde ya nacieron los defectos de arriba.
 | **U7-1** | P3 | `preset_gap` se evalúa en cada rerun contra los widgets actuales, así que sacar un valor a mano dispara "ese filtro no se aplicó", que es falso | `1_Screener.py:663` |
 | **U7-2** | P3 | Vaciar el multiselect "Fuente" muestra **todas** las filas en vez de ninguna | `13_Track_Record.py:86` |
 | **U0-3** | P3 | CONTEXT §8 (a)(b) describen como abiertos dos defectos ya cerrados | |
+| **N7** | P3 | La dimensión de dividendo **no puede pasar de 7 en un fund**: `payoutRatio` está ausente en 13 de 13 funds cacheados y presente en 130 de 130 equities, así que los 3 puntos del payout son inalcanzables por construcción — y la ficha muestra igual «Dividend x/10», porque su `else` sólo separa cripto del resto. Apareció midiendo U5-8: los tres funds que quedan debajo del techo del no-pagador (BND, QQQ, VGT) caen por el payout que no tienen, no por la banda de yield | `fundamental.py:1552`, `2_Stock_Analysis.py:336,343` |
 
 ---
 
@@ -286,6 +288,7 @@ priorizarlo:
   | N5 | *(no existía)* | apareció midiendo si bajar un techo, y el techo era la perilla equivocada |
   | U3-2 | 3 suavizados del ADX, «ATR y ADX más nerviosos» | 4 sitios, uno de ellos **no puede** mover el número; y el ATR no tiene sesgo de signo, sólo el ADX |
   | N6 | 3 filas en un PR, «contaminación futura» | 53 filas en 16 días, y **ya puntuadas**: 11 de los 22 outcomes, +22,7 pp de hit rate inflado |
+  | U5-8 | no pagar (+3) puntúa más que un yield bajo (+2) | cierto en la sub-banda, **falso como score**: 0 de 130 equities; los 6 que caen debajo de 3 son 3 de yield alto castigados a propósito y 3 funds sin payout |
 
   Empezar a arreglar sin medir produce el arreglo de la fila, no el del defecto.
 - Una fila se cierra cuando su **oráculo** pasa, no cuando el código "parece bien".
