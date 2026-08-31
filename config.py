@@ -86,7 +86,19 @@ DB_PATH = DB_DIR / "retirement_advisor.db"
 #                   +6,4 % de legado. Todo plan de retiro guardado bajo
 #                   tier0-tier6 tiene prob_sustain_real_pct y
 #                   expected_depletion_year calculados con la cadencia vieja.
-ENGINE_VERSION = "2026.08-tier7"
+#   2026.08-tier8 — U4-4: la longevidad sólo truncaba. `cap_week = min(longevity
+#                   *52, n_cols-1)` recortaba al horizonte simulado, así que
+#                   pedir 30, 45 o 60 años daba la MISMA probabilidad —esos años
+#                   no existían— y el resultado reportaba la longevidad pedida,
+#                   no la medida. No era un caso borde: los defaults son
+#                   horizonte 20 y longevidad 30, así que el desfase venía de
+#                   fábrica. Ahora se simula hasta el mayor de los dos. Con los
+#                   defaults, sostener el ingreso cae de 97,86 % a 91,96 %
+#                   (−5,90 pp); el año de agotamiento pasa de 17,17 a 23,50 y ya
+#                   puede caer más allá del horizonte. Las métricas de riqueza no
+#                   se mueven: el horizonte se sortea primero y la cola se
+#                   empalma, así que el terminal queda byte-idéntico.
+ENGINE_VERSION = "2026.08-tier8"
 
 
 @dataclass(frozen=True)
