@@ -349,6 +349,76 @@ miraba `action`, así que un cambio del tamaño de éste habría salido como
 
 ---
 
+## U4-5 — La pantalla que pregunta «¿llego?» ya puede representar que ahorres (2026-08-31)
+
+La pestaña principal de Simulaciones tenía un solo input de flujo —«Retiro
+anual», con piso en cero— así que no podía expresar un aporte. Ahora tiene su
+palanca, y el número va al motor, que desde tier2 lo deposita **mensualmente**.
+
+### Lo que la fila no decía
+
+**La misma pantalla ya conocía el ahorro.** La línea 458 lo resolvía con
+`contribution_inputs` y lo usaba para calcular el consejo de «cuánto te falta»
+(`compute_gap_to_goal_levers`, :471). O sea que el consejo asumía que el usuario
+ahorra y la simulación que producía ese faltante, no. No era sólo una palanca
+que faltaba: eran dos partes de la misma pantalla en desacuerdo sobre si el
+usuario ahorra.
+
+### Cómo se conecta
+
+La clave del widget es `monthly_savings` a propósito — es la primera que
+`contribution_inputs` mira y la unidad en la que el perfil pregunta. Lo que se
+tipea acá pisa al perfil, que es lo correcto: un valor puesto en esta pantalla
+gana sobre uno heredado.
+
+El número que va al motor sale del helper, **nunca de un `×12` local**: es lo
+que impide que dos pantallas le coticen plata distinta al mismo ahorrista
+(U4-1). El contrato de `tests/test_cash_flow_oracle.py` se extendió para
+cubrirlo, y ya no se mide por proximidad de líneas sino por la propiedad — todo
+valor pasado como `annual_contribution` tiene que ser un nombre asignado desde
+el helper.
+
+**El motor no se tocó**: `cached_monte_carlo` ya aceptaba el parámetro.
+
+### Alcance, medido
+
+Sin aporte cargado nada se mueve — con `annual_contribution=0.0` el terminal es
+exactamente el capital inicial capitalizado:
+
+    aporte         0/año  →  terminal  201.235
+    aporte     6.000/año  →  terminal  331.272
+    aporte     9.600/año  →  terminal  409.293
+
+`ENGINE_VERSION` **no se bumpea**: ningún plan guardado cambia de número.
+
+### Un defecto que la medición encontró antes de shipearlo
+
+El widget dice «0 = no aporto» y `contribution_inputs` **no lo cumplía**: su
+`_positive` descarta el cero, así que un usuario que escribía 0 recibía igual
+los 6.000/año de su perfil. Habría sido una etiqueta prometiendo lo que el
+código no hace — introducida por este mismo PR.
+
+La distinción ahora vive en la **presencia de la clave**, no en su valor: la que
+no está significa «no sé, buscá en otro lado»; la que está en 0 significa «no
+aporto», que es una respuesta y no la falta de una. Es el reverso de U3-1: allá
+«no sé» se leía como «no», acá «no» se leía como «no sé». Sólo aplica a los
+diccionarios explícitos — un atributo de `prefs` siempre existe, así que su 0
+sigue significando «sin completar».
+
+### Dos errores en el oráculo, corregidos antes de commitear
+
+Uno **pasaba sobre el código roto**: `"annual_contribution=" in page` ya era
+cierto porque la palanca de «cuánto me falta» pasaba uno.
+
+El otro **marcaba código legítimo**: medía por proximidad —¿hay un
+`contribution_inputs` a menos de 12 líneas?— y la asignación real está a 13.
+Misma trampa que U7-3: una ventana angosta tapa al culpable y una ancha absuelve
+al inocente. Reemplazada por la propiedad.
+
+Oráculo: `tests/test_cash_flow_oracle.py`, 28 tests. Las cinco mutaciones mueren.
+
+---
+
 ## U4-4 — La longevidad se simula, no se trunca (2026-08-31)
 
 `decumulation_metrics` recortaba con `cap_week = min(longevity*52, n_cols-1)`.
