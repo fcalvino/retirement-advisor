@@ -1951,6 +1951,15 @@ ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
         "capital proyectado baja y la fecha de agotamiento se adelanta; si retira "
         "un porcentaje, el presupuesto pasa a fijarse al empezar cada año.",
     ),
+    (
+        "2026.08-tier8",
+        "Si pedías que el dinero durara más años que el horizonte de proyección, "
+        "esos años no se simulaban: la probabilidad de que el ingreso durara era "
+        "la misma para 30, 45 o 60 años. Ahora se simulan de verdad. Con la "
+        "configuración por defecto la probabilidad baja unos 6 puntos, y la fecha "
+        "estimada de agotamiento puede caer después del horizonte. El capital "
+        "proyectado no cambia.",
+    ),
 )
 
 

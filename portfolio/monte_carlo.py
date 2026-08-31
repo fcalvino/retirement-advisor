@@ -322,9 +322,51 @@ class MonteCarloSimulator:
         port_hist_adj = self._conservative_adjustment(port_hist)
 
         # 3 — Simulate paths
-        logger.info(f"Monte Carlo: {n_sims} sims × {horizon_years}y using {n_weeks} weeks of history")
+        # U4-4: la simulación cubre lo que se le pregunte. `longevity_years` es
+        # «cuántos años tiene que durarme el ingreso» y podía superar al horizonte
+        # de proyección — de fábrica lo hace, porque los defaults son 20 y 30. Con
+        # `cap_week = min(longevity*52, n_cols-1)` los años de más simplemente no
+        # existían y el producto respondía igual para 30, 45 o 60, afirmando una
+        # longevidad que nunca simuló. Los años no simulados son justo aquellos en
+        # que el pozo está más chico, así que el recorte era sistemáticamente
+        # optimista.
+        #
+        # Se simula hasta el mayor de los dos y **las métricas de riqueza siguen
+        # siendo las del horizonte de proyección**: terminal, fan chart, CAGR,
+        # drawdown y ruina se leen en `horizon_week`, no al final del array. Sólo
+        # las de decumulación miran la ventana larga. Con longevidad ≤ horizonte
+        # nada se mueve.
+        sim_years = max(int(horizon_years), int(longevity_years or 0))
+        logger.info(
+            f"Monte Carlo: {n_sims} sims × {horizon_years}y "
+            + (f"(simuladas {sim_years}y por longevidad) " if sim_years > horizon_years else "")
+            + f"using {n_weeks} weeks of history"
+        )
         n_horizon_weeks = horizon_years * 52
+        n_sim_weeks = sim_years * 52
+        #: La columna donde termina el horizonte de PROYECCIÓN. Todo lo que
+        #: describe riqueza se lee acá y no en `[:, -1]`, que desde U4-4 puede
+        #: estar más adelante.
+        horizon_week = n_horizon_weeks
+
+        # El horizonte se sortea PRIMERO y con su largo de siempre, y la cola se
+        # empalma después. No es un detalle de estilo: `_simulate_paths` sortea
+        # `rng.integers(size=(n_sims, n_blocks))`, así que pedir más semanas
+        # cambia la forma del array y **redibuja también los primeros años**.
+        # Medido antes de hacerlo así: mover la longevidad de 20 a 45 movía el
+        # capital terminal ~1 %, que es ruido de muestreo y no sesgo, pero
+        # significaba que preguntar «¿cuánto me dura?» cambiaba la respuesta a
+        # «¿cuánto junto?». Son dos preguntas independientes y tienen que serlo
+        # también en los números.
         paths = self._simulate_paths(port_hist_adj, n_sims, n_horizon_weeks)
+        if n_sim_weeks > n_horizon_weeks:
+            cola = self._simulate_paths(
+                port_hist_adj, n_sims, n_sim_weeks - n_horizon_weeks
+            )
+            # `cola` arranca en 1.0; se la escala por donde terminó el horizonte.
+            paths = np.concatenate(
+                [paths, paths[:, -1:] * cola[:, 1:]], axis=1
+            )
 
         # 3a — U2-2 (P2): SORR and drawdown are measured on the MARKET series —
         # the bootstrap path before drags and before ANY cash flow. Measuring
@@ -346,7 +388,11 @@ class MonteCarloSimulator:
         # contaminated array. Since tier2 the cash-flow kernel holds units and
         # never touches `paths`, so the guarantee is structural and pinned by
         # ``tests/test_cash_flow_oracle.py`` instead of resting on call order.
-        market_dd = self._compute_drawdown_metrics(paths, horizon_years)
+        # U4-4: sobre el horizonte de PROYECCIÓN. El drawdown de mercado y el
+        # SORR describen el camino hasta la meta, no la cola de longevidad.
+        market_dd = self._compute_drawdown_metrics(
+            paths[:, : horizon_week + 1], horizon_years
+        )
 
         # 3b — Economic drags (Item 1). total_drag_frac == 0 → base behavior,
         # paths untouched, base_* reference metrics left at 0 (byte-identical
@@ -393,12 +439,12 @@ class MonteCarloSimulator:
         def _wealth_usd(market: np.ndarray) -> np.ndarray:
             if strategy is not None:
                 return apply_withdrawal_strategy(
-                    market, initial_value, strategy, n_horizon_weeks,
+                    market, initial_value, strategy, n_sim_weeks,
                     inflation_rate=withdrawal_growth_rate,
                 ) * initial_value
             return self._apply_cash_flows(
                 market, initial_value, basis, withdrawal, contribution,
-                n_horizon_weeks, withdrawal_growth_rate=withdrawal_growth_rate,
+                n_sim_weeks, withdrawal_growth_rate=withdrawal_growth_rate,
             ) * basis
 
         paths_usd = _wealth_usd(paths)
@@ -407,7 +453,7 @@ class MonteCarloSimulator:
         result.years = list(range(0, horizon_years + 1))
         result.fan_paths = self._fan_paths(paths_usd, horizon_years)
 
-        terminal = paths_usd[:, -1]
+        terminal = paths_usd[:, horizon_week]
         result.median_terminal = float(np.median(terminal))
         result.p10_terminal    = float(np.percentile(terminal, 10))
         result.p25_terminal    = float(np.percentile(terminal, 25))
@@ -419,7 +465,7 @@ class MonteCarloSimulator:
 
         # 5b — Base (no-drag) reference metrics for the comparison badge.
         if base_paths is not None:
-            base_terminal = _wealth_usd(base_paths)[:, -1]
+            base_terminal = _wealth_usd(base_paths)[:, horizon_week]
             result.base_median_terminal = float(np.median(base_terminal))
             result.base_p10_terminal    = float(np.percentile(base_terminal, 10))
             result.base_p90_terminal    = float(np.percentile(base_terminal, 90))
@@ -438,7 +484,7 @@ class MonteCarloSimulator:
             )
             if total_drag_frac > 0:
                 realistic_paths = self._apply_drags(realistic_paths, total_drag_frac)
-            realistic_terminal = _wealth_usd(realistic_paths)[:, -1]
+            realistic_terminal = _wealth_usd(realistic_paths)[:, horizon_week]
             result.realistic_reference_applied = True
             result.realistic_median_terminal = float(np.median(realistic_terminal))
             result.realistic_p10_terminal    = float(np.percentile(realistic_terminal, 10))
@@ -466,7 +512,8 @@ class MonteCarloSimulator:
             )[0]
         _ruin_eps = max(initial_value, contribution, 1.0) * 1e-9
         result.prob_ruin_pct = float(
-            (paths_usd[:, _first_flow_week:].min(axis=1) <= _ruin_eps).mean() * 100
+            (paths_usd[:, _first_flow_week:horizon_week + 1].min(axis=1) <= _ruin_eps)
+            .mean() * 100
         )
         if initial_value <= 0 and contribution <= 0:
             result.warnings.append(
@@ -481,7 +528,9 @@ class MonteCarloSimulator:
 
         # The dollar floor, in contrast, IS a property of the real pot: it must
         # keep seeing drags and withdrawals (U2-2 moves the % metrics, not this).
-        result.p10_intra_min = float(np.percentile(paths_usd.min(axis=1), 10))
+        result.p10_intra_min = float(
+            np.percentile(paths_usd[:, : horizon_week + 1].min(axis=1), 10)
+        )
 
         # Pot growth per simulation. Already not a rate of return whenever there
         # are cash flows (see MonteCarloResult) — and with no starting capital it
