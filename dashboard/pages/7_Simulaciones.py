@@ -211,6 +211,31 @@ initial_value = st.sidebar.number_input(
     format="%d",
     key="initial_value",
 )
+# U4-5: la palanca que faltaba. El único input de flujo era el retiro de abajo,
+# con piso en cero, así que la pantalla que contesta «¿llego?» no podía
+# representar que alguien ahorre — y sin embargo el consejo de «cuánto te falta»
+# más abajo YA resolvía el ahorro del perfil y lo usaba. El consejo asumía que el
+# usuario ahorra y la simulación que lo producía, no.
+#
+# La clave es `monthly_savings` a propósito: es la primera que
+# `contribution_inputs` mira, y es la unidad en la que el perfil pregunta. Lo
+# que se tipea acá pisa al perfil, que es lo correcto — un valor puesto en esta
+# pantalla gana sobre uno heredado.
+st.sidebar.number_input(
+    "Ahorro mensual (USD, 0 = no aporto)",
+    min_value=0,
+    max_value=100_000,
+    value=int(min(max(contribution_inputs(prefs=_prefs_sim)["monthly"], 0), 100_000)),
+    step=100,
+    format="%d",
+    help=(
+        "Cuánto ponés por mes durante el horizonte. El motor lo deposita "
+        "**mensualmente**, no una vez al año (U4-1). Se siembra con el ahorro de "
+        "tu perfil; si lo cambiás acá, manda este."
+    ),
+    key="monthly_savings",
+)
+
 annual_withdrawal = st.sidebar.number_input(
     "Retiro anual (USD, 0 = acumulación)",
     min_value=0,
@@ -221,6 +246,16 @@ annual_withdrawal = st.sidebar.number_input(
     help="Cuánto retirás cada año (fase de desacumulación). 0 si todavía estás acumulando.",
     key="annual_withdrawal",
 )
+
+# El número que va al motor sale del helper, nunca de un ×12 local: es lo que
+# impide que dos pantallas le coticen plata distinta al mismo ahorrista (U4-1).
+_contrib = contribution_inputs(st.session_state, prefs=_prefs_sim)
+annual_contribution = _contrib["annual"]
+if annual_contribution > 0:
+    st.sidebar.caption(
+        f"≈ \\${annual_contribution:,.0f}/año, en doce depósitos"
+        + (" · viene de tu perfil" if _contrib["source"] == "perfil" else "")
+    )
 target_value = st.sidebar.number_input(
     "Meta de retiro (USD)",
     min_value=0,
@@ -330,6 +365,7 @@ def _tab_mc_content():
                 n_sims=n_sims,
                 initial_value=float(initial_value),
                 annual_withdrawal=float(annual_withdrawal),
+                annual_contribution=float(annual_contribution),   # U4-5
                 target_value=float(target_value),
                 withdrawal_growth_rate=float(inflation_rate) / 100.0,   # Phase 0: growing withdrawals
                 drags_tuple=drags_to_tuple(drags),                      # Item 1

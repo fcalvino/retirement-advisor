@@ -2017,6 +2017,29 @@ def contribution_inputs(
             return None
         return number if number > 0 else None
 
+    # U4-5: un cero **tipeado** es una respuesta, no la falta de una.
+    #
+    # `_positive` descarta el 0, que es lo correcto para un campo de perfil sin
+    # completar. Pero desde que la pestaña principal tiene su propia palanca —y
+    # su rótulo dice «0 = no aporto»— un cero escrito ahí tiene que ganarle al
+    # perfil: si no, el usuario pide no aportar y el motor le deposita 6.000 al
+    # año igual. Es el reverso de U3-1: allá «no sé» se leía como «no»; acá «no»
+    # se leía como «no sé».
+    #
+    # La distinción vive en la **presencia de la clave**, no en su valor, y sólo
+    # aplica a los diccionarios explícitos (session/personal). Un atributo de
+    # `prefs` siempre existe, así que su 0 sigue significando «sin completar».
+    for fuente, datos in (("session", session), ("personal", personal)):
+        for clave, divisor in (("monthly_savings", 1), ("annual_savings", MONTHS_PER_YEAR)):
+            if clave in datos:
+                try:
+                    numero = float(datos[clave])
+                except (TypeError, ValueError):
+                    continue
+                if numero == 0:
+                    return {"monthly": 0.0, "annual": 0.0, "source": fuente}
+                break
+
     candidates = (
         (_positive(session.get("monthly_savings")), 1, "session"),
         (_positive(session.get("annual_savings")), MONTHS_PER_YEAR, "session"),

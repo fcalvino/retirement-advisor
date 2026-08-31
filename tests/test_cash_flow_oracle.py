@@ -378,6 +378,36 @@ class TestContributionUnitsContract:
         assert resolved["annual"] == pytest.approx(6_000.0)
         assert resolved["source"]
 
+    def test_un_cero_tipeado_no_lo_pisa_el_perfil(self):
+        """La palanca dice «0 = no aporto» y tiene que cumplirlo.
+
+        ``contribution_inputs`` descartaba el cero con un ``_positive``, así que
+        un usuario que escribía 0 en la pantalla igual recibía el ahorro de su
+        perfil: 6.000/año donde había pedido cero. La etiqueta prometía lo que el
+        código no hacía.
+
+        La distinción es entre **ausente** y **cero explícito**: la clave que no
+        está significa «no sé, buscá en otro lado»; la que está en 0 significa
+        «no aporto», y es una respuesta, no la falta de una.
+        """
+        from types import SimpleNamespace
+
+        from data.product_ux import contribution_inputs
+
+        perfil = SimpleNamespace(monthly_savings=500.0)
+
+        # ausente -> hereda del perfil
+        heredado = contribution_inputs({}, prefs=perfil)
+        assert heredado["annual"] == pytest.approx(6_000.0)
+        assert heredado["source"] == "perfil"
+
+        # cero explícito -> gana el cero
+        explicito = contribution_inputs({"monthly_savings": 0}, prefs=perfil)
+        assert explicito["annual"] == 0.0, (
+            "un cero tipeado en la pantalla lo sigue pisando el perfil"
+        )
+        assert explicito["monthly"] == 0.0
+
     def test_no_surface_multiplies_savings_by_twelve_on_its_own(self):
         assert "contribution_inputs" in self._page()
 
