@@ -229,6 +229,35 @@ class TestLoQueNoPuedeRomperse:
         )
         assert store.get_pending_scoring(30, now=DESPUES) == []
 
+    def test_ninguna_fila_sin_fecha_llega_al_colapso(self, zona_ar):
+        """Por qué el colapso no necesita una guarda para filas sin fecha.
+
+        La primera versión traía un `if created_at is None` y la mutación que lo
+        borraba **sobrevivía**: era inalcanzable. Dos razones independientes lo
+        garantizan, y este test fija las dos —si alguna cae, la guarda hace falta
+        y el test avisa antes que un usuario.
+        """
+        import datetime
+
+        from analysis.track_record import RecommendationLog
+
+        store = _store()
+        with store._Session() as s:
+            s.add(RecommendationLog(symbol="AAPL", action="BUY", confidence="HIGH",
+                                    source="test", created_at=None))
+            s.commit()
+            # (1) la columna tiene default, así que el None ni siquiera se guarda
+            assert s.query(RecommendationLog).filter(
+                RecommendationLog.created_at.is_(None)
+            ).count() == 0, "un created_at NULL llegó a la base"
+
+        # (2) y aun si llegara, el filtro por cutoff lo descarta: en SQL
+        #     `NULL <= x` es NULL, que en un WHERE es falso.
+        assert all(
+            r.created_at is not None
+            for r in store.get_pending_scoring(30, now=DESPUES, collapse_same_day=False)
+        )
+
     def test_una_fila_sin_vencer_no_aparece(self, zona_ar, monkeypatch):
         store = _store()
         _log_at(store, MANANA, monkeypatch)
