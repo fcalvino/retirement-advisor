@@ -409,6 +409,78 @@ mutaciones mueren.
 
 ---
 
+## U5-8 — La fila no era cierta: ninguna equity de yield bajo cae debajo del no-pagador (2026-08-31)
+
+La fila decía: «No pagar dividendo (+3) puntúa más que pagar un yield bajo (+2)».
+Es cierto de la **sub-banda de yield** y falso del **score**. El no pagador cobra
+sus 3 puntos y **retorna ahí mismo** (`fundamental.py:1538`), techo 3. El pagador
+de yield bajo cobra 2 y sigue: payout (hasta +3) y racha de crecimiento (hasta
++3), techo 8. Para que la comparación del enunciado se sostenga, el pagador tiene
+que perder también las otras dos dimensiones.
+
+### Medido sobre los 164 tickers cacheados, sin red
+
+| | n |
+|---|---:|
+| No pagadores (cobran el +3 y cortan) | 21 |
+| Pagadores con yield medible | 143 |
+| Pagadores con yield no medible (la rama de N5) | 0 |
+| Pagadores con `dividend_score < 3` | **6** |
+| Pagadores en la banda de yield **bajo** (+2) | 51 |
+| De esos, con score final < 3 | 2 |
+| **Equities** de yield bajo con score < 3 | **0** |
+
+Los 51 de banda baja se reparten entre 5 y 8: 39 tienen payout excelente y 32 de
+ésos suman además racha. La asimetría existe en el código y **no llega nunca al
+score final de una equity**, porque el payout no le falta a ninguna: está
+presente en 130 de 130.
+
+### Los seis que sí quedan debajo, y por qué ninguno es esta fila
+
+| Ticker | clase | score | yield | banda | payout | estado | racha | y+p+s |
+|---|---|---:|---:|---|---:|---|---:|---|
+| ABEV | equity | 1 | 5,64 % | alto | 77 % | sobre el techo | 0 | 1+0+0 |
+| BSBR | equity | 1 | 5,95 % | alto | 131 % | sobre el techo | 0 | 1+0+0 |
+| VALE | equity | 1 | 8,12 % | alto | 159 % | sobre el techo | 1 | 1+0+0 |
+| BND | fund | 2 | 4,03 % | alto | — | ausente | 4 | 1+0+1 |
+| QQQ | fund | 2 | 0,25 % | bajo | — | ausente | 0 | 2+0+0 |
+| VGT | fund | 2 | 0,38 % | bajo | — | ausente | 0 | 2+0+0 |
+
+Las tres equities son de yield **alto** con el payout sobre el techo: el motor
+las castiga a propósito y les escribe la advertencia de dividendo insostenible.
+Que una empresa que reparte más de lo que gana puntúe por debajo de una que
+reinvierte no es el defecto — es la política.
+
+### Lo que sí apareció, y no es U5-8
+
+Los tres funds caen por otra causa: **`payoutRatio` está ausente en 13 de 13
+funds cacheados y presente en 130 de 130 equities**. Los 3 puntos del payout son
+inalcanzables para un fund por construcción, así que su techo real es 7 y no 10 —
+y `2_Stock_Analysis.py:343` muestra igual «Dividend x/10», porque el `else` de
+esa pantalla separa cripto del resto, no fund de equity. Es una etiqueta que
+promete una escala que el activo no puede alcanzar, que es la banda 4 del
+criterio. Queda abierto como **N7** en el Bloque 4.
+
+### Cómo se midió
+
+Re-scoring offline del universo cacheado con el mismo blindaje que
+`scripts/measure_score_impact.py` —TTL en 3650 días, `attach_in_pipeline` en
+falso, capas de IA en `cache_only`— y además `yf.Ticker` reemplazado por un doble
+que revienta, de modo que un cache miss se cuenta como salteado en vez de salir a
+la red. Salteados: 0. La atribución por componente (banda de yield, estado del
+payout, tramo de racha) se recompone de `dividend_yield`,
+`payout_ratio_effective`, `payout_basis` y `annual_dividend_totals`, que son los
+mismos campos que `_score_dividends` persiste.
+
+### Lo que este cierre deliberadamente NO hizo
+
+No se tocó `_score_dividends`. Subir el no pagador de 3 a 2, o bajar la banda
+baja, mueve el score de 21 y de 51 tickers para arreglar un caso que no existe en
+el universo — y `total_score` alimenta el umbral de BUY. Un cambio así necesita
+outcomes que lo justifiquen, no una lectura del código.
+
+---
+
 ## U4-5 — La pantalla que pregunta «¿llego?» ya puede representar que ahorres (2026-08-31)
 
 La pestaña principal de Simulaciones tenía un solo input de flujo —«Retiro
