@@ -48,6 +48,9 @@ class FactorResult:
     high_label: str
     low: Dict[str, float] = field(default_factory=dict)    # metric -> value at low
     high: Dict[str, float] = field(default_factory=dict)   # metric -> value at high
+    #: Whether moving this assumption reached the plan at all (U4-3). False when
+    #: low and high left every metric identical — see ``_applies``.
+    applies: bool = True
 
 
 @dataclass
@@ -58,6 +61,9 @@ class ScenarioResult:
     description: str
     metrics: Dict[str, float] = field(default_factory=dict)
     deltas: Dict[str, float] = field(default_factory=dict)   # metric -> (scenario - base)
+    #: Whether the what-if reached the plan at all (U4-3). False when every
+    #: delta is exactly zero — see ``_applies``.
+    applies: bool = True
 
 
 @dataclass
@@ -75,6 +81,28 @@ class SensitivityResult:
 def _metrics(result) -> Dict[str, float]:
     """Extract the comparison metrics from a MonteCarloResult-like object."""
     return {k: float(getattr(result, k, 0.0) or 0.0) for k in METRIC_KEYS}
+
+
+def _applies(low: Dict[str, float], high: Dict[str, float]) -> bool:
+    """Did moving this assumption reach the plan at all? (U4-3)
+
+    An assumption that leaves **every** metric identical did not fail to matter:
+    it never entered the wealth path. The tornado draws ``x = high - low``, so
+    the two cases are the same picture — a zero-width bar next to its label,
+    under a caption that says "the longest bar is what moves your result most".
+    The user reads a measurement where there was none.
+
+    Measured, not enumerated. The lab does not need to know which withdrawal
+    method indexes spending: ``constant_pct`` takes a percentage of the current
+    pot and never reads ``inflation_rate`` (``decumulation.py`` ~:389), and pure
+    accumulation has no indexed spending to move at all — both come out of this
+    comparison on their own, and so will the next method somebody adds.
+
+    Compared across ALL of ``METRIC_KEYS`` rather than the charted one: a solvent
+    plan reports ``prob_ruin_pct = 0`` for every factor, and reading only the
+    metric selected in the UI would brand four live assumptions inapplicable.
+    """
+    return any(low.get(k) != high.get(k) for k in METRIC_KEYS)
 
 
 def _bumped(params: dict, **changes) -> dict:
@@ -207,13 +235,16 @@ def run_sensitivity(
     for spec in _factor_specs(cfg):
         low_p = _bumped(base_params, **{spec["param"]: ("add", -spec["delta"])})
         high_p = _bumped(base_params, **{spec["param"]: ("add", spec["delta"])})
+        low_m = _metrics(run_fn(low_p))
+        high_m = _metrics(run_fn(high_p))
         factors.append(FactorResult(
             key=spec["key"],
             label=spec["label"],
             low_label=spec["low_label"],
             high_label=spec["high_label"],
-            low=_metrics(run_fn(low_p)),
-            high=_metrics(run_fn(high_p)),
+            low=low_m,
+            high=high_m,
+            applies=_applies(low_m, high_m),
         ))
 
     scenarios: List[ScenarioResult] = []
@@ -226,6 +257,7 @@ def run_sensitivity(
                 description=spec["description"],
                 metrics=m,
                 deltas={k: round(m[k] - base_m[k], 2) for k in METRIC_KEYS},
+                applies=_applies(base_m, m),
             ))
 
     return SensitivityResult(
@@ -239,9 +271,13 @@ def run_sensitivity(
 def tornado_rows(result: SensitivityResult, metric: str | None = None) -> list[dict]:
     """Flatten a SensitivityResult into tornado-chart rows, sorted by impact.
 
-    Each row: {key, label, low, high, base, swing} for the chosen metric.
-    Sorted descending by ``swing`` (|high − low|) so the most impactful factor
-    is on top — the canonical tornado ordering.
+    Each row: {key, label, low, high, base, swing, applies} for the chosen
+    metric. Sorted descending by ``swing`` (|high − low|) so the most impactful
+    factor is on top — the canonical tornado ordering.
+
+    ``applies`` travels with the row because the surface cannot re-derive it: it
+    is decided over every metric, not the one being charted (see ``_applies``).
+    A row with ``applies=False`` must not be drawn as a zero-length bar.
     """
     metric = metric or result.primary_metric
     base = result.base.get(metric, 0.0)
@@ -258,6 +294,7 @@ def tornado_rows(result: SensitivityResult, metric: str | None = None) -> list[d
             "high": round(high, 2),
             "base": round(base, 2),
             "swing": round(abs(high - low), 2),
+            "applies": f.applies,
         })
     rows.sort(key=lambda r: r["swing"], reverse=True)
     return rows

@@ -166,3 +166,100 @@ def test_uses_config_magnitudes():
         {**base, "withdrawal_growth_rate": 0.03 + SENSITIVITY.inflation_delta_pct / 100.0}
     ).median_terminal
     assert infl.high["median_terminal"] == expected_high
+
+
+# ------------------------------------------------------------------ #
+#  U4-3 — "no aplica" no es lo mismo que "medí y da cero"              #
+# ------------------------------------------------------------------ #
+
+def _run_sin_indexar(params: dict):
+    """Surrogate de un plan cuyo gasto NO se indexa por inflación.
+
+    Es el caso real de ``constant_pct``: la estrategia toma un % del pozo
+    actual, así que ``decide`` nunca lee ``inflation_rate``
+    (``portfolio/decumulation.py:389-392``). Medido sobre 5 tickers cacheados,
+    el swing de la palanca "Inflación" da **0,00 exacto** con retiros activos —
+    justo el caso que la fila U4-3 daba por imposible.
+    """
+    return _fake_run({**params, "withdrawal_growth_rate": 0.0})
+
+
+class TestPalancaQueNoAplica:
+    """Una barra de ancho cero afirma que se midió; hay que poder desmentirlo.
+
+    El tornado dibuja ``x=[high - low]``. Cuando la palanca no toca el plan eso
+    es una barra invisible junto a su etiqueta, y el pie del gráfico dice "la
+    barra más larga = el supuesto que más mueve tu resultado". Es decir: el
+    usuario lee "la inflación no mueve mi plan", que es una afirmación, no la
+    ausencia de una.
+
+    El criterio lo mide el motor y no lo adivina la UI: la palanca no aplica
+    cuando mover el supuesto a su valor bajo y a su alto deja **idénticas las
+    cuatro métricas**. No hay que enumerar qué método de retiro indexa el gasto,
+    y sigue siendo correcto cuando mañana se agregue otro.
+    """
+
+    def _factor(self, res, key):
+        return next(f for f in res.factors if f.key == key)
+
+    def test_una_palanca_que_no_mueve_nada_no_aplica(self):
+        res = run_sensitivity(_run_sin_indexar, _base())
+        infl = self._factor(res, "inflation")
+        assert infl.low == infl.high, "el surrogate no reprodujo el caso medido"
+        assert infl.applies is False, (
+            "la palanca no movió ninguna métrica y el tornado la presenta igual "
+            "que a las que sí midió: una barra de ancho cero se lee como un "
+            "resultado, no como «este supuesto no toca tu plan»"
+        )
+
+    def test_una_palanca_que_mueve_algo_si_aplica(self):
+        res = run_sensitivity(_run_sin_indexar, _base())
+        for key in ("fees", "real_return", "volatility"):
+            assert self._factor(res, key).applies is True, (
+                f"la palanca {key} sí mueve el resultado y quedó marcada como "
+                f"inaplicable"
+            )
+
+    def test_applies_mira_las_cuatro_metricas_no_la_graficada(self):
+        """El caso que hay que acertar para no marcar de más.
+
+        Un plan solvente da ``prob_ruin_pct = 0`` en las cuatro palancas. Si el
+        criterio mirara sólo la métrica elegida en el selectbox, las cuatro
+        quedarían "no aplica" con esa métrica seleccionada — y tres de ellas sí
+        mueven el plan. El criterio es sobre todo ``METRIC_KEYS``.
+        """
+        def _run_sin_ruina(params: dict):
+            r = _fake_run(params)
+            r.prob_ruin_pct = 0.0
+            return r
+
+        res = run_sensitivity(_run_sin_ruina, _base())
+        for f in res.factors:
+            assert f.low["prob_ruin_pct"] == f.high["prob_ruin_pct"] == 0.0
+        assert all(f.applies for f in res.factors), (
+            "una ruina plana en 0 volvió inaplicables a palancas que mueven el "
+            "capital terminal"
+        )
+
+    def test_tornado_rows_propaga_applies(self):
+        res = run_sensitivity(_run_sin_indexar, _base())
+        rows = tornado_rows(res)
+        assert all("applies" in r for r in rows), (
+            "la fila que consume la UI no lleva el dato, así que la pantalla "
+            "no puede distinguir un cero medido de un supuesto que no aplica"
+        )
+        infl = next(r for r in rows if r["key"] == "inflation")
+        assert infl["applies"] is False
+        assert infl["swing"] == 0.0
+
+    def test_un_escenario_sin_efecto_tampoco_aplica(self):
+        """Misma mentira, otra superficie: la tabla muestra «Δ vs base $0»."""
+        res = run_sensitivity(_run_sin_indexar, _base())
+        hot = next(s for s in res.scenarios if s.key == "inflation_hot")
+        assert all(v == 0 for v in hot.deltas.values())
+        assert hot.applies is False, (
+            "el escenario no cambió ninguna métrica y la tabla lo reporta como "
+            "un delta de cero medido"
+        )
+        otros = [s for s in res.scenarios if s.key != "inflation_hot"]
+        assert all(s.applies for s in otros)

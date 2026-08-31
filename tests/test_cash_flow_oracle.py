@@ -498,6 +498,64 @@ class TestContributionUnitsContract:
             "la página convierte el ahorro por su cuenta:\n  " + "\n  ".join(ofensas)
         )
 
+    # -- U4-3: el laboratorio de sensibilidad, misma pantalla --------- #
+
+    def _base_params_del_laboratorio(self) -> str:
+        """El bloque ``base_params = { ... }`` de ``_render_sensitivity_lab``.
+
+        Se aísla el bloque en vez de mirar la página entera porque la pantalla
+        tiene varios diccionarios de parámetros y varias llamadas al motor: un
+        ``in page`` a secas pasa sobre el código roto, que es el error que este
+        mismo contrato ya cometió una vez (ver ``test_la_corrida_principal_...``).
+        """
+        import re
+
+        page = self._page()
+        lab = page.split("def _render_sensitivity_lab(")[-1]
+        m = re.search(r"base_params\s*=\s*\{(.*?)\n    \}", lab, re.S)
+        assert m, "no se encontró el base_params del laboratorio de sensibilidad"
+        return m.group(1)
+
+    def test_el_laboratorio_de_sensibilidad_recibe_el_aporte(self):
+        """El contrato de U4-5 no llegaba hasta acá, y el defecto sí.
+
+        ``_render_sensitivity_lab`` arma sus parámetros como un **dict**, no como
+        kwargs, así que la regex de ``annual_contribution=`` nunca lo miró. El
+        laboratorio corría el plan del usuario sin sus ahorros: medido sobre 5
+        tickers cacheados, el caso base del tornado daba 490.275 donde el plan
+        real da 1.234.907 — 2,5×. Y no es sólo la palanca de inflación: las
+        cuatro palancas y los cuatro escenarios salen de ese caso base.
+        """
+        bloque = self._base_params_del_laboratorio()
+        assert '"annual_contribution"' in bloque, (
+            "el laboratorio de sensibilidad no le pasa el aporte al motor: su "
+            "caso base es un plan sin los ahorros del usuario, y las cuatro "
+            "palancas y los cuatro escenarios se miden contra ese plan"
+        )
+
+    def test_el_aporte_del_laboratorio_tambien_sale_del_helper(self):
+        """Misma propiedad que la corrida principal, sobre el otro call site."""
+        import re
+
+        page = self._page()
+        del_helper = set(re.findall(r"(\w+)\s*=\s*contribution_inputs\(", page))
+        assert del_helper, "nadie resuelve el ahorro con el helper"
+
+        bloque = self._base_params_del_laboratorio()
+        m = re.search(r'"annual_contribution"\s*:\s*([^,\n]+)', bloque)
+        assert m, "el laboratorio no pasa el aporte"
+        expr = m.group(1).strip().rstrip(",").strip()
+        ok = (
+            any(nombre in expr for nombre in del_helper)
+            or re.fullmatch(r"(float\()?0(\.0)?\)?", expr)
+            or "contribution_inputs" in expr
+        )
+        assert ok, (
+            f"`annual_contribution: {expr}` no salió de contribution_inputs: si "
+            f"el laboratorio hace su propio ×12, le cotiza al mismo ahorrista "
+            f"plata distinta que la pestaña de arriba"
+        )
+
 
 class TestSinAporteCargadoNadaSeMueve:
     """El alcance del cambio, medido: una corrida sin ahorro es la de siempre."""

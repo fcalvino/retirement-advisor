@@ -104,7 +104,11 @@ U5-9 ya no existían al abrirla),
 **U5-8** (la fila no era cierta: de 143 pagadores sólo 6 quedan debajo del
 techo del no-pagador, y **ninguno es una equity de yield bajo** — ver `ROADMAP.md`),
 **U3-2** (ATR y ADX con el suavizado de Wilder; 48 de 164 tickers cruzan el gate
-de ADX 25 y la fila se quedaba corta en los dos sentidos — ver `ROADMAP.md`).
+de ADX 25 y la fila se quedaba corta en los dos sentidos — ver `ROADMAP.md`),
+**U4-3** (el cero no era de la palanca, era del caso base: el laboratorio corría
+el plan del usuario **sin sus ahorros** —490.275 contra 1.234.907, 2,52×— y el
+tornado presentaba una barra de ancho cero como si fuera una medición. Con eso,
+la oleada 4 queda entera — ver `ROADMAP.md`).
 Fuera de las oleadas 3–7,
 **U0-2** también cerró — ver `ROADMAP.md`.
 
@@ -158,7 +162,6 @@ son el terreno donde ya nacieron los defectos de arriba.
 | id | sev | qué | evidencia |
 |---|---|---|---|
 | **U3-1b** | P3 | `sma200_slope_pct` tiene la misma forma que tenía `above_sma200` antes de U3-1: es `float = 0.0`, así que "no hay ventana suficiente" y "la media está plana" son el mismo valor. Consecuencia acotada pero real: el gate D15 de `technical.py:266` (`or result.sma200_slope_pct >= 0`) concede el bonus por sobreventa a un ticker cuya pendiente nadie pudo medir. Se dejó afuera de U3-1 para no mezclar dos campos en un PR de tipos | `technical.py:35,266` |
-| **U4-3** | P2 | La palanca "Inflación" del tornado bumpea `withdrawal_growth_rate`; sin retiros activos el swing es exactamente 0 y el rótulo queda igual | `sensitivity.py:105-110` |
 | **U5-7** | P2 | El docstring promete "Conservative: age / Aggressive: age − 10"; la función no toma perfil y siempre devuelve `min(age, 80)` | `config.py:360-362` |
 | **U5-19** | P3 | Black-Litterman documenta Π como "CAPM equilibrium **excess** returns" mientras las views `q` son retornos totales | `black_litterman.py:83` |
 | **U7-1** | P3 | `preset_gap` se evalúa en cada rerun contra los widgets actuales, así que sacar un valor a mano dispara "ese filtro no se aplicó", que es falso | `1_Screener.py:663` |
@@ -208,6 +211,33 @@ Verificar primero si el agujero sigue abierto —`alerts/store.py:321` es otro
 singleton de módulo, y `test_alert_engine.py` usa `FakeAlertStore`, pero puede
 haber otros tests que no—. Si sigue abierto, cerrarlo vale más que limpiar las
 dos filas.
+
+### N8 · «Inflación» es la indexación del gasto, no la inflación
+
+Abierta al cerrar U4-3, con la medición hecha. La palanca del tornado bumpea
+`withdrawal_growth_rate`, que es **cuánto crece el gasto cada año**, no la
+inflación del plan. Consecuencias, sobre 5 tickers cacheados:
+
+| plan | swing P10 | |
+|---|---|---|
+| retiro `fixed_real` 40k/año | 1.717.777 | correcto |
+| retiro `guardrails` 4 % | 296.017 | correcto |
+| retiro `constant_pct` 4 % | 0,00 exacto | el gasto no se indexa (`decumulation.py` ~:389) |
+| acumulación con aporte 12k/año | 112.059 | **signo invertido** |
+
+Los dos ceros ya no mienten: U4-3 los marca «no aplica». **El signo invertido
+queda vivo y ahora es visible** — lo tapaba el cero del caso base sin aportes.
+Sale de `_apply_cash_flows` (`monte_carlo.py:803`), que hace crecer los depósitos
+con el mismo `withdrawal_growth_rate` que la palanca mueve: más inflación ⇒ P10
+más alto. Es defendible que un aporte nominal indexado crezca, pero entonces la
+palanca no puede llamarse «Inflación» a secas, porque para un ahorrista dice que
+la inflación lo ayuda.
+
+Modelar inflación de verdad pide tocar el **retorno real**, no sólo el flujo, y
+eso mueve el Monte Carlo ⇒ hay que bumpear `ENGINE_VERSION` (U6-2). Es la razón
+por la que se dejó afuera de U4-3, que no toca `portfolio/monte_carlo.py`.
+
+Mientras tanto el rótulo promete más que la fórmula, así que es **banda 4**.
 
 ### N3 · Accesibilidad y tema
 
@@ -289,6 +319,7 @@ priorizarlo:
   | U3-2 | 3 suavizados del ADX, «ATR y ADX más nerviosos» | 4 sitios, uno de ellos **no puede** mover el número; y el ATR no tiene sesgo de signo, sólo el ADX |
   | N6 | 3 filas en un PR, «contaminación futura» | 53 filas en 16 días, y **ya puntuadas**: 11 de los 22 outcomes, +22,7 pp de hit rate inflado |
   | U5-8 | no pagar (+3) puntúa más que un yield bajo (+2) | cierto en la sub-banda, **falso como score**: 0 de 130 equities; los 6 que caen debajo de 3 son 3 de yield alto castigados a propósito y 3 funds sin payout |
+  | U4-3 | «sin retiros activos el swing es 0» | la condición no era «sin retiros»: con `constant_pct` **hay** retiros y el swing también da 0, y con aportes la palanca mueve el plan **al revés**. Y el defecto que pesaba no estaba en la fila: el caso base corría sin los ahorros del usuario, 2,52× |
 
   Empezar a arreglar sin medir produce el arreglo de la fila, no el del defecto.
 - Una fila se cierra cuando su **oráculo** pasa, no cuando el código "parece bien".
