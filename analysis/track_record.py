@@ -504,6 +504,7 @@ class TrackRecordStore:
         now: Optional[datetime] = None,
         *,
         include_fixtures: bool = False,
+        collapse_same_day: bool = True,
     ) -> List[RecommendationLog]:
         """Recommendations old enough for ``horizon_days`` that lack a *complete* outcome.
 
@@ -518,6 +519,22 @@ class TrackRecordStore:
         todavía no cumplieron 30 días se van puntuando de a 3 por día hábil desde
         el 2026-09-08 y cada una agrega un outcome más al sesgo. Los otros dos
         sitios corrigen lo que se lee y pueden esperar; éste no.
+
+        **U5-18c: también colapsa las repeticiones del mismo día local.** Sin
+        eso el scorer puntúa las 74 duplicadas que U5-18b ya descarta al leer —
+        un lookup de red por cada una y una fila basura en
+        ``recommendation_outcome``. No mueve ningún número (la lectura filtra),
+        pero llega solo: las duplicadas son del 23 y 28 de agosto y vencen a
+        fines de septiembre.
+
+        Sobrevive **la primera**, igual que en la lectura y que en
+        ``_exists_today``. Si acá se eligiera la última, el motor puntuaría una
+        fila y mostraría otra. La clave sale de ``same_local_day_key`` y no de
+        una tupla armada acá, que es lo único que garantiza que los tres sitios
+        no puedan derivar.
+
+        ``collapse_same_day=False`` devuelve el crudo, misma puerta de auditoría
+        que ``get_scored_rows``.
         """
         now = now or utc_now()
         from datetime import timedelta
@@ -538,7 +555,25 @@ class TrackRecordStore:
                 .filter(RecommendationLog.created_at <= cutoff)
                 .order_by(RecommendationLog.created_at)
             )
-            return [r for r in q.all() if r.id not in scored_ids]
+            pendientes = [r for r in q.all() if r.id not in scored_ids]
+            if not collapse_same_day:
+                return pendientes
+
+            # Una fila **sin fecha** pasa entera en vez de desaparecer: no
+            # pertenece a ningún día y asignarle uno sería inventarlo (misma
+            # regla que ``collapse_same_local_day``).
+            vistos: set = set()
+            colapsadas: List[RecommendationLog] = []
+            for fila in pendientes:
+                if fila.created_at is None:
+                    colapsadas.append(fila)
+                    continue
+                clave = same_local_day_key(fila.symbol, fila.action, fila.created_at)
+                if clave in vistos:
+                    continue
+                vistos.add(clave)
+                colapsadas.append(fila)
+            return colapsadas
 
     def save_outcome(
         self,
