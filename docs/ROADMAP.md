@@ -10,6 +10,101 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U4-3 — El cero no era de la palanca, era del caso base (2026-08-31)
+
+Cierra la oleada 4 entera. La fila decía: *«La palanca "Inflación" del tornado
+bumpea `withdrawal_growth_rate`; sin retiros activos el swing es exactamente 0 y
+el rótulo queda igual»*.
+
+Medido offline sobre 5 tickers cacheados (AAPL/MSFT/JNJ/PG/XOM equiponderados,
+10y semanal, seed 42, `n_sims=2000`, drags 0,60 %, inflación 3 % ± 1 pp), sin red
+y con la palanca corrida por cada método de retiro:
+
+| plan | swing Inflación (P10) | |
+|---|---|---|
+| acumulación, sin retiros ni aportes | **0,00 exacto** | la fila acierta |
+| retiro `fixed_real` 40k/año | 1.717.777 | correcto |
+| retiro `guardrails` 4 % | 296.017 | correcto |
+| retiro `constant_pct` 4 % | **0,00 exacto** | **hay retiros y el swing es 0** |
+| acumulación con aporte 12k/año | 112.059 | **signo invertido** |
+
+### La fila tenía razón en el síntoma y no en la causa
+
+La condición no es «no hay retiros», es «el método de retiro no indexa el gasto».
+`constant_pct` toma un porcentaje del **pozo actual**, así que su `decide` nunca
+lee `inflation_rate` (`portfolio/decumulation.py` ~:389) — y es una opción que el
+usuario elige en el panel (`dashboard/shared.py:1082`). Arreglar «el caso sin
+retiros» habría dejado el defecto intacto para un jubilado.
+
+### El defecto que pesaba no estaba en la fila
+
+`base_params` de `_render_sensitivity_lab` **no pasaba `annual_contribution`** y
+`_sensitivity_run_fn` la defaultea a 0. La variable estaba resuelta doce líneas
+más arriba en la misma página (`:253`, vía `contribution_inputs`) y la corrida
+principal sí la usaba (`:368` — eso es U4-5, cerrada ese mismo día).
+
+    caso base P10   sin el aporte      490.275
+    caso base P10   con 12k/año      1.234.907   (2,52x)
+
+No es sólo la palanca de inflación: **las cuatro palancas y los cuatro escenarios
+se medían contra un plan que no era el del usuario.** Es exactamente el defecto
+que U4-5 cerró en la pestaña de arriba, todavía abierto una sección más abajo de
+la misma pantalla. El contrato de U4-5 no lo agarró porque mide los valores
+pasados como `annual_contribution=` en formato kwarg, y el laboratorio arma un
+**dict**: la regex nunca lo miró.
+
+### Por qué los dos van en el mismo PR
+
+Están acoplados: arreglar el aporte **solo** empeora la pantalla. Con aportes la
+palanca de inflación deja de dar 0 y pasa a dar el signo invertido — y un número
+al revés se lee peor que un cero.
+
+### «No aplica» se mide, no se enumera
+
+`sensitivity._applies`: una palanca no aplica cuando mover el supuesto a su valor
+bajo y a su alto deja idénticas las **cuatro** métricas de `METRIC_KEYS`. El
+laboratorio no necesita saber qué método de retiro indexa el gasto —`constant_pct`
+y la acumulación pura salen solos de esa comparación— y sigue siendo correcto
+cuando se agregue otro método.
+
+Sobre las cuatro y no sobre la graficada: un plan solvente da `prob_ruin_pct = 0`
+en todas las palancas, y el criterio angosto habría marcado como inaplicables a
+tres palancas vivas. Es el test que hay que acertar para no marcar de más.
+
+La fila **sigue en el eje**, rotulada «no aplica a este plan», con el hover
+explicando por qué y el pie del gráfico aclarando que no es un cero medido.
+Sacarla escondería que el motor consideró el supuesto: el usuario no podría
+distinguir «no aplica» de «se olvidaron de esta palanca». La tabla de escenarios
+recibe el mismo trato — decía «Δ vs base $0», que es la misma afirmación.
+
+### Lo que deliberadamente no hizo → N8
+
+`withdrawal_growth_rate` no es inflación, es indexación del gasto. El signo
+invertido con aportes sale de `_apply_cash_flows` (`monte_carlo.py:803`), que
+hace crecer los depósitos con el mismo número que la palanca mueve. **Este PR lo
+destapa**: antes lo tapaba el cero del caso base sin aportes. Corregirlo pide que
+la palanca toque el retorno real y no sólo el flujo, lo que mueve el Monte Carlo
+y obliga a bumpear `ENGINE_VERSION` (U6-2). Abierto como **N8** en el backlog,
+con la medición ya hecha.
+
+`ENGINE_VERSION` no se bumpeó acá: no se tocó `portfolio/monte_carlo.py`. Misma
+clase de cambio que U4-5 (`a7db06f`), que tampoco lo bumpeó.
+
+### Un error propio, corregido antes de reportar
+
+La primera corrida de la medición dio swing 0 también para `fixed_real`, lo que
+habría sido un hallazgo falso mucho más grande. La causa era mía:
+`WithdrawalStrategy.coerce` (`decumulation.py:145-147`) filtra en silencio las
+claves que no reconoce, y yo le pasé `{"method": ..., "initial_rate_pct": ...}`
+en vez de los nombres reales de los campos. Devolvió un `fixed_real` con
+`annual_amount=0` — o sea, un plan que no retiraba nada. Queda anotado porque le
+pasa igual a un plan guardado con una clave mal escrita: se convierte en «no
+retira nada» sin avisar, en vez de fallar.
+
+**Commits:** `ef66599` (oráculo, 7 de 49 en rojo), `59a0058` (fix).
+
+---
+
 ## U5-18d — Las 53 filas de fixture salen del track record (2026-08-30)
 
 ### Qué se decidió y por qué no fue lo mismo que U5-18b
