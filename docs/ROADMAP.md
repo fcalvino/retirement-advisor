@@ -349,6 +349,83 @@ miraba `action`, así que un cambio del tamaño de éste habría salido como
 
 ---
 
+## U3-7b — El moat se rankea con la regla que lo mide (2026-08-30)
+
+U3-7 arregló las **etiquetas**: dos escalas existen y no son intercambiables —
+con IA el total corre 0–20, sin ella es el tramo cuantitativo solo, 0–12, donde
+los umbrales de 14/8/4 vuelven «Wide» inalcanzable por construcción. Por eso
+`classify_moat` exige `ai_available` en cada call site. Esta fila es la misma
+corrección en los **pesos**.
+
+### La fila describía un defecto y había otro
+
+Dice: *«una fila sin IA queda sistemáticamente peor rankeada por no haber sido
+enriquecida, no por la empresa»*. Eso necesita una población **mixta**.
+
+Medido sobre las 150 equities cacheadas: el moat va de 0,5 a 12,0 y **ninguna
+supera 12**. Ninguna pasó por la capa de IA, así que la población es **uniforme**
+y no hay penalización relativa entre enriquecidas y no enriquecidas.
+
+Lo que sí había: con moat ≤ 12 dividido por 20, el término de moat aporta el
+**60 % de lo que declara `cfg.moat_weight`**. No perjudica a una fila en
+particular — encoge el término entero frente al score y al dividendo.
+
+Las dos cosas son ciertas y el arreglo cubre ambas, porque escala por el techo
+que efectivamente aplica. Si algún día el screener corre con IA, la población se
+vuelve mixta y aparece el defecto que la fila describe; hay un test para eso.
+
+### La prueba más limpia salía del propio código
+
+`_core_rank` documentaba:
+
+    moat_factor = (a.moat_score / 20.0) + 0.5  # range 0.5–1.5
+
+El rango real, con moat ≤ 12, era **0,53–1,10**. El comentario decía la
+intención y el código entregaba el 60 % de ella. `moat_rank_factor` ahora cubre
+0,5–1,5 de verdad, en las dos escalas.
+
+### Qué se movió
+
+Núcleo determinístico, sobre el universo cacheado:
+
+| perfil | entra | sale |
+|---|---|---|
+| conservador | ADBE | CMCSA |
+| moderado | GOOGL, META | LRCX, MA |
+| agresivo | SPG | CINF |
+
+Down-select: cambian 1 de 20 candidatos en Conservador, 2 de 30 en Moderado,
+2 de 45 en Agresivo.
+
+`ENGINE_VERSION` **no se bumpea**: cambia el orden de los candidatos y del
+núcleo sugerido, no μ ni ningún número que un plan guardado persista.
+
+### De paso
+
+`_rank_score` era una función local adentro del down-select y ahora es método:
+es lo que elige el pool sobre el que corre toda la optimización, así que merece
+ser ejercitable directo — mismo criterio que `_clean_div_yield` y
+`_expected_returns`. Las líneas que la fila citaba estaban corridas (483/509 →
+516/542) y el tercer `/20` de `:625` efectivamente había desaparecido con U5-6.
+
+`MOAT.quant_max_score` y `MOAT.ai_max_score` explicitan los dos techos, y
+`_moat_had_ai` los lee del dato en vez de asumirlos: una fila que no lo trae se
+toma como cuantitativa, porque equivocarse hacia esa escala sólo puede
+sub-estimar un moat enriquecido, nunca inflar uno que no lo está.
+
+### Un test que se habría salteado para siempre
+
+El primero que escribí para fijar la población leía el baseline del scratchpad de
+la sesión, con un `skipif` si no existía. En CI ese archivo no existe: se
+saltearía siempre, y un skip permanente es un verde por ausencia — la misma clase
+de defecto que el archivo existe para atrapar. Reemplazado por la medición
+embebida como dato.
+
+Oráculo: `tests/test_moat_ranking_scale_oracle.py`, 13 tests. Las seis
+mutaciones mueren.
+
+---
+
 ## U7-3 — El titular deja de afirmar lo que la muestra no sostiene (2026-08-30)
 
 Con el track record limpio (U5-18b, U5-18d), su lectura honesta es que **no se

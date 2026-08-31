@@ -32,7 +32,7 @@ import pandas as pd
 from loguru import logger
 from scipy.optimize import minimize
 
-from analysis.moat import classify_moat
+from analysis.moat import classify_moat, moat_scale_max
 from config import (
     ARS_RISK,
     OPTIMIZER,
@@ -46,6 +46,37 @@ from data.fetcher import get_history
 
 # ETF tickers — excluded from optimization (no fundamentals)
 _ETF_TICKERS = {"SPY", "QQQ", "VTI", "BND", "GLD", "SLV", "TLT", "IEF"}
+
+
+def moat_rank_factor(moat_score: float, *, ai_available: bool) -> float:
+    """El moat como multiplicador de ranking, en 0,5–1,5 (U3-7b).
+
+    ``_core_rank`` documentaba ese rango y entregaba 0,53–1,10, porque dividía
+    por 20 un total que sin IA tiene techo 12. El comentario decía la intención
+    y el código el 60 % de ella.
+
+    ``ai_available`` es obligatorio: la escala la decide la capa que produjo el
+    número, igual que en ``classify_moat``.
+    """
+    from analysis.moat import moat_scale_max
+
+    techo = moat_scale_max(ai_available=ai_available)
+    return (float(moat_score) / techo) + 0.5 if techo > 0 else 0.5
+
+
+def _moat_had_ai(row) -> bool:
+    """Si la capa de IA corrió sobre esa fila.
+
+    Se lee del dato, no se asume. Una fila que no lo trae se toma como
+    cuantitativa: es lo que produce el screener, es lo que tienen las 150
+    equities cacheadas, y equivocarse hacia esa escala sólo puede sub-estimar un
+    moat enriquecido, nunca inflar uno que no lo está.
+    """
+    if isinstance(row, dict):
+        valor = row.get("moat_ai_available")
+    else:
+        valor = getattr(row, "moat_ai_available", None)
+    return bool(valor)
 
 
 def is_ars_exposed(ticker: dict) -> bool:
@@ -485,6 +516,25 @@ class PortfolioOptimizer:
         ceiling = THRESHOLDS.max_plausible_dividend_yield_pct
         return raw if 0 <= raw <= ceiling else 0.0
 
+    def _rank_score(self, t: dict) -> float:
+        """Puntaje compuesto que decide qué candidatos entran a SLSQP.
+
+        Método y no una función local adentro del down-select, para que sea
+        ejercitable directo: es lo que elige el pool sobre el que después corre
+        toda la optimización.
+
+        U3-7b: el moat se normaliza por el techo que aplica a ESA fila, no por
+        20 siempre. Con las 150 equities cacheadas —todas sin IA, todas bajo 12—
+        el `/20` dejaba al término de moat aportando el 60 % de `moat_weight`.
+        """
+        cfg = self.cfg
+        score = float(t.get("adjusted_score", 0) or 0) / 100.0
+        div = self._clean_div_yield(float(t.get("dividend_yield", 0) or 0)) / 15.0
+        moat = float(t.get("moat_score", 0) or 0) / moat_scale_max(
+            ai_available=_moat_had_ai(t)
+        )
+        return cfg.score_weight * score + cfg.dividend_weight * div + cfg.moat_weight * moat
+
     # ------------------------------------------------------------------ #
     #  Profile-aware candidate selection (Fase C)                          #
     # ------------------------------------------------------------------ #
@@ -508,15 +558,7 @@ class PortfolioOptimizer:
         if len(eligible) <= min_keep:
             return eligible
 
-        cfg = self.cfg
-
-        def _rank_score(t: dict) -> float:
-            score = float(t.get("adjusted_score", 0) or 0) / 100.0
-            div   = self._clean_div_yield(float(t.get("dividend_yield", 0) or 0)) / 15.0
-            moat  = float(t.get("moat_score", 0) or 0) / 20.0
-            return cfg.score_weight * score + cfg.dividend_weight * div + cfg.moat_weight * moat
-
-        ranked = sorted(eligible, key=_rank_score, reverse=True)
+        ranked = sorted(eligible, key=self._rank_score, reverse=True)
         return ranked[:k]
 
     # ------------------------------------------------------------------ #
@@ -527,7 +569,7 @@ class PortfolioOptimizer:
         """
         Build a human-manageable core portfolio without calling any LLM.
 
-        Ranks allocated positions by weight × adjusted_score × (moat_score / 20 + 0.5)
+        Ranks allocated positions by weight × adjusted_score × moat_rank_factor(...)
         and keeps the top cfg.target_max_human_positions. Rescales weights to 100 %
         and adds a plain-data reason line (no LLM needed).
 
@@ -539,7 +581,9 @@ class PortfolioOptimizer:
         target = self.cfg.target_max_human_positions
 
         def _core_rank(a: "TickerAllocation") -> float:
-            moat_factor = (a.moat_score / 20.0) + 0.5  # range 0.5–1.5
+            moat_factor = moat_rank_factor(          # range 0.5–1.5, de verdad
+                a.moat_score, ai_available=_moat_had_ai(a)
+            )
             return a.weight_pct * (a.adjusted_score / 100.0) * moat_factor
 
         ranked = sorted(allocations, key=_core_rank, reverse=True)

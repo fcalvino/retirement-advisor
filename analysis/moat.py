@@ -191,6 +191,23 @@ class MoatDetail:
 #  Analyzer                                                            #
 # ------------------------------------------------------------------ #
 
+def moat_scale_max(*, ai_available: bool, cfg=None) -> float:
+    """El techo de la escala en la que ese total fue medido (U3-7b).
+
+    Compañera de :func:`classify_moat` y por la misma razón: dos escalas existen
+    y no son intercambiables. Un total con IA corre 0–20; uno sin ella es el
+    tramo cuantitativo solo, 0–12. Normalizar los dos por 20 —que es lo que el
+    Optimizer hacía al ordenar— deja un moat perfecto sin IA valiendo 0,6 en vez
+    de 1,0, así que el término entero pesa el 60 % de lo que declara
+    ``moat_weight``.
+
+    ``ai_available`` es obligatorio, no tiene default: pasar la escala
+    equivocada es exactamente el defecto que esto arregla.
+    """
+    c = cfg or MOAT
+    return c.quant_max_score + (c.ai_max_score if ai_available else 0.0)
+
+
 def classify_moat(total: float, *, ai_available: bool, cfg=None) -> str:
     """The single mapping from a moat total to its label.
 
