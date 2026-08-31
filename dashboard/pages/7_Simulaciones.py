@@ -964,6 +964,12 @@ def _render_sensitivity_lab():
         "horizon_years": int(horizon_years),
         "initial_value": float(initial_value),
         "annual_withdrawal": float(annual_withdrawal),
+        # U4-3: el laboratorio corría el plan del usuario sin sus ahorros. La
+        # pestaña de arriba ya lo pasaba (U4-5) y acá se perdía, así que el caso
+        # base del tornado era otro plan — 490.275 contra 1.234.907 sobre el
+        # mismo ahorrista— y las cuatro palancas y los cuatro escenarios se
+        # medían contra ese. Sale del mismo `contribution_inputs`, sin ×12 local.
+        "annual_contribution": float(annual_contribution),
         "target_value": float(target_value),
         "withdrawal_growth_rate": float(inflation_rate) / 100.0,
         "vol_scale": 1.0,
@@ -982,12 +988,33 @@ def _render_sensitivity_lab():
     st.caption(f"**Caso base — {_metric_label[metric]}: {_fmt(base_val)}**")
 
     # --- Tornado ---
+    # U4-3: una palanca que no toca este plan se rotula, no se dibuja en cero.
+    # `x=[hi - lo]` con hi == lo es una barra invisible junto a su etiqueta, y el
+    # pie dice "la barra más larga = el supuesto que más mueve tu resultado": el
+    # usuario lee "la inflación no mueve mi plan", que es una afirmación y no la
+    # ausencia de una. Quién no aplica lo decide el motor (`sensitivity._applies`),
+    # que lo mide sobre las cuatro métricas; la pantalla sólo lo presenta.
+    _NO_APLICA = "no aplica a este plan"
     rows = tornado_rows(res, metric=metric)
+    _hay_inaplicables = any(not r["applies"] for r in rows)
     fig = go.Figure()
     for r in rows:
+        _label = r["label"] if r["applies"] else f"{r['label']} ({_NO_APLICA})"
+        if not r["applies"]:
+            # Marca de posición: la fila sigue en el eje —sacarla escondería que
+            # el motor consideró el supuesto— pero sin barra que leer.
+            fig.add_trace(go.Bar(
+                y=[_label], x=[0], base=base_val, orientation="h",
+                marker_color="rgba(0,0,0,0)", showlegend=False,
+                hovertemplate=(
+                    f"{r['label']}<br>{_NO_APLICA}: mover este supuesto no cambió "
+                    f"ninguna métrica de tu plan<extra></extra>"
+                ),
+            ))
+            continue
         lo, hi = min(r["low"], r["high"]), max(r["low"], r["high"])
         fig.add_trace(go.Bar(
-            y=[r["label"]], x=[hi - lo], base=lo, orientation="h",
+            y=[_label], x=[hi - lo], base=lo, orientation="h",
             marker_color="#17A2B8", showlegend=False,
             hovertemplate=(
                 f"{r['label']}<br>{r['low_label']}: {_fmt(r['low'])}"
@@ -1004,10 +1031,17 @@ def _render_sensitivity_lab():
         yaxis=dict(autorange="reversed"),
     )
     st.plotly_chart(fig, width="stretch")
-    st.caption(
+    _pie = (
         "Cada barra es el rango de la métrica cuando ese supuesto se mueve a su valor bajo/alto "
         "(todo lo demás fijo). La barra más larga = el supuesto que más mueve tu resultado."
     )
+    if _hay_inaplicables:
+        _pie += (
+            f" Una palanca marcada «{_NO_APLICA}» **no se midió en cero**: moverla no "
+            "entra en tu plan tal como está configurado — por ejemplo, la inflación no "
+            "toca un retiro que ya se calcula como % del capital actual."
+        )
+    st.caption(_pie)
 
     # --- Scenario table ---
     st.markdown("**Escenarios de retiro predefinidos**")
@@ -1018,7 +1052,11 @@ def _render_sensitivity_lab():
             "Escenario": s.label,
             "Qué cambia": s.description,
             _metric_label[metric]: _fmt(s.metrics.get(metric, 0.0)),
-            "Δ vs base": (f"{'+' if _d >= 0 else ''}{_fmt(_d)}"),
+            # U4-3: mismo criterio que el tornado. Un escenario que no tocó
+            # ninguna métrica reportaba "Δ vs base $0", que es un cero medido.
+            "Δ vs base": (
+                f"{'+' if _d >= 0 else ''}{_fmt(_d)}" if s.applies else _NO_APLICA
+            ),
         })
     st.dataframe(pd.DataFrame(_scn_rows), width="stretch", hide_index=True)
     st.caption(
