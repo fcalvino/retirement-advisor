@@ -349,6 +349,74 @@ miraba `action`, así que un cambio del tamaño de éste habría salido como
 
 ---
 
+## U4-4 — La longevidad se simula, no se trunca (2026-08-31)
+
+`decumulation_metrics` recortaba con `cap_week = min(longevity*52, n_cols-1)`.
+Cuando la longevidad pedida superaba el horizonte simulado ganaba el segundo:
+los años de más no existían, y la copy los nombraba igual.
+
+### No era un caso borde: era el estado por defecto
+
+    MONTE_CARLO.default_horizon_years   = 20
+    WITHDRAWAL.default_longevity_years  = 30
+
+El selector de horizonte arranca en 20; el widget de longevidad arranca en 30 y
+acepta hasta 60. **Sin configurar nada**, el producto decía *«tu ingreso dura los
+30 años en 97,86 % de los escenarios»* habiendo simulado 20. Y reportaba la
+longevidad **pedida**, no la medida, así que Plan, PDF y prompts la repetían.
+
+Medido antes del arreglo, para 20 / 30 / 45 / 60 años la respuesta era **la
+misma**: 97,77 %. Los años no simulados son justo aquellos en que el pozo está
+más chico, así que truncar era **sistemáticamente optimista**.
+
+### Por qué extender y no negarse a contestar
+
+El repo tiene precedente de decir «no sé» (U3-1, U2-4, U5-14, U7-3) y acá no
+aplicaba: no faltaba un dato, **sobraba un recorte**. La pregunta está bien
+planteada y el motor puede contestarla; negarse además dejaría la configuración
+por defecto mostrando «desconocido» en una métrica central.
+
+### Qué cambia
+
+| longevidad | 10 | 20 | 30 | 45 | 60 |
+|---|---:|---:|---:|---:|---:|
+| sostiene | 100,00 | 97,86 | 91,96 | 85,52 | 83,58 |
+| año agotamiento | 0,00 | 17,17 | 23,50 | 29,29 | 30,58 |
+
+Baja de forma monótona, y el agotamiento ya puede caer más allá del horizonte.
+**Con los defaults: 97,86 % → 91,96 %, −5,90 pp.**
+
+`ENGINE_VERSION` → `2026.08-tier8`.
+
+### Lo que no se mueve, y lo que costó que no se moviera
+
+Las métricas de riqueza son del horizonte de proyección — terminal, fan chart,
+CAGR, drawdown, SORR y ruina se leen en `horizon_week`, no al final del array.
+
+El primer intento simulaba directamente el largo total, y eso **redibujaba
+también los primeros años**: `_simulate_paths` sortea
+`rng.integers(size=(n_sims, n_blocks))`, así que pedir más semanas cambia la
+forma del array y corre todos los draws. Medido: mover la longevidad de 20 a 45
+movía el capital terminal ~1 %. Ruido de muestreo, no sesgo — pero significaba
+que preguntar *«¿cuánto me dura?»* cambiaba la respuesta a *«¿cuánto junto?»*, y
+son dos preguntas independientes.
+
+Ahora el horizonte se sortea primero, con su largo de siempre, y la cola se
+**empalma** escalada por donde terminó. El terminal queda byte-idéntico en las
+cinco longevidades: **1.923.483**.
+
+### Un test que pasaba sobre el código roto
+
+El primero que escribí para la monotonía usaba `sorted(probs, reverse=True)`,
+que **acepta empates** — y con el recorte las probabilidades de 25, 35 y 45 eran
+idénticas, así que pasaba sobre el defecto. Empatar era exactamente el síntoma.
+Reescrito con comparación estricta.
+
+Oráculo: `tests/test_longevity_horizon_oracle.py`, 17 tests, de los cuales nueve
+fijan que las métricas de riqueza **no** se muevan. Las seis mutaciones mueren.
+
+---
+
 ## U3-7b — El moat se rankea con la regla que lo mide (2026-08-30)
 
 U3-7 arregló las **etiquetas**: dos escalas existen y no son intercambiables —

@@ -81,6 +81,8 @@ observación más reciente), **U5-2 + U5-3** (`d1aba8f`, dos señales del Piotro
 que respondían otra pregunta),
 **U4-1c** (el jubilado gasta todos los meses; el efecto no resultó uniformemente
 conservador — ver `ROADMAP.md`),
+**U4-4** (la longevidad se simula en vez de truncarse; el desfase venía de
+fábrica en los defaults y costaba 5,90 pp de probabilidad),
 **U3-7b** (el moat se rankea con la regla que lo mide; la fila describía una
 penalización relativa y lo que había era una miscalibración del 60 %),
 **U7-3** (el titular del track record dejó de afirmar lo que n=11 no sostiene),
@@ -153,7 +155,6 @@ son el terreno donde ya nacieron los defectos de arriba.
 | **U3-1b** | P3 | `sma200_slope_pct` tiene la misma forma que tenía `above_sma200` antes de U3-1: es `float = 0.0`, así que "no hay ventana suficiente" y "la media está plana" son el mismo valor. Consecuencia acotada pero real: el gate D15 de `technical.py:266` (`or result.sma200_slope_pct >= 0`) concede el bonus por sobreventa a un ticker cuya pendiente nadie pudo medir. Se dejó afuera de U3-1 para no mezclar dos campos en un PR de tipos | `technical.py:35,266` |
 | **U4-5** | P2 | La pestaña principal de Simulaciones **no puede** simular un aporte: su único widget de flujo es "Retiro anual" con `min_value=0`, así que la pantalla que contesta "¿llego?" no representa que alguien ahorre. El motor acepta `annual_contribution` desde tier2 y `contribution_inputs` ya resuelve el número; falta la palanca | `7_Simulaciones.py:195-204` |
 | **U4-3** | P2 | La palanca "Inflación" del tornado bumpea `withdrawal_growth_rate`; sin retiros activos el swing es exactamente 0 y el rótulo queda igual | `sensitivity.py:105-110` |
-| **U4-4** | P2 | La longevidad solo trunca: `cap_week = min(longevity*52, n_cols-1)`. Vivir 5 años más no puede alargar la simulación | `decumulation.py:300` |
 | **U5-7** | P2 | El docstring promete "Conservative: age / Aggressive: age − 10"; la función no toma perfil y siempre devuelve `min(age, 80)` | `config.py:360-362` |
 | **U5-19** | P3 | Black-Litterman documenta Π como "CAPM equilibrium **excess** returns" mientras las views `q` son retornos totales | `black_litterman.py:83` |
 | **U7-1** | P3 | `preset_gap` se evalúa en cada rerun contra los widgets actuales, así que sacar un valor a mano dispara "ese filtro no se aplicó", que es falso | `1_Screener.py:663` |
