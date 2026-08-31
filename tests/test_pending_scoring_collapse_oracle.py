@@ -237,7 +237,6 @@ class TestLoQueNoPuedeRomperse:
         garantizan, y este test fija las dos —si alguna cae, la guarda hace falta
         y el test avisa antes que un usuario.
         """
-        import datetime
 
         from analysis.track_record import RecommendationLog
 

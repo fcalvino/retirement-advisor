@@ -81,6 +81,8 @@ observación más reciente), **U5-2 + U5-3** (`d1aba8f`, dos señales del Piotro
 que respondían otra pregunta),
 **U4-1c** (el jubilado gasta todos los meses; el efecto no resultó uniformemente
 conservador — ver `ROADMAP.md`),
+**U5-18c** (una sola política también al escribir: el pending deja de puntuar
+las 74 duplicadas que la lectura descartaba — 0 hoy, 74 desde el 28/09),
 **U4-5** (la pantalla que pregunta «¿llego?» ya representa que alguien ahorre;
 el consejo de «cuánto te falta» ya usaba el ahorro y la simulación no),
 **U4-4** (la longevidad se simula en vez de truncarse; el desfase venía de
@@ -160,7 +162,6 @@ son el terreno donde ya nacieron los defectos de arriba.
 | **U5-19** | P3 | Black-Litterman documenta Π como "CAPM equilibrium **excess** returns" mientras las views `q` son retornos totales | `black_litterman.py:83` |
 | **U7-1** | P3 | `preset_gap` se evalúa en cada rerun contra los widgets actuales, así que sacar un valor a mano dispara "ese filtro no se aplicó", que es falso | `1_Screener.py:663` |
 | **U7-2** | P3 | Vaciar el multiselect "Fuente" muestra **todas** las filas en vez de ninguna | `13_Track_Record.py:86` |
-| **U5-18c** | P3 | `get_pending_scoring` lee el log **crudo**, no la vista deduplicada, así que el scorer va a puntuar las 80 duplicadas y escribir ~80 outcomes que `get_scored_rows` después descarta. No rompe ningún número —la lectura los filtra, ver U5-18b— pero gasta lookups de red y ensucia `recommendation_outcome`. Se dejó **deliberadamente** fuera de U5-18b: cambia lo que el motor **escribe**, no lo que lee, y eso es una decisión aparte. Ojo con el orden si se toma: colapsar el pending sin colapsar la lectura dejaría de nuevo dos políticas conviviendo. **U5-18d ya cerró**, que era la precondición: las 53 fixtures salen del pending por su `source`, así que lo que queda acá son las 80 duplicadas y nada más | `track_record.py:get_pending_scoring` |
 | **U0-3** | P3 | CONTEXT §8 (a)(b) describen como abiertos dos defectos ya cerrados | |
 
 ---

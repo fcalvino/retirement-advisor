@@ -349,6 +349,66 @@ miraba `action`, así que un cambio del tamaño de éste habría salido como
 
 ---
 
+## U5-18c — Una sola política, también al escribir (2026-08-31)
+
+U5-18b colapsó las repeticiones del mismo día local **al leer** y U5-18d sacó
+las 53 fixtures de los tres sitios. Faltaba el flujo de escritura:
+`get_pending_scoring` devolvía las duplicadas, así que el scorer las iba a
+puntuar —un lookup de red cada una— y a escribir outcomes que `get_scored_rows`
+descarta acto seguido.
+
+### Qué evita, y cuándo
+
+| fecha | con colapso | sin colapso | evitados |
+|---|---:|---:|---:|
+| 2026-08-31 | 0 | 0 | 0 |
+| 2026-09-23 | 93 | 93 | 0 |
+| 2026-09-28 | 259 | 333 | **74** |
+| 2026-10-15 | 332 | 406 | **74** |
+
+**Cero hoy.** Las duplicadas son del 23 y 28 de agosto y cumplen 30 días a fines
+de septiembre, así que el defecto no se puede ver ejecutando el motor hoy — por
+eso el oráculo inyecta el `now` que la firma ya aceptaba.
+
+No mueve ningún número: la lectura ya filtra, así que el hit rate y la curva
+quedan igual. Se ahorran **74 llamadas de red** y 74 filas basura en
+`recommendation_outcome`. Es la única de la familia cuyo costo es eficiencia y
+no corrección.
+
+### Sobrevive la primera, con la clave compartida
+
+Igual que en la lectura y que en `_exists_today`. Si acá se eligiera la última,
+el motor puntuaría una fila y mostraría otra.
+
+La clave sale de `same_local_day_key` y no de una tupla armada en el sitio: es
+lo único que garantiza que los tres no puedan derivar, y hay un test que falla
+si alguien la reimplementa. `collapse_same_day=False` devuelve el crudo, misma
+puerta de auditoría que `get_scored_rows`.
+
+### Verificado antes de tocar nada
+
+De los 74 pares, **ninguna segunda tiene outcome todavía**, así que colapsar el
+pending no deja ningún outcome huérfano. Era el riesgo real de la fila.
+
+### Una guarda que era código muerto
+
+La primera versión traía un `if created_at is None: pasa entera`, copiado del
+criterio de `collapse_same_local_day`. La mutación que lo borraba **sobrevivía**,
+y al mirarlo el problema era la guarda: en `get_pending_scoring` no puede llegar
+una fila sin fecha por dos razones independientes — la columna tiene
+`default=utc_now`, y el `WHERE created_at <= cutoff` descarta los NULL porque en
+SQL `NULL <= x` es falso.
+
+Código defensivo inalcanzable no protege nada y esconde que el invariante ya lo
+da el esquema — mismo criterio que la absorción en U4-1c. La guarda se fue y
+quedó un test que fija **las dos razones**: si alguna cae, avisa.
+`collapse_same_local_day` sí la necesita, porque recibe dicts.
+
+Oráculo: `tests/test_pending_scoring_collapse_oracle.py`, 10 tests. Las cinco
+mutaciones mueren.
+
+---
+
 ## U4-5 — La pantalla que pregunta «¿llego?» ya puede representar que ahorres (2026-08-31)
 
 La pestaña principal de Simulaciones tenía un solo input de flujo —«Retiro
