@@ -2,7 +2,7 @@
 
 Data-shaped, with two exceptions: an autouse fixture that zeroes the network
 retry backoff (see ``no_retry_backoff``) and the import-time redirection of the
-track record away from the user's database (see below).
+track record and the alert store away from the user's database (see below).
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+import alerts.store as _alerts_store
 import analysis.track_record as _track_record
 
 # ------------------------------------------------------------------ #
@@ -42,6 +43,40 @@ import analysis.track_record as _track_record
 _track_record.track_record_store._engine.dispose()  # release the user's file
 _track_record.DB_PATH = ":memory:"
 _track_record.track_record_store = _track_record.TrackRecordStore()
+
+
+# ------------------------------------------------------------------ #
+#  Alerts: the suite never writes to the user's database (N6c)         #
+# ------------------------------------------------------------------ #
+#
+# Same leak as N6, one table over, and one level deeper. ``alerts/store.py``
+# has its own module-level singleton on ``config.DB_PATH``, and two of its
+# writers run before any assert does: ``AlertEngine.__init__`` calls
+# ``purge_expired_mutes()`` (a ``DELETE`` + commit), and ``set_cooldown()`` is
+# reachable straight off the store without going through the engine at all.
+# That second path is the one that actually left rows behind: ``alert_cooldowns``
+# carried two ``TEST1`` rows from 2026-05-24, and ``alert_snapshots`` is empty,
+# which ``AlertEngine.run`` could not have produced — it saves a snapshot for
+# every symbol it touches and nothing in the repo deletes them.
+#
+# **This block mutates the store in place; it does not replace it, and that is
+# the difference from the track record above.** ``alerts/engine.py`` binds the
+# singleton as a *default argument* (``store: AlertStore = alert_store``), which
+# is evaluated at import and keeps the object, not the name. Rebinding
+# ``alerts.store.alert_store`` to a fresh instance leaves that default pointing
+# at the user's database — measured, ``AlertEngine.__init__.__defaults__[0]`` is
+# still the original object. Replacing the singleton here would go green while
+# the leak stayed open, so every existing reference has to be fixed through the
+# object itself.
+#
+# Patching ``DB_PATH`` inside the module — not just the singleton — is what
+# covers the caller that constructs its own store instead of importing this one.
+# ``tests/test_alert_store_isolation_oracle.py`` fails if any of this regresses.
+_alerts_store.alert_store._engine.dispose()  # release the user's file
+_alerts_store.DB_PATH = ":memory:"
+_isolated_alerts = _alerts_store.AlertStore()
+_alerts_store.alert_store._engine = _isolated_alerts._engine
+_alerts_store.alert_store._Session = _isolated_alerts._Session
 
 
 # ------------------------------------------------------------------ #

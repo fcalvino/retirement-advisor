@@ -10,6 +10,107 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## N6c — La suite también escribía en la tabla de alertas (2026-09-01)
+
+Hermana de N6: mismo singleton de módulo alcanzable desde la suite, otra tabla,
+dos meses antes. Lo que la hace valer no es el daño —es chico— sino que la fila
+se equivocaba en las tres cosas que había que saber para arreglarla.
+
+### La fila decía tres cosas y ninguna era cierta
+
+| lo que decía | lo que había |
+|---|---|
+| «escritas cuando algún test usó el `alert_store` real» | ningún test lo hace hoy: los seis sitios usan `AlertEngine.__new__` o un doble |
+| implícito: la escribió el camino del engine | la escribió `AlertStore.set_cooldown()` **directo**, sin pasar por el engine |
+| implícito: se cierra copiando el bloque de N6 | copiarlo da un **verde falso** |
+
+**Ningún test la escribió.** `test_alert_engine.py`, `test_sorr_oracle.py`,
+`test_plan_health.py`, `test_product_ux.py` y el oráculo de N6 construyen el
+engine con `AlertEngine.__new__(AlertEngine)`, que saltea `__init__`, y le
+asignan un doble a mano; `test_scheduler.py` parchea la clase entera. Y `TEST1`
+no aparece en ningún commit de código: `git log -S "TEST1" --all` sólo devuelve
+los dos commits de *docs* que lo mencionan en `BACKLOG.md`. La aislación existía,
+pero era un ritual de cuatro líneas repetido en cinco archivos, no una garantía.
+
+**No la escribió el engine.** `alert_cooldowns` tenía 2 filas y
+`alert_snapshots` 0. `_fire` (`engine.py:585-586`) escribe cooldown **y**
+history, y `run()` guarda un snapshot por símbolo antes de poder disparar nada;
+no hay en el repo ningún camino que borre snapshots. Con snapshots en 0 la firma
+no cierra con `AlertEngine.run()`. Entró por el camino corto, que es el que la
+fila no miraba.
+
+### La trampa: la forma de N6 no transfiere
+
+N6 cerró el track record **reemplazando** el singleton del módulo. Acá eso pasa
+en verde con la fuga abierta, porque `alerts/engine.py:137` liga el store como
+**default de argumento**:
+
+```python
+def __init__(self, store: AlertStore = alert_store, ...)
+```
+
+Ese default se evalúa al importar y se queda con **el objeto**, no con el
+nombre. Medido: después de `alerts.store.alert_store = AlertStore()`,
+`AlertEngine.__init__.__defaults__[0] is orig` sigue dando `True`, apuntando a
+`data/db/retirement_advisor.db`. Es la misma clase de trampa que el comentario
+de N6 describe para el *collection*, un nivel más adentro.
+
+Por eso el `conftest.py` **muta el store en el lugar** —le reapunta `_engine` y
+`_Session` al mismo objeto— en vez de reemplazarlo. Así queda sano todo el que
+ya tenga una referencia, default de argumento incluido.
+
+### El arreglo
+
+- `alerts/store.py` — `AlertStore.__init__` toma `db_path` y guarda
+  `self._engine`, el mismo idioma que `TrackRecordStore` (`track_record.py:342`).
+  Sin eso no se puede ni liberar el archivo del usuario ni escribir el oráculo:
+  el engine era una variable **local**, alcanzable sólo por
+  `_Session.kw["bind"]`, detalle privado de SQLAlchemy. Cambio compatible —
+  `AlertStore()` sigue resolviendo a `DB_PATH`.
+- `tests/conftest.py` — redirección en tiempo de import al lado de la de N6,
+  mutando en el lugar, con el comentario que explica por qué acá no alcanza con
+  reemplazar. Sin ese comentario el próximo lector copia el bloque de arriba y
+  rompe la garantía sin que nada se ponga rojo.
+- `scripts/purge_test_alert_rows.py` — dry-run por default, borra con `--apply`.
+
+**Acá borra y en N6 se marcó.** No es incoherencia: aquellas filas tenían
+outcomes puntuados y lecturas que preservar, así que marcar era reversible y
+borrar no. `alert_cooldowns` sólo se consulta por `key` exacta desde
+`is_on_cooldown`, y un cooldown de un símbolo que no existe no alimenta ninguna
+lectura ni ninguna métrica: no hay nada que un marcador preservaría.
+
+### El oráculo, y el rojo que reprodujo el defecto en vivo
+
+`tests/test_alert_store_isolation_oracle.py` fija la propiedad estructural —bajo
+pytest ningún `AlertStore` alcanzable resuelve a `DB_PATH`— en vez de contar
+filas, por las mismas razones que el de N6.
+
+Correrlo en rojo, antes del arreglo, **agregó una tercera fila a la base del
+usuario** (`AlertType.SIGNAL_CHANGE:TEST_ORACLE`, 2026-09-01): el defecto
+reproducido en vivo, cuatro meses después de las dos originales. Se corrió sobre
+un backup y se restauró; el hash volvió a `046109…602a`. Después del arreglo, la
+suite completa deja la base **byte a byte idéntica**.
+
+Mutación: cuatro formas de romperlo, y qué las ve.
+
+| mutante | lo ve |
+|---|---|
+| reemplazar el singleton en vez de mutarlo (la forma de N6) | `test_the_engine_default_is_not_the_users_database`, `test_constructing_an_engine_writes_nothing_to_the_users_database`, `test_no_imported_module_holds_a_store_on_the_users_database` |
+| mutar el objeto pero no el `DB_PATH` del módulo | `test_the_module_default_is_not_the_users_database` |
+| `set_cooldown` deja de escribir (verde vacío) | `test_set_cooldown_never_reaches_the_users_database` |
+| un caller nuevo que se ligue el singleton al importar | `test_no_imported_module_holds_a_store_on_the_users_database` |
+
+### Lo que deliberadamente no hizo
+
+- **No unificó los cinco rituales de `__new__`.** Con el conftest cubriendo el
+  store, esos dobles pasan a ser conveniencia y no aislación. Consolidarlos es un
+  PR de tests aparte.
+- **No tocó `alerts/engine.py:137`.** Inyectar el store explícitamente sería más
+  limpio, pero es el trade-off que N6 ya resolvió al revés y con razones
+  escritas: cubre un caller y hay que acordarse en cada uno nuevo.
+
+---
+
 ## U4-3 — El cero no era de la palanca, era del caso base (2026-08-31)
 
 Cierra la oleada 4 entera. La fila decía: *«La palanca "Inflación" del tornado

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from enum import Enum
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from loguru import logger
 from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Text, create_engine
@@ -108,11 +108,14 @@ class AlertMute(_Base):
 class AlertStore:
     """Thread-safe SQLite store for alert state."""
 
-    def __init__(self) -> None:
-        engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
-        _Base.metadata.create_all(engine)
-        self._Session = sessionmaker(bind=engine)
-        self._migrate(engine)
+    def __init__(self, db_path: Any = None) -> None:
+        path = db_path if db_path is not None else DB_PATH
+        # ``sqlite:///:memory:`` is supported for tests by passing db_path=":memory:".
+        url = "sqlite:///:memory:" if path == ":memory:" else f"sqlite:///{path}"
+        self._engine = create_engine(url, echo=False)
+        _Base.metadata.create_all(self._engine)
+        self._Session = sessionmaker(bind=self._engine)
+        self._migrate(self._engine)
 
     def _migrate(self, engine) -> None:
         """Add new columns to existing tables without dropping data (SQLite safe)."""
