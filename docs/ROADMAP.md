@@ -10,6 +10,27 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## N8 — La palanca indexa el gasto, no la inflación (2026-09-01)
+
+Abierta al cerrar U4-3. La palanca del tornado bumpeaba `withdrawal_growth_rate`
+— cuánto crece el gasto (o el aporte) cada año — y se llamaba «Inflación».
+Medido: en acumulación con aportes el P10 **sube** al subir la palanca, porque
+`_apply_cash_flows` indexa los depósitos con el mismo número. Eso no es «la
+inflación te ayuda»; es un rótulo que promete un shock de retorno real que el
+Monte Carlo no calcula.
+
+Se cerró como U1-1 / U1-3 / U6-1: **se corrige lo que se lee, no lo que se
+calcula**. Etiqueta canónica «Indexación del gasto» en `data/product_ux.py`.
+Los identificadores (`inflation`, `inflation_hot`, `inflation_delta_pct`)
+conservan el nombre legacy. `portfolio/monte_carlo.py` no se tocó;
+`ENGINE_VERSION` no se bumpea. El signo invertido del flujo **sigue**; deja de
+llamarse inflación. Modelar inflación en el retorno real es U6-2.
+
+`constant_pct` sigue en «no aplica» (U4-3). Locked por
+`tests/test_indexation_label_contract.py`.
+
+---
+
 ## U0-3 + N4 — El backlog deja de mentir sobre lo que está abierto (2026-09-01)
 
 U0-3 decía: CONTEXT §8 (a)(b) describen como abiertos dos defectos ya cerrados.
