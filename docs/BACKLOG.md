@@ -74,7 +74,6 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | id | banda | qué |
 |---|---|---|
 | **U5-1b** | 3 | Recalibrar Piotroski vs moat. Bloqueado: n=11, todas a 30 días |
-| **N2b** | 5 | Fallback de fetch a SEC/FMP (el retry ya cerró) |
 | **N3** | 5 | No hay `.streamlit/config.toml` |
 | **Asistente de gap** | ideación | `monthly_savings_for_probability` existe; falta la superficie |
 
@@ -134,7 +133,7 @@ para todo Agresivo, a toda edad, en dos superficies — y de paso el mismo `advi
 calificaba la concentración con los topes globales mientras el Optimizer usaba los
 del perfil, así que las dos pantallas se contradecían — ver `ROADMAP.md`).
 Fuera de las oleadas 3–7,
-**U0-2**, **N6c**, **N9**, **U0-3**, **N4**, **N8**, **N7**, **U3-1b**, **U5-19**, **U7-1** y **U7-2** también cerraron — ver `ROADMAP.md`.
+**U0-2**, **N6c**, **N9**, **U0-3**, **N4**, **N8**, **N7**, **U3-1b**, **U5-19**, **U7-1**, **U7-2** y **N2b** también cerraron — ver `ROADMAP.md`.
 
 ---
 
@@ -190,23 +189,6 @@ Fuente vacío es ninguna fila. Ver `ROADMAP.md`.
 Trabajo que ninguna de las tres fuentes cubre, o que cambió de costo desde que se
 escribió.
 
-### N2b · El fallback de fetch a una segunda fuente
-
-**El retry cerró** (`1fa5013`): los cuatro fetchers reintentan y la política vive en
-`config.FETCH`. Queda la mitad cara, que es la que `X-08` tenía en mente.
-
-`data/data_sources.py` habla con SEC EDGAR y FMP, pero sólo en el camino de
-**verificación** (`attach_cross_source_quality`). Usarlas en el de **fetch** exige
-decidir a quién creerle cuando difieren — y difieren, que es exactamente la razón
-por la que existe la capa de reconciliación. Pedirle dos veces a la misma fuente y
-elegir entre dos fuentes distintas son trabajos distintos.
-
-**Hallazgo del PR del retry:** `YFinanceSource` importa `get_financials`
-**localmente** y su comentario dice que espera un cache hit porque `analyze` ya lo
-trajo. Cuando la caché falla, es una segunda llamada de red redundante — invisible
-hasta que el retry la volvió cara (la suite pasó de 23 s a 7m26). Vale arreglarlo
-junto con el fallback.
-
 ### N3 · Accesibilidad y tema
 
 `99_PRIORIZACION.md` lo lista como quick win y sigue abierto: **no existe
@@ -235,7 +217,7 @@ priorizarlo:
 | Realista vs Conservador visible | ✅ Fase J, `7_Simulaciones.py:416-422` |
 | Deriva inteligente cuando cartera y plan no se superponen | ✅ U2-3, `drift_breakdown` sobre la unión |
 | Asistente "¿qué cambio para llegar?" | 🟡 El motor existe (`monthly_savings_for_probability`, bisección sobre la probabilidad MC real); falta la superficie que lo presente como asistente |
-| Segunda fuente de datos + reintentos | 🟡 Reconciliación ✅, retry ✅ (N2, `1fa5013`), fallback de fetch ❌ → **N2b** |
+| Segunda fuente de datos + reintentos | ✅ Reconciliación, retry (N2), adapter cache-only (N2b). Scoring sigue siendo yfinance; SEC/FMP no puntúan |
 | Módulo Doble Moneda | 🟡 Conversión ✅ (U2-5), cotización ✅ (N1, oficial de `ARS=X`, paralelo lo carga el usuario) |
 | Modo oscuro y accesibilidad | ❌ → **N3** |
 | Separar el motor de la interfaz (API interna) | ❌ Sigue siendo la apuesta grande sin empezar |
