@@ -379,6 +379,20 @@ def test_preset_gap_ignores_axes_that_cannot_be_dropped():
     assert preset_gap(requested, FilterCriteria()) == {}
 
 
+def test_preset_gap_does_not_fire_when_the_user_unchecks_a_value_the_run_has():
+    """U7-1: widgets ≠ available. SELL is in the run; the user dropped it by hand."""
+    requested = FilterCriteria(signals=("SELL", "HOLD"))
+    available = FilterCriteria(signals=("SELL", "HOLD", "BUY"))
+    assert preset_gap(requested, available) == {}
+
+
+def test_preset_gap_still_names_a_value_no_ticker_in_the_run_carries():
+    """The original lie: preset asks SELL, this run has none."""
+    requested = FilterCriteria(signals=("SELL", "AVOID"))
+    available = FilterCriteria(signals=("BUY", "STRONG BUY"))
+    assert preset_gap(requested, available) == {"Señal": ("SELL", "AVOID")}
+
+
 def test_apply_filters_honours_the_moat_axis():
     """The engine side always worked; only the UI wiring was missing."""
     rows = [
