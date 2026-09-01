@@ -32,6 +32,7 @@ from data.product_ux import (
     PROXY_INDEX_LABEL,
     PROXY_RATIO_LABEL,
     TREND_MA_LABEL,
+    format_dividend_score,
     max_dd_estimate_help,
     proxy_attractiveness_index,
 )
@@ -444,7 +445,7 @@ Valuación ({fund.valuation_score:.0f}/25):
 Crecimiento ({fund.growth_score:.0f}/20):
   Revenue CAGR {getattr(fund, "revenue_cagr_years", 0) or "?"}Y={fmt(fund.revenue_cagr_5y, "%")} | {_eps_growth_label(fund)}={fmt(fund.eps_cagr_5y, "%")} | FCF Yield={fmt(fund.fcf_yield, "%")}
 
-Dividendos ({fund.dividend_score:.0f}/10):
+Dividendos ({format_dividend_score(fund.dividend_score, getattr(fund, "asset_class", None))}):
   Yield={fmt(fund.dividend_yield, "%")} | {_payout_block(fund)}
 
 Graham Value: ${fmt(fund.graham_value, decimals=2)} | Margen de Seguridad: {fmt(fund.margin_of_safety_pct, "%")}

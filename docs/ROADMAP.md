@@ -10,6 +10,20 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## N7 — El dividendo de un fund no se muestra sobre 10 (2026-09-01)
+
+Apareció midiendo U5-8. La dimensión reparte 4 + 3 + 3 = 10 (yield, payout,
+racha) y `payoutRatio` está ausente en 13 de 13 funds cacheados y presente en
+130 de 130 equities, así que los 3 del payout son inalcanzables para un fund.
+La ficha mostraba igual «Dividend x/10» porque el `else` de Stock Analysis
+separaba cripto del resto, no fund de equity.
+
+Se cerró el rótulo, no el scorer: `format_dividend_score` / `dividend_score_max`
+en `data/product_ux.py` (equity 10, fund 7). `_score_dividends` no se tocó —
+0 scores se mueven. Locked por `tests/test_dividend_scale_label_contract.py`.
+
+---
+
 ## N8 — La palanca indexa el gasto, no la inflación (2026-09-01)
 
 Abierta al cerrar U4-3. La palanca del tornado bumpeaba `withdrawal_growth_rate`
