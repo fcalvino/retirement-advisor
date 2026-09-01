@@ -840,8 +840,10 @@ class ProfileConfig:
                                    Used by _select_core_holdings() without LLM.
 
     Age-based allocation (U5-7):
-      bond_age_offset_pp — shifts the "bond % = age" glide path by profile:
+      bond_age_offset_pp — shifts the "defensive % = age" glide path by profile:
                            0 for conservative, -5 moderate, -10 aggressive.
+                           The sleeve it moves is bonds **plus** the cash buffer;
+                           see ``recommended_bond_pct`` for why (N9).
 
       This does **not** reopen audit D3. D3 banned the profile from μ because an
       asset's expected return "does not depend on who is looking at it" — it is
@@ -868,7 +870,7 @@ class ProfileConfig:
     pre_filter_top_k: int = 30    # max candidates into SLSQP (profile-tilt down-select)
     target_max_human_positions: int = 12  # ideal core size for deterministic core selector
     risk_aversion: float = 2.5    # δ for the Black-Litterman equilibrium prior
-    bond_age_offset_pp: float = 0.0  # shifts the "bond % = age" glide path (U5-7)
+    bond_age_offset_pp: float = 0.0  # shifts the "defensive % = age" glide path (U5-7)
 
 
 # Module-level profile definitions (importable by name)
@@ -887,7 +889,7 @@ CONSERVATIVE_PROFILE = ProfileConfig(
     pre_filter_top_k=20,       # conservative: smaller, income-tilted pool
     target_max_human_positions=10,
     risk_aversion=4.0,         # most risk-averse → defensive equilibrium anchor
-    bond_age_offset_pp=0.0,    # bond % = age
+    bond_age_offset_pp=0.0,    # defensivo % = age (bonos + efectivo)
 )
 
 MODERATE_PROFILE = ProfileConfig(
@@ -905,7 +907,7 @@ MODERATE_PROFILE = ProfileConfig(
     pre_filter_top_k=30,       # moderate: balanced pool
     target_max_human_positions=12,
     risk_aversion=2.5,         # textbook default δ
-    bond_age_offset_pp=-5.0,   # bond % = age - 5 (midpoint; the docstring named
+    bond_age_offset_pp=-5.0,   # defensivo % = age - 5, bonos + efectivo (midpoint; the docstring named
                                # only the two ends, and this product has three)
 )
 
@@ -924,7 +926,7 @@ AGGRESSIVE_PROFILE = ProfileConfig(
     pre_filter_top_k=45,       # aggressive: larger pool for growth coverage
     target_max_human_positions=15,
     risk_aversion=1.5,         # most risk-tolerant → growth-tilted anchor
-    bond_age_offset_pp=-10.0,  # bond % = age - 10
+    bond_age_offset_pp=-10.0,  # defensivo % = age - 10 (bonos + efectivo)
 )
 
 OPTIMIZER_PROFILES: Dict[str, ProfileConfig] = {
@@ -957,9 +959,10 @@ def profile_from_name(name: Optional[str]) -> ProfileConfig:
 
 
 def recommended_bond_pct(age: int, profile: Optional[ProfileConfig] = None) -> float:
-    """Bond sleeve for an age, tilted by the investor's risk profile.
+    """**Defensive** sleeve for an age, tilted by the investor's risk profile.
 
-    The classic "bond % = age" rule of thumb, shifted by
+    The classic "bond % = age" rule of thumb — read here as bonds + cash, see
+    below — shifted by
     ``ProfileConfig.bond_age_offset_pp``: age for conservative, age - 5 for
     moderate, age - 10 for aggressive. No profile means conservative, which is
     what every caller got before U5-7.
@@ -969,12 +972,39 @@ def recommended_bond_pct(age: int, profile: Optional[ProfileConfig] = None) -> f
     80), which the age sliders make unreachable today; it is pinned by
     ``tests/test_allocation_profile_oracle.py`` so nobody has to re-derive it.
 
-    This is the *rule*. What the Allocation screen shows is 5 pp lower, because
-    ``AllocationAdvisor`` carves its cash buffer out of the bond sleeve — see
-    the note there.
+    **What this number governs is bonds plus cash, not bonds alone (N9).**
+    ``AllocationAdvisor`` holds ``CASH_BUFFER_PCT`` of it liquid as a
+    rebalancing buffer, so the Allocation screen shows the rule split in two —
+    at 30, a conservative investor reads 25 % bonds + 5 % cash, and the rule
+    says 30. Reading the 25 as "the rule" is what made this look like a 5 pp
+    error for one release; the sleeve was never short, it was described by the
+    name of its larger half.
+
+    The contract the engine actually holds, exact for every profile and age::
+
+        bonds_pct + cash_pct == max(recommended_bond_pct(age, profile),
+                                    CASH_BUFFER_PCT)
+
+    The ``max`` is a **liquidity floor**, not a rounding artefact: the buffer is
+    a fixed 5 pp, so an investor whose rule lands below it still holds it (age
+    13 aggressive: rule 3, defensive 5). Unreachable from the 20–80 sliders,
+    reachable from this function. Pinned by
+    ``tests/test_defensive_sleeve_contract.py``.
+
+    The name says "bond" for the reason ``above_sma200`` still says 200 and
+    ``_wacc_proxy`` keeps its legacy spelling (U1-3, U1-4): N9 fixed what is
+    read, not what is typed.
     """
     prof = profile or CONSERVATIVE_PROFILE
     return min(max(float(age) + prof.bond_age_offset_pp, 0.0), 80.0)
+
+
+# Share of the defensive sleeve held liquid as a rebalancing buffer, in pp.
+# Lives here and not in ``portfolio/allocation.py`` because two places used to
+# spell it as a literal — the ``cash_pct`` default and the ``bond_pct - 5`` that
+# carves it out — and a rule stated in one of them cannot be checked against the
+# other. That is how N9 got written down as a 5 pp error.
+CASH_BUFFER_PCT: float = 5.0
 
 
 @dataclass

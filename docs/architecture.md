@@ -144,7 +144,11 @@ Block-bootstrap vectorizado:
 CRUD de posiciones (SQLite). Calcula P&L, peso actual por posición, métricas de riesgo simples.
 
 #### `allocation.py`
-Regla edad-conservadora: `bond_pct = min(age, 80)`. Incluye tablas de referencia para diferentes horizontes y perfiles de riesgo.
+Regla por edad para el tramo **defensivo (bonos + efectivo)**, inclinada por el perfil de riesgo (U5-7): `recommended_bond_pct(age, profile)` es `min(max(age + bond_age_offset_pp, 0), 80)`, con offset `0 / −5 / −10` para Conservador / Moderado / Agresivo.
+
+Lo que ese número gobierna es el tramo **defensivo — bonos + efectivo**, no el de bonos solo (N9). `AllocationAdvisor` mantiene `config.CASH_BUFFER_PCT` líquido como buffer de rebalanceo y el resto va a bonos, así que la pantalla parte la regla en dos filas y ninguna es la regla por separado: a los 30 un Conservador lee 25 % en bonos + 5 % en efectivo, y la regla dice 30. El contrato — exacto para todo perfil y edad — es `bonds_pct + cash_pct == max(recommended_bond_pct(age, profile), CASH_BUFFER_PCT)`, fijado por `tests/test_defensive_sleeve_contract.py`.
+
+Incluye además las verificaciones de concentración por sector y por posición, que califican contra los topes del perfil (`max_sector_pct` / `max_position_pct`), no contra los globales de `STRATEGY`.
 
 ---
 

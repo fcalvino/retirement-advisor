@@ -10,6 +10,89 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## N9 — La regla por edad gobierna el tramo defensivo, no el de bonos (2026-09-01)
+
+La fila salió de U5-7, que arregló la etiqueta del perfil y dejó el buffer
+donde estaba: *"el buffer de 5 % de cash se talla **del tramo de bonos**, así
+que la regla que `recommended_bond_pct` enuncia nunca es la que la pantalla
+muestra: a los 30 un Conservador lee 25 % donde la regla dice 30 %"*. Se difirió
+con una razón explícita — mover el buffer corre los números del usuario default.
+
+### La fila describía el defecto correcto y le erraba al tramo
+
+El primer paso fue medir si seguía siendo cierta, y no lo era. La regla **sí** se
+cumple, sobre el tramo **defensivo**:
+
+```
+bonds_pct + cash_pct == max(recommended_bond_pct(age, perfil), CASH_BUFFER_PCT)
+```
+
+**0 violaciones** sobre los 3 perfiles × edades 20–80, y también debajo del rango
+de los sliders. A los 30 un Conservador lee 25 % en bonos + 5 % en efectivo, y la
+regla dice 30: los dos números son correctos y **ninguna de las dos filas es la
+regla por separado**. El tramo nunca estuvo corto — estaba nombrado por su mitad
+más grande.
+
+Eso cambia la banda del arreglo. No es una fórmula equivocada sino un enunciado
+equivocado sobre una fórmula correcta, así que el remedio es el de U1-1, U1-3 y
+U1-4: **se corrige lo que se lee, no lo que se calcula**. Verificado con diff
+byte-idéntico de las 183 filas (3 perfiles × 61 edades) que produce `advise()`:
+**ningún número, banda, offset ni fórmula se movió**, que es exactamente la razón
+por la que U5-7 lo había diferido.
+
+### El `max(…, 0)` no era una guarda
+
+Parecía una guarda defensiva contra negativos y es un **piso de liquidez**: el
+buffer son 5 pp fijos, no una porción del tramo, así que un inversor cuya regla
+cae por debajo igual lo tiene. Agresivo a los 13: regla 3, defensivo 5. Los
+sliders arrancan en 20, así que sólo se llega por la función — pinneado para que
+nadie lo "arregle" y convierta el piso en una contradicción silenciosa.
+
+### Una sola casa para el buffer
+
+El 5 vivía escrito dos veces: el default de `AllocationAdvice.cash_pct` y el
+`bond_pct - 5` que lo tallaba. Dos copias del mismo número son lo que deja
+enunciar la regla en un lado y contradecirla en el otro — el mismo defecto de
+config duplicada que U5-9 y U5-18c. Ahora es `config.CASH_BUFFER_PCT`, y un test
+falla si el literal vuelve a `allocation.py`.
+
+### Qué cambió en pantalla
+
+Las dos superficies muestran el defensivo con su split debajo, y la copy sale de
+`data/product_ux.py` (`DEFENSIVE_SLEEVE_LABEL`/`_SHORT`/`_HELP`,
+`defensive_sleeve_caption`), no de cada página por su cuenta — que es como el
+número de bonos terminó con un caption que hablaba de la regla entera.
+
+`AllocationAdvice.defensive_pct` existe para que las dos pantallas lean el
+número de un solo lugar en vez de sumarlo cada una.
+
+### El barrido encontró una tercera superficie
+
+`tests/test_defensive_sleeve_contract.py` sigue el patrón de U1-1: oráculo desde
+la definición (la regla se recalcula en el test desde `bond_age_offset_pp`, no se
+le pregunta al motor), diferencial sobre el offset —afirmar `defensive == 30.0`
+sobreviviría a una perilla desconectada—, guard del piso, guard del literal
+único, y barrido de etiqueta sobre las tres capas: los `.py` que renderizan copy,
+`config.py`/`portfolio/allocation.py`, y el markdown vivo catalogado en
+`INDEX.md`.
+
+Ese barrido encontró que `docs/architecture.md` seguía diciendo
+`bond_pct = min(age, 80)` — stale por partida doble: sin el offset por perfil que
+introdujo U5-7, y nombrando el tramo equivocado. Los roles históricos
+(`ROADMAP`, `AUDIT_*`, `brainstorm`) quedan afuera a propósito.
+
+### Lo que deliberadamente no hizo
+
+Mover el buffer al tramo de acciones quedó **descartado**, no pendiente: haría
+que «Bonos» mostrara literalmente el número de la regla, pero bajaría 5 pp el
+equity de todo usuario default a toda edad y dejaría el defensivo en regla + 5 —
+la misma contradicción con el signo invertido.
+
+`recommended_bond_pct` conserva el nombre legacy, igual que `above_sma200`
+(U1-3) y `_wacc_proxy` (U1-4).
+
+---
+
 ## U5-7 — La asignación por edad no leía el perfil del usuario (2026-09-01)
 
 El backlog la tenía como higiene: *"el docstring promete «Conservative: age /

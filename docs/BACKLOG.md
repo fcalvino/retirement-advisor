@@ -171,7 +171,6 @@ son el terreno donde ya nacieron los defectos de arriba.
 | **U7-1** | P3 | `preset_gap` se evalúa en cada rerun contra los widgets actuales, así que sacar un valor a mano dispara "ese filtro no se aplicó", que es falso | `1_Screener.py:663` |
 | **U7-2** | P3 | Vaciar el multiselect "Fuente" muestra **todas** las filas en vez de ninguna | `13_Track_Record.py:86` |
 | **U0-3** | P3 | CONTEXT §8 (a)(b) describen como abiertos dos defectos ya cerrados | |
-| **N9** | P3 | El buffer de 5 % de cash se talla **del tramo de bonos** (`allocation.py:74`), así que la regla que `recommended_bond_pct` enuncia nunca es la que la pantalla muestra: a los 30 un Conservador lee 25 % donde la regla dice 30 %. Abierta al cerrar U5-7, que arregló la etiqueta y no la fórmula porque mover el buffer corre los números del usuario default | `allocation.py:70-74` |
 | **N7** | P3 | La dimensión de dividendo **no puede pasar de 7 en un fund**: `payoutRatio` está ausente en 13 de 13 funds cacheados y presente en 130 de 130 equities, así que los 3 puntos del payout son inalcanzables por construcción — y la ficha muestra igual «Dividend x/10», porque su `else` sólo separa cripto del resto. Apareció midiendo U5-8: los tres funds que quedan debajo del techo del no-pagador (BND, QQQ, VGT) caen por el payout que no tienen, no por la banda de yield | `fundamental.py:1552`, `2_Stock_Analysis.py:336,343` |
 
 ---
@@ -306,6 +305,7 @@ priorizarlo:
   | N6 | 3 filas en un PR, «contaminación futura» | 53 filas en 16 días, y **ya puntuadas**: 11 de los 22 outcomes, +22,7 pp de hit rate inflado |
   | U5-8 | no pagar (+3) puntúa más que un yield bajo (+2) | cierto en la sub-banda, **falso como score**: 0 de 130 equities; los 6 que caen debajo de 3 son 3 de yield alto castigados a propósito y 3 funds sin payout |
   | U4-3 | «sin retiros activos el swing es 0» | la condición no era «sin retiros»: con `constant_pct` **hay** retiros y el swing también da 0, y con aportes la palanca mueve el plan **al revés**. Y el defecto que pesaba no estaba en la fila: el caso base corría sin los ahorros del usuario, 2,52× |
+  | N9 | «el buffer se talla del tramo de bonos, la pantalla muestra 5 pp menos que la regla» | la regla se cumple **exacta** — sobre bonos **+ efectivo**: 0 violaciones en 3 perfiles × edades 20–80. El tramo nunca estuvo corto, estaba nombrado por su mitad más grande. Y el `max(…, 0)` que parecía una guarda es un **piso de liquidez** (edad 13 agresivo: regla 3, defensivo 5) |
   | N6c | «escritas cuando algún test usó el `alert_store` real» | ningún test lo hace: los seis sitios usan un doble, y `TEST1` no está en ningún commit de código. Tampoco lo escribió el engine —`alert_snapshots` en 0 lo descarta—, sino `set_cooldown()` directo. Y copiar el bloque de N6 daba **verde falso**: el default de argumento de `alerts/engine.py:137` se queda con el objeto, no con el nombre |
 
   Empezar a arreglar sin medir produce el arreglo de la fila, no el del defecto.

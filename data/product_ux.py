@@ -17,7 +17,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 # Module-level: the copy constants below are built at import time, so they cannot
 # use the lazy `from config import X as config` the functions in this file do.
 # Safe in both directions — config.py imports nothing from data/.
-from config import MOAT
+from config import CASH_BUFFER_PCT, MOAT
 
 # --------------------------------------------------------------------------- #
 #  Canonical labels for the two models that produce a "return" (U1-1, U1-2)   #
@@ -183,6 +183,50 @@ ROIC_ABSOLUTE_HELP = (
     "Modo legacy: no mira el sector, así que no compara el ROIC contra ningún "
     "costo de capital."
 )
+
+
+#  Defensive sleeve — N9
+#  ---------------------
+#  The age rule (``config.recommended_bond_pct``) governs **bonds plus cash**,
+#  not bonds alone. Both screens used to print the bond number next to a caption
+#  calling it "la regla por edad" — which is the defensivo, bonos + efectivo, so
+#  the bond line alone lands 5 pp below what the rule says: at 30
+#  a conservative investor read 25 where the rule says 30. The sleeve was never
+#  short — it was named after its larger half.
+#
+#  So the label names the sleeve and the screens show the split underneath. No
+#  number moved. Locked by ``tests/test_defensive_sleeve_contract.py``.
+
+DEFENSIVE_SLEEVE_LABEL = "Defensivo (bonos + efectivo)"
+DEFENSIVE_SLEEVE_SHORT = "Defensivo"
+DEFENSIVE_SLEEVE_HELP = (
+    "Lo que la regla por edad y perfil pide como defensivo: bonos + efectivo. "
+    f"Se muestra partido en dos: **bonos** y un **buffer de {CASH_BUFFER_PCT:g} % en "
+    "efectivo** para rebalancear. Ninguna de las dos filas es la regla por "
+    "separado — la regla es la suma."
+)
+
+
+def defensive_sleeve_caption(advice) -> str:
+    """One line naming the rule and its split, for the screens that show it.
+
+    Takes the ``AllocationAdvice`` rather than the raw numbers so the caption
+    cannot disagree with the metrics beside it — the two used to be assembled
+    independently on each page, which is how the bond number ended up captioned
+    as the whole rule (N9).
+    """
+    return (
+        # The sleeve is named on the same line as the rule on purpose: the sweep
+        # in ``tests/test_defensive_sleeve_contract.py`` reads line by line with
+        # no context window, so a qualifier three lines down would not count —
+        # and a qualifier that drifts away from its claim is what went stale.
+        f"📐 A los {advice.age}, la regla por edad (defensivo = bonos + efectivo) "
+        f"y perfil **{advice.profile_name}** pide "
+        f"**{advice.defensive_pct:.0f} % defensivo**: "
+        f"se mantiene como {advice.bonds_pct:.0f} % en bonos + "
+        f"{advice.cash_pct:.0f} % de efectivo, el buffer para rebalancear. "
+        f"Ninguna de las dos filas es la regla por separado."
+    )
 
 
 def roic_sustained_help(config=None) -> str:

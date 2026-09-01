@@ -327,6 +327,9 @@ with st.expander(
 
 with st.expander("📊 Asignación por edad (acciones / bonos / cash)", expanded=False):
     from dashboard.shared import get_user_prefs as _gup
+    from data.product_ux import DEFENSIVE_SLEEVE_HELP as _DEFENSIVE_HELP
+    from data.product_ux import DEFENSIVE_SLEEVE_SHORT as _DEFENSIVE_SHORT
+    from data.product_ux import defensive_sleeve_caption as _defensive_caption
     from portfolio.allocation import AllocationAdvisor
 
     _ap = _gup()
@@ -337,12 +340,20 @@ with st.expander("📊 Asignación por edad (acciones / bonos / cash)", expanded
     _age_w = _ac1.slider("Edad actual", 20, 80, _age0, key="opt_alloc_age")
     _ret_w = _ac2.slider("Edad de retiro", _age_w + 1, 80, max(_age_w + 1, _ret0), key="opt_alloc_ret")
     _adv = AllocationAdvisor().advise(_age_w, _ret_w, {}, {}, profile=prof)
+    # Same split as the Allocation page: the rule governs bonds + cash, so the
+    # caption below names the sleeve and not the bond line alone (N9).
     _m1, _m2, _m3 = st.columns(3)
     _m1.metric("Acciones", f"{_adv.equity_pct:.0f}%")
-    _m2.metric("Bonos", f"{_adv.bonds_pct:.0f}%")
-    _m3.metric("Efectivo", f"{_adv.cash_pct:.0f}%")
+    _m2.metric(
+        _DEFENSIVE_SHORT,
+        f"{_adv.defensive_pct:.0f}%",
+        help=_DEFENSIVE_HELP,
+    )
+    _m3.metric("↳ Bonos / Efectivo", f"{_adv.bonds_pct:.0f}% / {_adv.cash_pct:.0f}%")
+    st.caption(_defensive_caption(_adv))
     st.caption(
-        f"📊 Calculado · regla por edad y perfil **{_adv.profile_name}** (no IA). "
+        f"📊 Calculado · regla por edad (defensivo = bonos + efectivo) y perfil "
+        f"**{_adv.profile_name}** (no IA). "
         f"Detalle completo en Ajustes → Allocation. "
         f"{getattr(_adv, 'inflation_note', '')}"
     )

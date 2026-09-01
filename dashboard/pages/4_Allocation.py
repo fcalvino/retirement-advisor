@@ -6,6 +6,11 @@ import plotly.express as px
 import streamlit as st
 
 from dashboard.shared import get_user_prefs
+from data.product_ux import (
+    DEFENSIVE_SLEEVE_HELP,
+    DEFENSIVE_SLEEVE_LABEL,
+    defensive_sleeve_caption,
+)
 from portfolio.allocation import AllocationAdvisor
 from portfolio.tracker import Portfolio
 
@@ -62,11 +67,23 @@ fig = px.pie(
 )
 st.plotly_chart(fig, width="stretch")
 
-# Detail
-col1, col2, col3 = st.columns(3)
+# Detail. The age rule governs the defensive sleeve — bonds *plus* the cash
+# buffer — so that is the number shown against it, with the split underneath
+# (N9). Showing "Bonos 25 %" alone next to a rule that says 30 read as a 5 pp
+# error for one release.
+col1, col2 = st.columns(2)
 col1.metric("Acciones Totales", f"{advice.equity_pct:.0f}%")
-col2.metric("Bonos",          f"{advice.bonds_pct:.0f}%")
-col3.metric("Buffer de Efectivo",    f"{advice.cash_pct:.0f}%")
+col2.metric(
+    DEFENSIVE_SLEEVE_LABEL,
+    f"{advice.defensive_pct:.0f}%",
+    help=DEFENSIVE_SLEEVE_HELP,
+)
+
+sub1, sub2 = st.columns(2)
+sub1.metric("↳ Bonos", f"{advice.bonds_pct:.0f}%")
+sub2.metric("↳ Buffer de Efectivo", f"{advice.cash_pct:.0f}%")
+
+st.caption(defensive_sleeve_caption(advice))
 
 st.info(f"💡 {advice.inflation_note}")
 
