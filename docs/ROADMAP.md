@@ -10,6 +10,16 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## N3 — Tema Streamlit declarado (2026-09-01)
+
+No había `.streamlit/config.toml`, así que el dashboard heredaba el default de
+Streamlit y `run.sh` mandaba usage stats (Docker ya los apagaba por env).
+Tema dark con contraste cuerpo ≥ 4.5:1, paleta fija, `gatherUsageStats = false`.
+Sin toggle en runtime ni paleta Plotly. Locked por
+`tests/test_streamlit_theme_contract.py`.
+
+---
+
 ## N2b — El adapter de yfinance no es un segundo fetch (2026-09-01)
 
 La fila pedía «fallback de fetch a SEC/FMP». Medida, SEC no habla el idioma del

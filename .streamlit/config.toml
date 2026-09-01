@@ -1,0 +1,14 @@
+# Declared theme (backlog N3). Streamlit reads this from the repo root
+# (run.sh cwd and Docker WORKDIR /app). Dark + high contrast: the
+# brainstorm quick win for a retirement audience. No runtime toggle.
+
+[theme]
+base = "dark"
+primaryColor = "#7EB6FF"
+backgroundColor = "#0E1117"
+secondaryBackgroundColor = "#1A1F2B"
+textColor = "#E6EDF3"
+font = "sans serif"
+
+[browser]
+gatherUsageStats = false
