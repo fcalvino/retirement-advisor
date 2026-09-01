@@ -660,7 +660,19 @@ _criteria = FilterCriteria(
 # the box — "Lo que descarté" over a universe that is 86 % buys showed all 78
 # rows. Say it, instead of letting the label lie about what is on screen.
 _active_preset = st.session_state.get("flt_preset", _NO_PRESET)
-_gap = preset_gap(filter_preset(_active_preset), _criteria) if _active_preset != _NO_PRESET else {}
+# U7-1: gap against what this run can offer (the option lists), not the
+# widgets. `_criteria` is the user's current slice — unchecking a value by
+# hand is a custom filter, not "the preset failed to apply".
+_available = FilterCriteria(
+    sectors=tuple(_sector_opts),
+    signals=tuple(_signal_opts),
+    moats=tuple(_moat_opts),
+    quality_levels=("good", "partial", "poor"),
+)
+_gap = (
+    preset_gap(filter_preset(_active_preset), _available)
+    if _active_preset != _NO_PRESET else {}
+)
 if _gap:
     _gap_bits = " · ".join(
         f"{axis}: {', '.join(str(v) for v in vals)}" for axis, vals in _gap.items()

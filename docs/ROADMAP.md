@@ -10,6 +10,16 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U7-1 — preset_gap compara contra la corrida, no contra el widget (2026-09-01)
+
+`preset_gap` se reevaluaba en cada rerun contra los widgets. Sacar un valor a
+mano disparaba «ese filtro no se aplicó», que es falso: el usuario aplicó un
+filtro custom. Ahora compara el preset contra las **opciones que la corrida
+puede ofrecer**. El caption solo sale cuando el preset nombra un valor que
+ningún ticker de esta corrida carga. Locked por `tests/test_ranking.py`.
+
+---
+
 ## U5-19 — Π es excess; las views q son totales (2026-09-01)
 
 `implied_equilibrium_returns` documentaba Π como "CAPM equilibrium excess
