@@ -1,10 +1,11 @@
 # Backlog — Retirement Advisor
 
-> **Rol:** `living-guide`. Esto es lo que **falta hacer**. Última repriorización: 2026-08-28.
+> **Rol:** `living-guide`. Esto es lo que **falta hacer**. Última repriorización: 2026-09-01.
 >
 > No confundir con [`ROADMAP.md`](ROADMAP.md), que es el diario de fases **ya
 > shipeadas**, ni con [`brainstorm/`](brainstorm/00_INDICE.md), que es ideación sin
-> verificar contra el código.
+> verificar contra el código. El CSV de la auditoría unificada **no** vive en el
+> repo: el estado versionado es este archivo (N4).
 
 ---
 
@@ -19,7 +20,9 @@ Hasta hoy el trabajo abierto vivía en tres lugares y ninguno era el repo:
 | [`prefilter_contract.md`](prefilter_contract.md) | Contrato del portero | Spec sin código y sin dueño |
 
 Las tres corrientes nunca se cruzaron entre sí, así que no había forma de responder
-"¿qué hago ahora?" sin releer las tres. Este archivo es esa respuesta.
+"¿qué hago ahora?" sin releer las tres. Este archivo es esa respuesta. N4 cerró
+eligiendo no importar el CSV: 69 filas de un momento, sin oráculo, no son el
+estado. El estado versionado es la tabla de abiertas de abajo.
 
 ---
 
@@ -45,19 +48,41 @@ decidir, y que está mal, pesa más que una pantalla incómoda. Siempre.
 
 ---
 
-## Estado verificado (2026-08-28)
+## Estado verificado (2026-09-01)
 
-Las 39 filas de oleadas 3–7 de la auditoría se verificaron contra `main` una por
-una, con oráculos empíricos donde el hallazgo lo permitía.
+Las 39 filas de oleadas 3–7 se verificaron contra `main` una por una. La foto del
+2026-08-28 decía 30 cerradas / 9 abiertas y **ya no vale**: desde entonces
+cerraron U4-3, U4-4, U4-5, U4-1c, U5-7, U5-8, U5-9+10+11, U5-18/b/c/d, U6-1,
+U7-3, U3-2, U3-7b, N1, N2 (retry), N5, N6, N6c y N9 — ver [`ROADMAP.md`](ROADMAP.md).
+U0-3 y N4 cierran en este pase (docs).
 
-| Oleada | Total | Cerradas | Abiertas |
-|---|---|---|---|
-| 3 — fórmulas con blast radius | 11 | 11 | 0 |
-| 4 — flujos del motor | 4 | 2 | 2 |
-| 5 — scoring y config | 20 | 17 | 3 |
-| 6 — dos motores de retorno | 2 | 0 | 2 |
-| 7 — UX del dashboard | 2 | 0 | 2 |
-| **Total** | **39** | **30** | **9** |
+Oleadas de origen, reconstruidas desde las filas que siguen acá y las que
+ya están en el diario:
+
+| Oleada | Total origen | Cerradas | Abiertas de origen | Leftover vivo |
+|---|---|---|---|---|
+| 3 — fórmulas con blast radius | 11 | 11 | 0 | **U3-1b** (se partió de U3-1) |
+| 4 — flujos del motor | 4 | 4 | 0 | **N8** (se partió de U4-3) |
+| 5 — scoring y config | 20 | 19 | 1 (**U5-19**) | **U5-1b** (se partió de U5-1) |
+| 6 — dos motores de retorno | 2 | 1 (U6-1) | 0 de defecto | U6-2 es ritual (`ENGINE_VERSION`), no una fila |
+| 7 — UX del dashboard | 2 | 0 | 2 (**U7-1**, **U7-2**) | U7-3 nació y cerró después |
+| **Total origen 3–7** | **39** | **35** | **3** | leftovers aparte |
+
+**Abiertas hoy**, verificadas contra el código — un agente que lea solo este
+archivo tiene que nombrar estas y ninguna cerrada:
+
+| id | banda | qué |
+|---|---|---|
+| **U5-1b** | 3 | Recalibrar Piotroski vs moat. Bloqueado: n=11, todas a 30 días |
+| **N8** | 4 | La palanca del tornado se llama «Inflación» y mueve la indexación del gasto |
+| **N7** | 4 | Un fund no puede pasar de 7 en dividendos y la ficha muestra `/10` |
+| **U3-1b** | 4 | `sma200_slope_pct = 0.0` es «no se midió» y «la media está plana» |
+| **U5-19** | 5 | Black-Litterman documenta Π como excess y las views `q` son totales |
+| **U7-1** | 5 | `preset_gap` se reevalúa contra los widgets, no contra la corrida |
+| **U7-2** | 5 | Vaciar «Fuente» en Track Record muestra todas las filas |
+| **N2b** | 5 | Fallback de fetch a SEC/FMP (el retry ya cerró) |
+| **N3** | 5 | No hay `.streamlit/config.toml` |
+| **Asistente de gap** | ideación | `monthly_savings_for_probability` existe; falta la superficie |
 
 Cerradas: **U3-6** (`a5a63d9`), **U3-11** (`00fb551`, oráculo: sin `payoutRatio` ni
 FFO el score es 4.0 exacto), **U5-20** (`d86f8e9`), **U4-2** y **U4-1** (`9f05443`,
@@ -115,7 +140,7 @@ para todo Agresivo, a toda edad, en dos superficies — y de paso el mismo `advi
 calificaba la concentración con los topes globales mientras el Optimizer usaba los
 del perfil, así que las dos pantallas se contradecían — ver `ROADMAP.md`).
 Fuera de las oleadas 3–7,
-**U0-2** y **N6c** también cerraron — ver `ROADMAP.md`.
+**U0-2**, **N6c**, **N9**, **U0-3** y **N4** también cerraron — ver `ROADMAP.md`.
 
 ---
 
@@ -170,7 +195,6 @@ son el terreno donde ya nacieron los defectos de arriba.
 | **U5-19** | P3 | Black-Litterman documenta Π como "CAPM equilibrium **excess** returns" mientras las views `q` son retornos totales | `black_litterman.py:83` |
 | **U7-1** | P3 | `preset_gap` se evalúa en cada rerun contra los widgets actuales, así que sacar un valor a mano dispara "ese filtro no se aplicó", que es falso | `1_Screener.py:663` |
 | **U7-2** | P3 | Vaciar el multiselect "Fuente" muestra **todas** las filas en vez de ninguna | `13_Track_Record.py:86` |
-| **U0-3** | P3 | CONTEXT §8 (a)(b) describen como abiertos dos defectos ya cerrados | |
 | **N7** | P3 | La dimensión de dividendo **no puede pasar de 7 en un fund**: `payoutRatio` está ausente en 13 de 13 funds cacheados y presente en 130 de 130 equities, así que los 3 puntos del payout son inalcanzables por construcción — y la ficha muestra igual «Dividend x/10», porque su `else` sólo separa cripto del resto. Apareció midiendo U5-8: los tres funds que quedan debajo del techo del no-pagador (BND, QQQ, VGT) caen por el payout que no tienen, no por la banda de yield | `fundamental.py:1552`, `2_Stock_Analysis.py:336,343` |
 
 ---
@@ -230,13 +254,6 @@ Mientras tanto el rótulo promete más que la fórmula, así que es **banda 4**.
 `.streamlit/config.toml`** en el repo, así que no hay tema declarado ni paleta
 controlada. Es de los pocos quick wins de la ideación que no se shipeó.
 
-### N4 · El backlog vive en el repo
-
-Este archivo. Falta cerrar el círculo: mover
-`auditoria_remediacion_unificada.csv` adentro del repo (o versionar su estado acá),
-para que "qué está abierto" no dependa de un archivo en `~/Downloads`. Es lo que
-U0-1 pedía a medias.
-
 ---
 
 ## Qué de la ideación ya no aplica
@@ -259,8 +276,8 @@ priorizarlo:
 | Realista vs Conservador visible | ✅ Fase J, `7_Simulaciones.py:416-422` |
 | Deriva inteligente cuando cartera y plan no se superponen | ✅ U2-3, `drift_breakdown` sobre la unión |
 | Asistente "¿qué cambio para llegar?" | 🟡 El motor existe (`monthly_savings_for_probability`, bisección sobre la probabilidad MC real); falta la superficie que lo presente como asistente |
-| Segunda fuente de datos + reintentos | 🟡 Reconciliación ✅, fallback de fetch ❌, retry ❌ → **N2** |
-| Módulo Doble Moneda | 🟡 Conversión ✅ (U2-5), cotización ❌ → **N1** |
+| Segunda fuente de datos + reintentos | 🟡 Reconciliación ✅, retry ✅ (N2, `1fa5013`), fallback de fetch ❌ → **N2b** |
+| Módulo Doble Moneda | 🟡 Conversión ✅ (U2-5), cotización ✅ (N1, oficial de `ARS=X`, paralelo lo carga el usuario) |
 | Modo oscuro y accesibilidad | ❌ → **N3** |
 | Separar el motor de la interfaz (API interna) | ❌ Sigue siendo la apuesta grande sin empezar |
 | Unificar ficha + comité + chat | ❌ |
