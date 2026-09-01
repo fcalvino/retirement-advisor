@@ -88,6 +88,22 @@ class TestShortHistoryIsUnknownNotBelow:
         assert result.above_sma100 is True      # 120 ≥ 100
         assert result.above_sma200 is None      # 120 < 200
 
+    def test_a_series_too_short_for_the_slope_reports_unknown(self):
+        """U3-1b: 108 weeks cannot produce a 26-week change of a 200-week mean."""
+        result = TechnicalAnalyzer().analyze("SHORT", _series(108, drift=0.004))
+        assert result.sma200_slope_pct is None
+
+    def test_above_the_mean_does_not_imply_the_slope_was_measured(self):
+        """200 bars give ``above_sma200``; the slope still needs 26 more of that mean."""
+        result = TechnicalAnalyzer().analyze("EDGE", _series(200, drift=0.003))
+        assert result.above_sma200 is True
+        assert result.sma200_slope_pct is None
+
+    def test_a_long_series_reports_a_real_slope(self):
+        result = TechnicalAnalyzer().analyze("UP", _series(400, drift=0.003))
+        assert result.sma200_slope_pct is not None
+        assert result.sma200_slope_pct > 0
+
     def test_an_unknown_trend_is_worth_neither_points_nor_a_penalty(self):
         """The convention ``macd_bullish`` already follows.
 
@@ -149,6 +165,20 @@ class TestNoConsumerReadsUnknownAsBelow:
 
         src = Path("analysis/prompts.py").read_text(encoding="utf-8")
         assert 'if tech.above_sma200 else "DEBAJO"' not in src
+
+    def test_the_prompt_does_not_print_unknown_slope_as_plus_zero(self):
+        from pathlib import Path
+
+        src = Path("analysis/prompts.py").read_text(encoding="utf-8")
+        assert "tech.sma200_slope_pct:+.1f" not in src
+        assert "_slope_pct(tech.sma200_slope_pct)" in src
+
+    def test_the_sizer_does_not_coerce_a_missing_slope_to_flat(self):
+        from portfolio.personal_sizer import AnalysisView
+
+        assert AnalysisView.from_enrich("X", {}).sma200_slope_pct is None
+        assert AnalysisView.from_enrich("X", {"sma200_slope_pct": None}).sma200_slope_pct is None
+        assert AnalysisView.from_enrich("X", {"sma200_slope_pct": 0.0}).sma200_slope_pct == 0.0
 
 
 if __name__ == "__main__":

@@ -1316,7 +1316,7 @@ def cached_personal_book_analysis(
             # Sin bool(): None significa "sin historial", y coercionarlo lo
             # convertiría en "debajo de la media" (U3-1).
             "above_sma200": getattr(tech, "above_sma200", True),
-            "sma200_slope_pct": getattr(tech, "sma200_slope_pct", 0.0),
+            "sma200_slope_pct": getattr(tech, "sma200_slope_pct", None),
             "price_vs_52w_high_pct": getattr(tech, "price_vs_52w_high_pct", 0.0),
             "retirement_action": getattr(decision, "action", "HOLD"),
         }
