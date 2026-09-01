@@ -34,7 +34,17 @@ sector_weights   = portfolio.get_sector_weights()   if portfolio.positions else 
 position_weights = portfolio.get_position_weights() if portfolio.positions else {}
 
 advisor = AllocationAdvisor()
-advice = advisor.advise(age, retirement_age, sector_weights, position_weights)
+# The glide path and the concentration limits both read the risk profile the
+# onboarding already asked for (U5-7) — before that, everyone got the
+# conservative path regardless of what they answered.
+advice = advisor.advise(
+    age, retirement_age, sector_weights, position_weights,
+    profile=_prefs.default_profile,
+)
+st.caption(
+    f"📊 Calculado · perfil **{advice.profile_name}** — la mezcla acciones/bonos y los "
+    f"límites de concentración salen de él. Se cambia en ⚙️ Settings."
+)
 
 # Allocation pie
 fig = px.pie(
