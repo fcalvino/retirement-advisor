@@ -75,7 +75,6 @@ archivo tiene que nombrar estas y ninguna cerrada:
 |---|---|---|
 | **U5-1b** | 3 | Recalibrar Piotroski vs moat. Bloqueado: n=11, todas a 30 días |
 | **N2b** | 5 | Fallback de fetch a SEC/FMP (el retry ya cerró) |
-| **N3** | 5 | No hay `.streamlit/config.toml` |
 | **Asistente de gap** | ideación | `monthly_savings_for_probability` existe; falta la superficie |
 
 Cerradas: **U3-6** (`a5a63d9`), **U3-11** (`00fb551`, oráculo: sin `payoutRatio` ni
@@ -134,7 +133,7 @@ para todo Agresivo, a toda edad, en dos superficies — y de paso el mismo `advi
 calificaba la concentración con los topes globales mientras el Optimizer usaba los
 del perfil, así que las dos pantallas se contradecían — ver `ROADMAP.md`).
 Fuera de las oleadas 3–7,
-**U0-2**, **N6c**, **N9**, **U0-3**, **N4**, **N8**, **N7**, **U3-1b**, **U5-19**, **U7-1** y **U7-2** también cerraron — ver `ROADMAP.md`.
+**U0-2**, **N6c**, **N9**, **U0-3**, **N4**, **N8**, **N7**, **U3-1b**, **U5-19**, **U7-1**, **U7-2** y **N3** también cerraron — ver `ROADMAP.md`.
 
 ---
 
@@ -207,12 +206,6 @@ trajo. Cuando la caché falla, es una segunda llamada de red redundante — invi
 hasta que el retry la volvió cara (la suite pasó de 23 s a 7m26). Vale arreglarlo
 junto con el fallback.
 
-### N3 · Accesibilidad y tema
-
-`99_PRIORIZACION.md` lo lista como quick win y sigue abierto: **no existe
-`.streamlit/config.toml`** en el repo, así que no hay tema declarado ni paleta
-controlada. Es de los pocos quick wins de la ideación que no se shipeó.
-
 ---
 
 ## Qué de la ideación ya no aplica
@@ -237,7 +230,7 @@ priorizarlo:
 | Asistente "¿qué cambio para llegar?" | 🟡 El motor existe (`monthly_savings_for_probability`, bisección sobre la probabilidad MC real); falta la superficie que lo presente como asistente |
 | Segunda fuente de datos + reintentos | 🟡 Reconciliación ✅, retry ✅ (N2, `1fa5013`), fallback de fetch ❌ → **N2b** |
 | Módulo Doble Moneda | 🟡 Conversión ✅ (U2-5), cotización ✅ (N1, oficial de `ARS=X`, paralelo lo carga el usuario) |
-| Modo oscuro y accesibilidad | ❌ → **N3** |
+| Modo oscuro y accesibilidad | ✅ `.streamlit/config.toml` (N3) — tema dark, contraste AA, telemetry off. Sin toggle en runtime |
 | Separar el motor de la interfaz (API interna) | ❌ Sigue siendo la apuesta grande sin empezar |
 | Unificar ficha + comité + chat | ❌ |
 | Chat como puerta de entrada principal | ❌ |
