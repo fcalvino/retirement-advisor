@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, List, Mapping, Optional, Sequence
 
 from loguru import logger
 from sqlalchemy import (
@@ -201,6 +201,22 @@ def collapse_same_local_day(rows: List[dict]) -> List[dict]:
         row for idx, row in enumerate(rows)
         if row.get("created_at") is None or idx in conservados
     ]
+
+
+def filter_by_sources(
+    rows: Sequence[Mapping[str, Any]],
+    picked: Optional[Sequence[str]],
+) -> List[dict]:
+    """Apply the Track Record «Fuente» multiselect (U7-2).
+
+    ``None`` means the widget was not shown (zero or one source) — keep every
+    row. A list, **including empty**, filters: empty is no rows, not all rows.
+    The page used ``if _picked:`` so clearing the multiselect showed everything.
+    """
+    if picked is None:
+        return [dict(r) for r in rows]
+    want = {str(s).lower() for s in picked}
+    return [dict(r) for r in rows if (r.get("source") or "").lower() in want]
 
 
 # --------------------------------------------------------------------------- #
