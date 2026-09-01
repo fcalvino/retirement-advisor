@@ -36,7 +36,7 @@ class TechnicalResult:
     above_sma50: Optional[bool] = None
     above_sma100: Optional[bool] = None
     above_sma200: Optional[bool] = None
-    sma200_slope_pct: float = 0.0     # % change of the 200-week SMA over last 26 weeks
+    sma200_slope_pct: Optional[float] = None  # % change of the 200-week SMA over last 26 weeks; None = window too short (U3-1b)
     golden_cross: bool = False        # 50-week SMA > 200-week SMA, recently crossed
     death_cross: bool = False
 
@@ -246,9 +246,9 @@ class TechnicalAnalyzer:
             score += 10
         if result.above_sma50 is True:
             score += 5
-        if result.sma200_slope_pct > 2:
+        if result.sma200_slope_pct is not None and result.sma200_slope_pct > 2:
             score += 10
-        elif result.sma200_slope_pct < -2:
+        elif result.sma200_slope_pct is not None and result.sma200_slope_pct < -2:
             score -= 10
         if result.golden_cross:
             score += 15
@@ -263,7 +263,10 @@ class TechnicalAnalyzer:
             elif rsi < 30:
                 # D15: oversold is only a positive for L/T retirement entries
                 # when the secular trend is still intact (not a value trap).
-                if result.above_sma200 is True or result.sma200_slope_pct >= 0:
+                if result.above_sma200 is True or (
+                    result.sma200_slope_pct is not None
+                    and result.sma200_slope_pct >= 0
+                ):
                     score += 10
             elif rsi > 75:
                 score -= 15       # overbought

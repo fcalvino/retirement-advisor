@@ -229,6 +229,90 @@ def defensive_sleeve_caption(advice) -> str:
     )
 
 
+#  Indexation of spending — N8
+#  ---------------------------
+#  The tornado lever bumps ``withdrawal_growth_rate``: how much spending (or
+#  deposits) grow each year. Calling it "Inflación" promised a real-return shock
+#  the Monte Carlo does not compute. For an accumulator the sign is inverted:
+#  more "inflation" grows deposits and P10 rises. Identifiers (``inflation``,
+#  ``inflation_hot``, ``inflation_delta_pct``) keep their names, like
+#  ``above_sma200``. Locked by ``tests/test_indexation_label_contract.py``.
+
+INDEXATION_LABEL = "Indexación del gasto"
+INDEXATION_SHORT = "Indexación"
+INDEXATION_HELP = (
+    "Cuánto crece el gasto o el aporte cada año. **No es la inflación del plan**: "
+    "no baja el retorno real. El Monte Carlo sigue siendo nominal."
+)
+INDEXATION_HELP_ACCUMULATION = (
+    "En acumulación esta palanca hace crecer los depósitos. Subirla agranda el "
+    "P10: no es que la inflación te ayude, es que el laboratorio indexa el aporte "
+    "con el mismo número."
+)
+INDEXATION_HELP_WITHDRAWAL = (
+    "En retiro esta palanca hace crecer el gasto cada año. Subirla achica el pozo. "
+    "No modela inflación en el retorno."
+)
+INDEXATION_SCENARIO_DESCRIPTION = (
+    "El gasto (o el aporte) crece más rápido cada año. No es un shock de inflación "
+    "sobre el retorno real."
+)
+
+
+def indexation_help(*, has_contribution: bool, has_withdrawal: bool) -> str:
+    """Phase-aware caption for the sensitivity lever (N8)."""
+    if has_contribution and not has_withdrawal:
+        return INDEXATION_HELP_ACCUMULATION
+    if has_withdrawal and not has_contribution:
+        return INDEXATION_HELP_WITHDRAWAL
+    if has_contribution and has_withdrawal:
+        return (
+            INDEXATION_HELP
+            + " Con aportes y retiros a la vez, el signo depende de cuál manda."
+        )
+    return INDEXATION_HELP
+
+
+def indexation_scenario_label(delta_pct: float) -> str:
+    """Scenario name: the lever, not «Inflación +Npp»."""
+    sign = "+" if delta_pct >= 0 else ""
+    return f"{INDEXATION_LABEL} {sign}{delta_pct:.0f}pp"
+
+
+#  Dividend dimension ceiling — N7
+#  -------------------------------
+#  ``_score_dividends`` pays 4 (yield) + 3 (payout) + 3 (streak) = 10. A fund
+#  has no ``payoutRatio`` (13/13 cached funds missing, 130/130 equities
+#  present), so the payout leg is unreachable and the real ceiling is 7.
+#  Showing «Dividend x/10» on a fund promised a scale the asset cannot reach.
+#  The scorer is untouched: this is the denominator of the label. Locked by
+#  ``tests/test_dividend_scale_label_contract.py``.
+
+DIVIDEND_SCORE_MAX_EQUITY = 10
+DIVIDEND_SCORE_MAX_FUND = 7
+DIVIDEND_PAYOUT_POINTS = 3
+
+
+def dividend_score_max(asset_class: str | None) -> int:
+    """Label denominator for the dividend dimension (N7)."""
+    if (asset_class or "").strip().lower() == "fund":
+        return DIVIDEND_SCORE_MAX_FUND
+    return DIVIDEND_SCORE_MAX_EQUITY
+
+
+def format_dividend_score(score: float, asset_class: str | None = None) -> str:
+    return f"{float(score):.0f}/{dividend_score_max(asset_class)}"
+
+
+def dividend_score_help(asset_class: str | None = None) -> str:
+    if dividend_score_max(asset_class) == DIVIDEND_SCORE_MAX_FUND:
+        return (
+            "Techo 7, no 10: un fund no reporta payoutRatio, así que los 3 puntos "
+            "del payout son inalcanzables por construcción."
+        )
+    return "Yield (hasta 4) + payout (hasta 3) + racha (hasta 3)."
+
+
 def roic_sustained_help(config=None) -> str:
     """Help for the ``roic_sustained`` dimension, for the mode actually running.
 

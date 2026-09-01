@@ -2,8 +2,11 @@
 Sensitivity & scenario lab (Fase H.3).
 
 A "what-if" workbench on top of the existing Monte Carlo engine. It answers
-questions like *"if inflation runs 1pp hotter, how much lower is my pessimistic
-P10?"* or *"what if I live 5 years longer?"* using the user's OWN plan numbers.
+questions like *"if spending is indexed 1pp hotter, how much lower is my
+pessimistic P10?"* or *"what if I live 5 years longer?"* using the user's OWN
+plan numbers. The lever that used to be labelled "Inflación" moves
+``withdrawal_growth_rate`` (N8): it is indexation of spending or deposits, not
+a real-return inflation shock.
 
 Design (mirrors the rest of the project):
   - Pure + injectable: the simulation is provided as a ``run_fn(params) ->
@@ -15,8 +18,9 @@ Design (mirrors the rest of the project):
     the base params, so the base case is always the comparison reference.
 
 Two views are produced:
-  - Tornado: one factor at a time (inflation, fees, real return, volatility),
-    moved low/high, to rank what the plan's outcome is most sensitive to.
+  - Tornado: one factor at a time (spending indexation, fees, real return,
+    volatility), moved low/high, to rank what the plan's outcome is most
+    sensitive to.
   - Scenarios: predefined retirement what-ifs (live longer, full real-world
     frictions, adverse market) shown as outcome deltas vs the base case.
 """
@@ -27,6 +31,11 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, List
 
 from config import SENSITIVITY
+from data.product_ux import (
+    INDEXATION_LABEL,
+    INDEXATION_SCENARIO_DESCRIPTION,
+    indexation_scenario_label,
+)
 
 # Metrics pulled from a MonteCarloResult for every run.
 METRIC_KEYS = ("p10_terminal", "median_terminal", "p90_terminal", "prob_ruin_pct")
@@ -130,8 +139,8 @@ def _factor_specs(cfg) -> list[dict]:
     infl = cfg.inflation_delta_pct / 100.0
     return [
         {
-            "key": "inflation",
-            "label": "Inflación",
+            "key": "inflation",  # identifier kept; the label is N8
+            "label": INDEXATION_LABEL,
             "param": "withdrawal_growth_rate",
             "delta": infl,
             "low_label": f"−{cfg.inflation_delta_pct:.1f}pp",
@@ -169,9 +178,9 @@ def _scenario_specs(cfg) -> list[dict]:
     infl = cfg.inflation_delta_pct / 100.0
     return [
         {
-            "key": "inflation_hot",
-            "label": f"Inflación +{cfg.inflation_delta_pct:.0f}pp",
-            "description": "La inflación corre más caliente todo el horizonte.",
+            "key": "inflation_hot",  # identifier kept; the label is N8
+            "label": indexation_scenario_label(cfg.inflation_delta_pct),
+            "description": INDEXATION_SCENARIO_DESCRIPTION,
             "changes": {"withdrawal_growth_rate": ("add", infl)},
         },
         {

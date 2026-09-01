@@ -26,6 +26,8 @@ from data.product_ux import (
     MID_MA_SHORT,
     TREND_MA_HELP,
     TREND_MA_SHORT,
+    dividend_score_help,
+    format_dividend_score,
     graham_value_help,
     roic_sustained_help,
 )
@@ -340,7 +342,13 @@ if symbol:
         col2.metric("Fin. Health",   f"{fund.health_score:.0f}/20")
         col3.metric("Valuation",     f"{fund.valuation_score:.0f}/25")
         col4.metric("Growth",        f"{fund.growth_score:.0f}/20")
-        col5.metric("Dividend",      f"{fund.dividend_score:.0f}/10")
+        col5.metric(
+            "Dividend",
+            format_dividend_score(
+                fund.dividend_score, getattr(fund, "asset_class", None)
+            ),
+            help=dividend_score_help(getattr(fund, "asset_class", None)),
+        )
 
         col1, col2, col3, col4, col5 = st.columns(5)
         col1.metric("Base Score", f"{fund.total_score:.1f}/100")
@@ -702,7 +710,15 @@ if symbol:
         col4.metric("RSI (weekly)", f"{tech.rsi_weekly:.1f}" if tech.rsi_weekly else "N/A")
 
         col1, col2 = st.columns(2)
-        col1.metric(f"Pendiente {TREND_MA_SHORT} (26 sem.)", f"{tech.sma200_slope_pct:+.1f}%", help=TREND_MA_HELP)
+        col1.metric(
+            f"Pendiente {TREND_MA_SHORT} (26 sem.)",
+            "—" if tech.sma200_slope_pct is None else f"{tech.sma200_slope_pct:+.1f}%",
+            help=TREND_MA_HELP + (
+                "  ·  «—» = no hay 26 semanas de esa media para medir la pendiente "
+                "(U3-1b: no es lo mismo que una media plana)."
+                if tech.sma200_slope_pct is None else ""
+            ),
+        )
         col2.metric("vs 52w High",        f"{tech.price_vs_52w_high_pct:+.1f}%")
 
         if tech.notes:

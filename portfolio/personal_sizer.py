@@ -95,7 +95,7 @@ class AnalysisView:
     data_quality_level: str = "good"           # good | partial | poor
     rsi_weekly: Optional[float] = None
     above_sma200: Optional[bool] = True   # None = ventana más larga que la serie (U3-1)
-    sma200_slope_pct: float = 0.0
+    sma200_slope_pct: Optional[float] = None  # None = ventana corta (U3-1b)
     price_vs_52w_high_pct: float = 0.0          # ≤ 0 (qué tan lejos del máximo)
     retirement_action: str = "HOLD"            # STRONG BUY | BUY | HOLD | REDUCE | SELL
 
@@ -114,7 +114,10 @@ class AnalysisView:
             # Sin coerción: ``bool(None)`` es False, así que envolver esto daría
             # vuelta el default optimista de arriba justo cuando no se sabe (U3-1).
             above_sma200=raw.get("above_sma200", True),
-            sma200_slope_pct=float(raw.get("sma200_slope_pct", 0.0) or 0.0),
+            sma200_slope_pct=(
+                None if raw.get("sma200_slope_pct") is None
+                else float(raw["sma200_slope_pct"])
+            ),
             price_vs_52w_high_pct=float(raw.get("price_vs_52w_high_pct", 0.0) or 0.0),
             retirement_action=str(raw.get("retirement_action", "HOLD") or "HOLD"),
         )
@@ -244,7 +247,7 @@ def _default_enrich(symbol: str, ai_config: Any = None) -> Dict[str, Any]:
         "data_quality_level": (dq.get("level") if isinstance(dq, dict) else "good") or "good",
         "rsi_weekly": getattr(tech, "rsi_weekly", None),
         "above_sma200": getattr(tech, "above_sma200", True),   # sin bool(): ver U3-1
-        "sma200_slope_pct": getattr(tech, "sma200_slope_pct", 0.0),
+        "sma200_slope_pct": getattr(tech, "sma200_slope_pct", None),
         "price_vs_52w_high_pct": getattr(tech, "price_vs_52w_high_pct", 0.0),
         "retirement_action": getattr(decision, "action", "HOLD"),
     }

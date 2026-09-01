@@ -54,16 +54,16 @@ Las 39 filas de oleadas 3–7 se verificaron contra `main` una por una. La foto 
 2026-08-28 decía 30 cerradas / 9 abiertas y **ya no vale**: desde entonces
 cerraron U4-3, U4-4, U4-5, U4-1c, U5-7, U5-8, U5-9+10+11, U5-18/b/c/d, U6-1,
 U7-3, U3-2, U3-7b, N1, N2 (retry), N5, N6, N6c y N9 — ver [`ROADMAP.md`](ROADMAP.md).
-U0-3 y N4 cierran en este pase (docs).
+U0-3 y N4 cerraron en docs; N8 cierra el rótulo de la palanca.
 
 Oleadas de origen, reconstruidas desde las filas que siguen acá y las que
 ya están en el diario:
 
 | Oleada | Total origen | Cerradas | Abiertas de origen | Leftover vivo |
 |---|---|---|---|---|
-| 3 — fórmulas con blast radius | 11 | 11 | 0 | **U3-1b** (se partió de U3-1) |
-| 4 — flujos del motor | 4 | 4 | 0 | **N8** (se partió de U4-3) |
-| 5 — scoring y config | 20 | 19 | 1 (**U5-19**) | **U5-1b** (se partió de U5-1) |
+| 3 — fórmulas con blast radius | 11 | 11 | 0 | U3-1b cerró (pendiente desconocida es None) |
+| 4 — flujos del motor | 4 | 4 | 0 | N8 cerró (rótulo; el signo invertido del flujo queda) |
+| 5 — scoring y config | 20 | 20 | 0 | **U5-1b** (se partió de U5-1; bloqueado) |
 | 6 — dos motores de retorno | 2 | 1 (U6-1) | 0 de defecto | U6-2 es ritual (`ENGINE_VERSION`), no una fila |
 | 7 — UX del dashboard | 2 | 0 | 2 (**U7-1**, **U7-2**) | U7-3 nació y cerró después |
 | **Total origen 3–7** | **39** | **35** | **3** | leftovers aparte |
@@ -74,10 +74,6 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | id | banda | qué |
 |---|---|---|
 | **U5-1b** | 3 | Recalibrar Piotroski vs moat. Bloqueado: n=11, todas a 30 días |
-| **N8** | 4 | La palanca del tornado se llama «Inflación» y mueve la indexación del gasto |
-| **N7** | 4 | Un fund no puede pasar de 7 en dividendos y la ficha muestra `/10` |
-| **U3-1b** | 4 | `sma200_slope_pct = 0.0` es «no se midió» y «la media está plana» |
-| **U5-19** | 5 | Black-Litterman documenta Π como excess y las views `q` son totales |
 | **U7-1** | 5 | `preset_gap` se reevalúa contra los widgets, no contra la corrida |
 | **U7-2** | 5 | Vaciar «Fuente» en Track Record muestra todas las filas |
 | **N2b** | 5 | Fallback de fetch a SEC/FMP (el retry ya cerró) |
@@ -140,7 +136,7 @@ para todo Agresivo, a toda edad, en dos superficies — y de paso el mismo `advi
 calificaba la concentración con los topes globales mientras el Optimizer usaba los
 del perfil, así que las dos pantallas se contradecían — ver `ROADMAP.md`).
 Fuera de las oleadas 3–7,
-**U0-2**, **N6c**, **N9**, **U0-3** y **N4** también cerraron — ver `ROADMAP.md`.
+**U0-2**, **N6c**, **N9**, **U0-3**, **N4**, **N8**, **N7**, **U3-1b** y **U5-19** también cerraron — ver `ROADMAP.md`.
 
 ---
 
@@ -191,11 +187,8 @@ son el terreno donde ya nacieron los defectos de arriba.
 
 | id | sev | qué | evidencia |
 |---|---|---|---|
-| **U3-1b** | P3 | `sma200_slope_pct` tiene la misma forma que tenía `above_sma200` antes de U3-1: es `float = 0.0`, así que "no hay ventana suficiente" y "la media está plana" son el mismo valor. Consecuencia acotada pero real: el gate D15 de `technical.py:266` (`or result.sma200_slope_pct >= 0`) concede el bonus por sobreventa a un ticker cuya pendiente nadie pudo medir. Se dejó afuera de U3-1 para no mezclar dos campos en un PR de tipos | `technical.py:35,266` |
-| **U5-19** | P3 | Black-Litterman documenta Π como "CAPM equilibrium **excess** returns" mientras las views `q` son retornos totales | `black_litterman.py:83` |
 | **U7-1** | P3 | `preset_gap` se evalúa en cada rerun contra los widgets actuales, así que sacar un valor a mano dispara "ese filtro no se aplicó", que es falso | `1_Screener.py:663` |
 | **U7-2** | P3 | Vaciar el multiselect "Fuente" muestra **todas** las filas en vez de ninguna | `13_Track_Record.py:86` |
-| **N7** | P3 | La dimensión de dividendo **no puede pasar de 7 en un fund**: `payoutRatio` está ausente en 13 de 13 funds cacheados y presente en 130 de 130 equities, así que los 3 puntos del payout son inalcanzables por construcción — y la ficha muestra igual «Dividend x/10», porque su `else` sólo separa cripto del resto. Apareció midiendo U5-8: los tres funds que quedan debajo del techo del no-pagador (BND, QQQ, VGT) caen por el payout que no tienen, no por la banda de yield | `fundamental.py:1552`, `2_Stock_Analysis.py:336,343` |
 
 ---
 
@@ -220,33 +213,6 @@ elegir entre dos fuentes distintas son trabajos distintos.
 trajo. Cuando la caché falla, es una segunda llamada de red redundante — invisible
 hasta que el retry la volvió cara (la suite pasó de 23 s a 7m26). Vale arreglarlo
 junto con el fallback.
-
-### N8 · «Inflación» es la indexación del gasto, no la inflación
-
-Abierta al cerrar U4-3, con la medición hecha. La palanca del tornado bumpea
-`withdrawal_growth_rate`, que es **cuánto crece el gasto cada año**, no la
-inflación del plan. Consecuencias, sobre 5 tickers cacheados:
-
-| plan | swing P10 | |
-|---|---|---|
-| retiro `fixed_real` 40k/año | 1.717.777 | correcto |
-| retiro `guardrails` 4 % | 296.017 | correcto |
-| retiro `constant_pct` 4 % | 0,00 exacto | el gasto no se indexa (`decumulation.py` ~:389) |
-| acumulación con aporte 12k/año | 112.059 | **signo invertido** |
-
-Los dos ceros ya no mienten: U4-3 los marca «no aplica». **El signo invertido
-queda vivo y ahora es visible** — lo tapaba el cero del caso base sin aportes.
-Sale de `_apply_cash_flows` (`monte_carlo.py:803`), que hace crecer los depósitos
-con el mismo `withdrawal_growth_rate` que la palanca mueve: más inflación ⇒ P10
-más alto. Es defendible que un aporte nominal indexado crezca, pero entonces la
-palanca no puede llamarse «Inflación» a secas, porque para un ahorrista dice que
-la inflación lo ayuda.
-
-Modelar inflación de verdad pide tocar el **retorno real**, no sólo el flujo, y
-eso mueve el Monte Carlo ⇒ hay que bumpear `ENGINE_VERSION` (U6-2). Es la razón
-por la que se dejó afuera de U4-3, que no toca `portfolio/monte_carlo.py`.
-
-Mientras tanto el rótulo promete más que la fórmula, así que es **banda 4**.
 
 ### N3 · Accesibilidad y tema
 

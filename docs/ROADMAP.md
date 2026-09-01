@@ -10,6 +10,65 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U5-19 — Π es excess; las views q son totales (2026-09-01)
+
+`implied_equilibrium_returns` documentaba Π como "CAPM equilibrium excess
+returns" y las views `q` que le pasa el optimizer son retornos totales (el
+proxy de score + dividendo). Se admitió en el docstring; no se restó Rf de
+`q`. Ningún número se movió.
+
+---
+
+## U3-1b — Pendiente desconocida no es cero (2026-09-01)
+
+Se dejó afuera de U3-1 para no mezclar dos campos en un PR de tipos.
+`sma200_slope_pct` era `float = 0.0`, así que "no hay ventana" y "la media está
+plana" eran el mismo valor. El gate D15 (`above_sma200 is True or slope >= 0`)
+concedía el bonus de sobreventa a un ticker cuya pendiente nadie midió — y
+`None >= 0` es `TypeError`, así que el default 0.0 no era inocente.
+
+Misma forma que U3-1: `Optional[float] = None`; unknown no suma ni resta.
+La ventana SMA no se movió (U1-3). `ENGINE_VERSION` no se bumpea: el técnico
+no entra a μ ni al Monte Carlo. Locked por `tests/test_trend_unknown_oracle.py`
+y `tests/test_technical_d15.py`.
+
+---
+
+## N7 — El dividendo de un fund no se muestra sobre 10 (2026-09-01)
+
+Apareció midiendo U5-8. La dimensión reparte 4 + 3 + 3 = 10 (yield, payout,
+racha) y `payoutRatio` está ausente en 13 de 13 funds cacheados y presente en
+130 de 130 equities, así que los 3 del payout son inalcanzables para un fund.
+La ficha mostraba igual «Dividend x/10» porque el `else` de Stock Analysis
+separaba cripto del resto, no fund de equity.
+
+Se cerró el rótulo, no el scorer: `format_dividend_score` / `dividend_score_max`
+en `data/product_ux.py` (equity 10, fund 7). `_score_dividends` no se tocó —
+0 scores se mueven. Locked por `tests/test_dividend_scale_label_contract.py`.
+
+---
+
+## N8 — La palanca indexa el gasto, no la inflación (2026-09-01)
+
+Abierta al cerrar U4-3. La palanca del tornado bumpeaba `withdrawal_growth_rate`
+— cuánto crece el gasto (o el aporte) cada año — y se llamaba «Inflación».
+Medido: en acumulación con aportes el P10 **sube** al subir la palanca, porque
+`_apply_cash_flows` indexa los depósitos con el mismo número. Eso no es «la
+inflación te ayuda»; es un rótulo que promete un shock de retorno real que el
+Monte Carlo no calcula.
+
+Se cerró como U1-1 / U1-3 / U6-1: **se corrige lo que se lee, no lo que se
+calcula**. Etiqueta canónica «Indexación del gasto» en `data/product_ux.py`.
+Los identificadores (`inflation`, `inflation_hot`, `inflation_delta_pct`)
+conservan el nombre legacy. `portfolio/monte_carlo.py` no se tocó;
+`ENGINE_VERSION` no se bumpea. El signo invertido del flujo **sigue**; deja de
+llamarse inflación. Modelar inflación en el retorno real es U6-2.
+
+`constant_pct` sigue en «no aplica» (U4-3). Locked por
+`tests/test_indexation_label_contract.py`.
+
+---
+
 ## U0-3 + N4 — El backlog deja de mentir sobre lo que está abierto (2026-09-01)
 
 U0-3 decía: CONTEXT §8 (a)(b) describen como abiertos dos defectos ya cerrados.

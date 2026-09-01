@@ -40,6 +40,7 @@ from data.product_ux import (
     PROXY_RETURN_HELP,
     ar_dual_context,
     contribution_inputs,
+    indexation_help,
     mc_has_cash_flows,
     pot_growth_column_label,
     pot_growth_delta,
@@ -991,7 +992,7 @@ def _render_sensitivity_lab():
     # U4-3: una palanca que no toca este plan se rotula, no se dibuja en cero.
     # `x=[hi - lo]` con hi == lo es una barra invisible junto a su etiqueta, y el
     # pie dice "la barra más larga = el supuesto que más mueve tu resultado": el
-    # usuario lee "la inflación no mueve mi plan", que es una afirmación y no la
+    # usuario lee "la indexación no mueve mi plan", que es una afirmación y no la
     # ausencia de una. Quién no aplica lo decide el motor (`sensitivity._applies`),
     # que lo mide sobre las cuatro métricas; la pantalla sólo lo presenta.
     _NO_APLICA = "no aplica a este plan"
@@ -1038,10 +1039,16 @@ def _render_sensitivity_lab():
     if _hay_inaplicables:
         _pie += (
             f" Una palanca marcada «{_NO_APLICA}» **no se midió en cero**: moverla no "
-            "entra en tu plan tal como está configurado — por ejemplo, la inflación no "
-            "toca un retiro que ya se calcula como % del capital actual."
+            "entra en tu plan tal como está configurado — por ejemplo, la indexación "
+            "del gasto no toca un retiro que ya se calcula como % del capital actual."
         )
     st.caption(_pie)
+    st.caption(
+        indexation_help(
+            has_contribution=float(annual_contribution) > 0,
+            has_withdrawal=float(annual_withdrawal) > 0,
+        )
+    )
 
     # --- Scenario table ---
     st.markdown("**Escenarios de retiro predefinidos**")
