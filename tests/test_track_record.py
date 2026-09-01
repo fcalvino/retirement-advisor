@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from analysis.track_record import TrackRecordStore
+from analysis.track_record import TrackRecordStore, filter_by_sources
 from analysis.track_record_scorer import (
     calibration_by_confidence,
     compute_hit,
@@ -317,3 +317,26 @@ def test_the_scheduler_job_never_propagates_failures(monkeypatch):
         "analysis.track_record_scorer.score_due_recommendations", boom
     )
     sched.job_score_track_record()   # must not raise
+
+
+# --------------------------------------------------------------------------- #
+#  U7-2 — Fuente vacío es ninguna fila, no todas                               #
+# --------------------------------------------------------------------------- #
+
+
+def test_filter_by_sources_empty_picked_is_no_rows():
+    rows = [{"source": "screener"}, {"source": "rule_based"}]
+    assert filter_by_sources(rows, []) == []
+
+
+def test_filter_by_sources_none_picked_keeps_all():
+    rows = [{"source": "screener"}, {"source": "rule_based"}]
+    assert [r["source"] for r in filter_by_sources(rows, None)] == [
+        "screener", "rule_based",
+    ]
+
+
+def test_filter_by_sources_subset():
+    rows = [{"source": "screener"}, {"source": "rule_based"}]
+    kept = filter_by_sources(rows, ["screener"])
+    assert [r["source"] for r in kept] == ["screener"]

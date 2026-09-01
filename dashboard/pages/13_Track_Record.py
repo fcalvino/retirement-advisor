@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 from loguru import logger
 
-from analysis.track_record import track_record_store
+from analysis.track_record import filter_by_sources, track_record_store
 from analysis.track_record_scorer import (
     calibration_by_confidence,
     equity_curve,
@@ -73,6 +73,7 @@ all_recs = track_record_store.get_recommendations()
 # unbiased sample calibration needs — but those are recommendations nobody looked at,
 # so they must not silently become the headline of "how the model did".
 _sources = sorted({(r.get("source") or "").lower() for r in rows if r.get("source")})
+_picked = None
 if len(_sources) > 1:
     _picked = st.multiselect(
         "Fuente",
@@ -84,8 +85,7 @@ if len(_sources) > 1:
             "efectivamente viste."
         ),
     )
-    if _picked:
-        rows = [r for r in rows if (r.get("source") or "").lower() in _picked]
+rows = filter_by_sources(rows, _picked)
 
 # ------------------------------------------------------------------ #
 #  Headline                                                            #

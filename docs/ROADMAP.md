@@ -10,6 +10,15 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U7-2 — Fuente vacío es ninguna fila, no todas (2026-09-01)
+
+Vaciar el multiselect «Fuente» en Track Record mostraba **todas** las filas
+porque el filtro vivía detrás de `if _picked:`. Ahora `filter_by_sources`
+trata una lista vacía como cero filas; `None` (el widget no se dibujó) sigue
+mostrando todo. Locked por `tests/test_track_record.py`.
+
+---
+
 ## U5-19 — Π es excess; las views q son totales (2026-09-01)
 
 `implied_equilibrium_returns` documentaba Π como "CAPM equilibrium excess
