@@ -33,7 +33,8 @@ from typing import Dict, List, Optional
 import pandas as pd
 from loguru import logger
 
-from config import MULTI_SOURCE
+from config import FETCH, MULTI_SOURCE
+from data.cache import cache
 
 
 @dataclass
@@ -101,11 +102,54 @@ def _annual_fact(df, candidates: List[str]) -> Optional[tuple]:
     return None
 
 
+def _cached_info(symbol: str) -> dict:
+    """What ``get_info`` already stored. Miss → {} , no network (N2b)."""
+    return cache.get(f"info:{symbol}") or {}
+
+
+def _cached_financials(symbol: str) -> Dict[str, pd.DataFrame]:
+    """What ``get_financials`` already stored. Miss → {} , no network (N2b)."""
+    raw = cache.get(f"financials:{symbol}")
+    if not raw or not isinstance(raw, dict):
+        return {}
+    return {k: pd.DataFrame(v) for k, v in raw.items()}
+
+
+def _fetched_info(symbol: str) -> dict:
+    """Kill-switch path: go to the fetcher. Default is cache-only."""
+    try:
+        from data.fetcher import get_info
+
+        return get_info(symbol) or {}
+    except Exception as exc:
+        logger.warning(f"YFinanceSource: {symbol} info failed — {exc}")
+        return {}
+
+
+def _fetched_financials(symbol: str) -> Dict[str, pd.DataFrame]:
+    try:
+        from data.fetcher import get_financials
+
+        return get_financials(symbol) or {}
+    except Exception as exc:
+        logger.warning(f"YFinanceSource: {symbol} financials failed — {exc}")
+        return {}
+
+
 # --------------------------------------------------------------------------- #
 #  yfinance (always available — wraps the existing fetcher)                   #
 # --------------------------------------------------------------------------- #
 
 class YFinanceSource(DataSource):
+    """Adapter over the yfinance *cache*, not a second fetcher (N2b).
+
+    ``FundamentalAnalyzer.analyze`` is the one that calls ``get_info`` /
+    ``get_financials``. This class maps whatever those already stored into
+    canonical ``SourceValue``s for reconciliation. A cache miss is ``{}``, not
+    another trip to the network — that second trip is what doubled the retry
+    loop. Kill-switch: ``FETCH.adapter_reads_cache_only``.
+    """
+
     name = "yfinance"
 
     # Periodic facts read off the annual statements, so each one carries the
@@ -136,29 +180,18 @@ class YFinanceSource(DataSource):
     def fetch_fundamentals(self, symbol: str) -> Dict[str, SourceValue]:
         out: Dict[str, SourceValue] = {}
 
-        try:
-            from data.fetcher import get_info
-
-            info = get_info(symbol) or {}
-        except Exception as exc:
-            logger.warning(f"YFinanceSource: {symbol} info failed — {exc}")
-            info = {}
+        if FETCH.adapter_reads_cache_only:
+            info = _cached_info(symbol)
+            financials = _cached_financials(symbol)
+        else:
+            info = _fetched_info(symbol)
+            financials = _fetched_financials(symbol)
 
         for field_name, keys in self._INFO_FACTS.items():
             raw = next((info.get(k) for k in keys if info.get(k) is not None), None)
             v = _f(raw)
             if v is not None:
                 out[field_name] = SourceValue(field_name, v, self.name)
-
-        # ``get_financials`` is cached and ``FundamentalAnalyzer.analyze`` already
-        # calls it, so this costs no extra network on the pipeline path.
-        try:
-            from data.fetcher import get_financials
-
-            financials = get_financials(symbol) or {}
-        except Exception as exc:
-            logger.warning(f"YFinanceSource: {symbol} financials failed — {exc}")
-            return out
 
         for field_name, (stmt_key, candidates) in self._STATEMENT_FACTS.items():
             parsed = _annual_fact(financials.get(stmt_key), candidates)

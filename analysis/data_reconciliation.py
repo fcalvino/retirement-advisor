@@ -295,10 +295,33 @@ def data_quality_agent(
         "Verificación cruzada sobre hechos crudos (revenue, NI, equity, assets), "
         "no sobre ratios del score (ROE/PE)."
     )
+    _STATEMENT_FIELDS = frozenset(
+        ("total_revenue", "net_income", "total_equity", "total_assets")
+    )
 
     out["cross_check_scope"] = "raw_facts"
     out["sources_used"] = recon.sources_used if recon else []
     out["n_uncomparable_fields"] = len(recon.uncomparable_fields) if recon else 0
+    # N2b: scoring still reads yfinance. When the primary feed left no
+    # statements but another source did, name both legs — do not upgrade
+    # ``level``. A 10-K on the verification path is not a scored analysis.
+    out["primary_source"] = "yfinance"
+    other = [s for s in out["sources_used"] if s != "yfinance"]
+    yf_has_statements = False
+    if recon is not None:
+        yf_has_statements = any(
+            f.field in _STATEMENT_FIELDS and "yfinance" in f.values
+            for f in recon.fields
+        )
+    out["fallback_available"] = other if (other and not yf_has_statements) else []
+    if out["fallback_available"]:
+        names = ", ".join(out["fallback_available"])
+        note = (
+            f"yfinance no aportó estados; hay 10-K/hechos de {names} "
+            "(no usados para puntuar)."
+        )
+        if note not in out["warnings"]:
+            out["warnings"].append(note)
 
     if recon is None or not recon.cross_checked_fields:
         out["cross_source_agreement_pct"] = None

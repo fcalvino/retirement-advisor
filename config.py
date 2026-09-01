@@ -617,7 +617,7 @@ class CryptoMoatConfig:
 
 @dataclass
 class FetchConfig:
-    """Retry policy for network fetches (N2).
+    """Retry policy for network fetches (N2) and how the yfinance adapter reads (N2b).
 
     ``_fetch_with_retry`` had these as literals in ``data/fetcher.py`` while every
     other tunable in this project lives here. They are a choice — how long to keep
@@ -626,10 +626,18 @@ class FetchConfig:
 
     Backoff doubles each attempt, so 3 × 2 s means a permanent failure costs about
     six seconds before the fetcher degrades quietly.
+
+    ``adapter_reads_cache_only`` (N2b): ``YFinanceSource`` is a *reader* of what
+    ``get_info`` / ``get_financials`` already stored, not a second fetcher.
+    Asking yfinance twice on a miss paid a second retry loop (the suite went
+    from 23 s to 7m26). Off reproduces that double fetch — scoring still never
+    reads SEC/FMP; those stay on the verification path. Do not synthesize
+    statement DataFrames from a 10-K.
     """
 
     max_retries: int = 3
     retry_base_delay_s: float = 2.0
+    adapter_reads_cache_only: bool = True
 
 
 @dataclass
