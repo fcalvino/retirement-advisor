@@ -74,7 +74,6 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | id | banda | qué |
 |---|---|---|
 | **U5-1b** | 3 | Recalibrar Piotroski vs moat. Bloqueado: n=11, todas a 30 días |
-| **N7** | 4 | Un fund no puede pasar de 7 en dividendos y la ficha muestra `/10` |
 | **U3-1b** | 4 | `sma200_slope_pct = 0.0` es «no se midió» y «la media está plana» |
 | **U5-19** | 5 | Black-Litterman documenta Π como excess y las views `q` son totales |
 | **U7-1** | 5 | `preset_gap` se reevalúa contra los widgets, no contra la corrida |
@@ -139,7 +138,7 @@ para todo Agresivo, a toda edad, en dos superficies — y de paso el mismo `advi
 calificaba la concentración con los topes globales mientras el Optimizer usaba los
 del perfil, así que las dos pantallas se contradecían — ver `ROADMAP.md`).
 Fuera de las oleadas 3–7,
-**U0-2**, **N6c**, **N9**, **U0-3**, **N4** y **N8** también cerraron — ver `ROADMAP.md`.
+**U0-2**, **N6c**, **N9**, **U0-3**, **N4**, **N8** y **N7** también cerraron — ver `ROADMAP.md`.
 
 ---
 
@@ -194,7 +193,6 @@ son el terreno donde ya nacieron los defectos de arriba.
 | **U5-19** | P3 | Black-Litterman documenta Π como "CAPM equilibrium **excess** returns" mientras las views `q` son retornos totales | `black_litterman.py:83` |
 | **U7-1** | P3 | `preset_gap` se evalúa en cada rerun contra los widgets actuales, así que sacar un valor a mano dispara "ese filtro no se aplicó", que es falso | `1_Screener.py:663` |
 | **U7-2** | P3 | Vaciar el multiselect "Fuente" muestra **todas** las filas en vez de ninguna | `13_Track_Record.py:86` |
-| **N7** | P3 | La dimensión de dividendo **no puede pasar de 7 en un fund**: `payoutRatio` está ausente en 13 de 13 funds cacheados y presente en 130 de 130 equities, así que los 3 puntos del payout son inalcanzables por construcción — y la ficha muestra igual «Dividend x/10», porque su `else` sólo separa cripto del resto. Apareció midiendo U5-8: los tres funds que quedan debajo del techo del no-pagador (BND, QQQ, VGT) caen por el payout que no tienen, no por la banda de yield | `fundamental.py:1552`, `2_Stock_Analysis.py:336,343` |
 
 ---
 

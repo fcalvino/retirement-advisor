@@ -26,6 +26,8 @@ from data.product_ux import (
     MID_MA_SHORT,
     TREND_MA_HELP,
     TREND_MA_SHORT,
+    dividend_score_help,
+    format_dividend_score,
     graham_value_help,
     roic_sustained_help,
 )
@@ -340,7 +342,13 @@ if symbol:
         col2.metric("Fin. Health",   f"{fund.health_score:.0f}/20")
         col3.metric("Valuation",     f"{fund.valuation_score:.0f}/25")
         col4.metric("Growth",        f"{fund.growth_score:.0f}/20")
-        col5.metric("Dividend",      f"{fund.dividend_score:.0f}/10")
+        col5.metric(
+            "Dividend",
+            format_dividend_score(
+                fund.dividend_score, getattr(fund, "asset_class", None)
+            ),
+            help=dividend_score_help(getattr(fund, "asset_class", None)),
+        )
 
         col1, col2, col3, col4, col5 = st.columns(5)
         col1.metric("Base Score", f"{fund.total_score:.1f}/100")

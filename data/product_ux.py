@@ -279,6 +279,40 @@ def indexation_scenario_label(delta_pct: float) -> str:
     return f"{INDEXATION_LABEL} {sign}{delta_pct:.0f}pp"
 
 
+#  Dividend dimension ceiling — N7
+#  -------------------------------
+#  ``_score_dividends`` pays 4 (yield) + 3 (payout) + 3 (streak) = 10. A fund
+#  has no ``payoutRatio`` (13/13 cached funds missing, 130/130 equities
+#  present), so the payout leg is unreachable and the real ceiling is 7.
+#  Showing «Dividend x/10» on a fund promised a scale the asset cannot reach.
+#  The scorer is untouched: this is the denominator of the label. Locked by
+#  ``tests/test_dividend_scale_label_contract.py``.
+
+DIVIDEND_SCORE_MAX_EQUITY = 10
+DIVIDEND_SCORE_MAX_FUND = 7
+DIVIDEND_PAYOUT_POINTS = 3
+
+
+def dividend_score_max(asset_class: str | None) -> int:
+    """Label denominator for the dividend dimension (N7)."""
+    if (asset_class or "").strip().lower() == "fund":
+        return DIVIDEND_SCORE_MAX_FUND
+    return DIVIDEND_SCORE_MAX_EQUITY
+
+
+def format_dividend_score(score: float, asset_class: str | None = None) -> str:
+    return f"{float(score):.0f}/{dividend_score_max(asset_class)}"
+
+
+def dividend_score_help(asset_class: str | None = None) -> str:
+    if dividend_score_max(asset_class) == DIVIDEND_SCORE_MAX_FUND:
+        return (
+            "Techo 7, no 10: un fund no reporta payoutRatio, así que los 3 puntos "
+            "del payout son inalcanzables por construcción."
+        )
+    return "Yield (hasta 4) + payout (hasta 3) + racha (hasta 3)."
+
+
 def roic_sustained_help(config=None) -> str:
     """Help for the ``roic_sustained`` dimension, for the mode actually running.
 

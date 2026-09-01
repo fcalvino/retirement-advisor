@@ -66,7 +66,13 @@ def cmd_analyze(symbols: list[str]) -> None:
             print(f"    Fin. Health   : {fund.health_score:.0f}/20")
             print(f"    Valuation     : {fund.valuation_score:.0f}/25")
             print(f"    Growth        : {fund.growth_score:.0f}/20")
-            print(f"    Dividends     : {fund.dividend_score:.0f}/10")
+            from data.product_ux import format_dividend_score
+            print(
+                "    Dividends     : "
+                + format_dividend_score(
+                    fund.dividend_score, getattr(fund, "asset_class", None)
+                )
+            )
 
         print(f"\n  Technical: {tech.signal} (strength {tech.signal_strength:+d})")
         if tech.above_sma200:
