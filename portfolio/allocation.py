@@ -11,7 +11,12 @@ Provides:
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Union
 
-from config import ProfileConfig, profile_from_name, recommended_bond_pct
+from config import (
+    CASH_BUFFER_PCT,
+    ProfileConfig,
+    profile_from_name,
+    recommended_bond_pct,
+)
 
 
 @dataclass
@@ -23,7 +28,17 @@ class AllocationAdvice:
     # Recommended allocation
     equity_pct: float = 0.0
     bonds_pct: float = 0.0
-    cash_pct: float = 5.0
+    cash_pct: float = CASH_BUFFER_PCT
+
+    @property
+    def defensive_pct(self) -> float:
+        """Bonds plus the cash buffer — the sleeve the age rule governs (N9).
+
+        Exposed so the two screens that show this number read it from one place
+        instead of each summing the parts. See ``config.recommended_bond_pct``
+        for the contract this satisfies.
+        """
+        return self.bonds_pct + self.cash_pct
 
     # Equity breakdown
     us_large_cap_pct: float = 0.0
@@ -66,13 +81,20 @@ class AllocationAdvisor:
         )
 
         # ---- Target allocation ----
-        bond_pct = recommended_bond_pct(age, prof)
-        # Reserve 5% cash for opportunities (rebalancing buffer). Note this is
-        # carved out of the *bond* sleeve, so what the screen shows is 5 pp below
-        # the rule ``recommended_bond_pct`` states (U5-7 left this deliberately
-        # unchanged: moving it would shift the default investor's numbers).
-        advice.bonds_pct = max(bond_pct - 5, 0)
-        advice.cash_pct = 5.0
+        # ``recommended_bond_pct`` gives the **defensive** sleeve for this age
+        # and profile. ``CASH_BUFFER_PCT`` of it is held liquid for rebalancing
+        # and the rest goes to bonds, so the rule is split across two lines on
+        # the screen and neither line is the rule on its own (N9):
+        #
+        #     bonds_pct + cash_pct == max(defensive_pct, CASH_BUFFER_PCT)
+        #
+        # The ``max(..., 0.0)`` is what makes the buffer a floor rather than a
+        # share: below CASH_BUFFER_PCT the whole sleeve is cash and the investor
+        # still holds the buffer. Exact for every profile and age — pinned by
+        # ``tests/test_defensive_sleeve_contract.py``.
+        defensive_pct = recommended_bond_pct(age, prof)
+        advice.cash_pct = CASH_BUFFER_PCT
+        advice.bonds_pct = max(defensive_pct - CASH_BUFFER_PCT, 0.0)
         advice.equity_pct = 100.0 - advice.bonds_pct - advice.cash_pct
 
         # Equity sub-allocation
