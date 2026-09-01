@@ -10,6 +10,24 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U0-3 + N4 — El backlog deja de mentir sobre lo que está abierto (2026-09-01)
+
+U0-3 decía: CONTEXT §8 (a)(b) describen como abiertos dos defectos ya cerrados.
+Medido el 2026-09-01, (a)(b)(e) **ya** estaban marcados cerrados. Lo que seguía
+abierto en esa viñeta era **(c) ATR/ADX** y **(d) U3-1**, los dos shipeados
+(U3-2, U3-1). Misma clase de defecto, otro par. Se cerró actualizando la viñeta,
+no tocando código.
+
+N4 pedía meter `auditoria_remediacion_unificada.csv` en el repo **o** versionar
+su estado en BACKLOG. Se eligió el OR: el CSV se queda en Downloads (69 filas de
+un momento, sin oráculo) y `docs/BACKLOG.md` es la fuente de «qué está abierto».
+La foto 2026-08-28 (39/30/9) se reemplazó por un recuento contra el código de
+hoy y una tabla de abiertas que un agente puede leer sin cruzar ROADMAP.
+
+Ningún número, umbral ni fórmula se movió.
+
+---
+
 ## N9 — La regla por edad gobierna el tramo defensivo, no el de bonos (2026-09-01)
 
 La fila salió de U5-7, que arregló la etiqueta del perfil y dejó el buffer
