@@ -54,10 +54,10 @@ una, con oráculos empíricos donde el hallazgo lo permitía.
 |---|---|---|---|
 | 3 — fórmulas con blast radius | 11 | 11 | 0 |
 | 4 — flujos del motor | 4 | 2 | 2 |
-| 5 — scoring y config | 20 | 16 | 4 |
+| 5 — scoring y config | 20 | 17 | 3 |
 | 6 — dos motores de retorno | 2 | 0 | 2 |
 | 7 — UX del dashboard | 2 | 0 | 2 |
-| **Total** | **39** | **29** | **10** |
+| **Total** | **39** | **30** | **9** |
 
 Cerradas: **U3-6** (`a5a63d9`), **U3-11** (`00fb551`, oráculo: sin `payoutRatio` ni
 FFO el score es 4.0 exacto), **U5-20** (`d86f8e9`), **U4-2** y **U4-1** (`9f05443`,
@@ -109,6 +109,11 @@ de ADX 25 y la fila se quedaba corta en los dos sentidos — ver `ROADMAP.md`),
 el plan del usuario **sin sus ahorros** —490.275 contra 1.234.907, 2,52×— y el
 tornado presentaba una barra de ancho cero como si fuera una medición. Con eso,
 la oleada 4 queda entera — ver `ROADMAP.md`).
+**U5-7** (la asignación por edad lee el perfil que el onboarding ya había
+preguntado: la fila lo llamaba un docstring desalineado y era **+10 pp de equity**
+para todo Agresivo, a toda edad, en dos superficies — y de paso el mismo `advise()`
+calificaba la concentración con los topes globales mientras el Optimizer usaba los
+del perfil, así que las dos pantallas se contradecían — ver `ROADMAP.md`).
 Fuera de las oleadas 3–7,
 **U0-2** y **N6c** también cerraron — ver `ROADMAP.md`.
 
@@ -162,11 +167,11 @@ son el terreno donde ya nacieron los defectos de arriba.
 | id | sev | qué | evidencia |
 |---|---|---|---|
 | **U3-1b** | P3 | `sma200_slope_pct` tiene la misma forma que tenía `above_sma200` antes de U3-1: es `float = 0.0`, así que "no hay ventana suficiente" y "la media está plana" son el mismo valor. Consecuencia acotada pero real: el gate D15 de `technical.py:266` (`or result.sma200_slope_pct >= 0`) concede el bonus por sobreventa a un ticker cuya pendiente nadie pudo medir. Se dejó afuera de U3-1 para no mezclar dos campos en un PR de tipos | `technical.py:35,266` |
-| **U5-7** | P2 | El docstring promete "Conservative: age / Aggressive: age − 10"; la función no toma perfil y siempre devuelve `min(age, 80)` | `config.py:360-362` |
 | **U5-19** | P3 | Black-Litterman documenta Π como "CAPM equilibrium **excess** returns" mientras las views `q` son retornos totales | `black_litterman.py:83` |
 | **U7-1** | P3 | `preset_gap` se evalúa en cada rerun contra los widgets actuales, así que sacar un valor a mano dispara "ese filtro no se aplicó", que es falso | `1_Screener.py:663` |
 | **U7-2** | P3 | Vaciar el multiselect "Fuente" muestra **todas** las filas en vez de ninguna | `13_Track_Record.py:86` |
 | **U0-3** | P3 | CONTEXT §8 (a)(b) describen como abiertos dos defectos ya cerrados | |
+| **N9** | P3 | El buffer de 5 % de cash se talla **del tramo de bonos** (`allocation.py:74`), así que la regla que `recommended_bond_pct` enuncia nunca es la que la pantalla muestra: a los 30 un Conservador lee 25 % donde la regla dice 30 %. Abierta al cerrar U5-7, que arregló la etiqueta y no la fórmula porque mover el buffer corre los números del usuario default | `allocation.py:70-74` |
 | **N7** | P3 | La dimensión de dividendo **no puede pasar de 7 en un fund**: `payoutRatio` está ausente en 13 de 13 funds cacheados y presente en 130 de 130 equities, así que los 3 puntos del payout son inalcanzables por construcción — y la ficha muestra igual «Dividend x/10», porque su `else` sólo separa cripto del resto. Apareció midiendo U5-8: los tres funds que quedan debajo del techo del no-pagador (BND, QQQ, VGT) caen por el payout que no tienen, no por la banda de yield | `fundamental.py:1552`, `2_Stock_Analysis.py:336,343` |
 
 ---

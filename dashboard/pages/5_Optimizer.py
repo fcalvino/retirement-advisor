@@ -50,11 +50,9 @@ _PROFILE_LABELS = {
     "aggressive":   "🚀 Agresivo",
 }
 _PROFILE_KEYS = {v: k for k, v in _PROFILE_LABELS.items()}
-_PREFS_TO_KEY = {
-    "Conservador": "conservative",
-    "Moderado":    "moderate",
-    "Agresivo":    "aggressive",
-}
+# Stored profile name → key. Derived from config so the three Spanish names live
+# in one place (they used to be spelled again here).
+_PREFS_TO_KEY = {p.name: k for k, p in OPTIMIZER_PROFILES.items()}
 
 _PROFILE_COLORS = {
     "conservative": {"bg": "#e8f5e9", "border": "#43a047", "accent": "#2e7d32", "icon": "🛡️"},
@@ -338,18 +336,19 @@ with st.expander("📊 Asignación por edad (acciones / bonos / cash)", expanded
     _ac1, _ac2 = st.columns(2)
     _age_w = _ac1.slider("Edad actual", 20, 80, _age0, key="opt_alloc_age")
     _ret_w = _ac2.slider("Edad de retiro", _age_w + 1, 80, max(_age_w + 1, _ret0), key="opt_alloc_ret")
-    _adv = AllocationAdvisor().advise(_age_w, _ret_w, {}, {})
+    _adv = AllocationAdvisor().advise(_age_w, _ret_w, {}, {}, profile=prof)
     _m1, _m2, _m3 = st.columns(3)
     _m1.metric("Acciones", f"{_adv.equity_pct:.0f}%")
     _m2.metric("Bonos", f"{_adv.bonds_pct:.0f}%")
     _m3.metric("Efectivo", f"{_adv.cash_pct:.0f}%")
     st.caption(
-        f"📊 Calculado · regla por edad (no IA). Detalle completo en Ajustes → Allocation. "
+        f"📊 Calculado · regla por edad y perfil **{_adv.profile_name}** (no IA). "
+        f"Detalle completo en Ajustes → Allocation. "
         f"{getattr(_adv, 'inflation_note', '')}"
     )
     st.caption(
-        "Usá este marco para elegir el **perfil** del optimizer (más bonos → Conservador; "
-        "más equity → Agresivo)."
+        "Estos números se mueven con el **perfil** elegido arriba: más conservador → "
+        "más bonos, más agresivo → más equity."
     )
 
 st.caption(

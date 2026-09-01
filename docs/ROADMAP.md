@@ -10,6 +10,105 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U5-7 — La asignación por edad no leía el perfil del usuario (2026-09-01)
+
+El backlog la tenía como higiene: *"el docstring promete «Conservative: age /
+Aggressive: age − 10»; la función no toma perfil y siempre devuelve
+`min(age, 80)`"*. Un docstring desalineado, bloque 4, no mueve un número.
+
+Movía dos, en dos pantallas.
+
+### La fila describía la mitad chica
+
+`recommended_bond_pct` no era decorativa: `AllocationAdvisor.advise()` la usa
+para fijar el trío bonos/equity/cash, y **dos superficies** lo leen —
+`4_Allocation.py` y el bloque "Asignación por edad" del Optimizer. Como
+`advise()` no tomaba perfil, todo el mundo recibía la senda conservadora:
+
+| edad | equity Conservador | equity Moderado | equity Agresivo |
+|---|---|---|---|
+| 30 | 70 % | 75 % | **80 %** |
+| 45 | 55 % | 60 % | **65 %** |
+| 60 | 40 % | 45 % | **50 %** |
+| 70 | 30 % | 35 % | **40 %** |
+
+Antes, un Agresivo veía la primera columna: **10 pp menos de equity a toda
+edad**, plano —el tope de 80 no muerde antes de los 90— y arrastrando la
+sub-asignación, porque US/internacional/REIT son porcentajes de `equity_pct`.
+
+El perfil nunca faltó. El onboarding **pregunta** la tolerancia al riesgo y
+`data/preferences.py` la persiste en `default_profile`, con su propio comentario
+diciendo *"Risk tolerance is the single source of truth for the optimizer
+profile"*. Los dos call sites ya lo tenían en la mano: `4_Allocation.py` llamaba
+a `get_user_prefs()` para sacar la edad y descartaba el resto, y en el Optimizer
+`profile_key` estaba viva 24 líneas más arriba de la llamada.
+
+### El segundo agujero, que la fila no menciona
+
+El mismo `advise()` calificaba la concentración contra los topes **globales** de
+`STRATEGY` (8 / 25 / 10) mientras el Optimizer calificaba contra los del
+**perfil**. Medido:
+
+    NVDA al 15 % con perfil Agresivo   → "⚠️ reducir a menos de 8%"   (tope real: 18)
+    NVDA al 15 % con perfil Agresivo   → sin advertencia               (después)
+
+Dos pantallas, una cartera, consejos contradictorios: Allocation le decía al
+usuario que deshiciera la posición que el Optimizer le acababa de construir
+dentro de su propio límite. El Conservador tenía la imagen espejo, sub-avisado
+en sector (25 % global contra 20 % de su perfil).
+
+Y `5_Optimizer.py` cerraba el círculo con una caption que decía *"Usá este marco
+para elegir el perfil del optimizer (más bonos → Conservador; más equity →
+Agresivo)"* sobre números que no se movían al cambiar el perfil.
+
+**Cero tests.** Ni una línea en `tests/` mencionaba `AllocationAdvisor`,
+`recommended_bond_pct` ni `bonds_pct`. Por eso el docstring pudo prometer
+durante meses una regla que nadie implementó.
+
+### El arreglo
+
+`bond_age_offset_pp` entra en `ProfileConfig` (0 / −5 / −10) junto a
+`risk_aversion` y los topes de concentración. **No reabre la auditoría D3**: D3
+prohibió que el perfil tocara μ porque el retorno de un activo no depende de
+quién lo mira —es propiedad del activo—; una senda de bonos por edad es lo
+contrario, propiedad del inversor, que es justo lo que esa dataclass guarda.
+
+El docstring nombraba dos reglas para un producto de tres perfiles. Moderado
+queda en `age − 5`, el punto medio, que mantiene el orden monótono con
+`risk_aversion` (4,0 / 2,5 / 1,5) en vez de inventar una tercera forma.
+
+`advise()` toma `profile` y lo usa en las dos mitades. Sin perfil devuelve la
+regla conservadora, así que ningún caller viejo cambia de comportamiento.
+
+`tests/test_allocation_profile_oracle.py` (220 casos) es **diferencial**, no
+literal — la lección explícita de `test_config_single_home_oracle`: afirmar
+`bonds_pct == 45.0` lo pasaría un fix que mueve el número a config y después lo
+ignora. El test ancla mueve `bond_age_offset_pp` y exige que la asignación se
+mueva con él. Incluye una guarda anti-contradicción: para los tres perfiles, el
+umbral con el que `advise()` advierte tiene que ser el `max_position_pct` de ese
+perfil, así que Allocation no puede volver a contradecir al Optimizer.
+
+`ENGINE_VERSION` **no** se bumpea: `AllocationAdvisor` tiene exactamente dos
+consumidores y ninguno está en el camino de μ ni del Monte Carlo.
+
+### Números que se movieron, incluido uno que nadie pidió
+
+Un usuario que nunca tocó su perfil queda en Conservador, cuyo tope de sector es
+**20 %** contra el 25 % global que `advise()` usaba antes. Puede ver una
+advertencia de sector nueva sin haber cambiado nada. Es el defecto que la fila
+pedía arreglar, no un efecto colateral, pero va anotado porque se ve.
+
+### Lo que deliberadamente no hizo
+
+El buffer de 5 % de cash se sigue tallando **del tramo de bonos**, así que la
+regla que `recommended_bond_pct` enuncia nunca es la que la pantalla muestra: a
+los 30 un Conservador lee 25 % donde la regla dice 30 %. Acá se arregló la
+etiqueta —la función devuelve la regla y `advise()` documenta el tallado— y no
+la fórmula, porque moverla corre los números del usuario default y es otra
+decisión de producto. Abierta como **N9**.
+
+---
+
 ## N6c — La suite también escribía en la tabla de alertas (2026-09-01)
 
 Hermana de N6: mismo singleton de módulo alcanzable desde la suite, otra tabla,

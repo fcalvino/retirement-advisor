@@ -494,10 +494,8 @@ SECTOR_MAP: Dict[str, List[str]] = {
     "Crypto": ["BTC-USD", "ETH-USD"],
 }
 
-# Asset allocation by age (bonds % = age rule + buffer for conservative)
-def recommended_bond_pct(age: int) -> float:
-    """Conservative: bond % = age. Aggressive: bond % = age - 10."""
-    return min(float(age), 80.0)
+# Asset allocation by age lives with the profiles it depends on — see
+# ``recommended_bond_pct`` below ``OPTIMIZER_PROFILES`` (U5-7).
 
 
 @dataclass
@@ -840,6 +838,21 @@ class ProfileConfig:
                                    Limits cov matrix size and ensures manageable output.
       target_max_human_positions — ideal core portfolio size for the deterministic core selector.
                                    Used by _select_core_holdings() without LLM.
+
+    Age-based allocation (U5-7):
+      bond_age_offset_pp — shifts the "bond % = age" glide path by profile:
+                           0 for conservative, -5 moderate, -10 aggressive.
+
+      This does **not** reopen audit D3. D3 banned the profile from μ because an
+      asset's expected return "does not depend on who is looking at it" — it is
+      a property of the asset. A bond glide path is the opposite: a property of
+      the *investor*, which is precisely what this dataclass holds. It sits next
+      to ``risk_aversion`` and the concentration caps for the same reason.
+
+      Until U5-7 the offset existed only as a promise in the docstring of
+      ``recommended_bond_pct`` and nothing read a profile, so every investor was
+      shown the conservative path — 10 pp less equity than an aggressive one had
+      asked for, at every age.
     """
     name: str
     description: str
@@ -855,6 +868,7 @@ class ProfileConfig:
     pre_filter_top_k: int = 30    # max candidates into SLSQP (profile-tilt down-select)
     target_max_human_positions: int = 12  # ideal core size for deterministic core selector
     risk_aversion: float = 2.5    # δ for the Black-Litterman equilibrium prior
+    bond_age_offset_pp: float = 0.0  # shifts the "bond % = age" glide path (U5-7)
 
 
 # Module-level profile definitions (importable by name)
@@ -873,6 +887,7 @@ CONSERVATIVE_PROFILE = ProfileConfig(
     pre_filter_top_k=20,       # conservative: smaller, income-tilted pool
     target_max_human_positions=10,
     risk_aversion=4.0,         # most risk-averse → defensive equilibrium anchor
+    bond_age_offset_pp=0.0,    # bond % = age
 )
 
 MODERATE_PROFILE = ProfileConfig(
@@ -890,6 +905,8 @@ MODERATE_PROFILE = ProfileConfig(
     pre_filter_top_k=30,       # moderate: balanced pool
     target_max_human_positions=12,
     risk_aversion=2.5,         # textbook default δ
+    bond_age_offset_pp=-5.0,   # bond % = age - 5 (midpoint; the docstring named
+                               # only the two ends, and this product has three)
 )
 
 AGGRESSIVE_PROFILE = ProfileConfig(
@@ -907,6 +924,7 @@ AGGRESSIVE_PROFILE = ProfileConfig(
     pre_filter_top_k=45,       # aggressive: larger pool for growth coverage
     target_max_human_positions=15,
     risk_aversion=1.5,         # most risk-tolerant → growth-tilted anchor
+    bond_age_offset_pp=-10.0,  # bond % = age - 10
 )
 
 OPTIMIZER_PROFILES: Dict[str, ProfileConfig] = {
@@ -914,6 +932,49 @@ OPTIMIZER_PROFILES: Dict[str, ProfileConfig] = {
     "moderate":     MODERATE_PROFILE,
     "aggressive":   AGGRESSIVE_PROFILE,
 }
+
+# Stored name (``UserPreferences.default_profile``) → profile. The optimizer page
+# used to keep its own copy of this mapping; one number, one home (U5-9/10/11).
+_PROFILE_BY_NAME: Dict[str, ProfileConfig] = {
+    p.name: p for p in OPTIMIZER_PROFILES.values()
+}
+
+
+def profile_from_name(name: Optional[str]) -> ProfileConfig:
+    """Resolve a profile from either the stored Spanish name or the English key.
+
+    ``UserPreferences.default_profile`` holds "Conservador" / "Moderado" /
+    "Agresivo" while ``OPTIMIZER_PROFILES`` is keyed in English, so callers need
+    both doors. An unknown or missing name falls back to conservative, which is
+    also ``UserPreferences``' own default — never guess the investor into more
+    risk than they asked for.
+    """
+    if not name:
+        return CONSERVATIVE_PROFILE
+    if name in _PROFILE_BY_NAME:
+        return _PROFILE_BY_NAME[name]
+    return OPTIMIZER_PROFILES.get(str(name).lower(), CONSERVATIVE_PROFILE)
+
+
+def recommended_bond_pct(age: int, profile: Optional[ProfileConfig] = None) -> float:
+    """Bond sleeve for an age, tilted by the investor's risk profile.
+
+    The classic "bond % = age" rule of thumb, shifted by
+    ``ProfileConfig.bond_age_offset_pp``: age for conservative, age - 5 for
+    moderate, age - 10 for aggressive. No profile means conservative, which is
+    what every caller got before U5-7.
+
+    The offset is applied **first** and the result clamped to [0, 80]. The order
+    only matters past 90 (``min(age, 80) - 10`` would give 70 where this gives
+    80), which the age sliders make unreachable today; it is pinned by
+    ``tests/test_allocation_profile_oracle.py`` so nobody has to re-derive it.
+
+    This is the *rule*. What the Allocation screen shows is 5 pp lower, because
+    ``AllocationAdvisor`` carves its cash buffer out of the bond sleeve — see
+    the note there.
+    """
+    prof = profile or CONSERVATIVE_PROFILE
+    return min(max(float(age) + prof.bond_age_offset_pp, 0.0), 80.0)
 
 
 @dataclass
