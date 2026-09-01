@@ -319,7 +319,7 @@ _GAP_AXES: Sequence[tuple] = (
 
 
 def preset_gap(
-    requested: FilterCriteria, effective: FilterCriteria
+    requested: FilterCriteria, available: FilterCriteria
 ) -> Dict[str, tuple]:
     """Values a preset asked for that this run cannot offer, keyed by axis label.
 
@@ -328,17 +328,19 @@ def preset_gap(
     descart\u00e9" over a universe that is 86 % buys — applies nothing at all, and
     the table shows every row while the preset box still reads "Lo que descart\u00e9".
     A filter that silently does the opposite of what its name says is worse than
-    one that refuses; comparing what was asked against what actually reached the
-    criteria is what lets the page say so out loud.
+    one that refuses.
 
-    Empty dict = the preset was applied in full.
+    ``available`` is what the **run** can offer (the option lists), not the
+    current widgets (U7-1). Comparing against widgets made a manual uncheck
+    look like "ese filtro no se aplicó", which is false: the user applied a
+    custom slice. Empty dict = every value the preset named exists in this run.
     """
     gaps: Dict[str, tuple] = {}
     for field_name, label in _GAP_AXES:
         wanted = tuple(getattr(requested, field_name, ()) or ())
         if not wanted:
             continue
-        got = {str(v).upper() for v in (getattr(effective, field_name, ()) or ())}
+        got = {str(v).upper() for v in (getattr(available, field_name, ()) or ())}
         dropped = tuple(v for v in wanted if str(v).upper() not in got)
         if dropped:
             gaps[label] = dropped
