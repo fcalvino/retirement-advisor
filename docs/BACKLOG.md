@@ -110,7 +110,7 @@ el plan del usuario **sin sus ahorros** —490.275 contra 1.234.907, 2,52×— y
 tornado presentaba una barra de ancho cero como si fuera una medición. Con eso,
 la oleada 4 queda entera — ver `ROADMAP.md`).
 Fuera de las oleadas 3–7,
-**U0-2** también cerró — ver `ROADMAP.md`.
+**U0-2** y **N6c** también cerraron — ver `ROADMAP.md`.
 
 ---
 
@@ -192,25 +192,6 @@ elegir entre dos fuentes distintas son trabajos distintos.
 trajo. Cuando la caché falla, es una segunda llamada de red redundante — invisible
 hasta que el retry la volvió cara (la suite pasó de 23 s a 7m26). Vale arreglarlo
 junto con el fallback.
-
-### N6c · La suite también dejó filas en la tabla de alertas
-
-Misma clase de filtración que N6, otra tabla, y quedó fuera de U5-18d.
-`alert_cooldowns` tiene **2 filas del símbolo `TEST1`**, del 2026-05-24
-(`AlertType.SIGNAL_CHANGE:TEST1` y `AlertType.SCORE_DROP:TEST1`), escritas
-cuando algún test usó el `alert_store` real en vez de un doble.
-
-Es **mucho** más leve que N6: ningún número que el usuario ve sale de
-`alert_cooldowns`, y un cooldown de un símbolo que no existe no silencia nada.
-Pero vale por lo que dice — la fuga no fue un incidente del track record, fue un
-patrón: dos tablas, dos meses de diferencia, la misma causa (un singleton de
-módulo alcanzable desde la suite). El fixture autouse de N6 cubre el track
-record; el `alert_store` sigue expuesto por el mismo camino.
-
-Verificar primero si el agujero sigue abierto —`alerts/store.py:321` es otro
-singleton de módulo, y `test_alert_engine.py` usa `FakeAlertStore`, pero puede
-haber otros tests que no—. Si sigue abierto, cerrarlo vale más que limpiar las
-dos filas.
 
 ### N8 · «Inflación» es la indexación del gasto, no la inflación
 
@@ -320,6 +301,7 @@ priorizarlo:
   | N6 | 3 filas en un PR, «contaminación futura» | 53 filas en 16 días, y **ya puntuadas**: 11 de los 22 outcomes, +22,7 pp de hit rate inflado |
   | U5-8 | no pagar (+3) puntúa más que un yield bajo (+2) | cierto en la sub-banda, **falso como score**: 0 de 130 equities; los 6 que caen debajo de 3 son 3 de yield alto castigados a propósito y 3 funds sin payout |
   | U4-3 | «sin retiros activos el swing es 0» | la condición no era «sin retiros»: con `constant_pct` **hay** retiros y el swing también da 0, y con aportes la palanca mueve el plan **al revés**. Y el defecto que pesaba no estaba en la fila: el caso base corría sin los ahorros del usuario, 2,52× |
+  | N6c | «escritas cuando algún test usó el `alert_store` real» | ningún test lo hace: los seis sitios usan un doble, y `TEST1` no está en ningún commit de código. Tampoco lo escribió el engine —`alert_snapshots` en 0 lo descarta—, sino `set_cooldown()` directo. Y copiar el bloque de N6 daba **verde falso**: el default de argumento de `alerts/engine.py:137` se queda con el objeto, no con el nombre |
 
   Empezar a arreglar sin medir produce el arreglo de la fila, no el del defecto.
 - Una fila se cierra cuando su **oráculo** pasa, no cuando el código "parece bien".
