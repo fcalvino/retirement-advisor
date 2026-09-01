@@ -10,6 +10,15 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U5-19 — Π es excess; las views q son totales (2026-09-01)
+
+`implied_equilibrium_returns` documentaba Π como "CAPM equilibrium excess
+returns" y las views `q` que le pasa el optimizer son retornos totales (el
+proxy de score + dividendo). Se admitió en el docstring; no se restó Rf de
+`q`. Ningún número se movió.
+
+---
+
 ## U3-1b — Pendiente desconocida no es cero (2026-09-01)
 
 Se dejó afuera de U3-1 para no mezclar dos campos en un PR de tipos.
