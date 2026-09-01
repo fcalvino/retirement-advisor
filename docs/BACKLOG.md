@@ -61,7 +61,7 @@ ya están en el diario:
 
 | Oleada | Total origen | Cerradas | Abiertas de origen | Leftover vivo |
 |---|---|---|---|---|
-| 3 — fórmulas con blast radius | 11 | 11 | 0 | **U3-1b** (se partió de U3-1) |
+| 3 — fórmulas con blast radius | 11 | 11 | 0 | U3-1b cerró (pendiente desconocida es None) |
 | 4 — flujos del motor | 4 | 4 | 0 | N8 cerró (rótulo; el signo invertido del flujo queda) |
 | 5 — scoring y config | 20 | 19 | 1 (**U5-19**) | **U5-1b** (se partió de U5-1) |
 | 6 — dos motores de retorno | 2 | 1 (U6-1) | 0 de defecto | U6-2 es ritual (`ENGINE_VERSION`), no una fila |
@@ -74,7 +74,6 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | id | banda | qué |
 |---|---|---|
 | **U5-1b** | 3 | Recalibrar Piotroski vs moat. Bloqueado: n=11, todas a 30 días |
-| **U3-1b** | 4 | `sma200_slope_pct = 0.0` es «no se midió» y «la media está plana» |
 | **U5-19** | 5 | Black-Litterman documenta Π como excess y las views `q` son totales |
 | **U7-1** | 5 | `preset_gap` se reevalúa contra los widgets, no contra la corrida |
 | **U7-2** | 5 | Vaciar «Fuente» en Track Record muestra todas las filas |
@@ -138,7 +137,7 @@ para todo Agresivo, a toda edad, en dos superficies — y de paso el mismo `advi
 calificaba la concentración con los topes globales mientras el Optimizer usaba los
 del perfil, así que las dos pantallas se contradecían — ver `ROADMAP.md`).
 Fuera de las oleadas 3–7,
-**U0-2**, **N6c**, **N9**, **U0-3**, **N4**, **N8** y **N7** también cerraron — ver `ROADMAP.md`.
+**U0-2**, **N6c**, **N9**, **U0-3**, **N4**, **N8**, **N7** y **U3-1b** también cerraron — ver `ROADMAP.md`.
 
 ---
 
@@ -189,7 +188,6 @@ son el terreno donde ya nacieron los defectos de arriba.
 
 | id | sev | qué | evidencia |
 |---|---|---|---|
-| **U3-1b** | P3 | `sma200_slope_pct` tiene la misma forma que tenía `above_sma200` antes de U3-1: es `float = 0.0`, así que "no hay ventana suficiente" y "la media está plana" son el mismo valor. Consecuencia acotada pero real: el gate D15 de `technical.py:266` (`or result.sma200_slope_pct >= 0`) concede el bonus por sobreventa a un ticker cuya pendiente nadie pudo medir. Se dejó afuera de U3-1 para no mezclar dos campos en un PR de tipos | `technical.py:35,266` |
 | **U5-19** | P3 | Black-Litterman documenta Π como "CAPM equilibrium **excess** returns" mientras las views `q` son retornos totales | `black_litterman.py:83` |
 | **U7-1** | P3 | `preset_gap` se evalúa en cada rerun contra los widgets actuales, así que sacar un valor a mano dispara "ese filtro no se aplicó", que es falso | `1_Screener.py:663` |
 | **U7-2** | P3 | Vaciar el multiselect "Fuente" muestra **todas** las filas en vez de ninguna | `13_Track_Record.py:86` |

@@ -10,6 +10,21 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U3-1b — Pendiente desconocida no es cero (2026-09-01)
+
+Se dejó afuera de U3-1 para no mezclar dos campos en un PR de tipos.
+`sma200_slope_pct` era `float = 0.0`, así que "no hay ventana" y "la media está
+plana" eran el mismo valor. El gate D15 (`above_sma200 is True or slope >= 0`)
+concedía el bonus de sobreventa a un ticker cuya pendiente nadie midió — y
+`None >= 0` es `TypeError`, así que el default 0.0 no era inocente.
+
+Misma forma que U3-1: `Optional[float] = None`; unknown no suma ni resta.
+La ventana SMA no se movió (U1-3). `ENGINE_VERSION` no se bumpea: el técnico
+no entra a μ ni al Monte Carlo. Locked por `tests/test_trend_unknown_oracle.py`
+y `tests/test_technical_d15.py`.
+
+---
+
 ## N7 — El dividendo de un fund no se muestra sobre 10 (2026-09-01)
 
 Apareció midiendo U5-8. La dimensión reparte 4 + 3 + 3 = 10 (yield, payout,

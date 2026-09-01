@@ -44,3 +44,30 @@ class TestOversoldConditional:
         )
         ta._derive_signal(r)
         assert r.signal != "BULLISH"
+
+    def test_unknown_slope_does_not_grant_the_oversold_bonus(self):
+        """U3-1b: ``None >= 0`` would TypeError; the old default 0.0 granted the bonus."""
+        ta = TechnicalAnalyzer()
+        unknown = _base_result(
+            rsi_weekly=25.0, above_sma200=False, sma200_slope_pct=None,
+        )
+        # −1 is below the D15 gate but above the −2 penalty band, so the only
+        # difference vs None is "was the slope measured".
+        mild_down = _base_result(
+            rsi_weekly=25.0, above_sma200=False, sma200_slope_pct=-1.0,
+        )
+        flat = _base_result(
+            rsi_weekly=25.0, above_sma200=False, sma200_slope_pct=0.0,
+        )
+        ta._derive_signal(unknown)
+        ta._derive_signal(mild_down)
+        ta._derive_signal(flat)
+        assert unknown.signal_strength == mild_down.signal_strength
+        assert flat.signal_strength > unknown.signal_strength
+
+    def test_d15_gate_does_not_compare_none_to_zero(self):
+        from pathlib import Path
+
+        src = Path("analysis/technical.py").read_text(encoding="utf-8")
+        assert "result.sma200_slope_pct >= 0" in src
+        assert "result.sma200_slope_pct is not None" in src

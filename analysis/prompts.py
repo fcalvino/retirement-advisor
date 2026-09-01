@@ -136,6 +136,13 @@ def _tristate(flag, yes: str, no: str, unknown: str = "SIN DATO") -> str:
     return unknown
 
 
+def _slope_pct(value) -> str:
+    """Render an ``Optional[float]`` slope without printing +0.0% as measured (U3-1b)."""
+    if value is None:
+        return "SIN HISTORIAL PARA MEDIR"
+    return f"{value:+.1f}%"
+
+
 def _eps_growth_label(fund) -> str:
     """Name the earnings-growth figure honestly inside the prompt.
 
@@ -455,7 +462,7 @@ Alertas: {", ".join(fund.warnings) if fund.warnings else "ninguna"}
 
 --- ANÁLISIS TÉCNICO (barras semanales) ---
 Señal: {tech.signal} (fuerza: {tech.signal_strength:+d}/100)
-Tendencia: precio {_tristate(tech.above_sma200, "ENCIMA", "DEBAJO", "SIN HISTORIAL PARA MEDIR SU POSICIÓN RESPECTO")} de la {TREND_MA_LABEL} | Pendiente 26 semanas: {tech.sma200_slope_pct:+.1f}%
+Tendencia: precio {_tristate(tech.above_sma200, "ENCIMA", "DEBAJO", "SIN HISTORIAL PARA MEDIR SU POSICIÓN RESPECTO")} de la {TREND_MA_LABEL} | Pendiente 26 semanas: {_slope_pct(tech.sma200_slope_pct)}
 Momentum: RSI={fmt(tech.rsi_weekly)} | MACD={_tristate(tech.macd_bullish, "alcista", "bajista", "sin dato")} | ADX={fmt(tech.adx)}
 Contexto: {tech.price_vs_52w_high_pct:+.1f}% desde 52w high | {tech.price_vs_52w_low_pct:+.1f}% desde 52w low
 Alertas técnicas: {", ".join(tech.warnings) if tech.warnings else "ninguna"}
@@ -693,7 +700,7 @@ Alertas: {warnings_str}
 {moat_section}
 --- ANÁLISIS TÉCNICO (barras semanales) ---
 Señal: {tech.signal} (fuerza: {tech.signal_strength:+d}/100)
-Tendencia: precio {_tristate(tech.above_sma200, "ENCIMA", "DEBAJO", "SIN HISTORIAL PARA MEDIR SU POSICIÓN RESPECTO")} de la {TREND_MA_LABEL} | Pendiente 26 semanas: {tech.sma200_slope_pct:+.1f}%
+Tendencia: precio {_tristate(tech.above_sma200, "ENCIMA", "DEBAJO", "SIN HISTORIAL PARA MEDIR SU POSICIÓN RESPECTO")} de la {TREND_MA_LABEL} | Pendiente 26 semanas: {_slope_pct(tech.sma200_slope_pct)}
 Momentum: RSI={fmt(tech.rsi_weekly)} | MACD={_tristate(tech.macd_bullish, "alcista", "bajista", "sin dato")} | ADX={fmt(tech.adx)}
 Contexto: {tech.price_vs_52w_high_pct:+.1f}% desde 52w high | {tech.price_vs_52w_low_pct:+.1f}% desde 52w low
 

@@ -710,7 +710,15 @@ if symbol:
         col4.metric("RSI (weekly)", f"{tech.rsi_weekly:.1f}" if tech.rsi_weekly else "N/A")
 
         col1, col2 = st.columns(2)
-        col1.metric(f"Pendiente {TREND_MA_SHORT} (26 sem.)", f"{tech.sma200_slope_pct:+.1f}%", help=TREND_MA_HELP)
+        col1.metric(
+            f"Pendiente {TREND_MA_SHORT} (26 sem.)",
+            "—" if tech.sma200_slope_pct is None else f"{tech.sma200_slope_pct:+.1f}%",
+            help=TREND_MA_HELP + (
+                "  ·  «—» = no hay 26 semanas de esa media para medir la pendiente "
+                "(U3-1b: no es lo mismo que una media plana)."
+                if tech.sma200_slope_pct is None else ""
+            ),
+        )
         col2.metric("vs 52w High",        f"{tech.price_vs_52w_high_pct:+.1f}%")
 
         if tech.notes:

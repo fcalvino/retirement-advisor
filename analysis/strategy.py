@@ -462,7 +462,7 @@ class RetirementStrategy:
             decision.rationale.append("Golden Cross — momentum confirming")
         if t.rsi_weekly is not None and t.rsi_weekly < 40:
             decision.rationale.append(f"RSI {t.rsi_weekly:.0f} — pullback offers entry opportunity")
-        if t.sma200_slope_pct > 3:
+        if t.sma200_slope_pct is not None and t.sma200_slope_pct > 3:
             decision.rationale.append(f"{TREND_MA_LABEL_EN} trending up +{t.sma200_slope_pct:.1f}% — secular uptrend")
 
         # Risks
