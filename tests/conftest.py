@@ -241,15 +241,11 @@ def no_retry_backoff(monkeypatch):
     """Zero the fetch backoff for the whole suite.
 
     N2 routed every networked fetcher through ``_fetch_with_retry``, which sleeps
-    2 s, then 4 s, before giving up. Tests reach that path even when they think
-    they have mocked it out: ``data_sources.YFinanceSource`` imports
-    ``get_financials`` locally, so ``patch("analysis.fundamental.get_financials")``
-    does not intercept it, and for a synthetic ticker there is no cache entry to
-    serve it. That call always failed; it used to fail instantly.
-
-    Left alone the suite goes from 23 s to 7m26. The retry policy is right in
-    production and irrelevant here, so the delay — not the retry — is what gets
-    removed.
+    2 s, then 4 s, before giving up. N2b stopped ``YFinanceSource`` from being a
+    second fetcher (it reads the cache ``analyze()`` already filled). The fixture
+    stays because any test that still reaches yfinance — the retry oracle
+    included — would otherwise sleep. The delay is what gets removed, not the
+    retry.
     """
     from config import FETCH
 

@@ -239,34 +239,46 @@ def _fake_financials():
     }
 
 
-def test_yfinance_source_maps_equity_and_assets():
-    from unittest.mock import patch
+def _seed_yf_cache(symbol, info, financials):
+    """N2b: the adapter reads the fetcher cache, it does not call yfinance."""
+    store = {
+        f"info:{symbol}": info or {},
+        f"financials:{symbol}": {
+            k: df.rename(columns=str).rename(index=str).to_dict()
+            for k, df in financials.items()
+        },
+    }
+    return lambda key: store.get(key)
 
+
+def test_yfinance_source_maps_equity_and_assets(monkeypatch):
+    from data.cache import cache
     from data.data_sources import YFinanceSource
 
     fake_info = {"sharesOutstanding": 1e9, "currentPrice": 50.0, "marketCap": 5e10}
-    with patch("data.fetcher.get_info", return_value=fake_info), \
-         patch("data.fetcher.get_financials", return_value=_fake_financials()):
-        out = YFinanceSource().fetch_fundamentals("AAPL")
+    monkeypatch.setattr(
+        cache, "get", _seed_yf_cache("AAPL", fake_info, _fake_financials())
+    )
+    out = YFinanceSource().fetch_fundamentals("AAPL")
     assert out["total_equity"].value == 2e10
     assert out["total_assets"].value == 5e10
     assert out["total_revenue"].value == 100.0
 
 
-def test_yfinance_periodic_facts_carry_as_of_and_point_in_time_ones_do_not():
+def test_yfinance_periodic_facts_carry_as_of_and_point_in_time_ones_do_not(monkeypatch):
     """The whole fix rests on this: a periodic fact must declare its period.
 
     Price / market cap / share count are "now" by definition and SEC does not
     publish them, so they stay undated and are never cross-checked.
     """
-    from unittest.mock import patch
-
+    from data.cache import cache
     from data.data_sources import YFinanceSource
 
     fake_info = {"sharesOutstanding": 1e9, "currentPrice": 50.0, "marketCap": 5e10}
-    with patch("data.fetcher.get_info", return_value=fake_info), \
-         patch("data.fetcher.get_financials", return_value=_fake_financials()):
-        out = YFinanceSource().fetch_fundamentals("AAPL")
+    monkeypatch.setattr(
+        cache, "get", _seed_yf_cache("AAPL", fake_info, _fake_financials())
+    )
+    out = YFinanceSource().fetch_fundamentals("AAPL")
 
     for fld in ("total_revenue", "net_income", "total_equity", "total_assets"):
         assert out[fld].as_of == "2025-12-31", f"{fld} must declare its fiscal period"
@@ -274,14 +286,14 @@ def test_yfinance_periodic_facts_carry_as_of_and_point_in_time_ones_do_not():
         assert out[fld].as_of is None
 
 
-def test_yfinance_uses_newest_annual_column_not_an_older_one():
-    from unittest.mock import patch
-
+def test_yfinance_uses_newest_annual_column_not_an_older_one(monkeypatch):
+    from data.cache import cache
     from data.data_sources import YFinanceSource
 
-    with patch("data.fetcher.get_info", return_value={}), \
-         patch("data.fetcher.get_financials", return_value=_fake_financials()):
-        out = YFinanceSource().fetch_fundamentals("AAPL")
+    monkeypatch.setattr(
+        cache, "get", _seed_yf_cache("AAPL", {}, _fake_financials())
+    )
+    out = YFinanceSource().fetch_fundamentals("AAPL")
     assert out["net_income"].value == 10.0   # 2025, not the 8.0 of 2024
 
 

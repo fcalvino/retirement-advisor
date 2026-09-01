@@ -20,6 +20,21 @@ Sin toggle en runtime ni paleta Plotly. Locked por
 
 ---
 
+## N2b — El adapter de yfinance no es un segundo fetch (2026-09-01)
+
+La fila pedía «fallback de fetch a SEC/FMP». Medida, SEC no habla el idioma del
+scorer (cuatro hechos canónicos vs DataFrames de estados) y la reconciliación
+**ya** llama a SEC en paralelo. El defecto que sí estaba: `YFinanceSource`
+importaba `get_financials` adentro del método, así que un miss de `analyze()`
+pagaba otro ciclo de retry — 7 `Ticker` donde correspondían 4.
+
+El adapter pasa a leer la caché que el fetcher ya llenó (`FETCH.adapter_reads_cache_only`).
+Miss → `{}` , no red. Scoring sigue siendo yfinance. Si yfinance no aportó
+estados y SEC sí, el badge nombra las dos patas y **no** sube de `poor`.
+`ENGINE_VERSION` no se bumpea. Locked por `tests/test_fetch_fallback_oracle.py`.
+
+---
+
 ## U7-2 — Fuente vacío es ninguna fila, no todas (2026-09-01)
 
 Vaciar el multiselect «Fuente» en Track Record mostraba **todas** las filas
