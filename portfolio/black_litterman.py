@@ -80,7 +80,13 @@ def ledoit_wolf_shrinkage(returns: np.ndarray, periods_per_year: float = 52.0) -
 
 def implied_equilibrium_returns(cov: np.ndarray, market_weights: np.ndarray,
                                 risk_aversion: float = 2.5) -> np.ndarray:
-    """Reverse-optimisation: Π = δ · Σ · w_market (CAPM equilibrium excess returns)."""
+    """Reverse-optimisation: Π = δ · Σ · w_market.
+
+    That product is a CAPM-equilibrium **excess** return. The views ``q`` this
+    module receives from the optimizer are **total** (score + dividend proxy),
+    not excess. The two legs are not in the same unit (U5-19); this function
+    does not convert them.
+    """
     cov = np.asarray(cov, dtype=float)
     w = np.asarray(market_weights, dtype=float)
     w = w / w.sum() if w.sum() > 0 else np.ones(len(w)) / len(w)
@@ -99,9 +105,13 @@ def black_litterman_posterior(
     """Black-Litterman posterior expected returns with absolute views (P = I).
 
     Each asset's ``view_returns[i]`` is an absolute view on that asset (the
-    score-derived expected return). Ω is the standard diagonal ``tau·diag(Σ)``,
-    optionally scaled per-view by ``1/view_confidence`` (higher confidence → lower
-    uncertainty → the view pulls harder).
+    score-derived expected return) in **total** return units. Π from
+    :func:`implied_equilibrium_returns` is **excess**. They are mixed as-is
+    (U5-19): this function does not subtract Rf from ``q``.
+
+    Ω is the standard diagonal ``tau·diag(Σ)``, optionally scaled per-view by
+    ``1/view_confidence`` (higher confidence → lower uncertainty → the view
+    pulls harder).
 
     Returns the posterior expected-returns vector (same units as ``cov`` returns).
     Falls back to ``view_returns`` on any numerical failure.
