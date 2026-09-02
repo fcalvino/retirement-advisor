@@ -58,8 +58,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
+import _bootstrap  # noqa: F401
 
 _OFFLINE_TTL_HOURS = 24 * 3650
 
@@ -390,7 +389,7 @@ def main() -> int:
         if not (args.baseline or args.compare):
             return 0
 
-    current = measure_all(symbols)
+    current = off if args.matrix else measure_all(symbols)
 
     if args.baseline:
         Path(args.baseline).write_text(json.dumps(current, indent=1, sort_keys=True))

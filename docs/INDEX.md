@@ -33,6 +33,7 @@ Roles:
 | `historical-plan` | Plan o roadmap de trabajo **ya shipped** |
 | `ideation` | Visión y brainstorm; no es spec de implementación |
 | `archive` | Dump histórico; no es guía de integración actual |
+| `refactor-backlog` | Inventario de deuda técnica estructural; independiente del roadmap de features |
 
 <!-- catalog-table -->
 | Rol | Path | Descripción |
@@ -56,6 +57,7 @@ Roles:
 | ideation | `docs/VISION_GRAN_SALTO.md` | Visión de producto 2026-06; las 3 apuestas ya están en el código |
 | ideation | `docs/prefilter_contract.md` | Contrato del prefiltro (portero): salto → C → 5 puertas → embudo 50–80–120 |
 | ideation | `docs/brainstorm/` | Colección: un archivo por pantalla + capas; índice `00_INDICE.md` |
+| refactor-backlog | `docs/REFACTOR_BACKLOG.md` | Backlog de refactorización: ordenamiento, simplicidad, performance (2026-09-02) |
 | historical-audit | `docs/AUDITORIA_2026-08.md` | Auditoría técnica ago-2026 (Tier 0/1 del motor) |
 | historical-audit | `docs/auditoria_project_owner.md` | Auditoría de producto (project owner) |
 | historical-audit | `docs/AUDIT_DATA_QUALITY.md` | Calidad de datos + estado P0 |

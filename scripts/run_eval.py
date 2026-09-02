@@ -12,15 +12,8 @@ Usage:
 """
 
 import sys
-from pathlib import Path
 
-_sys_root = Path(__file__).resolve().parent.parent
-if str(_sys_root) not in sys.path:
-    sys.path.insert(0, str(_sys_root))
-from bootstrap import ensure_project_root
-
-ensure_project_root()
-
+import _bootstrap  # noqa: F401
 from loguru import logger
 
 from analysis.eval_harness import LiveProvider, ReplayProvider, run_eval

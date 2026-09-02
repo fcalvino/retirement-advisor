@@ -28,7 +28,7 @@ EXCLUDE_DIR_NAMES = frozenset(
 # Session notes, not product docs — see docs/INDEX.md and the audit non-goals.
 # ``.claude/`` holds harness scratch (resume checkpoints, local settings) written
 # by the tooling, not documentation a maintainer curates.
-EXCLUDE_PREFIXES = ("logs/", "qa/", ".claude/")
+EXCLUDE_PREFIXES = ("logs/", "qa/", ".claude/", ".context/")
 
 MUST_NOT_EXIST = (
     "RESUMEN_EJECUTIVO.md",
@@ -60,6 +60,7 @@ VALID_ROLES = frozenset(
         "historical-plan",
         "ideation",
         "archive",
+        "refactor-backlog",
     }
 )
 

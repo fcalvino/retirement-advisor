@@ -850,12 +850,11 @@ class FundamentalAnalyzer:
         # of safety above 80% — which is exactly what `require_margin_of_safety`
         # reads to unlock STRONG BUY. The cap lives in the formula only; the growth
         # rate reported elsewhere is never truncated.
-        from config import THRESHOLDS as _TH
         eps = _safe_float(info.get("trailingEps"))
         growth_estimate = float(result.eps_cagr_5y or 0.0)
-        g_cap = float(getattr(_TH, "graham_max_growth_pct", 15.0) or 15.0)
+        g_cap = float(getattr(T, "graham_max_growth_pct", 15.0) or 15.0)
         growth_used = min(growth_estimate, g_cap)
-        y_aaa = float(getattr(_TH, "graham_aaa_yield_pct", 4.5) or 4.5)
+        y_aaa = float(getattr(T, "graham_aaa_yield_pct", 4.5) or 4.5)
         if y_aaa <= 0:
             y_aaa = 4.5
         # U3-3: ``>= 0``, not ``> 0``. Graham assigned 8.5 as the multiple for a

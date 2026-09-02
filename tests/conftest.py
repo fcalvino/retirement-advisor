@@ -7,6 +7,15 @@ track record and the alert store away from the user's database (see below).
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# scripts/_bootstrap.py is importable only when scripts/ is on sys.path.
+# Tests that import scripts.* modules need this added before collection.
+_scripts_dir = str(Path(__file__).resolve().parent.parent / "scripts")
+if _scripts_dir not in sys.path:
+    sys.path.insert(0, _scripts_dir)
+
 import pandas as pd
 import pytest
 

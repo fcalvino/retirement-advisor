@@ -93,6 +93,13 @@ def proxy_attractiveness_index(
         return None
     return max(0.0, min(100.0, float(expected_return_pct) / cap_pct * 100.0))
 
+
+def fmt_attractiveness_index(expected_return_pct) -> str:
+    """Proxy como índice 0–100. «—» cuando no hay optimización corrida."""
+    idx = proxy_attractiveness_index(expected_return_pct)
+    return "—" if idx is None else f"{idx:.0f}"
+
+
 PROXY_RATIO_LABEL = "Ratio atractivo/vol"
 PROXY_RATIO_HELP = (
     "No es un Sharpe: el numerador es el atractivo estimado (proxy de score) menos "

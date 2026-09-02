@@ -23,9 +23,6 @@ from analysis.strategy import (
 from analysis.technical import TechnicalResult
 from analysis.utils import extract_json_object
 
-# Argentine ADR tickers — flag for emerging market context in the prompt
-ARGENTINA_ADRS = {"YPF", "PAM", "CEPU", "LOMA", "MELI", "GLOB", "DESP", "TEO", "EDN", "GGAL", "BMA", "BBAR", "SUPV"}
-
 
 def resolve_optimizer_profile(profile_name: str | None = None):
     """Map OptimizationResult.profile_name (or key) → ProfileConfig (P1 D13).
@@ -52,6 +49,19 @@ def resolve_optimizer_profile(profile_name: str | None = None):
         return OPTIMIZER_PROFILES.get("conservative", CONSERVATIVE_PROFILE)
 
     return CONSERVATIVE_PROFILE
+
+
+def _strip_code_fence(text: str) -> str:
+    """Remove ```[json] fences from LLM output. Safe when fence has no content."""
+    text = text.strip()
+    if not text.startswith("```"):
+        return text
+    parts = text.split("```")
+    inner = parts[1] if len(parts) > 1 else text
+    inner = inner.strip()
+    if inner.lower().startswith("json"):
+        inner = inner[4:].strip()
+    return inner
 
 
 class AIAnalyzer:
@@ -114,11 +124,7 @@ class AIAnalyzer:
 
         try:
             raw = self._call_api(prompt)
-            # Clean up common LLM artifacts
-            text = raw.strip()
-            if text.startswith("```"):
-                text = text.split("```")[1].strip()
-            return text
+            return _strip_code_fence(raw)
         except Exception as exc:
             logger.warning(f"Long-term narrative generation failed: {exc}")
             return (
@@ -160,13 +166,7 @@ class AIAnalyzer:
 
         try:
             raw = self._call_api(prompt, max_tokens=1800)
-            text = raw.strip()
-            if text.startswith("```"):
-                parts = text.split("```")
-                text = parts[1] if len(parts) > 1 else text
-                text = text.strip()
-                if text.lower().startswith("json"):
-                    text = text[4:].strip()
+            text = _strip_code_fence(raw)
 
             # Parse the JSON contract; if the model returned plain prose instead,
             # salvage the whole text as the narrative rather than failing.
@@ -309,14 +309,7 @@ class AIAnalyzer:
 
         try:
             raw = self._call_api(prompt, max_tokens=2500)
-            text = raw.strip()
-            if text.startswith("```"):
-                parts = text.split("```")
-                text = parts[1] if len(parts) > 1 else text
-                text = text.strip()
-                if text.lower().startswith("json"):
-                    text = text[4:].strip()
-
+            text = _strip_code_fence(raw)
             data = extract_json_object(text)
 
             data.setdefault("narrative", "")

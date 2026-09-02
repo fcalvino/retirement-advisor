@@ -23,16 +23,8 @@ import argparse
 import sys
 import time
 from datetime import datetime
-from pathlib import Path
 
-# Seed repo root then canonicalize via bootstrap.
-_sys_root = Path(__file__).resolve().parent.parent
-if str(_sys_root) not in sys.path:
-    sys.path.insert(0, str(_sys_root))
-from bootstrap import ensure_project_root
-
-ensure_project_root()
-
+import _bootstrap  # noqa: F401
 import schedule
 from loguru import logger
 
