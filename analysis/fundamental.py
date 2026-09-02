@@ -1136,9 +1136,12 @@ class FundamentalAnalyzer:
             else:
                 result.warnings.append(f"Interest coverage thin: {ic:.1f}x")
 
-        # Quick Ratio (3 pts)
-        qr = _safe_float(info.get("quickRatio"))
-        if qr >= T.min_quick_ratio_good:
+        # Quick Ratio (3 pts). An absent field is not a low ratio — same
+        # omitted-vs-zero split as the other ratios in this dimension.
+        qr = reported_positive_metric(info, "quickRatio")
+        if qr is None:
+            missing.append("Quick Ratio")
+        elif qr >= T.min_quick_ratio_good:
             score += 3
         elif qr >= T.min_quick_ratio_ok:
             score += 2
