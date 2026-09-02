@@ -10,6 +10,9 @@ rule-based engine if the API call fails.
 """
 
 import json
+import os
+import sys
+from typing import Callable
 
 from loguru import logger
 
@@ -401,29 +404,31 @@ class AIAnalyzer:
         )
         return response.choices[0].message.content
 
-    def _call_nous(self, prompt: str, max_tokens: int | None = None) -> str:
-        import os
-        import sys
-
+    def _call_openai_compatible(
+        self,
+        base_url: str,
+        credential_resolver: Callable,
+        prompt: str,
+        max_tokens: int | None = None,
+    ) -> str:
+        """Call any OpenAI-compatible inference endpoint with optional Hermes credential resolution."""
         from openai import OpenAI
 
-        # Resolve credentials: prefer local Hermes OAuth session, fall back to explicit API key
         api_key = self.config.api_key
-        base_url = "https://inference-api.nousresearch.com/v1"
 
         hermes_path = os.path.expanduser("~/.hermes/hermes-agent")
         if os.path.isdir(hermes_path) and hermes_path not in sys.path:
             sys.path.insert(0, hermes_path)
 
         try:
-            from hermes_cli.auth import resolve_nous_runtime_credentials
-            creds = resolve_nous_runtime_credentials()
+            creds = credential_resolver()
             api_key = creds["api_key"]
             base_url = creds.get("base_url", base_url).rstrip("/")
         except Exception:
             if not api_key:
                 raise RuntimeError(
-                    "No Nous credentials found. Run `hermes login` or provide a NOUS_API_KEY."
+                    f"No credentials found for {base_url}. "
+                    "Run `hermes login` or provide an API key in Settings."
                 )
 
         client = OpenAI(api_key=api_key, base_url=base_url)
@@ -435,40 +440,22 @@ class AIAnalyzer:
             messages=[{"role": "user", "content": prompt}],
         )
         return response.choices[0].message.content
+
+    def _call_nous(self, prompt: str, max_tokens: int | None = None) -> str:
+        def _resolver():
+            from hermes_cli.auth import resolve_nous_runtime_credentials
+            return resolve_nous_runtime_credentials()
+        return self._call_openai_compatible(
+            "https://inference-api.nousresearch.com/v1", _resolver, prompt, max_tokens,
+        )
 
     def _call_xai(self, prompt: str, max_tokens: int | None = None) -> str:
-        import os
-        import sys
-
-        from openai import OpenAI
-
-        api_key = self.config.api_key
-        base_url = "https://api.x.ai/v1"
-
-        hermes_path = os.path.expanduser("~/.hermes/hermes-agent")
-        if os.path.isdir(hermes_path) and hermes_path not in sys.path:
-            sys.path.insert(0, hermes_path)
-
-        try:
+        def _resolver():
             from hermes_cli.auth import resolve_xai_oauth_runtime_credentials
-            creds = resolve_xai_oauth_runtime_credentials()
-            api_key = creds["api_key"]
-            base_url = creds.get("base_url", base_url).rstrip("/")
-        except Exception:
-            if not api_key:
-                raise RuntimeError(
-                    "No xAI credentials found. Run `hermes auth add xai-oauth` or provide an XAI_API_KEY."
-                )
-
-        client = OpenAI(api_key=api_key, base_url=base_url)
-        mt = max_tokens or 1024
-        response = client.chat.completions.create(
-            model=self.config.model,
-            temperature=0,
-            max_tokens=mt,
-            messages=[{"role": "user", "content": prompt}],
+            return resolve_xai_oauth_runtime_credentials()
+        return self._call_openai_compatible(
+            "https://api.x.ai/v1", _resolver, prompt, max_tokens,
         )
-        return response.choices[0].message.content
 
     def _parse_response(self, raw: str, fund: FundamentalResult, tech: TechnicalResult) -> Decision:
         try:
