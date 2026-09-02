@@ -17,6 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+from config import STRESS_TEST
+
 # ------------------------------------------------------------------ #
 #  Scenario definitions                                                #
 # ------------------------------------------------------------------ #
@@ -288,11 +290,11 @@ class StressTester:
         bench_dd = scenario.historical_spy_dd
         relative = round(portfolio_dd - bench_dd, 1)  # negative = worse than SPY
 
-        # Rough recovery estimate: assume SPY-like recovery rate (~15% p.a. from trough)
+        # Rough recovery estimate: assume SPY-like recovery rate from trough
         recovery_years = round(scenario.recovery_months_est / 12, 1)
 
-        # Estimate value after 1 year of recovery (8% annual from trough)
-        recovery_1yr = trough_value * 1.08
+        # Estimate value after 1 year of recovery (rate from config.STRESS_TEST)
+        recovery_1yr = trough_value * (1 + STRESS_TEST.recovery_annual_rate)
 
         return StressTestResult(
             scenario=scenario,

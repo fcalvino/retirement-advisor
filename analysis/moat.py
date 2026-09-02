@@ -416,11 +416,11 @@ class MoatAnalyzer:
         # 1. Gross Margin Level — pricing power vs. commodity competitors
         #    Software/pharma/luxury: typically ≥50%. Energy/retail: often <30%.
         gm = self._pct(info.get("grossMargins"))
-        if gm >= 50:
+        if gm >= self.cfg.gross_margin_excellent:
             d.gross_margin_level = 2.0
-        elif gm >= 35:
+        elif gm >= self.cfg.gross_margin_good:
             d.gross_margin_level = 1.0
-        elif gm >= 20:
+        elif gm >= self.cfg.gross_margin_min:
             d.gross_margin_level = 0.5
 
         # 2. Gross Margin Stability — consistent GM = structural pricing power
@@ -428,11 +428,11 @@ class MoatAnalyzer:
         gm_series = self._gm_series(income_stmt)
         if len(gm_series) >= 3:
             gm_std = float(gm_series.std())
-            if gm_std <= 3:
+            if gm_std <= self.cfg.gross_margin_stability_excellent:
                 d.gross_margin_stability = 2.0
-            elif gm_std <= 8:
+            elif gm_std <= self.cfg.gross_margin_stability_good:
                 d.gross_margin_stability = 1.0
-            elif gm_std <= 15:
+            elif gm_std <= self.cfg.gross_margin_stability_min:
                 d.gross_margin_stability = 0.5
 
         # 3. ROIC Sustained — returns above the cost of capital signal a moat
@@ -454,33 +454,33 @@ class MoatAnalyzer:
         if len(rev_series) >= 3:
             growth = rev_series.sort_index().pct_change().dropna()
             negative_years = int((growth < 0).sum())
-            if negative_years == 0:
+            if negative_years == self.cfg.revenue_defensiveness_excellent:
                 d.revenue_defensiveness = 2.0
-            elif negative_years == 1:
+            elif negative_years == self.cfg.revenue_defensiveness_good:
                 d.revenue_defensiveness = 1.0
-            elif negative_years <= 2:
+            elif negative_years <= self.cfg.revenue_defensiveness_min:
                 d.revenue_defensiveness = 0.5
 
         # 5. FCF Conversion — OCF/NI > 1 means accounting earnings are backed by cash
         #    Low conversion (<0.6) can indicate aggressive revenue recognition.
         fcf_conv = self._fcf_conversion(income_stmt, cashflow)
         if fcf_conv is not None:
-            if fcf_conv >= 1.2:
+            if fcf_conv >= self.cfg.fcf_conversion_excellent:
                 d.fcf_conversion = 2.0
-            elif fcf_conv >= 0.9:
+            elif fcf_conv >= self.cfg.fcf_conversion_good:
                 d.fcf_conversion = 1.0
-            elif fcf_conv >= 0.6:
+            elif fcf_conv >= self.cfg.fcf_conversion_min:
                 d.fcf_conversion = 0.5
 
         # 6. FCF Margin — high FCF/revenue = scalable model (asset-light or software-like)
         #    Avg over available years is more conservative than a single peak year.
         fcf_margin_val = self._fcf_margin(income_stmt, cashflow)
         if fcf_margin_val is not None:
-            if fcf_margin_val >= 20:
+            if fcf_margin_val >= self.cfg.fcf_margin_excellent:
                 d.fcf_margin = 2.0
-            elif fcf_margin_val >= 10:
+            elif fcf_margin_val >= self.cfg.fcf_margin_good:
                 d.fcf_margin = 1.0
-            elif fcf_margin_val >= 5:
+            elif fcf_margin_val >= self.cfg.fcf_margin_min:
                 d.fcf_margin = 0.5
 
         d.quant_total = round(
@@ -501,7 +501,7 @@ class MoatAnalyzer:
 
     def _call_api(self, prompt: str, ai_config: AIConfig) -> str:
         """Delegate to the module-level call_ai_api() shared with CryptoAnalyzer."""
-        return call_ai_api(prompt, ai_config)
+        return call_ai_api(prompt, ai_config, max_tokens=self.cfg.ai_max_tokens)
 
     def _parse_ai_response(self, raw: str, symbol: str) -> dict:
         """
@@ -647,12 +647,12 @@ class MoatAnalyzer:
             if spread >= float(getattr(cfg, "roic_spread_min", 0.0)):
                 return 0.5
             return 0.0
-        # Legacy absolute ROIC thresholds
-        if roic_avg >= 20:
+        # Legacy absolute ROIC thresholds (S5)
+        if roic_avg >= self.cfg.roic_absolute_excellent:
             return 2.0
-        if roic_avg >= 12:
+        if roic_avg >= self.cfg.roic_absolute_good:
             return 1.0
-        if roic_avg >= 8:
+        if roic_avg >= self.cfg.roic_absolute_min:
             return 0.5
         return 0.0
 
@@ -778,7 +778,7 @@ class MoatAnalyzer:
 # ---------------------------------------------------------------------------
 
 
-def call_ai_api(prompt: str, ai_config: AIConfig) -> str:
+def call_ai_api(prompt: str, ai_config: AIConfig, max_tokens: int = 1024) -> str:
     """
     Dispatch *prompt* to the configured AI provider and return the raw text.
 
@@ -796,7 +796,7 @@ def call_ai_api(prompt: str, ai_config: AIConfig) -> str:
             client = anthropic.Anthropic(api_key=ai_config.api_key)
             msg = client.messages.create(
                 model=ai_config.model,
-                max_tokens=800,
+                max_tokens=max_tokens,
                 temperature=0,
                 messages=[{"role": "user", "content": prompt}],
             )
@@ -808,7 +808,7 @@ def call_ai_api(prompt: str, ai_config: AIConfig) -> str:
             resp = client.chat.completions.create(
                 model=ai_config.model,
                 temperature=0,
-                max_tokens=800,
+                max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}],
             )
             return resp.choices[0].message.content
@@ -840,7 +840,7 @@ def call_ai_api(prompt: str, ai_config: AIConfig) -> str:
             resp = client.chat.completions.create(
                 model=ai_config.model,
                 temperature=0,
-                max_tokens=800,
+                max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}],
             )
             return resp.choices[0].message.content

@@ -24,19 +24,19 @@ Los ítems están agrupados en fases coherentes con el criterio de ratio impacto
 
 | ID | Eje | Esfuerzo | Impacto | Marcador | Título corto |
 |----|-----|----------|---------|----------|-------------|
-| S1 | simplicidad | S | medio | interno | `ARGENTINA_ADRS` declarada dos veces |
-| S2 | simplicidad | S | alto | interno | Code-fence stripping: 3 copias, IndexError latente |
-| S7 | simplicidad | S | bajo | interno | Re-import `THRESHOLDS` local en `analyze()` |
-| S13 | simplicidad | S | bajo | interno | `_fmt_idx` duplicada en dos páginas |
-| S20 | performance | S | bajo | interno | `measure_all` llamado 3 veces donde corresponden 2 |
-| S21 | simplicidad | S | bajo | interno | Boilerplate sys.path duplicado en todos los scripts |
-| S4 | simplicidad | M | alto | observable | 5 dims del moat cuantitativo: thresholds hardcodeados |
-| S5 | simplicidad | S | alto | observable | Fallback de ROIC absoluto hardcodeado |
-| S6 | simplicidad | S | alto | observable | CV de EPS y banda `roe_std*2` no están en config |
-| S9 | simplicidad | S | medio | observable | `div / 15.0` en optimizer sin nombre ni config |
-| S10 | simplicidad | M | alto | observable | 5 glide-path overrides hardcodeados en optimizer |
-| S11 | simplicidad | S | medio | observable | Tasa de recovery en stress test: contradicción y sin config |
-| P1 | performance | S | alto | observable | `max_tokens=800` hardcodeado en moat AI — trunca JSON |
+| S1 ✅ | simplicidad | S | medio | interno | `ARGENTINA_ADRS` declarada dos veces |
+| S2 ✅ | simplicidad | S | alto | interno | Code-fence stripping: 3 copias, IndexError latente |
+| S7 ✅ | simplicidad | S | bajo | interno | Re-import `THRESHOLDS` local en `analyze()` |
+| S13 ✅ | simplicidad | S | bajo | interno | `_fmt_idx` duplicada en dos páginas |
+| S20 ✅ | performance | S | bajo | interno | `measure_all` llamado 3 veces donde corresponden 2 |
+| S21 ✅ | simplicidad | S | bajo | interno | Boilerplate sys.path duplicado en todos los scripts |
+| S4 ✅ | simplicidad | M | alto | observable | 5 dims del moat cuantitativo: thresholds hardcodeados |
+| S5 ✅ | simplicidad | S | alto | observable | Fallback de ROIC absoluto hardcodeado |
+| S6 ✅ | simplicidad | S | alto | observable | CV de EPS y banda `roe_std*2` no están en config |
+| S9 ✅ | simplicidad | S | medio | observable | `div / 15.0` en optimizer sin nombre ni config |
+| S10 ✅ | simplicidad | M | alto | observable | 5 glide-path overrides hardcodeados en optimizer |
+| S11 ✅ | simplicidad | S | medio | observable | Tasa de recovery en stress test: contradicción y sin config |
+| P1 ✅ | performance | S | alto | observable | `max_tokens=800` hardcodeado en moat AI — trunca JSON |
 | S3 | simplicidad | M | medio | interno | `_call_nous` / `_call_xai` ~35 líneas duplicadas |
 | S8 | simplicidad | S | medio | interno | `quickRatio` ignora patrón `reported_metric()` |
 | S14 | simplicidad | S | medio | interno | Dict comprehension scored-ticker duplicado en 5_Optimizer |
@@ -82,6 +82,8 @@ Cambios triviales o de una sola línea. Sin riesgo de regresión; verificables s
 
 **Riesgos:** ninguno. Es un alias del mismo objeto.
 
+**Estado:** ✅ Mergeado — PR #74 (2026-09-02)
+
 **Verificación:** `make check`.
 
 ---
@@ -103,6 +105,8 @@ Tres copias de la misma lógica de limpieza de respuesta LLM. La versión de lí
 
 **Riesgos:** bajo. El cambio elimina un bug latente.
 
+**Estado:** ✅ Mergeado — PR #74 (2026-09-02)
+
 **Verificación:** `make check`. Si hay tests que mockeaban respuestas con fences, deben seguir pasando.
 
 ---
@@ -121,6 +125,8 @@ El bloque Graham fue añadido independientemente y usa `_TH.graham_max_growth_pc
 
 **Contrato estable:** sin cambio.
 
+**Estado:** ✅ Mergeado — PR #74 (2026-09-02)
+
 **Verificación:** `make check`.
 
 ---
@@ -136,6 +142,8 @@ El bloque Graham fue añadido independientemente y usa `_TH.graham_max_growth_pc
 **Cambio propuesto:** mover `_fmt_idx` a `data/product_ux.py` o `dashboard/shared.py` (junto a `proxy_attractiveness_index` que ya está ahí). Reemplazar las dos definiciones por un import.
 
 **Contrato estable:** función privada; ningún contrato externo.
+
+**Estado:** ✅ Mergeado — PR #74 (2026-09-02)
 
 **Verificación:** `make check`.
 
@@ -154,6 +162,8 @@ Con `--matrix`, el script corre `off = measure_all(symbols)` (AI off) y `on = me
 
 **Contrato estable:** salida idéntica; ninguna interfaz externa cambia.
 
+**Estado:** ✅ Mergeado — PR #74 (2026-09-02)
+
 **Verificación:** `make check`. Correr `scripts/measure_score_impact.py --matrix --compare` y verificar que produce el mismo resultado en menos tiempo.
 
 ---
@@ -170,6 +180,8 @@ Con `--matrix`, el script corre `off = measure_all(symbols)` (AI off) y `on = me
 **Contrato estable:** sin cambio de comportamiento.
 
 **Riesgos:** importar `_bootstrap` antes de que el path esté configurado es trivial si el módulo es autocontenido. El nombre con `_` señala que es interno.
+
+**Estado:** ✅ Mergeado — PR #74 (2026-09-02)
 
 **Verificación:** `make check` + correr un script de ejemplo.
 
@@ -202,6 +214,8 @@ Solo `roic_sustained` lee sus umbrales de `MoatConfig` (vía `self.cfg.roic_spre
 
 **Dependencias:** hacerlo antes de O1 (refactor de `analyze()`) para no enterrar más literales.
 
+**Estado:** ✅ Mergeado — PR R1 (2026-09-02)
+
 **Verificación:** `scripts/measure_score_impact.py --compare` debe reportar 0 scores movidos, 0 acciones. `make check`.
 
 ---
@@ -216,6 +230,8 @@ Solo `roic_sustained` lee sus umbrales de `MoatConfig` (vía `self.cfg.roic_spre
 **Cambio propuesto:** agregar `roic_absolute_excellent`, `roic_absolute_good`, `roic_absolute_min` a `MoatConfig`. Reemplazar literales.
 
 **Contrato estable:** mismo que S4.
+
+**Estado:** ✅ Mergeado — PR R1 (2026-09-02)
 
 **Verificación:** `scripts/measure_score_impact.py --compare` → 0 diferencias. `make check`.
 
@@ -235,6 +251,8 @@ Solo `roic_sustained` lee sus umbrales de `MoatConfig` (vía `self.cfg.roic_spre
 
 **Contrato estable:** `EnhancedScoring` — misma firma. Scores: idénticos con los mismos valores default.
 
+**Estado:** ✅ Mergeado — PR R1 (2026-09-02)
+
 **Verificación:** `scripts/measure_score_impact.py --compare` → 0 diferencias. `make check`.
 
 ---
@@ -251,6 +269,8 @@ El denominador `15.0` es la escala de normalización del yield en `_rank_score`.
 **Cambio propuesto:** agregar `div_yield_normalization_pct: float = 15.0` a `OptimizerConfig`. El valor default reproduce el comportamiento actual exactamente.
 
 **Contrato estable:** `PortfolioOptimizer.optimize()` — misma firma. Pesos: idénticos con el mismo default.
+
+**Estado:** ✅ Mergeado — PR R1 (2026-09-02)
 
 **Verificación:** `make check`. Correr el optimizer sobre la caché y comparar pesos antes/después.
 
@@ -273,6 +293,8 @@ Son las reglas del "glide path" del Goal-Aware Optimizer. Ninguna tiene nombre n
 
 **Riesgos:** bajo si los defaults son exactos. Verificar que `_derive_constraints_from_goals` no tiene más literales fuera de este bloque.
 
+**Estado:** ✅ Mergeado — PR R1 (2026-09-02)
+
 **Verificación:** `make check`. Correr optimizer con metas de horizonte corto/largo y comparar constraints.
 
 ---
@@ -290,6 +312,8 @@ El comentario dice 15%; el código usa 8%. Ninguno viene de config. `recovery_va
 **Cambio propuesto:** agregar `recovery_annual_rate: float = 0.08` a la config de stress test (o `THRESHOLDS`). Corregir el comentario para que refleje el valor en config. La decisión de si el valor correcto es 8% o 15% la toma el proyecto — el refactor solo elimina la contradicción y la hace configurable.
 
 **Contrato estable:** `StressResult.recovery_value_at_year1` — mismo campo. Con el mismo rate, mismo valor.
+
+**Estado:** ✅ Mergeado — PR R1 (2026-09-02)
 
 **Verificación:** `make check`. Test unitario que corra un escenario y verifique que `recovery_1yr == trough * (1 + config_rate)`.
 
@@ -310,6 +334,8 @@ El prompt de moat es el más largo del sistema (6 dimensiones cuantitativas + 4 
 **Contrato estable:** `MoatAnalyzer.analyze_with_ai()` — misma firma.
 
 **Riesgos:** costo de API marginalmente mayor. Monitorearlo con `rtk gain`.
+
+**Estado:** ✅ Mergeado — PR R1 (2026-09-02)
 
 **Verificación:** `make check`. Correr `measure_score_impact.py` con AI encendida sobre un ticker conocido y verificar que el JSON se parsea completo.
 
@@ -726,7 +752,7 @@ P2/O6  → (juntos)    (resolver double-query y sidebar import en el mismo PR)
 S18    →  T1         (extraer session guard facilita testear shared.py)
 S12    standalone    (el PR más grande; no combinar con ningún otro)
 O1     standalone    (segundo PR más grande; no combinar)
-R0     sin dependencias (empezar por aquí)
+R0     completo — PR #74 (2026-09-02); sin dependencias
 ```
 
 ---

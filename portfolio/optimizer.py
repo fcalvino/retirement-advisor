@@ -40,6 +40,7 @@ from config import (
     TAILWINDS,
     THRESHOLDS,
     VIEW_WEIGHTS,
+    OptimizerConfig,
     ProfileConfig,
 )
 from data.fetcher import get_history
@@ -136,7 +137,11 @@ class GoalConstraints:
     explanation: str                # human-readable reason for each override
 
 
-def _derive_constraints_from_goals(goals: list, base_cfg: "ProfileConfig") -> GoalConstraints:
+def _derive_constraints_from_goals(
+    goals: list,
+    base_cfg: "ProfileConfig",
+    opt_cfg: "OptimizerConfig" = None,
+) -> GoalConstraints:
     """
     Derives portfolio constraints from the goal with the shortest horizon.
     Grok rule: shortest horizon is always the binding constraint regardless of priority.
@@ -144,6 +149,9 @@ def _derive_constraints_from_goals(goals: list, base_cfg: "ProfileConfig") -> Go
     """
     if not goals:
         return None
+
+    if opt_cfg is None:
+        from config import OPTIMIZER as opt_cfg  # type: ignore[assignment]
 
     # Sort by horizon to find the binding (shortest) goal
     sorted_goals = sorted(goals, key=lambda g: g["horizon_years"])
@@ -153,37 +161,37 @@ def _derive_constraints_from_goals(goals: list, base_cfg: "ProfileConfig") -> Go
 
     overrides = []
 
-    # Vol cap — tighten based on shortest horizon
+    # Vol cap — tighten based on shortest horizon (S10)
     if horizon <= 2:
-        max_vol = min(base_cfg.max_volatility_pct, 8.0)
+        max_vol = min(base_cfg.max_volatility_pct, opt_cfg.glide_vol_cap_short)
         if max_vol < base_cfg.max_volatility_pct:
             overrides.append(f"Volatilidad máx reducida a {max_vol:.0f}% por '{name}' (horizonte {horizon}a)")
     elif horizon <= 5:
-        max_vol = min(base_cfg.max_volatility_pct, 11.0)
+        max_vol = min(base_cfg.max_volatility_pct, opt_cfg.glide_vol_cap_medium)
         if max_vol < base_cfg.max_volatility_pct:
             overrides.append(f"Volatilidad máx reducida a {max_vol:.0f}% por '{name}' (horizonte {horizon}a)")
     elif horizon <= 10:
-        max_vol = min(base_cfg.max_volatility_pct, 15.0)
+        max_vol = min(base_cfg.max_volatility_pct, opt_cfg.glide_vol_cap_long)
         if max_vol < base_cfg.max_volatility_pct:
             overrides.append(f"Volatilidad máx reducida a {max_vol:.0f}% por '{name}' (horizonte {horizon}a)")
     else:
         max_vol = base_cfg.max_volatility_pct
 
-    # Crypto cap — restrict for short horizons
+    # Crypto cap — restrict for short horizons (S10)
     if horizon <= 4:
-        max_crypto = min(base_cfg.max_crypto_pct, 2.0)
+        max_crypto = min(base_cfg.max_crypto_pct, opt_cfg.glide_crypto_cap_near)
         if max_crypto < base_cfg.max_crypto_pct:
             overrides.append(f"Cripto cap reducido a {max_crypto:.0f}% (meta cercana en {horizon}a)")
     elif horizon <= 7:
-        max_crypto = min(base_cfg.max_crypto_pct, 3.0)
+        max_crypto = min(base_cfg.max_crypto_pct, opt_cfg.glide_crypto_cap_mid)
         if max_crypto < base_cfg.max_crypto_pct:
             overrides.append(f"Cripto cap reducido a {max_crypto:.0f}% (meta en {horizon}a)")
     else:
         max_crypto = base_cfg.max_crypto_pct
 
-    # Dividend floor — raise for near-term goals (cash flow matters)
+    # Dividend floor — raise for near-term goals (cash flow matters) (S10)
     if horizon <= 3:
-        min_div = max(base_cfg.min_dividend_yield_pct, 3.5)
+        min_div = max(base_cfg.min_dividend_yield_pct, opt_cfg.glide_div_floor_near)
         if min_div > base_cfg.min_dividend_yield_pct:
             overrides.append(f"Dividendo mínimo subido a {min_div:.1f}% (meta '{name}' necesita flujo en {horizon}a)")
     else:
@@ -529,7 +537,7 @@ class PortfolioOptimizer:
         """
         cfg = self.cfg
         score = float(t.get("adjusted_score", 0) or 0) / 100.0
-        div = self._clean_div_yield(float(t.get("dividend_yield", 0) or 0)) / 15.0
+        div = self._clean_div_yield(float(t.get("dividend_yield", 0) or 0)) / self.opt.div_yield_normalization_pct
         moat = float(t.get("moat_score", 0) or 0) / moat_scale_max(
             ai_available=_moat_had_ai(t)
         )
@@ -1181,7 +1189,7 @@ class PortfolioOptimizer:
         """
         import dataclasses
 
-        constraints = _derive_constraints_from_goals(goals, self.cfg)
+        constraints = _derive_constraints_from_goals(goals, self.cfg, self.opt)
 
         # No override needed — all goals have long horizons
         if constraints is None or (

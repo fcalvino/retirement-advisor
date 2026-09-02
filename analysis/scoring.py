@@ -192,7 +192,7 @@ class EnhancedScoring:
             return 5.0
         elif std <= self.ct.roe_std_max_acceptable:
             return 3.0
-        elif std <= self.ct.roe_std_max_acceptable * 2:
+        elif std <= self.ct.roe_std_max_acceptable * self.ct.roe_std_moderate_multiplier:
             return 1.5
         return 0.5
 
@@ -214,13 +214,13 @@ class EnhancedScoring:
 
         cv = growth.std() / (growth.abs().mean() + 1e-9)
 
-        if cv <= 0.3:    # very stable growth
+        if cv <= self.ct.eps_cv_excellent:
             return 5.0
-        elif cv <= 0.6:
+        elif cv <= self.ct.eps_cv_good:
             return 3.5
-        elif cv <= 1.0:
+        elif cv <= self.ct.eps_cv_acceptable:
             return 2.0
-        elif cv <= 2.0:
+        elif cv <= self.ct.eps_cv_poor:
             return 1.0
         return 0.0
 
