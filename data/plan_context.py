@@ -175,6 +175,27 @@ def is_active(plan_id: str, prefs=None) -> bool:
 
 
 # ------------------------------------------------------------------ #
+#  Price lookup — pure, no Streamlit (usable by scheduler + shared)  #
+# ------------------------------------------------------------------ #
+
+def plan_price_lookup(symbol: str):
+    """Best-effort current price for a symbol, using the fetcher's disk cache.
+
+    Returns the market price (float) or None. Pure: no Streamlit imports.
+    Both the dashboard (dashboard/shared.py re-exports this) and the background
+    scheduler (scripts/run_scheduler.py) use this to avoid duplicating the logic.
+    """
+    try:
+        from data.fetcher import get_info
+        info = get_info(symbol)
+        price = info.get("currentPrice") or info.get("regularMarketPrice")
+        return float(price) if price else None
+    except Exception as exc:
+        logger.debug(f"plan_price_lookup failed for {symbol}: {exc}")
+        return None
+
+
+# ------------------------------------------------------------------ #
 #  Plan vs. reality (market delta + health)                          #
 # ------------------------------------------------------------------ #
 
