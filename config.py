@@ -528,6 +528,13 @@ class ConsistencyThresholds:
     # P1 audit D6: insufficient history must NOT gift ~2.5 pts/dimension (was
     # "neutral"). 0.0 is the conservative retirement default.
     missing_data_score: float = 0.0
+    # S6: EPS coefficient of variation thresholds for _eps_stability
+    eps_cv_excellent: float = 0.3
+    eps_cv_good: float = 0.6
+    eps_cv_acceptable: float = 1.0
+    eps_cv_poor: float = 2.0
+    # S6: multiplier applied to roe_std_max_acceptable for the "moderate" ROE band
+    roe_std_moderate_multiplier: float = 2.0
 
 
 @dataclass
@@ -806,6 +813,32 @@ class MoatConfig:
     roic_spread_excellent: float = 10.0   # spread ≥ this → 2.0 pts
     roic_spread_good: float = 4.0         # spread ≥ this → 1.0 pts
     roic_spread_min: float = 0.0          # spread ≥ this → 0.5 pts
+    # S4: Gross Margin Level (percentage, e.g. 50 = 50%)
+    gross_margin_excellent: float = 50.0
+    gross_margin_good: float = 35.0
+    gross_margin_min: float = 20.0
+    # S4: Gross Margin Stability (std of GM series in percentage points)
+    gross_margin_stability_excellent: float = 3.0
+    gross_margin_stability_good: float = 8.0
+    gross_margin_stability_min: float = 15.0
+    # S4: Revenue Defensiveness (count of years with negative revenue growth)
+    revenue_defensiveness_excellent: int = 0
+    revenue_defensiveness_good: int = 1
+    revenue_defensiveness_min: int = 2
+    # S4: FCF Conversion (OCF / Net Income ratio)
+    fcf_conversion_excellent: float = 1.2
+    fcf_conversion_good: float = 0.9
+    fcf_conversion_min: float = 0.6
+    # S4: FCF Margin (FCF / Revenue, percentage)
+    fcf_margin_excellent: float = 20.0
+    fcf_margin_good: float = 10.0
+    fcf_margin_min: float = 5.0
+    # S5: Fallback absolute ROIC bands (used when use_roic_wacc_spread is False)
+    roic_absolute_excellent: float = 20.0
+    roic_absolute_good: float = 12.0
+    roic_absolute_min: float = 8.0
+    # P1: max output tokens for moat AI calls (800 truncated JSON; 1024 is safer)
+    ai_max_tokens: int = 1024
 
 
 @dataclass
@@ -1110,6 +1143,15 @@ class OptimizerConfig:
     # expression with no name and no home. U6-1 is the row that asks whether
     # 0.18 is the right number; this only gives it somewhere to be argued with.
     score_return_span: float = 0.18
+    # S9: normalization denominator for dividend yield in _rank_score
+    div_yield_normalization_pct: float = 15.0
+    # S10: Glide-path caps applied by _derive_constraints_from_goals
+    glide_vol_cap_short: float = 8.0     # horizon ≤ 2 yr
+    glide_vol_cap_medium: float = 11.0   # horizon ≤ 5 yr
+    glide_vol_cap_long: float = 15.0     # horizon ≤ 10 yr
+    glide_crypto_cap_near: float = 2.0   # horizon ≤ 4 yr
+    glide_crypto_cap_mid: float = 3.0    # horizon ≤ 7 yr
+    glide_div_floor_near: float = 3.5    # horizon ≤ 3 yr
 
 
 @dataclass
@@ -2193,6 +2235,18 @@ class BlackLittermanConfig:
         }
 
 
+@dataclass
+class StressTestConfig:
+    """Parameters for the stress-test recovery estimate (S11).
+
+    recovery_annual_rate — assumed annual growth rate from the crisis trough used
+      to estimate portfolio value after 1 year of recovery. The inline comment
+      previously said 15%; the actual code used 8%. This field fixes the
+      contradiction and makes the rate configurable without touching the formula.
+    """
+    recovery_annual_rate: float = 0.08
+
+
 THRESHOLDS = FundamentalThresholds()
 STRATEGY = StrategyConfig()
 ALERTS = AlertConfig()
@@ -2224,6 +2278,7 @@ COMMITTEE = CommitteeConfig()
 MULTI_SOURCE = MultiSourceConfig()
 MACRO_RAG = MacroRagConfig()
 CHAT = ChatConfig()
+STRESS_TEST = StressTestConfig()
 def ar_fx_from_market(
     *,
     quote_lookup=None,
