@@ -40,6 +40,7 @@ from data.product_ux import (
     PROXY_RETURN_HELP,
     ar_dual_context,
     contribution_inputs,
+    fmt_attractiveness_index,
     indexation_help,
     mc_has_cash_flows,
     pot_growth_column_label,
@@ -71,13 +72,6 @@ st.caption(
     "💵 Valores en USD. Esta simulación es orientativa, no una garantía de resultados."
 )
 
-
-
-def _fmt_idx(expected_return_pct) -> str:
-    """El proxy como índice 0–100 (U6-1). «—» cuando no hay optimización corrida:
-    un plan sin correr no tiene atractivo 0, no tiene atractivo."""
-    idx = proxy_attractiveness_index(expected_return_pct)
-    return "—" if idx is None else f"{idx:.0f}"
 
 
 def _fmt_idx_delta(a, b) -> str | None:
@@ -1697,7 +1691,7 @@ with tab_goals:
             )
             _mc2.metric(
                 PROXY_INDEX_LABEL,
-                _fmt_idx(_goal_res.expected_return_pct),
+                fmt_attractiveness_index(_goal_res.expected_return_pct),
                 delta=_fmt_idx_delta(_goal_res.expected_return_pct, _base_res.expected_return_pct) if _base_res else None,
                 help=PROXY_RETURN_HELP,
             )
