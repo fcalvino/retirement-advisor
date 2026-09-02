@@ -211,6 +211,39 @@ def test_present_debt_to_equity_still_scores_as_before(raw, expected_de):
 
 
 # --------------------------------------------------------------------------- #
+#  S8 — quickRatio follows reported_positive_metric like every other ratio   #
+# --------------------------------------------------------------------------- #
+
+def test_missing_quick_ratio_scores_zero_and_is_noted():
+    """S8: an absent quickRatio must not silently score 0 without a note.
+
+    Before the fix, `_safe_float(None)` returned 0.0, which fell through all
+    three bands and contributed nothing — but also never appended to `missing[]`,
+    so the diagnostic note "Sin datos de … Quick Ratio" was never produced and
+    the data-quality system had no signal that the metric was unavailable.
+    """
+    score, result = _score_health(_info())
+    assert "Quick Ratio" in result.notes.get("health_missing", ""), (
+        "missing quickRatio must appear in health_missing"
+    )
+
+
+@pytest.mark.parametrize("qr,expected_pts", [
+    (T.min_quick_ratio_good, 3),      # exactly at the good threshold
+    (T.min_quick_ratio_good + 1, 3),  # above good
+    (T.min_quick_ratio_ok, 2),        # exactly at the ok threshold
+    (T.min_quick_ratio_ok + 0.1, 2),  # between ok and good
+    (0.5, 1),                         # positive but below ok
+])
+def test_present_quick_ratio_scores_as_before(qr, expected_pts):
+    """S8: tickers that do report quickRatio must not regress."""
+    _, result_before = _score_health(_info(quickRatio=qr))
+    assert "Quick Ratio" not in result_before.notes.get("health_missing", ""), (
+        f"quickRatio={qr} is present; it must not appear in missing"
+    )
+
+
+# --------------------------------------------------------------------------- #
 #  Engine agrees with the oracle across the grid                              #
 # --------------------------------------------------------------------------- #
 
