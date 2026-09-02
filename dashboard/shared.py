@@ -371,22 +371,9 @@ def seed_session_defaults_from_profile(prefs, *, force: bool = False) -> None:
 #  Mi Plan de Retiro — living-plan helpers (Fase C)                    #
 # ------------------------------------------------------------------ #
 
-def plan_price_lookup(symbol: str):
-    """Best-effort current price for a symbol, using the fetcher's disk cache.
-
-    Returns the market price (float) or None. Used both to capture
-    ``price_at_save`` when persisting a plan and to compute "plan vs reality"
-    deltas on refresh. The underlying ``get_info`` is cached for
-    ``CACHE_TTL_HOURS`` so repeated calls stay cheap.
-    """
-    try:
-        from data.fetcher import get_info
-        info = get_info(symbol)
-        price = info.get("currentPrice") or info.get("regularMarketPrice")
-        return float(price) if price else None
-    except Exception as exc:
-        logger.debug(f"plan_price_lookup failed for {symbol}: {exc}")
-        return None
+from data.plan_context import (
+    plan_price_lookup as plan_price_lookup,  # re-export; impl lives in data layer (S19)
+)
 
 
 def compute_plan_health(snap, *, core_only: bool = False) -> dict:

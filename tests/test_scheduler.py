@@ -105,6 +105,7 @@ def stub_plan_context(monkeypatch):
     mod.record_plan_health = lambda *a, **k: None
     mod.get_plan_health_history = lambda pid: []
     mod.compute_longitudinal_drift = lambda hist: {}
+    mod.plan_price_lookup = lambda sym: 100.0
     monkeypatch.setitem(sys.modules, "data.plan_context", mod)
     return mod
 

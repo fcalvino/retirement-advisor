@@ -265,11 +265,11 @@ def _check_plan_health(engine) -> None:
     if not HEALTH.enabled:
         return
 
-    from data.fetcher import get_info
     from data.plan_context import (
         compute_longitudinal_drift,
         get_active_plan,
         get_plan_health_history,
+        plan_price_lookup,
         record_plan_health,
     )
 
@@ -277,17 +277,9 @@ def _check_plan_health(engine) -> None:
     if plan is None:
         return
 
-    def _price_lookup(sym: str):
-        try:
-            info = get_info(sym)
-            p = info.get("currentPrice") or info.get("regularMarketPrice")
-            return float(p) if p else None
-        except Exception:
-            return None
-
     if HEALTH.auto_record:
         record_plan_health(
-            plan, _price_lookup, source="scheduler",
+            plan, plan_price_lookup, source="scheduler",
             min_days_between=HEALTH.min_days_between_records,
         )
 
