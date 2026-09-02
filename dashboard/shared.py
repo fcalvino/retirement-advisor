@@ -1500,12 +1500,13 @@ def cached_goal_optimization(
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def cached_stress_test(
-    sector_weights: dict[str, float],
+    sector_weights_tuple: tuple,
     initial_value: float,
 ):
     """Cache stress test results per sector allocation — recomputes only when weights change."""
     from portfolio.stress_test import StressTester
 
+    sector_weights = dict(sector_weights_tuple)
     tester = StressTester()
     return tester.run(sector_weights, initial_value=initial_value)
 
@@ -1533,7 +1534,7 @@ def run_holdings_committee(
         return None
 
     sw = dict(sector_weights or {})
-    stress_results = cached_stress_test(sw, 100_000.0) if sw else []
+    stress_results = cached_stress_test(tuple(sorted(sw.items())), 100_000.0) if sw else []
 
     # Alignment vs the active plan ("deriva inteligente"), best-effort.
     active_plan_name = ""

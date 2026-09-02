@@ -103,6 +103,30 @@ _BENCHMARKS = {
     "BND (Bonos)":     {"return": 4.2,  "vol": 5.8,  "sharpe": 0.35, "div": 3.80, "max_dd": -8.7},
 }
 
+
+def _to_scored_dict(sym, fund, _tech, _dec) -> dict:
+    """Convert a raw analysis tuple to the dict expected by PortfolioOptimizer."""
+    return {
+        "symbol":              sym,
+        "adjusted_score":      fund.adjusted_score,
+        "total_score":         fund.total_score,
+        "dividend_yield":      fund.dividend_yield or 0.0,
+        "moat_score":          getattr(fund, "moat_score", 0.0),
+        "moat_classification": getattr(fund, "moat_classification", "None"),
+        "tailwind_score":          getattr(fund, "tailwind_score", 0.0),
+        "tailwind_classification": getattr(fund, "tailwind_classification", "Neutral"),
+        "sector":              fund.sector or "Unknown",
+        # U5-16: the ARS discount keys off this, not off a hardcoded list.
+        "country":             getattr(fund, "country", "") or "",
+        "company_name":        fund.company_name,
+        "data_quality_level":  (
+            (getattr(fund, "data_quality", None) or {}).get("level")
+            if isinstance(getattr(fund, "data_quality", None), dict)
+            else "good"
+        ) or "good",
+    }
+
+
 # ------------------------------------------------------------------ #
 #  Page                                                                #
 # ------------------------------------------------------------------ #
@@ -486,28 +510,7 @@ if run_now or not has_valid_result:
         prog.empty()
         stat.empty()
 
-        scored = [
-            {
-                "symbol":              sym,
-                "adjusted_score":      fund.adjusted_score,
-                "total_score":         fund.total_score,
-                "dividend_yield":      fund.dividend_yield or 0.0,
-                "moat_score":          getattr(fund, "moat_score", 0.0),
-                "moat_classification": getattr(fund, "moat_classification", "None"),
-                "tailwind_score":          getattr(fund, "tailwind_score", 0.0),
-                "tailwind_classification": getattr(fund, "tailwind_classification", "Neutral"),
-                "sector":              fund.sector or "Unknown",
-                # U5-16: the ARS discount keys off this, not off a hardcoded list.
-                "country":             getattr(fund, "country", "") or "",
-                "company_name":        fund.company_name,
-                "data_quality_level":  (
-                    (getattr(fund, "data_quality", None) or {}).get("level")
-                    if isinstance(getattr(fund, "data_quality", None), dict)
-                    else "good"
-                ) or "good",
-            }
-            for sym, fund, _tech, _dec in raw
-        ]
+        scored = [_to_scored_dict(sym, fund, tech, dec) for sym, fund, tech, dec in raw]
         if not scored:
             st.error("No se pudo analizar ningún ticker. Verificá la conexión a internet.")
             st.stop()
@@ -1330,28 +1333,7 @@ with tab_compare:
                 _comp_prog.progress((_ci + 1) / len(_comp_universes))
                 continue
 
-            _u_scored = [
-                {
-                    "symbol":              sym,
-                    "adjusted_score":      fund.adjusted_score,
-                    "total_score":         fund.total_score,
-                    "dividend_yield":      fund.dividend_yield or 0.0,
-                    "moat_score":          getattr(fund, "moat_score", 0.0),
-                    "moat_classification": getattr(fund, "moat_classification", "None"),
-                    "tailwind_score":          getattr(fund, "tailwind_score", 0.0),
-                    "tailwind_classification": getattr(fund, "tailwind_classification", "Neutral"),
-                    "sector":              fund.sector or "Unknown",
-                # U5-16: the ARS discount keys off this, not off a hardcoded list.
-                "country":             getattr(fund, "country", "") or "",
-                    "company_name":        fund.company_name,
-                    "data_quality_level":  (
-                        (getattr(fund, "data_quality", None) or {}).get("level")
-                        if isinstance(getattr(fund, "data_quality", None), dict)
-                        else "good"
-                    ) or "good",
-                }
-                for sym, fund, _t, _d in _u_raw
-            ]
+            _u_scored = [_to_scored_dict(sym, fund, t, d) for sym, fund, t, d in _u_raw]
             if _u_scored:
                 try:
                     _u_result = PortfolioOptimizer(profile=profile_key).optimize(_u_scored)
