@@ -5,13 +5,14 @@ from __future__ import annotations
 import io
 import math
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from loguru import logger
 
-from config import AR_FX, GOAL_CARD, MONTE_CARLO, SECTOR_MAP
+from config import AR_FX, GOAL_CARD, MONTE_CARLO, SECTOR_MAP, WITHDRAWAL
 from dashboard.shared import (
     _get_ai_config,
     cached_goal_optimization,
@@ -148,7 +149,7 @@ preset_choice = st.sidebar.selectbox(
 
 if st.sidebar.button("Aplicar preset", type="primary", width="stretch"):
     if preset_choice == "Acumulación pura (20 años)":
-        st.session_state["horizon_years"] = 20
+        st.session_state["horizon_years"] = MONTE_CARLO.default_horizon_years
         st.session_state["initial_value"] = 100_000
         st.session_state["annual_withdrawal"] = 0
         st.session_state["target_value"] = 800_000
@@ -169,7 +170,7 @@ if st.sidebar.button("Aplicar preset", type="primary", width="stretch"):
         st.session_state["inflation_rate"] = 4.0
         st.session_state["last_preset"] = "Meta casa / gasto"
     elif preset_choice == "Retiro clásico 30 años (4% rule + inflación)":
-        st.session_state["horizon_years"] = 30
+        st.session_state["horizon_years"] = WITHDRAWAL.default_longevity_years
         st.session_state["initial_value"] = 1_000_000
         st.session_state["annual_withdrawal"] = 40_000
         st.session_state["target_value"] = 0
@@ -398,11 +399,9 @@ def _tab_mc_content():
         st.info(_es["demo_hint"], icon="💡")
         _e1, _e2 = st.columns(2)
         if _e1.button("📈 Ir al Optimizer", key="sim_empty_opt", width="stretch"):
-            from pathlib import Path as _P
-            st.switch_page(str(_P(__file__).parent / "5_Optimizer.py"))
+            st.switch_page(str(Path(__file__).parent / "5_Optimizer.py"))
         if _e2.button("🗺️ Mi Plan (ejemplo)", key="sim_empty_plan", width="stretch"):
-            from pathlib import Path as _P
-            st.switch_page(str(_P(__file__).parent / "12_Plan.py"))
+            st.switch_page(str(Path(__file__).parent / "12_Plan.py"))
         return
 
     for w in mc.warnings:
@@ -519,11 +518,9 @@ def _tab_mc_content():
             )
         _lc1, _lc2 = st.columns(2)
         if _lc1.button("🗺️ Ir a Mi Plan", key="sim_gap_plan", width="stretch"):
-            from pathlib import Path as _P
-            st.switch_page(str(_P(__file__).parent / "12_Plan.py"))
+            st.switch_page(str(Path(__file__).parent / "12_Plan.py"))
         if _lc2.button("💼 Ir a Portfolio", key="sim_gap_port", width="stretch"):
-            from pathlib import Path as _P
-            st.switch_page(str(_P(__file__).parent / "3_Portfolio.py"))
+            st.switch_page(str(Path(__file__).parent / "3_Portfolio.py"))
         st.caption(
             "📊 Calculado · palancas con fórmula de valor futuro (no IA). "
             "Bajá a **🔬 Sensibilidad** para el impacto estocástico de cada factor."
@@ -1085,7 +1082,7 @@ with tab_stress:
         st.info("Ejecutá el Optimizer primero para obtener pesos por sector.", icon="⚠️")
     else:
         stress_results = cached_stress_test(
-            sector_weights=dict(sector_weights),
+            sector_weights_tuple=tuple(sorted(dict(sector_weights).items())),
             initial_value=float(initial_value),
         )
 
@@ -1733,7 +1730,6 @@ with tab_goals:
                     })
 
             if _rows:
-                import pandas as pd
                 _df_cmp = pd.DataFrame(_rows)
                 st.dataframe(_df_cmp, width="stretch", hide_index=True)
 
