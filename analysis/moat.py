@@ -56,7 +56,12 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-from analysis.utils import corporate_tax_rate_pct, extract_json_object, roic_pct
+from analysis.utils import (
+    corporate_tax_rate_pct,
+    extract_financial_row,
+    extract_json_object,
+    roic_pct,
+)
 from config import MOAT, AIConfig
 
 # ------------------------------------------------------------------ #
@@ -671,15 +676,11 @@ class MoatAnalyzer:
         """
         Extract a time series for the first matching row name, sorted ascending by date.
         Returns an empty Series if df is None/empty or no candidate matches.
+
+        Thin wrapper over ``analysis.utils.extract_financial_row`` (S26) — this
+        module's flavour: oldest-first, cast to float, empty Series on miss.
         """
-        if df is None or df.empty:
-            return pd.Series(dtype=float)
-        for name in candidates:
-            if name in df.index:
-                s = df.loc[name].dropna()
-                s.index = pd.to_datetime(s.index)
-                return s.sort_index().astype(float)
-        return pd.Series(dtype=float)
+        return extract_financial_row(df, candidates, ascending=True, as_float=True)
 
     def _gm_series(self, income_stmt: pd.DataFrame) -> pd.Series:
         """Return a time series of gross margin % (Gross Profit / Revenue × 100)."""

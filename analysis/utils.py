@@ -9,7 +9,59 @@ two behaviours (see ``roic_pct``).
 from __future__ import annotations
 
 import json
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+    import pandas as pd
+
+_MISSING_EMPTY = object()
+
+
+def extract_financial_row(
+    df: "pd.DataFrame | None",
+    candidates: "list[str]",
+    *,
+    ascending: bool = False,
+    as_float: bool = True,
+    require_nonempty: bool = False,
+    missing: Any = _MISSING_EMPTY,
+) -> "Optional[pd.Series]":
+    """Pull one row out of a financial-statement DataFrame by name.
+
+    ``fundamental``, ``moat`` and ``scoring`` each grew a private copy of this
+    ("first candidate name found in ``df.index`` → its non-NaN values as a
+    datetime-indexed Series"). The copies drifted on four axes, so the shared
+    implementation keeps all four as parameters and every caller passes the
+    flavour it already used — the behaviour is byte-identical, only the code
+    lives in one place now (backlog S26):
+
+    - ``ascending`` — sort direction of the returned Series' datetime index.
+      ``moat`` wants oldest-first; ``fundamental``/``scoring`` want newest-first.
+    - ``as_float`` — cast the values with ``.astype(float)``. ``moat``/``scoring``
+      do; ``fundamental`` does not.
+    - ``require_nonempty`` — when a candidate name matches but every value is NaN,
+      keep scanning the remaining candidates (``scoring``) instead of returning
+      that empty match (``fundamental``/``moat``).
+    - ``missing`` — what to return when nothing matches (or ``df`` is
+      ``None``/empty). Defaults to an empty float Series; ``scoring`` passes
+      ``None``.
+    """
+    import pandas as pd
+
+    empty = pd.Series(dtype=float) if missing is _MISSING_EMPTY else missing
+
+    if df is None or getattr(df, "empty", False):
+        return empty
+    for name in candidates:
+        if name not in df.index:
+            continue
+        series = df.loc[name].dropna()
+        if require_nonempty and series.empty:
+            continue
+        series.index = pd.to_datetime(series.index)
+        series = series.sort_index(ascending=ascending)
+        return series.astype(float) if as_float else series
+    return empty
 
 
 def extract_json_object(raw: str) -> dict:

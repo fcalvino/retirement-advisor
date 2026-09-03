@@ -23,7 +23,12 @@ from loguru import logger
 from analysis.moat import MoatAnalyzer, MoatDetail
 from analysis.scoring import ConsistencyDetail, EnhancedScoring, PiotroskiDetail
 from analysis.tailwind import TailwindAnalyzer, TailwindDetail
-from analysis.utils import aligned_latest, corporate_tax_rate_pct, roic_pct
+from analysis.utils import (
+    aligned_latest,
+    corporate_tax_rate_pct,
+    extract_financial_row,
+    roic_pct,
+)
 from config import STRATEGY
 from config import THRESHOLDS as T
 from data.fetcher import (
@@ -1616,13 +1621,13 @@ class FundamentalAnalyzer:
         return 0.0
 
     def _extract_annual_series(self, df: pd.DataFrame, candidates: list) -> pd.Series:
-        """Return a Series of annual values (most recent first) for a matching row."""
-        for name in candidates:
-            if name in df.index:
-                series = df.loc[name].dropna()
-                series.index = pd.to_datetime(series.index)
-                return series.sort_index(ascending=False)
-        return pd.Series(dtype=float)
+        """Return a Series of annual values (most recent first) for a matching row.
+
+        Thin wrapper over ``analysis.utils.extract_financial_row`` (S26) — this
+        module's flavour: newest-first, no ``astype``, empty Series when nothing
+        matches.
+        """
+        return extract_financial_row(df, candidates, ascending=False, as_float=False)
 
     def _consecutive_growth_streak(self, annual: pd.Series) -> int:
         """Count how many consecutive years the dividend grew."""

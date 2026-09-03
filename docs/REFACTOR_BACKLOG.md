@@ -47,7 +47,7 @@ Los ítems están agrupados en fases coherentes con el criterio de ratio impacto
 | S23 ✅ | simplicidad | S | bajo | interno | `rf = 0.045` literal en `tracker.py` — no usa `RISK_FREE` |
 | S24 ✅ | simplicidad | S | medio | observable | Umbrales de drawdown severo/SORR hardcodeados en MC |
 | S25 | simplicidad | M | medio | observable | Pesos de señal técnica hardcodeados en `technical.py` |
-| S26 | simplicidad | S | bajo | interno | `_extract_annual_series` triplicada en 3 módulos de análisis |
+| S26 ✅ | simplicidad | S | bajo | interno | `_extract_annual_series` triplicada en 3 módulos de análisis |
 | S27 | simplicidad | M | medio | observable | SCENARIOS de stress test: ~85 shocks hardcodeados en módulo |
 | S28 ✅ | simplicidad | S | bajo | observable | `expected_annual_return=0.07` hardcodeado en `goals.py` |
 | P2 | performance | S | bajo | interno | Unread-alert count consultado 2 veces por rerun |
@@ -428,15 +428,15 @@ Ninguno de estos pesos ni umbrales proviene de `config.py`. `analysis/technical.
 - `analysis/moat.py:670` — `def _row_series(self, df, candidates) -> pd.Series`
 - `analysis/scoring.py:368` — `def _extract(self, df, candidates) -> Optional[pd.Series]`
 
-Los tres métodos resuelven el mismo problema: extraer una fila de un DataFrame de financial statements buscando el índice por nombre (con candidatos alternativos) y devolver una `pd.Series`. Son privados pero idénticos en semántica; el hecho de que vivan en clases distintas es accidental.
+Los tres métodos resuelven el mismo problema: extraer una fila de un DataFrame de financial statements buscando el índice por nombre (con candidatos alternativos) y devolver una `pd.Series`. Son privados; **no idénticos** — divergieron en 4 ejes (orden del sort, `astype(float)`, qué devuelven en un miss, y si saltan un match all-NaN).
 
-**Cambio propuesto:** mover la función canónica a `analysis/utils.py` como `extract_financial_row(df, candidates) -> Optional[pd.Series]`. Los tres módulos la importan y eliminan su propia copia. `analysis/utils.py` ya existe (contiene `roic_pct`, `aligned_latest`).
+**Cambio propuesto:** mover la función canónica a `analysis/utils.py` como `extract_financial_row(df, candidates) -> Optional[pd.Series]`. Los tres módulos la importan y eliminan su propia copia.
 
 **Contratos estables:** sin cambio; los métodos son privados.
 
-**Riesgos:** bajo. Verificar que los tres callers pasan los mismos tipos.
+**Estado:** ✅ Mergeado — PR #83 (2026-09-03). `analysis/utils.py::extract_financial_row(df, candidates, *, ascending, as_float, require_nonempty, missing)` — los 4 ejes de divergencia son parámetros. Los tres métodos (`_extract_annual_series`, `_row_series`, `_extract`) quedan como wrappers de 1 línea que pasan su flavour exacto, así que los 25+ call sites no cambian y el comportamiento es byte-idéntico.
 
-**Verificación:** `make check`. `TZ=UTC make test`.
+**Verificación:** `make check` + `TZ=UTC make test`.
 
 ---
 
