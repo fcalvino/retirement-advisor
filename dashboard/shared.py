@@ -1619,13 +1619,12 @@ def run_holdings_committee(
 ):
     """Convene the committee over the ACTUAL portfolio (real holdings). → CommitteeVerdict.
 
-    Interprets, does not recompute: reuses the deterministic stress test
-    (`cached_stress_test`), realized metrics already computed by the tracker,
-    drift vs the active plan (`compute_alignment_trades`) and dated macro context.
-    Verdict caching is handled by the committee's SQLite layer (keyed by a content
-    hash of the holdings + AI provider/model). Returns ``None`` when AI is disabled.
+    O4: the orchestration lives in ``analysis.committee.run_holdings_committee``
+    (a free function, no ``st.*``). This wrapper only resolves the AI config and
+    the ``@st.cache_data`` stress test from the Streamlit layer and delegates.
+    Returns ``None`` when AI is disabled.
     """
-    from analysis.committee import CommitteeAnalyzer, build_holdings_committee_context
+    from analysis.committee import run_holdings_committee as _run_holdings_committee
 
     ai_cfg = _get_ai_config()
     if not getattr(ai_cfg, "enabled", False):
@@ -1634,53 +1633,15 @@ def run_holdings_committee(
     sw = dict(sector_weights or {})
     stress_results = cached_stress_test(tuple(sorted(sw.items())), 100_000.0) if sw else []
 
-    # Alignment vs the active plan ("deriva inteligente"), best-effort.
-    active_plan_name = ""
-    drift_pct = None
-    alignment_trades = None
-    if active_plan is not None:
-        try:
-            from data.plan_context import compute_alignment_trades
-
-            _al = compute_alignment_trades(
-                active_plan, dict(position_weights or {}), float(total_value or 0.0),
-                price_lookup=plan_price_lookup,
-            )
-            alignment_trades = _al.get("trades")
-            drift_pct = (_al.get("summary") or {}).get("total_drift_pct")
-            active_plan_name = getattr(active_plan, "name", "")
-        except Exception:  # pragma: no cover - alignment is best-effort
-            pass
-
-    macro_context = ""
-    try:
-        from analysis.macro_rag import macro_rag_store
-
-        macro_context = macro_rag_store.build_context(
-            f"cartera de retiro {' '.join(sw.keys())} tasas inflación riesgo país"
-        )
-    except Exception:  # pragma: no cover - macro is best-effort
-        macro_context = ""
-
-    import hashlib
-
-    sig = "|".join(
-        f"{s}:{round(float(w or 0), 1)}" for s, w in sorted((position_weights or {}).items())
-    )
-    plan_key = hashlib.md5(sig.encode()).hexdigest()[:12]
-
-    ctx = build_holdings_committee_context(
+    return _run_holdings_committee(
         metrics=metrics,
         sector_weights=sw,
         position_weights=position_weights,
         total_value=total_value,
+        ai_config=ai_cfg,
         stress_results=stress_results,
-        macro_context=macro_context,
-        active_plan_name=active_plan_name,
-        drift_pct=drift_pct,
-        alignment_trades=alignment_trades,
+        active_plan=active_plan,
     )
-    return CommitteeAnalyzer(ai_config=ai_cfg).analyze_portfolio(ctx, plan_key=plan_key)
 
 
 def render_committee_verdict(verdict, *, footer_facts: str = "") -> None:
