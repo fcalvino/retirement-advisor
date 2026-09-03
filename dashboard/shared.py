@@ -605,6 +605,67 @@ def usd_ars_quote(symbol: str = "ARS=X"):
     return _usd_ars_quote(symbol)
 
 
+def get_price_history(symbol: str, period: str = "10y", interval: str = "1wk"):
+    """Price history for a chart, so Stock Analysis need not import ``data.fetcher``
+    directly (O7).
+
+    Deliberately *not* ``@st.cache_data``: ``get_history`` already has its own
+    disk cache for successful fetches, and it returns an empty frame (never
+    raises) on a transient outage. Memoizing that empty frame for an hour would
+    keep the chart broken long after the network recovered — the old direct call
+    re-fetched every rerun.
+    """
+    from data.fetcher import get_history
+
+    return get_history(symbol, period=period, interval=interval)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def cross_source_check(symbol: str) -> "dict | None":
+    """Cross-source reconciliation for the data-quality panel (Fase 3A).
+
+    Moved out of ``2_Stock_Analysis.py`` (O7) so the page holds no ``data.*``
+    imports. Cached an hour so it never slows reruns; the screener never calls it.
+    """
+    from analysis.data_reconciliation import reconcile_sources
+    from data.data_sources import default_fundamental_sources
+
+    report = reconcile_sources(symbol, default_fundamental_sources())
+    return report.as_dict()
+
+
+# ------------------------------------------------------------------ #
+#  Alert-engine wrappers for the Alertas page (O5) — the page holds    #
+#  no ``alerts.engine`` / ``alerts.reporter`` import.                  #
+# ------------------------------------------------------------------ #
+
+def run_alert_engine(
+    scored,
+    *,
+    active_profile,
+    positions=None,
+    current_prices=None,
+    optimizer_weights=None,
+):
+    """Build and run the alert engine. When ``positions`` is given, runs the
+    portfolio-aware path; otherwise the universe-only path."""
+    from alerts.engine import AlertEngine
+
+    engine = AlertEngine(active_profile=active_profile)
+    if positions is not None:
+        return engine.run_with_portfolio(
+            scored, positions, current_prices or {}, optimizer_weights
+        )
+    return engine.run(scored)
+
+
+def generate_alert_report(scored, *, period) -> str:
+    """Generate the alerts PDF and return its path."""
+    from alerts.reporter import ReportGenerator
+
+    return ReportGenerator().generate(scored, period=period)
+
+
 def next_priority_action(prefs) -> dict:
     """The single most urgent thing to do right now ("Hoy hacé esto").
 

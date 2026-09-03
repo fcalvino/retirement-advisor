@@ -16,11 +16,12 @@ from dashboard.shared import (
     _moat_badge_html,
     _tailwind_badge_html,
     cached_full_analysis,
+    cross_source_check,
     ensure_session_defaults,
+    get_price_history,
     render_ai_badge,
     render_calc_badge,
 )
-from data.fetcher import get_history
 from data.preferences import UserPreferences
 from data.product_ux import (
     FAST_MA_SHORT,
@@ -49,19 +50,6 @@ _CRYPTO_ALIASES: dict[str, str] = {
 def _normalize_ticker(s: str) -> str:
     return _CRYPTO_ALIASES.get(s.upper(), s)
 
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def _cross_source_check(symbol: str) -> dict | None:
-    """Cross-source reconciliation for the data-quality panel (Fase 3A).
-
-    Cached an hour so it never slows reruns; isolated from the analysis hot path
-    (the screener never calls this). Returns a small dict for display or None.
-    """
-    from analysis.data_reconciliation import reconcile_sources
-    from data.data_sources import default_fundamental_sources
-
-    report = reconcile_sources(symbol, default_fundamental_sources())
-    return report.as_dict()
 
 # ------------------------------------------------------------------ #
 #  Session guard (fresh-session direct navigation) — S18              #
@@ -189,7 +177,7 @@ if symbol:
         _dq = getattr(fund, "data_quality", None) or {}
         _xs = None
         if MULTI_SOURCE.enabled and not getattr(fund, "is_crypto", False):
-            _xs = _cross_source_check(symbol)
+            _xs = cross_source_check(symbol)
         _sig = second_source_quality_signal(_xs, data_quality=_dq if isinstance(_dq, dict) else None)
         st.caption(f"🔬 {_sig['message']}")
         if _xs and len(_xs.get("sources_used", [])) >= 2:
@@ -720,7 +708,7 @@ if symbol:
             st.warning("  ·  ".join(tech.warnings))
 
     with tab_chart:
-        hist = get_history(symbol, period="10y", interval="1wk")
+        hist = get_price_history(symbol, period="10y", interval="1wk")
         if not hist.empty:
             price  = hist["close"]
             sma50  = price.rolling(50).mean()

@@ -8,11 +8,14 @@ from pathlib import Path
 import streamlit as st
 from loguru import logger
 
-from alerts.engine import AlertEngine
-from alerts.reporter import ReportGenerator
 from alerts.store import AlertSeverity, AlertType, alert_store
 from config import ALERTS
-from dashboard.shared import _fetch_universe_parallel, _get_ai_config
+from dashboard.shared import (
+    _fetch_universe_parallel,
+    _get_ai_config,
+    generate_alert_report,
+    run_alert_engine,
+)
 from data.clock import utc_now
 
 # ------------------------------------------------------------------ #
@@ -115,8 +118,6 @@ with tab_run:
                 for sym, fund, _tech, dec in raw
             ]
 
-            engine = AlertEngine(active_profile=_profile)
-
             if _include_portfolio:
                 portfolio = st.session_state.get("portfolio")
                 optimizer_result = st.session_state.get("optimizer_result")
@@ -148,11 +149,15 @@ with tab_run:
                     except Exception:
                         pass
 
-                fired = engine.run_with_portfolio(
-                    scored_for_alerts, positions, current_prices, optimizer_weights
+                fired = run_alert_engine(
+                    scored_for_alerts,
+                    active_profile=_profile,
+                    positions=positions,
+                    current_prices=current_prices,
+                    optimizer_weights=optimizer_weights,
                 )
             else:
-                fired = engine.run(scored_for_alerts)
+                fired = run_alert_engine(scored_for_alerts, active_profile=_profile)
 
             if fired:
                 st.success(f"✅ {len(fired)} alertas detectadas y registradas.")
@@ -188,8 +193,7 @@ with tab_run:
             else:
                 with st.spinner("Generando reporte PDF…"):
                     try:
-                        gen  = ReportGenerator()
-                        path = gen.generate(scored_cache, period=period_label)
+                        path = generate_alert_report(scored_cache, period=period_label)
                         with open(path, "rb") as f:
                             pdf_bytes = f.read()
                         st.download_button(
