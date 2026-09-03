@@ -44,12 +44,12 @@ Los ítems están agrupados en fases coherentes con el criterio de ratio impacto
 | S18 | simplicidad | M | medio | interno | Guard de sesión duplicado en ≥3 páginas |
 | S19 ✅ | simplicidad | S | medio | interno | `_price_lookup` en scheduler duplica lógica de shared.py |
 | S22 | simplicidad | M | medio | interno | `_analyse_one` mezcla extracción de datos con UI strings |
-| S23 | simplicidad | S | bajo | interno | `rf = 0.045` literal en `tracker.py` — no usa `RISK_FREE` |
-| S24 | simplicidad | S | medio | observable | Umbrales de drawdown severo/SORR hardcodeados en MC |
+| S23 ✅ | simplicidad | S | bajo | interno | `rf = 0.045` literal en `tracker.py` — no usa `RISK_FREE` |
+| S24 ✅ | simplicidad | S | medio | observable | Umbrales de drawdown severo/SORR hardcodeados en MC |
 | S25 | simplicidad | M | medio | observable | Pesos de señal técnica hardcodeados en `technical.py` |
 | S26 | simplicidad | S | bajo | interno | `_extract_annual_series` triplicada en 3 módulos de análisis |
 | S27 | simplicidad | M | medio | observable | SCENARIOS de stress test: ~85 shocks hardcodeados en módulo |
-| S28 | simplicidad | S | bajo | observable | `expected_annual_return=0.07` hardcodeado en `goals.py` |
+| S28 ✅ | simplicidad | S | bajo | observable | `expected_annual_return=0.07` hardcodeado en `goals.py` |
 | P2 | performance | S | bajo | interno | Unread-alert count consultado 2 veces por rerun |
 | P3 ✅ | performance | S | bajo | interno | `print()` en `personal_sizer.py` — no usa loguru (evidencia incorrecta: era un docstring) |
 | O3 ✅ | ordenamiento | S | medio | interno | `cached_stress_test` acepta `dict` crudo como param de caché |
@@ -367,6 +367,8 @@ El proyecto unificó la tasa libre de riesgo en `config.RISK_FREE` (U5-10), pero
 
 **Riesgos:** ninguno; es una sustitución alias-por-alias.
 
+**Estado:** ✅ Mergeado — PR #82 (2026-09-03). `portfolio/tracker.py:229` → `rf = RISK_FREE.annual_fraction` (import agregado en `:24`). `RISK_FREE.annual_fraction` = 4.5/100 = 0.045 exacto.
+
 **Verificación:** `make check`. `scripts/measure_score_impact.py --compare`.
 
 ---
@@ -386,6 +388,8 @@ Son umbrales de negocio que determinan dos KPIs expuestos en el dashboard (`pct_
 **Contratos estables:** `MonteCarloResult.pct_paths_severe_drawdown` y `sorr_early_drawdown_pct` — mismos campos. Con los mismos defaults, números idénticos.
 
 **Riesgos:** bajo. Los defaults reproducen el comportamiento actual exactamente.
+
+**Estado:** ✅ Mergeado — PR #82 (2026-09-03). `MonteCarloConfig.severe_drawdown_threshold = 0.50` / `sorr_early_threshold = 0.30`; `_drawdown_stats` en `portfolio/monte_carlo.py` los lee de `MONTE_CARLO`.
 
 **Verificación:** `make check`. `scripts/measure_score_impact.py --compare`.
 
@@ -470,6 +474,8 @@ El 7 % anual es la tasa de retorno esperada por defecto del GoalPlanner. Es un n
 **Contratos estables:** `simulate_goal()` — misma firma. Con el mismo valor, resultados idénticos.
 
 **Riesgos:** ninguno.
+
+**Estado:** ✅ Mergeado — PR #82 (2026-09-03). `MonteCarloConfig.default_expected_annual_return = 0.07`; los dos literales en `portfolio/goals.py` (`required_monthly_savings` default en `:426` y el seed en `:511`) lo leen de `MONTE_CARLO`. *Nota: la función es `required_monthly_savings`, no `simulate_goal`.*
 
 **Verificación:** `make check`.
 

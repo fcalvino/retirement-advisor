@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-from config import DB_PATH
+from config import DB_PATH, RISK_FREE
 from data.fetcher import get_history, get_info
 
 PORTFOLIO_FILE = DB_PATH.parent / "portfolio.json"
@@ -226,7 +226,7 @@ class Portfolio:
             annual_factor = 52  # weekly returns
             mean_ret = returns.mean() * annual_factor
             std_ret = returns.std() * np.sqrt(annual_factor)
-            rf = 0.045  # 4.5% risk-free rate
+            rf = RISK_FREE.annual_fraction  # unified 10Y Treasury proxy (U5-10)
 
             metrics.sharpe_ratio = round((mean_ret - rf) / std_ret, 2) if std_ret > 0 else 0
 
