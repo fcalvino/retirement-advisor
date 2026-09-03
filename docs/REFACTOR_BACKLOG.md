@@ -37,18 +37,26 @@ Los ítems están agrupados en fases coherentes con el criterio de ratio impacto
 | S10 ✅ | simplicidad | M | alto | observable | 5 glide-path overrides hardcodeados en optimizer |
 | S11 ✅ | simplicidad | S | medio | observable | Tasa de recovery en stress test: contradicción y sin config |
 | P1 ✅ | performance | S | alto | observable | `max_tokens=800` hardcodeado en moat AI — trunca JSON |
-| S3 | simplicidad | M | medio | interno | `_call_nous` / `_call_xai` ~35 líneas duplicadas |
-| S8 | simplicidad | S | medio | interno | `quickRatio` ignora patrón `reported_metric()` |
-| S14 | simplicidad | S | medio | interno | Dict comprehension scored-ticker duplicado en 5_Optimizer |
-| S15 | simplicidad | S | bajo | observable | Defaults de sesión hardcodeados; imports mid-file |
+| S3 ✅ | simplicidad | M | medio | interno | `_call_nous` / `_call_xai` ~35 líneas duplicadas |
+| S8 ✅ | simplicidad | S | medio | interno | `quickRatio` ignora patrón `reported_metric()` |
+| S14 ✅ | simplicidad | S | medio | interno | Dict comprehension scored-ticker duplicado en 5_Optimizer |
+| S15 ✅ | simplicidad | S | bajo | observable | Defaults de sesión hardcodeados; imports mid-file |
 | S18 | simplicidad | M | medio | interno | Guard de sesión duplicado en ≥3 páginas |
-| S19 | simplicidad | S | medio | interno | `_price_lookup` en scheduler duplica lógica de shared.py |
+| S19 ✅ | simplicidad | S | medio | interno | `_price_lookup` en scheduler duplica lógica de shared.py |
 | S22 | simplicidad | M | medio | interno | `_analyse_one` mezcla extracción de datos con UI strings |
+| S23 | simplicidad | S | bajo | interno | `rf = 0.045` literal en `tracker.py` — no usa `RISK_FREE` |
+| S24 | simplicidad | S | medio | observable | Umbrales de drawdown severo/SORR hardcodeados en MC |
+| S25 | simplicidad | M | medio | observable | Pesos de señal técnica hardcodeados en `technical.py` |
+| S26 | simplicidad | S | bajo | interno | `_extract_annual_series` triplicada en 3 módulos de análisis |
+| S27 | simplicidad | M | medio | observable | SCENARIOS de stress test: ~85 shocks hardcodeados en módulo |
+| S28 | simplicidad | S | bajo | observable | `expected_annual_return=0.07` hardcodeado en `goals.py` |
 | P2 | performance | S | bajo | interno | Unread-alert count consultado 2 veces por rerun |
-| O3 | ordenamiento | S | medio | interno | `cached_stress_test` acepta `dict` crudo como param de caché |
+| P3 | performance | S | bajo | interno | `print()` en `personal_sizer.py` — no usa loguru |
+| O3 ✅ | ordenamiento | S | medio | interno | `cached_stress_test` acepta `dict` crudo como param de caché |
 | O6 | ordenamiento | S | bajo | interno | Sidebar importa `alert_store` directamente |
-| O7 | ordenamiento | S | bajo | interno | Stock Analysis importa `data.data_sources` directamente |
+| O7 | ordenamiento | S | bajo | interno | Stock Analysis importa `data.data_sources` y `data.fetcher` |
 | O8 | ordenamiento | S | bajo | interno | Migraciones one-shot mezcladas con scripts operacionales |
+| O9 | ordenamiento | S | bajo | interno | Settings importa `data.cache` y `data.fetcher` directamente |
 | O2 | ordenamiento | M | alto | interno | Dispatch de provider AI duplicado en moat.py y ai_analyzer.py |
 | O4 | ordenamiento | M | medio | interno | `run_holdings_committee` (negocio) en módulo de UI |
 | O5 | ordenamiento | M | bajo | interno | Página de alertas importa `AlertEngine` directamente |
@@ -57,6 +65,7 @@ Los ítems están agrupados en fases coherentes con el criterio de ratio impacto
 | O1 | ordenamiento | L | alto | interno | `FundamentalAnalyzer.analyze()` 215 líneas: God method |
 | S12 | simplicidad | L | alto | interno | `7_Simulaciones.py` 2.420 líneas sin helpers |
 | T1 | cobertura | M | alto | interno | Cero tests para `dashboard/shared.py` (1.891 líneas) |
+| T2 | cobertura | M | alto | interno | Sin test de integración para `FundamentalAnalyzer.analyze()` |
 
 ---
 
@@ -341,6 +350,131 @@ El prompt de moat es el más largo del sistema (6 dimensiones cuantitativas + 4 
 
 ---
 
+---
+
+### S23 — `rf = 0.045` literal en `portfolio/tracker.py` `[interno]`
+
+**Eje:** simplicidad · **Esfuerzo:** S · **Impacto:** bajo
+
+**Evidencia:**
+- `portfolio/tracker.py:229` — `rf = 0.045  # 4.5% risk-free rate`
+
+El proyecto unificó la tasa libre de riesgo en `config.RISK_FREE` (U5-10), pero `tracker.py` la redeclara como literal en vez de leer `RISK_FREE.annual_fraction`. Si la tasa cambia, el Sharpe del tracker diverge de los demás módulos sin advertencia.
+
+**Cambio propuesto:** reemplazar `rf = 0.045` por `from config import RISK_FREE; rf = RISK_FREE.annual_fraction`.
+
+**Contratos estables:** `Portfolio.compute_metrics()` — misma firma. Con el mismo valor (4.5 %), ningún número cambia.
+
+**Riesgos:** ninguno; es una sustitución alias-por-alias.
+
+**Verificación:** `make check`. `scripts/measure_score_impact.py --compare`.
+
+---
+
+### S24 — Umbrales de drawdown severo y SORR hardcodeados en `monte_carlo.py` `[observable]`
+
+**Eje:** simplicidad · **Esfuerzo:** S · **Impacto:** medio
+
+**Evidencia:**
+- `portfolio/monte_carlo.py:877` — `pct_severe = float((max_dd_per_path >= 0.50).mean() * 100)` — "caída severa" = 50 %
+- `portfolio/monte_carlo.py:889` — `sorr_early = float((early_dd >= 0.30).mean() * 100)` — "riesgo SORR temprano" = 30 %
+
+Son umbrales de negocio que determinan dos KPIs expuestos en el dashboard (`pct_paths_severe_drawdown`, `sorr_early_drawdown_pct`). El `AlertConfig` ya tiene `sorr_high_threshold_pct = 30.0` para el dispatch de alertas, pero el motor de MC define el mismo concepto con un literal independiente. Si se recalibra uno, el otro no se mueve.
+
+**Cambio propuesto:** agregar `severe_drawdown_threshold: float = 0.50` y `sorr_early_threshold: float = 0.30` a `MonteCarloConfig`. El motor los lee de allí. `AlertConfig.sorr_high_threshold_pct` queda como umbral de severidad de alerta (propósito distinto: cuándo disparar la notificación, no cómo medir el path).
+
+**Contratos estables:** `MonteCarloResult.pct_paths_severe_drawdown` y `sorr_early_drawdown_pct` — mismos campos. Con los mismos defaults, números idénticos.
+
+**Riesgos:** bajo. Los defaults reproducen el comportamiento actual exactamente.
+
+**Verificación:** `make check`. `scripts/measure_score_impact.py --compare`.
+
+---
+
+### S25 — Pesos de señal técnica hardcodeados en `analysis/technical.py` `[observable]`
+
+**Eje:** simplicidad · **Esfuerzo:** M · **Impacto:** medio
+
+**Evidencia (`analysis/technical.py`, función `_derive_signal`):**
+- Pesos por componente: `score += 25` (SMA alignment), `score += 10` (RSI zona), `score += 5` (MACD), `score += 10` / `+15` (tendencias adicionales)
+- Umbrales de clasificación de señal: `score >= 30` → BUY, `score <= -20` → SELL (o similares)
+- Umbrales de sobrecompra/sobreventa: `rsi < 30`, `rsi > 75`
+- Umbrales ADX: `adx >= 25` (tendencia fuerte), `adx < 15` (mercado lateral)
+
+Ninguno de estos pesos ni umbrales proviene de `config.py`. `analysis/technical.py` no tiene una sección de config asociada, a diferencia de todos los demás módulos del motor. Un ajuste metodológico requiere editar la lógica directamente.
+
+**Cambio propuesto:** crear `TechnicalConfig` en `config.py` con los campos: `sma_score_weight`, `rsi_score_weight`, `macd_score_weight`, `buy_signal_threshold`, `sell_signal_threshold`, `rsi_oversold`, `rsi_overbought`, `adx_strong_trend`, `adx_ranging`. Los defaults deben reproducir los valores actuales. Instanciar `TECHNICAL = TechnicalConfig()`.
+
+**Contratos estables:** `TechnicalResult` — sin cambio. Señales: idénticas con los mismos defaults.
+
+**Riesgos:** bajo si los defaults son exactos. Verificar con `--compare`.
+
+**Dependencias:** independiente; puede hacerse antes de O1.
+
+**Verificación:** `scripts/measure_score_impact.py --compare` → 0 diferencias. `make check`.
+
+---
+
+### S26 — `_extract_annual_series` triplicada en 3 módulos de análisis `[interno]`
+
+**Eje:** simplicidad · **Esfuerzo:** S · **Impacto:** bajo
+
+**Evidencia:**
+- `analysis/fundamental.py:1618` — `def _extract_annual_series(self, df, candidates) -> pd.Series`
+- `analysis/moat.py:670` — `def _row_series(self, df, candidates) -> pd.Series`
+- `analysis/scoring.py:368` — `def _extract(self, df, candidates) -> Optional[pd.Series]`
+
+Los tres métodos resuelven el mismo problema: extraer una fila de un DataFrame de financial statements buscando el índice por nombre (con candidatos alternativos) y devolver una `pd.Series`. Son privados pero idénticos en semántica; el hecho de que vivan en clases distintas es accidental.
+
+**Cambio propuesto:** mover la función canónica a `analysis/utils.py` como `extract_financial_row(df, candidates) -> Optional[pd.Series]`. Los tres módulos la importan y eliminan su propia copia. `analysis/utils.py` ya existe (contiene `roic_pct`, `aligned_latest`).
+
+**Contratos estables:** sin cambio; los métodos son privados.
+
+**Riesgos:** bajo. Verificar que los tres callers pasan los mismos tipos.
+
+**Verificación:** `make check`. `TZ=UTC make test`.
+
+---
+
+### S27 — SCENARIOS de stress test: ~85 shocks hardcodeados a nivel de módulo `[observable]`
+
+**Eje:** simplicidad · **Esfuerzo:** M · **Impacto:** medio
+
+**Evidencia:**
+- `portfolio/stress_test.py:40–203` — 6 instancias de `StressScenario` con `sector_shocks` y `default_shock` completamente hardcodeados como literales (GFC 2008, COVID 2020, Dot-com 2000, Bear 2022, Stagflation 1970s, Crypto Winter). Ejemplo: `"Financials": -80.0`, `"Crypto": -75.0`, etc.
+
+Son ~85 valores de negocio (shocks por sector por escenario histórico). Solo `recovery_annual_rate` (S11, ya mergeado) fue sacado a config. Los escenarios son calibración calibrable: un cambio de metodología requiere editar la lógica directamente. Si se agrega un sector al `SECTOR_MAP`, los 6 escenarios no lo capturan automáticamente.
+
+**Cambio propuesto:** definir los 6 `StressScenario` en `config.py` como una lista `STRESS_SCENARIOS: List[StressScenario]` (o como campo de `StressTestConfig`). `stress_test.py` los importa en vez de redeclararlos. Los valores default reproducen el comportamiento actual exactamente.
+
+**Contratos estables:** `StressResult` — sin cambio. `SCENARIOS` en el módulo puede quedar como re-export para compatibilidad con callers existentes.
+
+**Riesgos:** `StressScenario` es un dataclass definido en `stress_test.py`; moverlo implica decidir si va a `config.py` directamente o si se crea un módulo `data/stress_scenarios.py`. La opción más simple es que `config.py` importe `StressScenario` del módulo y los defina ahí.
+
+**Verificación:** `make check`. `tests/test_stress_test.py` debe seguir en verde.
+
+---
+
+### S28 — `expected_annual_return=0.07` hardcodeado en `portfolio/goals.py` `[observable]`
+
+**Eje:** simplicidad · **Esfuerzo:** S · **Impacto:** bajo
+
+**Evidencia:**
+- `portfolio/goals.py:426` — `def simulate_goal(..., expected_annual_return: float = 0.07, ...)`
+- `portfolio/goals.py:511` — `expected_annual_return=0.07` — llamada interna que usa el mismo literal
+
+El 7 % anual es la tasa de retorno esperada por defecto del GoalPlanner. Es un número de negocio (proxy histórico del mercado) que debería estar en `MONTE_CARLO` o en una nueva sección `GOALS` de `config.py` junto a `default_horizon_years`.
+
+**Cambio propuesto:** agregar `default_expected_annual_return: float = 0.07` a `MonteCarloConfig`. Reemplazar los dos literales por `MONTE_CARLO.default_expected_annual_return`.
+
+**Contratos estables:** `simulate_goal()` — misma firma. Con el mismo valor, resultados idénticos.
+
+**Riesgos:** ninguno.
+
+**Verificación:** `make check`.
+
+---
+
 ## Fase R2 — Deduplicación (Esfuerzo S–M)
 
 Eliminar código duplicado que ya tiene un lugar canónico en el codebase.
@@ -363,6 +497,8 @@ Los dos métodos son idénticos excepto por: `base_url` default (`nousresearch.c
 
 **Contrato estable:** `AIAnalyzer._call_api()` — misma firma. Los dos métodos siguen existiendo como delegadores de 2 líneas.
 
+**Estado:** ✅ Mergeado — PR #76 (2026-09-02). `_call_openai_compatible` en `analysis/ai_analyzer.py:407`; `_call_nous` (`:444`) y `_call_xai` (`:452`) son delegadores.
+
 **Verificación:** `make check`.
 
 ---
@@ -382,6 +518,8 @@ Todos los demás ratios en `_score_financial_health` — D/E (línea 1097), Curr
 
 **Riesgos:** puede mover scores de tickers sin `quickRatio`. Verificar antes de mergear.
 
+**Estado:** ✅ Mergeado — PR #77 (2026-09-02). `analysis/fundamental.py:1141` → `qr = reported_positive_metric(info, "quickRatio")`.
+
 **Verificación:** `scripts/measure_score_impact.py --compare`. `make check`.
 
 ---
@@ -399,6 +537,8 @@ Todos los demás ratios en `_score_financial_health` — D/E (línea 1097), Curr
 **Cambio propuesto:** extraer `_to_scored_dict(sym, fund, tech, dec) -> dict` como función local o moverla a `dashboard/shared.py`.
 
 **Contrato estable:** ningún cambio de firma visible.
+
+**Estado:** ✅ Mergeado — PR #78 (2026-09-02). `_to_scored_dict(...)` usado en `dashboard/pages/5_Optimizer.py:513` y `:1336`.
 
 **Verificación:** `make check`. Testear ambas tabs del optimizer.
 
@@ -420,6 +560,8 @@ Todos los demás ratios en `_score_financial_health` — D/E (línea 1097), Curr
 **Cambio propuesto:** seed de sesión desde `MONTE_CARLO.*` en vez de literales. Mover todos los imports al top del archivo.
 
 **Contrato estable:** sin cambio de comportamiento si los valores en config coinciden con los actuales.
+
+**Estado:** ✅ Mergeado — PR #78 (2026-09-02). `7_Simulaciones.py:152/173` siembran de `MONTE_CARLO.default_horizon_years` / `WITHDRAWAL.default_longevity_years`; imports al top. *Pendiente menor:* los presets de las líneas 159/166 aún usan literales `25` y `8`.
 
 **Verificación:** `make check`.
 
@@ -460,6 +602,8 @@ El scheduler no puede importar `dashboard/shared.py` (arrastraría Streamlit). L
 
 **Contrato estable:** `compute_plan_vs_reality(price_lookup=...)` — misma firma inyectable.
 
+**Estado:** ✅ Mergeado — PR #79 (2026-09-02). `plan_price_lookup` vive en `data/plan_context.py`; el scheduler la importa y `dashboard/shared.py` la re-exporta.
+
 **Verificación:** `make check`. Correr `scripts/run_scheduler.py --dry-run` si existe esa flag.
 
 ---
@@ -468,8 +612,8 @@ El scheduler no puede importar `dashboard/shared.py` (arrastraría Streamlit). L
 
 **Eje:** simplicidad · **Esfuerzo:** M · **Impacto:** medio
 
-**Evidencia:**
-- `dashboard/shared.py:1758–1819` — closure `_analyse_one` dentro del thread pool de `_analyse_universe_parallel`
+**Evidencia (verificada 2026-09-03):**
+- `dashboard/shared.py:1746–1814` — closure `_analyse_one` dentro del thread pool de `_analyse_universe_parallel` (`shared.py:1712`)
 
 La closure construye un dict con 20+ keys que incluyen strings de UI (emoji-prefixed sector label, `fund.company_name[:25]` truncation, badge formatting). Esta lógica de presentación vive dentro de un worker concurrente y se duplica parcialmente con el row builder del scheduler.
 
@@ -513,7 +657,30 @@ Dos queries SQLite en el mismo rerun para el mismo valor.
 
 **Contrato estable:** misma semántica de caché; mismo resultado.
 
+**Estado:** ✅ Mergeado — PR #78 (2026-09-02). `dashboard/shared.py:1489` `cached_stress_test(sector_weights_tuple: tuple, ...)` → `dict(sector_weights_tuple)`.
+
 **Verificación:** `make check`.
+
+---
+
+---
+
+### P3 — `print()` en `portfolio/personal_sizer.py` — no usa loguru `[interno]`
+
+**Eje:** performance · **Esfuerzo:** S · **Impacto:** bajo
+
+**Evidencia:**
+- `portfolio/personal_sizer.py:37` — `print(analysis.overall_summary)`
+
+El proyecto estandariza `loguru` para todo output de producción (CONTEXT.md §5). Un `print()` en un módulo de análisis mezcla output de diagnóstico con stdout del proceso Streamlit, que no tiene nivel de log y no puede filtrarse.
+
+**Cambio propuesto:** reemplazar por `logger.debug(analysis.overall_summary)` o `logger.info(...)` según el propósito. Agregar `from loguru import logger` si no está importado.
+
+**Contratos estables:** sin cambio de comportamiento.
+
+**Riesgos:** ninguno.
+
+**Verificación:** `make check`. Verificar que `grep -n "^print(" portfolio/personal_sizer.py` no devuelve nada.
 
 ---
 
@@ -523,15 +690,37 @@ Responsabilidades mal asignadas entre módulos. Mayor riesgo; requiere regresió
 
 ---
 
+### O9 — Settings importa `data.cache` y `data.fetcher` directamente `[interno]`
+
+**Eje:** ordenamiento · **Esfuerzo:** S · **Impacto:** bajo
+
+**Evidencia:**
+- `dashboard/pages/9_Settings.py:11` — `from data.cache import cache`
+- `dashboard/pages/9_Settings.py:12` — `from data.fetcher import usd_ars_quote`
+
+El estándar del proyecto (CONTEXT.md §5) prohíbe que las páginas del dashboard importen directamente de la capa `data/`. Settings usa `cache.invalidate(...)` para limpiar la caché desde la UI y `usd_ars_quote` para mostrar/refrescar el tipo de cambio. Si cambia la interfaz de `data.cache` o `data.fetcher`, la página rompe.
+
+**Cambio propuesto:** agregar `invalidate_ticker_cache(ticker)` y `get_usd_ars_quote()` (o un wrapper) en `dashboard/shared.py`. La página los importa desde ahí. O6 (sidebar → alert_store) tiene exactamente el mismo patrón y se resuelve junto a P2.
+
+**Contratos estables:** la página de Settings muestra los mismos datos y produce el mismo efecto de invalidación.
+
+**Riesgos:** bajo. Son wrappers de una línea.
+
+**Dependencias:** independiente; puede hacerse junto a O6/P2 para consistencia.
+
+**Verificación:** `make check`. Probar la sección de caché en Settings manualmente.
+
+---
+
 ### O2 — Dispatch de provider AI duplicado en dos módulos `[interno]`
 
 **Eje:** ordenamiento · **Esfuerzo:** M · **Impacto:** alto
 
-**Evidencia:**
-- `analysis/moat.py:781–854` — `call_ai_api(prompt, provider, model, api_key, max_tokens)` — maneja `claude`, `openai`, `xai`, `nous`
-- `analysis/ai_analyzer.py:375–478` — `AIAnalyzer._call_api()` delega a `_call_claude`, `_call_openai`, `_call_nous`, `_call_xai`
+**Evidencia (verificada 2026-09-03):**
+- `analysis/moat.py:502` — `MoatAnalyzer._call_api(prompt, ai_config)` + `analysis/moat.py:781` — módulo-level `call_ai_api(prompt, ai_config, max_tokens: int = 1024)` — maneja `claude`, `openai`, `xai`, `nous`; compartido con `CryptoAnalyzer` y `analysis/tailwind.py:340`
+- `analysis/ai_analyzer.py:371` — `AIAnalyzer._call_api()` delega a `_call_claude`, `_call_openai_compatible` (`_call_nous`/`_call_xai`)
 
-Son dos implementaciones paralelas del mismo dispatch de provider. `moat.py` hardcodea `max_tokens=800`; `ai_analyzer.py` default a 1024. Agregar un proveedor requiere editar los dos archivos.
+Son dos implementaciones paralelas del mismo dispatch de provider. *Nota: el `max_tokens=800` que citaba la evidencia original ya fue corregido a 1024 por P1; lo que persiste es la duplicación del dispatch.* Agregar un proveedor requiere editar los dos archivos.
 
 **Cambio propuesto:** consolidar en `AIAnalyzer._call_api()` como punto único. `MoatAnalyzer` recibe una instancia de `AIAnalyzer` (ya lo hace parcialmente) y delega todos los calls de red ahí. `call_ai_api()` en `moat.py` puede quedar como shim deprecado durante una transición.
 
@@ -539,7 +728,7 @@ Son dos implementaciones paralelas del mismo dispatch de provider. `moat.py` har
 
 **Riesgos:** requiere que `MoatAnalyzer` pueda construirse con un `AIAnalyzer` inyectado. Revisar que los tests de moat existentes no rompan.
 
-**Dependencias:** S3 (dedup `_call_nous`/`_call_xai`) se beneficia de hacerse junto.
+**Dependencias:** S3 ya mergeado (PR #76) — O2 pasa a standalone.
 
 **Verificación:** `make check`. `scripts/measure_score_impact.py` con AI on — los scores de moat no deben cambiar.
 
@@ -594,16 +783,17 @@ Si cambia la firma del constructor de `AlertEngine` o `ReportGenerator`, la pág
 
 ---
 
-### O7 — Stock Analysis importa `data.data_sources` directamente `[interno]`
+### O7 — Stock Analysis importa `data.data_sources` y `data.fetcher` directamente `[interno]`
 
 **Eje:** ordenamiento · **Esfuerzo:** S · **Impacto:** bajo
 
 **Evidencia:**
+- `dashboard/pages/2_Stock_Analysis.py:22` — `from data.fetcher import get_history`
 - `dashboard/pages/2_Stock_Analysis.py:61` — `from data.data_sources import default_fundamental_sources`
 
-La función `_cross_source_check` (líneas 53–64) podría vivir en `dashboard/shared.py` con su propio `@st.cache_data`, manteniendo la página libre de imports de la capa de datos.
+Dos imports directos de la capa de datos desde la misma página. `get_history` se usa para el chart de precio histórico; `_cross_source_check` (líneas 53–64) usa `default_fundamental_sources`. Ambos podrían vivir en `dashboard/shared.py` con `@st.cache_data`, manteniendo la página libre de imports de la capa de datos.
 
-**Cambio propuesto:** mover `_cross_source_check` y su import a `shared.py`. La página importa solo el helper cacheado.
+**Cambio propuesto:** mover `_cross_source_check` y `get_history` (o un wrapper cacheado) a `shared.py`. La página importa solo los helpers cacheados.
 
 **Verificación:** `make check`.
 
@@ -631,8 +821,8 @@ Viven junto a `run_scheduler.py`, `run_eval.py` y herramientas operacionales. Un
 
 **Eje:** ordenamiento · **Esfuerzo:** L · **Impacto:** alto
 
-**Evidencia:**
-- `analysis/fundamental.py:733–948` — método único que hace: fetch de datos yfinance, clasificación de activo, 5 dimensiones de scoring, Graham, EnhancedScoring (Consistency + Piotroski), MoatAnalyzer, TailwindAnalyzer, adjusted_score, data quality, cross-source quality, logging.
+**Evidencia (verificada 2026-09-03):**
+- `analysis/fundamental.py:733`–~`952` — método único que hace: fetch de datos yfinance, clasificación de activo, 5 dimensiones de scoring, Graham, EnhancedScoring (Consistency + Piotroski), MoatAnalyzer, TailwindAnalyzer, adjusted_score, data quality, cross-source quality, logging.
 
 Ninguna de estas responsabilidades se puede cambiar sin leer el método completo. Las funciones de dimensión ya están extraídas (`_score_profitability`, etc.) pero `analyze()` es el cuello de botella donde todas se acoplan.
 
@@ -648,18 +838,18 @@ Ninguna de estas responsabilidades se puede cambiar sin leer el método completo
 
 **Riesgos:** alto. Es el método más central del motor. Requiere tests de regresión exhaustivos con `measure_score_impact.py --compare` (0 scores deben moverse). Hacer en un PR dedicado.
 
-**Dependencias:** S4/S5 (moat thresholds a config) deben estar mergeados primero.
+**Dependencias:** S4/S5 (moat thresholds a config) ya mergeados (PR R1). T2 (test de integración de `analyze()`) debe mergearse **antes** — ver plan P-11 → P-16.
 
 **Verificación:** `scripts/measure_score_impact.py --compare` → 0 scores movidos. `make check`. `TZ=UTC make test`.
 
 ---
 
-### S16 — `_home_page()` 208 líneas `[interno]`
+### S16 — `_home_page()` ~200 líneas `[interno]`
 
 **Eje:** simplicidad · **Esfuerzo:** M · **Impacto:** medio
 
-**Evidencia:**
-- `dashboard/app.py:133–341` — función única que renderiza métricas, plan hub, action card, onboarding wizard, guided journey, sample-plan loading (con try/except y `st.switch_page`), y disclaimer
+**Evidencia (verificada 2026-09-03):**
+- `dashboard/app.py:133`–~`360` — función única que renderiza métricas, plan hub, action card, onboarding wizard, guided journey, sample-plan loading (con try/except y `st.switch_page`), y disclaimer; sin helpers `_render_*`
 
 **Cambio propuesto:** extraer `_render_plan_hub()`, `_render_guided_journey()`, `_render_sample_plan_section()`. Cada una con sus imports y su estado local.
 
@@ -743,16 +933,87 @@ Las funciones con mayor riesgo son:
 
 ---
 
+---
+
+### T2 — Sin test de integración para `FundamentalAnalyzer.analyze()` `[interno]`
+
+**Eje:** cobertura · **Esfuerzo:** M · **Impacto:** alto
+
+**Evidencia:**
+- `analysis/fundamental.py` — 1637 líneas; el método `analyze()` (líneas 733–947) es el corazón del motor de scoring
+- `tests/` — existen tests especializados por comportamiento (`test_eps_growth_and_graham.py`, `test_reit_ffo.py`, `test_dividend_yield_units.py`, `test_data_quality.py`, etc.) pero **no existe `tests/test_fundamental.py`** que cubra el flujo completo del pipeline
+
+Los tests especializados prueban casos de borde específicos pero no detectarían una regresión en la orquestación general de `analyze()` — por ejemplo, que el `adjusted_score` no incluya el bonus de moat, que la clasificación de activo no se propague correctamente a los sub-scorers, o que los ramos de fallback (sin estados financieros) no devuelvan el `FundamentalResult` correcto.
+
+**Las funciones de mayor riesgo sin cobertura de integración:**
+1. **Flujo completo `analyze(ticker)`** — 14 responsabilidades en secuencia; cualquier regresión en el orden o la propagación pasa inadvertida
+2. **Fast-path de crypto** — lógica bifurcada desde la línea 737; solo cubierto indirectamente por `test_crypto_scoring.py`
+3. **Cross-source quality check** — llamada a `data.data_sources` que puede degradar silenciosamente el badge si falla
+
+**Cambio propuesto:** crear `tests/test_fundamental.py` con:
+- Un test de integración por asset class (equity standard, REIT, crypto) usando fixtures de `conftest.py`
+- Test que verifica que `adjusted_score >= total_score` cuando hay moat/consistency (invariante del motor)
+- Test de fast-path crypto: `analyze("BTC-USD")` devuelve `FundamentalResult` válido sin iterar por los sub-scorers de equity
+
+**Contratos estables:** no cambia código de producción.
+
+**Riesgos:** los fixtures de `info` para equity son complejos. Reusar el patrón de `test_scoring.py` y `test_strategy.py` que ya mockan `get_info`.
+
+**Dependencias:** más urgente si se hace O1 (refactor de `analyze()`) — tener tests de integración antes del refactor garantiza que no se rompe nada.
+
+**Verificación:** `make check`. Los nuevos tests deben pasar sin `st` en el entorno.
+
+---
+
+## Plan de ejecución — PRs pendientes (2026-09-03)
+
+> R0 (PR #74) y R1 (PR R1) completos. S3 (#76), S8 (#77), S14/S15/O3 (#78), S19 (#79) mergeados.
+> Quedan **23 ítems** agrupados en 17 PRs (P-0 = esta actualización de docs). Un PR por iteración,
+> en orden. La aprobación de cada PR sigue el gate de su fila.
+
+| PR | Ítems | Fase | Esf. | Ola | Gate de verificación | Merge |
+|----|-------|------|------|-----|----------------------|-------|
+| P-0 | *(docs: este plan)* | — | S | 1 | `make check` | autónomo |
+| P-1 | P3, O8 | R2/R3 | S | 1 | `make check` | autónomo |
+| P-2 | S23, S24, S28 | R1-bis | S | 1 | `make check` + `measure_score_impact.py --compare` → 0 scores / 0 señales | autónomo si 0 diff |
+| P-3 | S26 | R2 | S | 1 | `make check` + `TZ=UTC make test` | autónomo |
+| P-4 | P2, O6, O9 | R2/R3 | M | 1 | `make check` | autónomo + revisión visual badge/Settings |
+| P-5 | S18 | R2 | M | 1 | `make check` + carga en frío de 3 páginas | autónomo |
+| P-6 | S25 | R1-bis | M | 2 | `make check` + `--compare` → 0 señales técnicas | autónomo si 0 diff |
+| P-7 | S27 | R1-bis | M | 2 | `make check` + `TZ=UTC make test` (`tests/test_stress_test.py` verde) | autónomo si 0 diff |
+| P-8 | O5, O7 | R3 | M | 2 | `make check` | autónomo + revisión visual |
+| P-9 | O4 | R3 | M | 2 | `make check` | autónomo + revisión visual comité |
+| P-10 | O2 | R3 | M | 2 | `make check` + `measure_score_impact.py` AI on → 0 delta moat | **aprobación usuario** |
+| P-11 | T2 | R4 | M | 2 | `make check` | autónomo · **precede a P-16** |
+| P-12 | S22 | R2 | M | 3 | `make check` + revisión visual tabla screener | **aprobación usuario** |
+| P-13 | S16 | R3 | M | 3 | `make check` + revisión visual home | **aprobación usuario** |
+| P-14 | S17 | R3 | M | 3 | `make check` + revisión visual controles retiro | **aprobación usuario** |
+| P-15 | T1 | R4 | M | 3 | `make check` (tras P-5) | autónomo |
+| P-16 | O1 | R3 | L | 3 | `make check` + `TZ=UTC make test` + `--compare` → 0 scores | **aprobación usuario** · standalone · tras P-11 |
+| P-17 | S12 | R3 | L | 3 | `make check` + `TZ=UTC make test` + revisión visual todas las tabs | **aprobación usuario** · standalone · último |
+
+**Olas:** 1 = P-0…P-5 (paralelizables, riesgo mínimo). 2 = P-6…P-11 (tras ola 1; P-4/P-8/P-9/P-10 tocan `shared.py` → coordinar rebase). 3 = P-12…P-17 (serializadas; P-16 tras P-11; P-17 solo y al final).
+
+**Contratos públicos a preservar** (por PR, según cada ítem): `Portfolio.compute_metrics()` (P-2), `MonteCarloResult` / `simulate_goal()` (P-2), `TechnicalResult` (P-6), `StressResult` (P-7), `run_holdings_committee()` (P-9), `MoatAnalyzer.analyze_with_ai()` (P-10), `FundamentalResult` / `FundamentalAnalyzer.analyze()` / `full_analysis()` (P-16), helpers `cached_*` de `shared.py` (P-4/P-8/P-9). Los ítems de config (S23–S28) no cambian la matemática: defaults = literales actuales. Re-exports se mantienen para no romper callers.
+
+**Evidencia para aprobar los `[observable]`:** P-2 (S24/S28) y P-6 (S25) y P-7 (S27) → `--compare` con 0 scores y 0 señales; P-10 → corrida con AI on antes/después, 0 delta de `moat_score`; P-4 (P2/O6) → badge muestra el mismo número; P-12/P-13/P-14/P-16/P-17 → captura antes/después, mismos componentes y orden.
+
+---
+
 ## Dependencias entre ítems
 
 ```
-S4/S5  →  O1         (mover thresholds a config antes de refactorizar analyze())
-O2     →  S3         (unificar dispatch AI antes de dedup _call_nous/_call_xai)
-P2/O6  → (juntos)    (resolver double-query y sidebar import en el mismo PR)
-S18    →  T1         (extraer session guard facilita testear shared.py)
-S12    standalone    (el PR más grande; no combinar con ningún otro)
-O1     standalone    (segundo PR más grande; no combinar)
-R0     completo — PR #74 (2026-09-02); sin dependencias
+S4/S5  →  O1         satisfecha (R1 mergeado) — O1 desbloqueado a nivel config
+O2     →  S3         satisfecha (S3 mergeado, PR #76) — O2 pasa a standalone (P-10)
+P2/O6/O9 → (juntos)  VIGENTE — mismo patrón double-query + import de capa (P-4)
+S18    →  T1         VIGENTE — session guard centralizado facilita testear shared.py (P-5 → P-15)
+T2     →  O1         VIGENTE — tests de integración ANTES de refactorizar analyze() (P-11 → P-16)
+S26    standalone    (S3 ya cerró; deja de ir "junto a S3") (P-3)
+S12    standalone    el PR más grande; no combinar (P-17)
+O1     standalone    segundo más grande; no combinar (P-16)
+R0     completo — PR #74 (2026-09-02)
+R1     completo — PR R1 (2026-09-02)
+R2/R3  parcial — S3 #76, S8 #77, S14/S15/O3 #78, S19 #79 (2026-09-02)
 ```
 
 ---
@@ -760,7 +1021,7 @@ R0     completo — PR #74 (2026-09-02); sin dependencias
 ## Ítems puramente internos vs. observables
 
 ### Solo internos (el usuario no nota nada)
-S1, S2, S3, S7, S8, S13, S14, S18, S19, S20, S21, S22, P2, O1, O2, O3, O4, O5, O6, O7, O8, T1, S12, S16, S17
+S1, S2, S3, S7, S8, S13, S14, S18, S19, S20, S21, S22, S23, S26, P2, P3, O1, O2, O3, O4, O5, O6, O7, O8, O9, T1, T2, S12, S16, S17
 
 ### Pueden cambiar lo que se ve o se puede configurar
 - **S4/S5**: los thresholds del moat pasan a ser editables en `config.py` sin tocar código
@@ -768,6 +1029,10 @@ S1, S2, S3, S7, S8, S13, S14, S18, S19, S20, S21, S22, P2, O1, O2, O3, O4, O5, O
 - **S8**: tickers sin `quickRatio` pueden mostrar diagnostic note nueva
 - **S9/S10/S11**: parámetros de optimizer y stress test ahora configurables
 - **P1**: moat AI puede parsear respuestas que antes truncaba → puede cambiar scores con AI on
+- **S24**: los umbrales de drawdown severo/SORR pasan a ser configurables en `MonteCarloConfig`
+- **S25**: los pesos de señal técnica pasan a ser configurables en `TechnicalConfig`
+- **S27**: los shocks de los escenarios de stress test pasan a ser editables en `config.py`
+- **S28**: `expected_annual_return` del GoalPlanner pasa a ser configurable
 
 ---
 
