@@ -783,72 +783,27 @@ def call_ai_api(prompt: str, ai_config: AIConfig, max_tokens: int = 1024) -> str
     """
     Dispatch *prompt* to the configured AI provider and return the raw text.
 
-    Shared between MoatAnalyzer (equity qualitative moat) and CryptoAnalyzer
-    (crypto moat) so provider logic lives in exactly one place.
+    O2: provider dispatch now lives in one place —
+    ``analysis.ai_analyzer.AIAnalyzer._call_api`` (which also resolves Hermes
+    credentials for ``nous``/``xai``). This is the deprecated shim kept for
+    ``MoatAnalyzer``, ``CryptoAnalyzer`` and ``analysis.tailwind``; it preserves
+    the signature and the ``MoatAPIError`` contract.
 
     Raises:
         MoatAPIError — on network, auth, rate-limit, or unknown-provider errors.
     """
+    import dataclasses
+
+    from analysis.ai_analyzer import AIAnalyzer
+
     provider = ai_config.provider.lower()
-
+    # AIAnalyzer._call_api matches the provider name exactly; this shim kept the
+    # historical leniency of lower-casing it first.
+    cfg = ai_config if ai_config.provider == provider else dataclasses.replace(
+        ai_config, provider=provider
+    )
     try:
-        if provider == "claude":
-            import anthropic
-            client = anthropic.Anthropic(api_key=ai_config.api_key)
-            msg = client.messages.create(
-                model=ai_config.model,
-                max_tokens=max_tokens,
-                temperature=0,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            return msg.content[0].text
-
-        elif provider == "openai":
-            import openai
-            client = openai.OpenAI(api_key=ai_config.api_key)
-            resp = client.chat.completions.create(
-                model=ai_config.model,
-                temperature=0,
-                max_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            return resp.choices[0].message.content
-
-        elif provider in ("xai", "nous"):
-            import sys
-            from pathlib import Path
-
-            hermes_path = Path.home() / ".hermes" / "hermes-agent"
-            if str(hermes_path) not in sys.path:
-                sys.path.insert(0, str(hermes_path))
-
-            # Try Hermes OAuth first; fall back to explicit api_key for xAI
-            try:
-                from hermes_cli.auth import resolve_xai_oauth_runtime_credentials
-                creds = resolve_xai_oauth_runtime_credentials()
-                _key  = creds.get("api_key") or "hermes-oauth"
-                _base = creds.get("base_url", "https://api.x.ai/v1")
-            except Exception:
-                _key  = ai_config.api_key
-                _base = "https://api.x.ai/v1"
-                if not _key:
-                    raise MoatAPIError(
-                        "No xAI credentials. Set XAI_API_KEY or run `hermes auth add xai-oauth`."
-                    )
-
-            import openai as _openai
-            client = _openai.OpenAI(api_key=_key, base_url=_base)
-            resp = client.chat.completions.create(
-                model=ai_config.model,
-                temperature=0,
-                max_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            return resp.choices[0].message.content
-
-        else:
-            raise MoatAPIError(f"Unknown AI provider: {provider!r}")
-
+        return AIAnalyzer(cfg)._call_api(prompt, max_tokens=max_tokens)
     except MoatAPIError:
         raise
     except Exception as exc:
