@@ -239,7 +239,7 @@ def filter_by_sources(
 #: engine escribe una fila byte-idéntica en las tres columnas, ``price_at_rec``
 #: NULL incluido. Un ``WHERE`` por patrón acá barrería filas reales el primer día
 #: que el scheduler corra de verdad, en silencio. Las 53 se marcan **una vez**,
-#: por id enumerado, desde ``scripts/mark_test_fixture_rows.py``; el código sólo
+#: por id enumerado, desde ``scripts/migrations/mark_test_fixture_rows.py``; el código sólo
 #: conoce el marcador, nunca el patrón.
 FIXTURE_SOURCE = "test_fixture"
 

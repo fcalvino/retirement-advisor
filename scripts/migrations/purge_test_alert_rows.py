@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Borra las 2 filas de cooldown que dejó la suite en la base del usuario (N6c) — dry-run por default.
 
-    ./venv/bin/python3 scripts/purge_test_alert_rows.py            # sólo muestra
-    ./venv/bin/python3 scripts/purge_test_alert_rows.py --apply    # borra
+    ./venv/bin/python3 scripts/migrations/purge_test_alert_rows.py            # sólo muestra
+    ./venv/bin/python3 scripts/migrations/purge_test_alert_rows.py --apply    # borra
 
 Idempotente: la segunda corrida no encuentra nada y lo dice.
 
@@ -35,7 +35,7 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from alerts.store import AlertCooldown, AlertStore  # noqa: E402
 

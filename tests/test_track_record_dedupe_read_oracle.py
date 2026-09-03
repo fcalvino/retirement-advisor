@@ -484,7 +484,7 @@ LECTORES_DIRECTOS_PERMITIDOS = {
         "propósito: deduplicarlo escondería que el motor repitió. Las cinco "
         "métricas de la misma página sí pasan por get_scored_rows."
     ),
-    ("scripts/mark_test_fixture_rows.py", "RecommendationLog"): (
+    ("scripts/migrations/mark_test_fixture_rows.py", "RecommendationLog"): (
         "U5-18d: marca 53 filas por id enumerado. Trabaja sobre la fila, no sobre "
         "la muestra —le pone `source='test_fixture'` a cada una—, así que colapsar "
         "sería directamente incorrecto: escondería filas que tiene que tocar. Es la "

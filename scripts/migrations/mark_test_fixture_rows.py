@@ -7,8 +7,8 @@ nada: las filas y sus 11 outcomes quedan en la base, y las lecturas de
 nada se borre — hoy las 53 tienen ``source='rule_based'``, y eso se verifica
 antes de escribir una sola.
 
-    ./venv/bin/python3 scripts/mark_test_fixture_rows.py            # sólo muestra
-    ./venv/bin/python3 scripts/mark_test_fixture_rows.py --apply    # escribe
+    ./venv/bin/python3 scripts/migrations/mark_test_fixture_rows.py            # sólo muestra
+    ./venv/bin/python3 scripts/migrations/mark_test_fixture_rows.py --apply    # escribe
 
 Idempotente: la segunda corrida no cambia nada y lo dice.
 
@@ -25,7 +25,7 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from analysis.track_record import (  # noqa: E402
     FIXTURE_SOURCE,

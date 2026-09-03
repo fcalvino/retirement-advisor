@@ -374,7 +374,7 @@ ya tenga una referencia, default de argumento incluido.
   mutando en el lugar, con el comentario que explica por qué acá no alcanza con
   reemplazar. Sin ese comentario el próximo lector copia el bloque de arriba y
   rompe la garantía sin que nada se ponga rojo.
-- `scripts/purge_test_alert_rows.py` — dry-run por default, borra con `--apply`.
+- `scripts/migrations/purge_test_alert_rows.py` — dry-run por default, borra con `--apply`.
 
 **Acá borra y en N6 se marcó.** No es incoherencia: aquellas filas tenían
 outcomes puntuados y lecturas que preservar, así que marcar era reversible y
@@ -559,7 +559,7 @@ path de alertas existe para producir, y sin un error que lo avise.
 
 ### Lo que cambió, medido sobre la base
 
-`scripts/mark_test_fixture_rows.py --apply` corrido el 2026-08-30. Nada se borró:
+`scripts/migrations/mark_test_fixture_rows.py --apply` corrido el 2026-08-30. Nada se borró:
 470 filas y 22 outcomes antes y después; sólo cambió `source` en 53 filas.
 
 | | antes | ahora |
