@@ -57,7 +57,7 @@ Los ítems están agrupados en fases coherentes con el criterio de ratio impacto
 | O7 ✅ | ordenamiento | S | bajo | interno | Stock Analysis importa `data.data_sources` y `data.fetcher` |
 | O8 ✅ | ordenamiento | S | bajo | interno | Migraciones one-shot mezcladas con scripts operacionales |
 | O9 ✅ | ordenamiento | S | bajo | interno | Settings importa `data.cache` y `data.fetcher` directamente |
-| O2 | ordenamiento | M | alto | interno | Dispatch de provider AI duplicado en moat.py y ai_analyzer.py |
+| O2 ✅ | ordenamiento | M | alto | interno | Dispatch de provider AI duplicado en moat.py y ai_analyzer.py |
 | O4 ✅ | ordenamiento | M | medio | interno | `run_holdings_committee` (negocio) en módulo de UI |
 | O5 ✅ | ordenamiento | M | bajo | interno | Página de alertas importa `AlertEngine` directamente |
 | S16 | simplicidad | M | medio | interno | `_home_page()` 208 líneas monolíticas |
@@ -65,7 +65,7 @@ Los ítems están agrupados en fases coherentes con el criterio de ratio impacto
 | O1 | ordenamiento | L | alto | interno | `FundamentalAnalyzer.analyze()` 215 líneas: God method |
 | S12 | simplicidad | L | alto | interno | `7_Simulaciones.py` 2.420 líneas sin helpers |
 | T1 | cobertura | M | alto | interno | Cero tests para `dashboard/shared.py` (1.891 líneas) |
-| T2 | cobertura | M | alto | interno | Sin test de integración para `FundamentalAnalyzer.analyze()` |
+| T2 ✅ | cobertura | M | alto | interno | Sin test de integración para `FundamentalAnalyzer.analyze()` |
 
 ---
 
@@ -738,7 +738,7 @@ Son dos implementaciones paralelas del mismo dispatch de provider. *Nota: el `ma
 
 **Dependencias:** S3 ya mergeado (PR #76) — O2 pasa a standalone.
 
-**Estado:** ⏳ PR #90 abierto — **pendiente de aprobación del usuario**. `analysis/moat.py::call_ai_api` pasa a ser un shim que delega en `AIAnalyzer(ai_config)._call_api(prompt, max_tokens=…)` (dispatch único). Preserva la firma y el contrato `MoatAPIError`. `MoatAnalyzer._call_api` y los callers `CryptoAnalyzer`/`analysis.tailwind` no cambian. **Cambio de comportamiento acotado:** el path `nous` de `moat.py` usaba (bug) el resolver + base-url de xAI; ahora usa los de nous (los de `AIAnalyzer._call_nous`). Con `claude`/`openai`/`xai` nada cambia. `make check` → 3129 passed; `tests/test_tailwind.py` (que patchea `analysis.moat.call_ai_api`) verde. **No se pudo correr la verificación AI-on**: la caché de este worktree no tiene entradas de moat AI (`--matrix` reporta "cache-only miss" para el único ticker), así que 0 tickers ejercitan el path.
+**Estado:** ✅ Mergeado — PR #90 (2026-09-03), **con aprobación explícita del usuario**. `analysis/moat.py::call_ai_api` pasa a ser un shim que delega en `AIAnalyzer(ai_config)._call_api(prompt, max_tokens=…)` (dispatch único). Preserva la firma y el contrato `MoatAPIError` (con el shim dentro del `try` tras code-review). `MoatAnalyzer._call_api` y los callers `CryptoAnalyzer`/`analysis.tailwind` no cambian. `tests/test_call_ai_api_shim.py` (4 tests). **Cambio de comportamiento acotado, aceptado por el usuario:** el path `nous` de `moat.py` usaba (bug) el resolver + base-url de xAI; ahora usa los de nous (`AIAnalyzer._call_nous`); mensajes de error de "sin credenciales" también cambian. Con `claude`/`openai`/`xai` nada cambia. `make check` → 3133 passed. **La verificación AI-on no se pudo correr** (caché de este worktree sin entradas de moat AI, `--matrix` "cache-only miss").
 
 **Verificación:** `make check`. `scripts/measure_score_impact.py` con AI on — los scores de moat no deben cambiar.
 
@@ -983,7 +983,9 @@ Los tests especializados prueban casos de borde específicos pero no detectaría
 
 **Dependencias:** más urgente si se hace O1 (refactor de `analyze()`) — tener tests de integración antes del refactor garantiza que no se rompe nada.
 
-**Verificación:** `make check`. Los nuevos tests deben pasar sin `st` en el entorno.
+**Estado:** ✅ Mergeado — PR #91 (2026-09-03). `tests/test_fundamental.py` (6 tests) con el patrón de `test_reit_ffo.py` (`patch` de `get_info`/`get_financials`/`get_dividends`/`get_info_age_hours`): 1 test por asset class (equity/REIT/crypto), fast-path crypto que verifica que `get_info`/`get_financials` **nunca** se llaman, invariante `raw_adjusted_score == total_score + consistency + piotroski_bonus + moat_bonus` y `adjusted_score >= total_score`, fallback sin estados financieros, `info` vacío. **Desbloquea P-16 (O1).**
+
+**Verificación:** `make check` → 3139 passed. Los tests corren sin `st`.
 
 ---
 
