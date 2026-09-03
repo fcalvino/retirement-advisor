@@ -738,6 +738,8 @@ Son dos implementaciones paralelas del mismo dispatch de provider. *Nota: el `ma
 
 **Dependencias:** S3 ya mergeado (PR #76) — O2 pasa a standalone.
 
+**Estado:** ⏳ PR #90 abierto — **pendiente de aprobación del usuario**. `analysis/moat.py::call_ai_api` pasa a ser un shim que delega en `AIAnalyzer(ai_config)._call_api(prompt, max_tokens=…)` (dispatch único). Preserva la firma y el contrato `MoatAPIError`. `MoatAnalyzer._call_api` y los callers `CryptoAnalyzer`/`analysis.tailwind` no cambian. **Cambio de comportamiento acotado:** el path `nous` de `moat.py` usaba (bug) el resolver + base-url de xAI; ahora usa los de nous (los de `AIAnalyzer._call_nous`). Con `claude`/`openai`/`xai` nada cambia. `make check` → 3129 passed; `tests/test_tailwind.py` (que patchea `analysis.moat.call_ai_api`) verde. **No se pudo correr la verificación AI-on**: la caché de este worktree no tiene entradas de moat AI (`--matrix` reporta "cache-only miss" para el único ticker), así que 0 tickers ejercitan el path.
+
 **Verificación:** `make check`. `scripts/measure_score_impact.py` con AI on — los scores de moat no deben cambiar.
 
 ---
