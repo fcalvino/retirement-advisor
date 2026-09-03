@@ -2251,6 +2251,60 @@ class BlackLittermanConfig:
 
 
 @dataclass
+class TechnicalConfig:
+    """Weights and thresholds for ``analysis/technical.py`` (S25).
+
+    ``analysis/technical.py`` was the only engine module with no config section —
+    every weight in ``_derive_signal`` and every band in the ``_compute_*``
+    helpers was an inline literal, so a methodology tweak meant editing the
+    logic. All fields below default to the exact literals that shipped, so
+    ``measure_score_impact.py --compare`` reports zero moved signals.
+
+    Indicator *periods* (RSI 14, MACD 12/26/9, ADX 14, SMA 50/100/200, BB 20/2)
+    stay hardcoded on purpose — those define the indicator, not its calibration,
+    and the MACD span carries an anti-cheat note (see U3-2).
+    """
+
+    # --- _derive_signal: trend block --------------------------------------- #
+    w_above_sma200: int = 25
+    w_above_sma100: int = 10
+    w_above_sma50: int = 5
+    w_sma200_slope_up: int = 10
+    w_sma200_slope_down: int = -10
+    w_golden_cross: int = 15
+    w_death_cross: int = -20
+    # --- _derive_signal: momentum block ---------------------------------- #
+    w_rsi_healthy: int = 15
+    w_rsi_oversold_trend_intact: int = 10
+    w_rsi_overbought: int = -15
+    w_macd_bullish: int = 10
+    w_macd_bearish: int = -10
+    w_adx_strong: int = 5
+    # --- _derive_signal: volatility / volume block --------------------- #
+    w_near_bb_upper: int = -10
+    w_near_bb_lower: int = 10
+    w_volume_increasing: int = 5
+    w_volume_decreasing: int = -5
+    # --- _derive_signal: final classification --------------------------- #
+    buy_signal_threshold: int = 30
+    sell_signal_threshold: int = -20
+
+    # --- shared indicator bands (read by _compute_* AND _derive_signal) - #
+    rsi_oversold: float = 30.0
+    rsi_overbought: float = 75.0
+    rsi_healthy_low: float = 40.0
+    rsi_healthy_high: float = 65.0
+    adx_strong_trend: float = 25.0
+    adx_ranging: float = 15.0
+    sma200_slope_up_pct: float = 2.0
+    sma200_slope_down_pct: float = -2.0
+    bb_pct_upper: float = 0.9
+    bb_pct_lower: float = 0.1
+    volume_surge_ratio: float = 1.2
+    volume_decline_ratio: float = 0.8
+
+
+@dataclass
 class StressTestConfig:
     """Parameters for the stress-test recovery estimate (S11).
 
@@ -2294,6 +2348,7 @@ MULTI_SOURCE = MultiSourceConfig()
 MACRO_RAG = MacroRagConfig()
 CHAT = ChatConfig()
 STRESS_TEST = StressTestConfig()
+TECHNICAL = TechnicalConfig()
 def ar_fx_from_market(
     *,
     quote_lookup=None,

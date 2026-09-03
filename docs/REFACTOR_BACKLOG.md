@@ -46,7 +46,7 @@ Los ítems están agrupados en fases coherentes con el criterio de ratio impacto
 | S22 | simplicidad | M | medio | interno | `_analyse_one` mezcla extracción de datos con UI strings |
 | S23 ✅ | simplicidad | S | bajo | interno | `rf = 0.045` literal en `tracker.py` — no usa `RISK_FREE` |
 | S24 ✅ | simplicidad | S | medio | observable | Umbrales de drawdown severo/SORR hardcodeados en MC |
-| S25 | simplicidad | M | medio | observable | Pesos de señal técnica hardcodeados en `technical.py` |
+| S25 ✅ | simplicidad | M | medio | observable | Pesos de señal técnica hardcodeados en `technical.py` |
 | S26 ✅ | simplicidad | S | bajo | interno | `_extract_annual_series` triplicada en 3 módulos de análisis |
 | S27 | simplicidad | M | medio | observable | SCENARIOS de stress test: ~85 shocks hardcodeados en módulo |
 | S28 ✅ | simplicidad | S | bajo | observable | `expected_annual_return=0.07` hardcodeado en `goals.py` |
@@ -415,7 +415,9 @@ Ninguno de estos pesos ni umbrales proviene de `config.py`. `analysis/technical.
 
 **Dependencias:** independiente; puede hacerse antes de O1.
 
-**Verificación:** `scripts/measure_score_impact.py --compare` → 0 diferencias. `make check`.
+**Estado:** ✅ Mergeado — PR #86 (2026-09-03). `TechnicalConfig` en `config.py` con **31 campos** (todos los pesos de `_derive_signal` + los umbrales compartidos RSI/ADX/slope/BB/volumen), `TECHNICAL = TechnicalConfig()`. `_derive_signal` + `_compute_trend`/`_compute_momentum`/`_compute_volatility`/`_compute_volume` los leen de `TECHNICAL`. Los *períodos* de indicador (RSI 14, MACD 12/26/9, ADX 14, SMA, BB) quedan hardcodeados a propósito (definen el indicador, no su calibración; el span del MACD tiene nota anti-cheat U3-2). Byte-idéntico: 31/31 defaults == literales shipeados; oráculo de `_derive_signal` con **0 mismatches sobre 20 000 estados aleatorios**.
+
+**Verificación:** `scripts/measure_score_impact.py --compare` → 0/0/0 (caché worktree: 1 ticker). `make check` → 3129 passed.
 
 ---
 

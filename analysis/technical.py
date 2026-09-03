@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
+from config import TECHNICAL
 from data.fetcher import get_history
 from data.product_ux import FAST_MA_LABEL_EN, TREND_MA_LABEL_EN
 
@@ -119,9 +120,9 @@ class TechnicalAnalyzer:
         if not pd.isna(sma200.iloc[-1]) and not pd.isna(sma200.iloc[-26]):
             slope = (float(sma200.iloc[-1]) - float(sma200.iloc[-26])) / float(sma200.iloc[-26]) * 100
             result.sma200_slope_pct = round(slope, 2)
-            if slope > 2:
+            if slope > TECHNICAL.sma200_slope_up_pct:
                 result.notes.append(f"{TREND_MA_LABEL_EN} rising +{slope:.1f}% — long-term uptrend confirmed")
-            elif slope < -2:
+            elif slope < TECHNICAL.sma200_slope_down_pct:
                 result.warnings.append(f"{TREND_MA_LABEL_EN} declining {slope:.1f}% — long-term downtrend")
 
         # Golden / Death cross (50-week vs 200-week SMA)
@@ -144,9 +145,9 @@ class TechnicalAnalyzer:
         rsi = self._rsi(price, 14)
         if rsi is not None:
             result.rsi_weekly = round(rsi, 1)
-            if rsi < 30:
+            if rsi < TECHNICAL.rsi_oversold:
                 result.notes.append(f"RSI oversold {rsi:.0f} — potential entry")
-            elif rsi > 75:
+            elif rsi > TECHNICAL.rsi_overbought:
                 result.warnings.append(f"RSI overbought {rsi:.0f} — extended, caution")
 
         # MACD (12/26/9) on weekly bars
@@ -162,9 +163,9 @@ class TechnicalAnalyzer:
         adx = self._adx(df, 14)
         if adx is not None:
             result.adx = round(adx, 1)
-            if adx >= 25:
+            if adx >= TECHNICAL.adx_strong_trend:
                 result.notes.append(f"ADX {adx:.0f} — strong trend")
-            elif adx < 15:
+            elif adx < TECHNICAL.adx_ranging:
                 result.notes.append(f"ADX {adx:.0f} — weak/ranging market")
 
     # ------------------------------------------------------------------ #
@@ -190,8 +191,8 @@ class TechnicalAnalyzer:
             band_width = u - l
             if band_width > 0:
                 pct_b = (last - l) / band_width
-                result.near_bb_upper = pct_b > 0.9
-                result.near_bb_lower = pct_b < 0.1
+                result.near_bb_upper = pct_b > TECHNICAL.bb_pct_upper
+                result.near_bb_lower = pct_b < TECHNICAL.bb_pct_lower
                 if result.near_bb_upper:
                     result.warnings.append("Price near Bollinger upper band — extended")
                 if result.near_bb_lower:
@@ -211,10 +212,10 @@ class TechnicalAnalyzer:
         prior_avg = float(vol.iloc[-26:-13].mean())
         if prior_avg > 0:
             ratio = recent_avg / prior_avg
-            if ratio > 1.2:
+            if ratio > TECHNICAL.volume_surge_ratio:
                 result.volume_trend = "INCREASING"
                 result.notes.append(f"Volume +{(ratio-1)*100:.0f}% vs prior period — institutional interest")
-            elif ratio < 0.8:
+            elif ratio < TECHNICAL.volume_decline_ratio:
                 result.volume_trend = "DECREASING"
                 result.warnings.append("Volume declining — waning interest")
 
@@ -237,60 +238,61 @@ class TechnicalAnalyzer:
     # ------------------------------------------------------------------ #
 
     def _derive_signal(self, result: TechnicalResult) -> None:
+        cfg = TECHNICAL
         score = 0
 
         # Trend weight = 50%
         if result.above_sma200 is True:
-            score += 25
+            score += cfg.w_above_sma200
         if result.above_sma100 is True:
-            score += 10
+            score += cfg.w_above_sma100
         if result.above_sma50 is True:
-            score += 5
-        if result.sma200_slope_pct is not None and result.sma200_slope_pct > 2:
-            score += 10
-        elif result.sma200_slope_pct is not None and result.sma200_slope_pct < -2:
-            score -= 10
+            score += cfg.w_above_sma50
+        if result.sma200_slope_pct is not None and result.sma200_slope_pct > cfg.sma200_slope_up_pct:
+            score += cfg.w_sma200_slope_up
+        elif result.sma200_slope_pct is not None and result.sma200_slope_pct < cfg.sma200_slope_down_pct:
+            score += cfg.w_sma200_slope_down
         if result.golden_cross:
-            score += 15
+            score += cfg.w_golden_cross
         if result.death_cross:
-            score -= 20
+            score += cfg.w_death_cross
 
         # Momentum weight = 30%
         if result.rsi_weekly is not None:
             rsi = result.rsi_weekly
-            if 40 <= rsi <= 65:
-                score += 15       # healthy momentum
-            elif rsi < 30:
+            if cfg.rsi_healthy_low <= rsi <= cfg.rsi_healthy_high:
+                score += cfg.w_rsi_healthy       # healthy momentum
+            elif rsi < cfg.rsi_oversold:
                 # D15: oversold is only a positive for L/T retirement entries
                 # when the secular trend is still intact (not a value trap).
                 if result.above_sma200 is True or (
                     result.sma200_slope_pct is not None
                     and result.sma200_slope_pct >= 0
                 ):
-                    score += 10
-            elif rsi > 75:
-                score -= 15       # overbought
+                    score += cfg.w_rsi_oversold_trend_intact
+            elif rsi > cfg.rsi_overbought:
+                score += cfg.w_rsi_overbought       # overbought
         if result.macd_bullish is True:
-            score += 10
+            score += cfg.w_macd_bullish
         elif result.macd_bullish is False:
-            score -= 10
-        if result.adx is not None and result.adx >= 25:
-            score += 5
+            score += cfg.w_macd_bearish
+        if result.adx is not None and result.adx >= cfg.adx_strong_trend:
+            score += cfg.w_adx_strong
 
         # Volatility weight = 20%
         if result.near_bb_upper:
-            score -= 10
+            score += cfg.w_near_bb_upper
         if result.near_bb_lower:
-            score += 10
+            score += cfg.w_near_bb_lower
         if result.volume_trend == "INCREASING":
-            score += 5
+            score += cfg.w_volume_increasing
         elif result.volume_trend == "DECREASING":
-            score -= 5
+            score += cfg.w_volume_decreasing
 
         result.signal_strength = max(-100, min(100, score))
-        if score >= 30:
+        if score >= cfg.buy_signal_threshold:
             result.signal = "BULLISH"
-        elif score <= -20:
+        elif score <= cfg.sell_signal_threshold:
             result.signal = "BEARISH"
         else:
             result.signal = "NEUTRAL"
