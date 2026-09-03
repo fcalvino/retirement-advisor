@@ -54,12 +54,12 @@ Los ítems están agrupados en fases coherentes con el criterio de ratio impacto
 | P3 ✅ | performance | S | bajo | interno | `print()` en `personal_sizer.py` — no usa loguru (evidencia incorrecta: era un docstring) |
 | O3 ✅ | ordenamiento | S | medio | interno | `cached_stress_test` acepta `dict` crudo como param de caché |
 | O6 ✅ | ordenamiento | S | bajo | interno | Sidebar importa `alert_store` directamente |
-| O7 | ordenamiento | S | bajo | interno | Stock Analysis importa `data.data_sources` y `data.fetcher` |
+| O7 ✅ | ordenamiento | S | bajo | interno | Stock Analysis importa `data.data_sources` y `data.fetcher` |
 | O8 ✅ | ordenamiento | S | bajo | interno | Migraciones one-shot mezcladas con scripts operacionales |
 | O9 ✅ | ordenamiento | S | bajo | interno | Settings importa `data.cache` y `data.fetcher` directamente |
 | O2 | ordenamiento | M | alto | interno | Dispatch de provider AI duplicado en moat.py y ai_analyzer.py |
 | O4 | ordenamiento | M | medio | interno | `run_holdings_committee` (negocio) en módulo de UI |
-| O5 | ordenamiento | M | bajo | interno | Página de alertas importa `AlertEngine` directamente |
+| O5 ✅ | ordenamiento | M | bajo | interno | Página de alertas importa `AlertEngine` directamente |
 | S16 | simplicidad | M | medio | interno | `_home_page()` 208 líneas monolíticas |
 | S17 | simplicidad | M | medio | interno | `render_*_controls` mutan session_state dentro del render |
 | O1 | ordenamiento | L | alto | interno | `FundamentalAnalyzer.analyze()` 215 líneas: God method |
@@ -772,6 +772,8 @@ Si cambia la firma del constructor de `AlertEngine` o `ReportGenerator`, la pág
 
 **Contrato estable:** la página de alertas muestra los mismos resultados.
 
+**Estado:** ✅ Mergeado — PR #88 (2026-09-03). `dashboard/shared.py::run_alert_engine(scored, *, active_profile, positions=None, current_prices=None, optimizer_weights=None)` (dispatch a `run`/`run_with_portfolio` según `positions`) + `generate_alert_report(scored, *, period)`. `8_Alertas.py` sin `from alerts.engine`/`from alerts.reporter` (sigue importando `alerts.store` para los enums `AlertSeverity`/`AlertType` — fuera del scope de O5).
+
 **Verificación:** `make check`. Probar la página manualmente.
 
 ---
@@ -804,6 +806,8 @@ Si cambia la firma del constructor de `AlertEngine` o `ReportGenerator`, la pág
 Dos imports directos de la capa de datos desde la misma página. `get_history` se usa para el chart de precio histórico; `_cross_source_check` (líneas 53–64) usa `default_fundamental_sources`. Ambos podrían vivir en `dashboard/shared.py` con `@st.cache_data`, manteniendo la página libre de imports de la capa de datos.
 
 **Cambio propuesto:** mover `_cross_source_check` y `get_history` (o un wrapper cacheado) a `shared.py`. La página importa solo los helpers cacheados.
+
+**Estado:** ✅ Mergeado — PR #88 (2026-09-03). `dashboard/shared.py::get_price_history(symbol, period, interval)` (`@st.cache_data`) + `cross_source_check(symbol)` (movido verbatim). `2_Stock_Analysis.py` sin `from data.fetcher`/`from data.data_sources`. (`16_Calidad_Datos.py` también importa `default_fundamental_sources` — fuera del scope de O7.)
 
 **Verificación:** `make check`.
 
