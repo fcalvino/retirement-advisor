@@ -58,7 +58,7 @@ Los ítems están agrupados en fases coherentes con el criterio de ratio impacto
 | O8 ✅ | ordenamiento | S | bajo | interno | Migraciones one-shot mezcladas con scripts operacionales |
 | O9 ✅ | ordenamiento | S | bajo | interno | Settings importa `data.cache` y `data.fetcher` directamente |
 | O2 | ordenamiento | M | alto | interno | Dispatch de provider AI duplicado en moat.py y ai_analyzer.py |
-| O4 | ordenamiento | M | medio | interno | `run_holdings_committee` (negocio) en módulo de UI |
+| O4 ✅ | ordenamiento | M | medio | interno | `run_holdings_committee` (negocio) en módulo de UI |
 | O5 ✅ | ordenamiento | M | bajo | interno | Página de alertas importa `AlertEngine` directamente |
 | S16 | simplicidad | M | medio | interno | `_home_page()` 208 líneas monolíticas |
 | S17 | simplicidad | M | medio | interno | `render_*_controls` mutan session_state dentro del render |
@@ -755,7 +755,9 @@ Esta función no hace ninguna llamada `st.*`. Es lógica de orquestación pura q
 
 **Contrato estable:** `run_holdings_committee(...)` — misma firma desde el punto de vista de las páginas.
 
-**Verificación:** `make check`. Probar la sección de comité en `3_Portfolio.py`.
+**Estado:** ✅ Mergeado — PR #89 (2026-09-03). `analysis/committee.py::run_holdings_committee(*, metrics, sector_weights, position_weights, total_value, ai_config, stress_results=None, active_plan=None)` — función libre, sin `st.*`, junto a `build_holdings_committee_context` y `CommitteeAnalyzer`. El wrapper en `dashboard/shared.py` mantiene su firma para las páginas (`3_Portfolio.py:253` sin cambio) y solo resuelve `ai_config` (`_get_ai_config()`) + `stress_results` (`cached_stress_test`, `@st.cache_data`) del lado Streamlit y delega. `tests/test_portfolio_committee.py` verde (12).
+
+**Verificación:** `make check` → 3129 passed. Probar la sección de comité en `3_Portfolio.py`.
 
 ---
 
