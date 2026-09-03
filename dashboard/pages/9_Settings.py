@@ -7,9 +7,12 @@ from datetime import datetime
 import streamlit as st
 
 from config import ar_fx_from_market
-from dashboard.shared import _save_ai_config_to_env
-from data.cache import cache
-from data.fetcher import usd_ars_quote
+from dashboard.shared import (
+    _save_ai_config_to_env,
+    cache_stats,
+    clear_data_cache,
+    usd_ars_quote,
+)
 from data.preferences import UserPreferences
 from data.universe_loader import UNIVERSE_META, load_universe
 
@@ -341,7 +344,7 @@ else:
 st.subheader("🗄️ Caché")
 st.caption("Almacena respuestas de Yahoo Finance para reducir llamadas a la API y acelerar el análisis.")
 
-_stats = cache.get_stats()
+_stats = cache_stats()
 _cs1, _cs2, _cs3, _cs4 = st.columns(4)
 _cs1.metric("Entradas válidas",   _stats["valid"])
 _cs2.metric("Entradas expiradas", _stats["expired"])
@@ -356,7 +359,7 @@ if _stats["newest"]:
 _cc1, _cc2 = st.columns(2)
 with _cc1:
     if st.button("🗑️ Limpiar todo el caché", type="secondary"):
-        cache.clear_all()
+        clear_data_cache()
         st.cache_data.clear()
         st.success("✅ Caché limpiado — el próximo análisis va a re-obtener todos los datos.")
         st.rerun()
