@@ -605,10 +605,16 @@ def usd_ars_quote(symbol: str = "ARS=X"):
     return _usd_ars_quote(symbol)
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
 def get_price_history(symbol: str, period: str = "10y", interval: str = "1wk"):
-    """Cached price history for a chart, so Stock Analysis need not import
-    ``data.fetcher`` directly (O7)."""
+    """Price history for a chart, so Stock Analysis need not import ``data.fetcher``
+    directly (O7).
+
+    Deliberately *not* ``@st.cache_data``: ``get_history`` already has its own
+    disk cache for successful fetches, and it returns an empty frame (never
+    raises) on a transient outage. Memoizing that empty frame for an hour would
+    keep the chart broken long after the network recovered — the old direct call
+    re-fetched every rerun.
+    """
     from data.fetcher import get_history
 
     return get_history(symbol, period=period, interval=interval)
