@@ -797,9 +797,11 @@ Dos imports directos de la capa de datos desde la misma página. `get_history` s
 
 **Eje:** ordenamiento · **Esfuerzo:** S · **Impacto:** bajo
 
-**Evidencia:**
+**Evidencia (estado original, pre-PR #81):**
 - `scripts/mark_test_fixture_rows.py:1` — migración one-shot de fixture rows (ejecutada 2026-08-30)
 - `scripts/purge_test_alert_rows.py:1` — migración one-shot de alert rows
+
+Ambos vivían junto a `run_scheduler.py` / `run_eval.py`. Tras PR #81 están en `scripts/migrations/`.
 
 Viven junto a `run_scheduler.py`, `run_eval.py` y herramientas operacionales. Un nuevo contribuidor no puede distinguir "herramienta que se corre seguido" de "script que ya cumplió su propósito".
 
