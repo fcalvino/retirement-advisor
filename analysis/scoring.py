@@ -16,6 +16,7 @@ from typing import List, Optional
 import numpy as np
 import pandas as pd
 
+from analysis.utils import extract_financial_row
 from config import CONSISTENCY, PIOTROSKI, ConsistencyThresholds, PiotroskiConfig
 
 
@@ -366,16 +367,16 @@ class EnhancedScoring:
     # ------------------------------------------------------------------ #
 
     def _extract(self, df: pd.DataFrame, candidates: List[str]) -> Optional[pd.Series]:
-        """Return a float Series sorted descending (current year first), or None."""
-        if df is None or df.empty:
-            return None
-        for name in candidates:
-            if name in df.index:
-                series = df.loc[name].dropna()
-                if not series.empty:
-                    series.index = pd.to_datetime(series.index)
-                    return series.sort_index(ascending=False).astype(float)
-        return None
+        """Return a float Series sorted descending (current year first), or None.
+
+        Thin wrapper over ``analysis.utils.extract_financial_row`` (S26) — this
+        module's flavour: newest-first, cast to float, skip all-NaN matches,
+        ``None`` when nothing matches.
+        """
+        return extract_financial_row(
+            df, candidates, ascending=False, as_float=True,
+            require_nonempty=True, missing=None,
+        )
 
     @staticmethod
     def _safe(fn, default: bool = False) -> bool:
