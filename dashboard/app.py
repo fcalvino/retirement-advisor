@@ -30,6 +30,7 @@ from config_validator import log_config_issues, validate_config
 from dashboard.shared import (
     _load_env_vars,
     build_home_hub_for_prefs,
+    ensure_session_defaults,
     is_dev_mode,
     next_priority_action,
     plan_journey_status,
@@ -40,7 +41,6 @@ from dashboard.shared import (
 )
 from data.preferences import _PREFS_PATH, UserPreferences
 from data.universe_loader import UNIVERSE_META, list_universes
-from portfolio.tracker import Portfolio
 
 # ------------------------------------------------------------------ #
 #  Production logging                                                  #
@@ -98,20 +98,11 @@ if "config_validated" not in st.session_state:
 #  Shared session_state initialization                                 #
 # ------------------------------------------------------------------ #
 
-if "user_prefs" not in st.session_state or not hasattr(st.session_state.user_prefs, "active_universe"):
-    st.session_state.user_prefs = UserPreferences.load()
-
+# user_prefs + universe (customs merged) + portfolio — S18: one implementation
+# in dashboard.shared, the pages reached by direct st.navigation links call the
+# same helper.
+ensure_session_defaults()
 _prefs: UserPreferences = st.session_state.user_prefs
-
-if "universe" not in st.session_state:
-    _saved_key = getattr(_prefs, "active_universe", "default") or "default"
-    # Item 3 — merge the user's custom tickers into the active universe.
-    from dashboard.shared import load_universe_with_customs
-    st.session_state.universe = load_universe_with_customs(_saved_key, _prefs)
-    st.session_state.active_universe_key = _saved_key
-
-if "portfolio" not in st.session_state:
-    st.session_state.portfolio = Portfolio()
 
 if "ai_provider" not in st.session_state:
     _env = _load_env_vars()

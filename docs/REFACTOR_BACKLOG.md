@@ -586,11 +586,11 @@ Los bloques re-implementaban la inicialización de `user_prefs`, `universe` y `p
 
 **Cambio propuesto:** `dashboard/shared.py` ya tiene `get_user_prefs()`. Agregar `ensure_session_defaults()` que centralice el guard completo para las tres variables. Las páginas llaman a ese helper.
 
-**Contrato estable:** mismo estado de sesión resultante. `2_Stock_Analysis.py` pasa a `load_universe_with_customs` (como `app.py`), pero **nunca lee `st.session_state.universe`** — cambio sin efecto observable.
+**Contrato estable:** el estado que produce `app.py` pasa a ser el único. **Cambio de comportamiento acotado:** en el path raro "sesión fresca + navegación directa a `2_Stock_Analysis.py`" (sin pasar por Home, `app.py` no corrió), el selectbox de tickers (`2_Stock_Analysis.py:91` lee `st.session_state.get("universe")`) ahora incluye los custom tickers del usuario, igual que en todo otro camino de entrada. Antes ese path mostraba menos tickers que el resto de la app.
 
-**Estado:** ✅ Mergeado — PR #85 (2026-09-03). `dashboard/shared.py::ensure_session_defaults()` reusa `get_user_prefs()` y replica la init de `app.py` (universe con customs + `Portfolio()`). `2_Stock_Analysis.py` y `5_Optimizer.py` reemplazan su bloque inline por una llamada; imports muertos (`load_universe` en 2_SA) sacados. `app.py` conserva su propio bloque como referencia (además siembra `ai_*`).
+**Estado:** ✅ Mergeado — PR #85 (2026-09-03). `dashboard/shared.py::ensure_session_defaults()` reusa `get_user_prefs()` y replica la init de `app.py` (universe con customs + `Portfolio()`). **`app.py`, `2_Stock_Analysis.py` y `5_Optimizer.py` los tres llaman al helper** — no queda ninguna copia inline (finding de code-review). `app.py` sigue sembrando `ai_provider`/`ai_model`/`ai_api_key` aparte. Imports muertos sacados (`load_universe` en 2_SA, `Portfolio` en `app.py`).
 
-**Verificación:** `make check` → 3129 passed. `ruff` limpio. Smoke: los 3 archivos parsean, `ensure_session_defaults` callable, guards reemplazados.
+**Verificación:** `make check` → 3129 passed. `ruff` limpio.
 
 ---
 
