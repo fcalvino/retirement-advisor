@@ -24,7 +24,7 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
-from config import GOAL_CARD
+from config import GOAL_CARD, MONTE_CARLO
 from data.product_ux import present_value_usd
 from portfolio.monte_carlo import MonteCarloResult, MonteCarloSimulator
 
@@ -423,7 +423,7 @@ def required_monthly_savings(
     target_nominal: float,
     initial_capital: float,
     horizon_years: int,
-    expected_annual_return: float = 0.07,
+    expected_annual_return: float = MONTE_CARLO.default_expected_annual_return,
 ) -> float:
     """
     Estimate monthly savings needed to reach target_nominal.
@@ -508,7 +508,7 @@ def monthly_savings_for_probability(
         target_nominal=goal.target_nominal,
         initial_capital=allocated_capital,
         horizon_years=goal.horizon_years,
-        expected_annual_return=0.07,
+        expected_annual_return=MONTE_CARLO.default_expected_annual_return,
     )
     hi = max(seed, goal.target_nominal / (goal.horizon_years * 12), 100.0)
 

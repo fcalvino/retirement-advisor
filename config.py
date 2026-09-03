@@ -1409,6 +1409,21 @@ class MonteCarloConfig:
     default_vol_scale_moderate: float = 1.0
     default_vol_scale_aggressive: float = 0.95
 
+    # Drawdown / SORR classification thresholds (S24). Fraction of peak, not %.
+    # These decide two KPIs the dashboard shows (``pct_paths_severe_drawdown``,
+    # ``sorr_early_drawdown_pct``); the engine reads them here instead of
+    # hardcoding the literals in ``_drawdown_stats``. ``AlertConfig
+    # .sorr_high_threshold_pct`` stays separate on purpose: it decides *when to
+    # fire the alert*, not *how to measure the path*.
+    severe_drawdown_threshold: float = 0.50   # max drawdown ≥ 50% of peak = "severe"
+    sorr_early_threshold: float = 0.30        # drawdown ≥ 30% in the first 5 years = early SORR
+
+    # Deterministic first-guess return for the GoalPlanner annuity seed (S28).
+    # Not the MC return model (that uses historical returns with a haircut) —
+    # it is the flat proxy ``required_monthly_savings`` uses as an
+    # order-of-magnitude bracket seed before the real probability search.
+    default_expected_annual_return: float = 0.07
+
 
 @dataclass
 class EconomicDragConfig:

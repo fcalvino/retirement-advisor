@@ -874,7 +874,7 @@ class MonteCarloSimulator:
         # Max drawdown per path (full horizon)
         max_dd_per_path = drawdown.max(axis=1)  # shape (n_sims,)
         median_max_dd = float(np.median(max_dd_per_path) * 100)
-        pct_severe = float((max_dd_per_path >= 0.50).mean() * 100)
+        pct_severe = float((max_dd_per_path >= MONTE_CARLO.severe_drawdown_threshold).mean() * 100)
 
         # Year of max drawdown: median AND quartiles across paths. The IQR is
         # what makes the number honest — see the docstring.
@@ -883,10 +883,10 @@ class MonteCarloSimulator:
         p25_year_max_dd = float(np.percentile(max_dd_week, 25) / 52)
         p75_year_max_dd = float(np.percentile(max_dd_week, 75) / 52)
 
-        # SORR: % of paths with >30% drawdown in first 5 years
+        # SORR: % of paths with an early large drawdown (first 5 years)
         early_weeks = min(5 * 52, n_weeks_plus1)
         early_dd = drawdown[:, :early_weeks].max(axis=1)
-        sorr_early = float((early_dd >= 0.30).mean() * 100)
+        sorr_early = float((early_dd >= MONTE_CARLO.sorr_early_threshold).mean() * 100)
 
         return (sorr_early, median_max_dd, pct_severe,
                 median_year_max_dd, p25_year_max_dd, p75_year_max_dd)
