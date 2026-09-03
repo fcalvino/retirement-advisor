@@ -50,13 +50,13 @@ Los ítems están agrupados en fases coherentes con el criterio de ratio impacto
 | S26 ✅ | simplicidad | S | bajo | interno | `_extract_annual_series` triplicada en 3 módulos de análisis |
 | S27 | simplicidad | M | medio | observable | SCENARIOS de stress test: ~85 shocks hardcodeados en módulo |
 | S28 ✅ | simplicidad | S | bajo | observable | `expected_annual_return=0.07` hardcodeado en `goals.py` |
-| P2 | performance | S | bajo | interno | Unread-alert count consultado 2 veces por rerun |
+| P2 ✅ | performance | S | bajo | interno | Unread-alert count consultado 2 veces por rerun |
 | P3 ✅ | performance | S | bajo | interno | `print()` en `personal_sizer.py` — no usa loguru (evidencia incorrecta: era un docstring) |
 | O3 ✅ | ordenamiento | S | medio | interno | `cached_stress_test` acepta `dict` crudo como param de caché |
-| O6 | ordenamiento | S | bajo | interno | Sidebar importa `alert_store` directamente |
+| O6 ✅ | ordenamiento | S | bajo | interno | Sidebar importa `alert_store` directamente |
 | O7 | ordenamiento | S | bajo | interno | Stock Analysis importa `data.data_sources` y `data.fetcher` |
 | O8 ✅ | ordenamiento | S | bajo | interno | Migraciones one-shot mezcladas con scripts operacionales |
-| O9 | ordenamiento | S | bajo | interno | Settings importa `data.cache` y `data.fetcher` directamente |
+| O9 ✅ | ordenamiento | S | bajo | interno | Settings importa `data.cache` y `data.fetcher` directamente |
 | O2 | ordenamiento | M | alto | interno | Dispatch de provider AI duplicado en moat.py y ai_analyzer.py |
 | O4 | ordenamiento | M | medio | interno | `run_holdings_committee` (negocio) en módulo de UI |
 | O5 | ordenamiento | M | bajo | interno | Página de alertas importa `AlertEngine` directamente |
@@ -645,6 +645,8 @@ Dos queries SQLite en el mismo rerun para el mismo valor.
 
 **Contrato estable:** el badge del sidebar muestra el mismo número.
 
+**Estado:** ✅ Mergeado — PR #84 (2026-09-03). `dashboard/shared.py::unread_alert_count()` con `@st.cache_data(ttl=300)` es la única fuente: el sidebar (`app.py`), `next_priority_action` y `build_home_hub_for_prefs` la llaman, y el caché colapsa las 3 lecturas de un render de home en 1. Antes: 3 `alert_store.get_unread_count()` por rerun.
+
 **Verificación:** `make check`. Verificar badge en la UI.
 
 ---
@@ -707,6 +709,8 @@ El estándar del proyecto (CONTEXT.md §5) prohíbe que las páginas del dashboa
 **Riesgos:** bajo. Son wrappers de una línea.
 
 **Dependencias:** independiente; puede hacerse junto a O6/P2 para consistencia.
+
+**Estado:** ✅ Mergeado — PR #84 (2026-09-03). `dashboard/shared.py` expone `cache_stats()`, `clear_data_cache()` y `usd_ars_quote()` (wrappers con import lazy). `9_Settings.py` los importa de shared; sacadas las líneas `from data.cache import cache` y `from data.fetcher import usd_ars_quote`. *Gap conocido fuera de scope:* el bloque "snapshot del universo" (`9_Settings.py:~145`) todavía hace `from data.fetcher import get_info` + `from data.snapshot import ...` lazy — feature aparte, no cubierta por la evidencia de O9.
 
 **Verificación:** `make check`. Probar la sección de caché en Settings manualmente.
 
@@ -778,6 +782,8 @@ Si cambia la firma del constructor de `AlertEngine` o `ReportGenerator`, la pág
 `build_home_hub_for_prefs` en `shared.py` ya consulta el unread count. El sidebar puede recibir el valor como parámetro desde `_home_page` en vez de importar el store directamente.
 
 **Cambio propuesto:** ver P2 — resolver ambos juntos. El sidebar lee el count de una variable calculada una sola vez.
+
+**Estado:** ✅ Mergeado — PR #84 (2026-09-03). `app.py` importa `unread_alert_count` de `dashboard.shared`; ya no hay `from alerts.store import alert_store` en `app.py`.
 
 **Verificación:** `make check`.
 

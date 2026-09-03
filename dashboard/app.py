@@ -36,6 +36,7 @@ from dashboard.shared import (
     render_assumptions_disclaimer,
     seed_session_defaults_from_profile,
     track_record_home_line,
+    unread_alert_count,
 )
 from data.preferences import _PREFS_PATH, UserPreferences
 from data.universe_loader import UNIVERSE_META, list_universes
@@ -465,15 +466,12 @@ if _wl:
         _badge += f" · 🔔 {_alerts_triggered} alerta{'s' if _alerts_triggered != 1 else ''}"
     st.sidebar.caption(_badge)
 
-# Alert badge (Phase 6) — unread alert count, clickeable via link
+# Alert badge (Phase 6) — unread alert count, clickeable via link.
+# Count comes from dashboard.shared.unread_alert_count (@st.cache_data): one
+# SQLite read per rerun, shared with the home hub (P2), no direct alerts.store
+# import here (O6).
 try:
-    from alerts.store import alert_store as _alert_store
-
-    @st.cache_data(ttl=300)
-    def _get_unread_count() -> int:
-        return _alert_store.get_unread_count()
-
-    _unread = _get_unread_count()
+    _unread = unread_alert_count()
     if _unread > 0:
         st.sidebar.markdown(
             f"[🔴 **{_unread} alerta{'s' if _unread != 1 else ''} sin leer** →](#alertas)",

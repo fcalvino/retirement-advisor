@@ -564,6 +564,47 @@ def _days_since_iso(ts: str) -> int | None:
         return None
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def unread_alert_count() -> int:
+    """Unread-alert count for the sidebar badge and the home hub.
+
+    ``@st.cache_data`` collapses the two-to-three SQLite reads a single home
+    render used to do (P2), and keeps ``alerts.store`` out of ``app.py`` (O6).
+    """
+    try:
+        from alerts.store import alert_store
+
+        return int(alert_store.get_unread_count() or 0)
+    except Exception:
+        return 0
+
+
+# ------------------------------------------------------------------ #
+#  Data-layer wrappers for pages (O9) — pages must not import from     #
+#  ``data.*`` directly (CONTEXT §5).                                   #
+# ------------------------------------------------------------------ #
+
+def cache_stats() -> dict:
+    """Data-cache stats for the Settings page."""
+    from data.cache import cache
+
+    return cache.get_stats()
+
+
+def clear_data_cache() -> None:
+    """Clear the whole data cache from the Settings page."""
+    from data.cache import cache
+
+    cache.clear_all()
+
+
+def usd_ars_quote(symbol: str = "ARS=X"):
+    """USD/ARS market quote wrapper so Settings need not import ``data.fetcher``."""
+    from data.fetcher import usd_ars_quote as _usd_ars_quote
+
+    return _usd_ars_quote(symbol)
+
+
 def next_priority_action(prefs) -> dict:
     """The single most urgent thing to do right now ("Hoy hacé esto").
 
@@ -582,11 +623,7 @@ def next_priority_action(prefs) -> dict:
         }
 
     # 2. Active plan exists — operational signals (all cheap, no price fetch).
-    try:
-        from alerts.store import alert_store
-        n_unread = alert_store.get_unread_count()
-    except Exception:
-        n_unread = 0
+    n_unread = unread_alert_count()
     if n_unread > 0:
         return {
             "icon": "🔔", "label": f"Revisá {n_unread} alerta(s) sin leer",
@@ -645,13 +682,7 @@ def build_home_hub_for_prefs(prefs) -> dict:
     from data.plan_context import get_active_plan, list_sample_plans
     from data.product_ux import build_home_plan_hub
 
-    unread = 0
-    try:
-        from alerts.store import alert_store
-
-        unread = int(alert_store.get_unread_count() or 0)
-    except Exception:
-        unread = 0
+    unread = unread_alert_count()
 
     snap = None
     try:
