@@ -41,7 +41,7 @@ Los ítems están agrupados en fases coherentes con el criterio de ratio impacto
 | S8 ✅ | simplicidad | S | medio | interno | `quickRatio` ignora patrón `reported_metric()` |
 | S14 ✅ | simplicidad | S | medio | interno | Dict comprehension scored-ticker duplicado en 5_Optimizer |
 | S15 ✅ | simplicidad | S | bajo | observable | Defaults de sesión hardcodeados; imports mid-file |
-| S18 | simplicidad | M | medio | interno | Guard de sesión duplicado en ≥3 páginas |
+| S18 ✅ | simplicidad | M | medio | interno | Guard de sesión duplicado en ≥3 páginas |
 | S19 ✅ | simplicidad | S | medio | interno | `_price_lookup` en scheduler duplica lógica de shared.py |
 | S22 | simplicidad | M | medio | interno | `_analyse_one` mezcla extracción de datos con UI strings |
 | S23 ✅ | simplicidad | S | bajo | interno | `rf = 0.045` literal en `tracker.py` — no usa `RISK_FREE` |
@@ -578,19 +578,19 @@ Todos los demás ratios en `_score_financial_health` — D/E (línea 1097), Curr
 **Eje:** simplicidad · **Esfuerzo:** M · **Impacto:** medio
 
 **Evidencia:**
-- `dashboard/pages/2_Stock_Analysis.py:70–77`
-- `dashboard/pages/5_Optimizer.py:127–135`
-- Parcialmente en `7_Simulaciones.py`
+- `dashboard/pages/2_Stock_Analysis.py:70–77` — bloque inline (usaba `load_universe`, sin customs)
+- `dashboard/pages/5_Optimizer.py:143–152` — bloque inline (usaba `load_universe_with_customs`)
+- `7_Simulaciones.py` — solo la mitad de prefs, vía `get_user_prefs()`; no toca `universe`/`portfolio`
 
-Los tres bloques re-implementan la inicialización de `user_prefs`, `universe` y `portfolio` en session state. Si cambia la inicialización, debe cambiarse en tres lugares.
+Los bloques re-implementaban la inicialización de `user_prefs`, `universe` y `portfolio` en session state, y **divergían**: Stock Analysis cargaba el universo sin custom tickers, Optimizer con customs (el mismo que `app.py`).
 
 **Cambio propuesto:** `dashboard/shared.py` ya tiene `get_user_prefs()`. Agregar `ensure_session_defaults()` que centralice el guard completo para las tres variables. Las páginas llaman a ese helper.
 
-**Contrato estable:** mismo estado de sesión resultante.
+**Contrato estable:** mismo estado de sesión resultante. `2_Stock_Analysis.py` pasa a `load_universe_with_customs` (como `app.py`), pero **nunca lee `st.session_state.universe`** — cambio sin efecto observable.
 
-**Riesgos:** el orden de inicialización importa en Streamlit. Probar que las páginas cargan correctamente en frío.
+**Estado:** ✅ Mergeado — PR #85 (2026-09-03). `dashboard/shared.py::ensure_session_defaults()` reusa `get_user_prefs()` y replica la init de `app.py` (universe con customs + `Portfolio()`). `2_Stock_Analysis.py` y `5_Optimizer.py` reemplazan su bloque inline por una llamada; imports muertos (`load_universe` en 2_SA) sacados. `app.py` conserva su propio bloque como referencia (además siembra `ai_*`).
 
-**Verificación:** `make check`. Abrir las tres páginas en un navegador limpio y verificar que no crashean.
+**Verificación:** `make check` → 3129 passed. `ruff` limpio. Smoke: los 3 archivos parsean, `ensure_session_defaults` callable, guards reemplazados.
 
 ---
 

@@ -16,6 +16,7 @@ from dashboard.shared import (
     _moat_badge_html,
     _tailwind_badge_html,
     cached_full_analysis,
+    ensure_session_defaults,
     render_ai_badge,
     render_calc_badge,
 )
@@ -31,7 +32,6 @@ from data.product_ux import (
     graham_value_help,
     roic_sustained_help,
 )
-from data.universe_loader import load_universe
 from portfolio.tracker import Portfolio
 
 # Display labels make crypto searchable by full name (Bitcoin, Ethereum…)
@@ -64,17 +64,10 @@ def _cross_source_check(symbol: str) -> dict | None:
     return report.as_dict()
 
 # ------------------------------------------------------------------ #
-#  Session guard (fresh-session direct navigation)                     #
+#  Session guard (fresh-session direct navigation) — S18              #
 # ------------------------------------------------------------------ #
 
-if "user_prefs" not in st.session_state:
-    st.session_state.user_prefs = UserPreferences.load()
-if "universe" not in st.session_state:
-    _uk = getattr(st.session_state.user_prefs, "active_universe", "default") or "default"
-    st.session_state.universe = load_universe(_uk)
-    st.session_state.active_universe_key = _uk
-if "portfolio" not in st.session_state:
-    st.session_state.portfolio = Portfolio()
+ensure_session_defaults()
 
 # ------------------------------------------------------------------ #
 #  Page                                                                #

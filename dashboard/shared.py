@@ -797,6 +797,25 @@ def load_universe_with_customs(key: str, prefs=None) -> list[str]:
     return tickers
 
 
+def ensure_session_defaults() -> None:
+    """Seed ``user_prefs`` / ``universe`` / ``portfolio`` into ``st.session_state``.
+
+    The same initialization ``app.py`` runs on entry, extracted so a page reached
+    by a direct ``st.navigation`` link (fresh session, ``app.py``'s startup block
+    never ran) falls back to one implementation instead of re-declaring the guard
+    in each page (S18). Idempotent — every branch is a "not set yet" check.
+    """
+    prefs = get_user_prefs()
+    if "universe" not in st.session_state:
+        key = getattr(prefs, "active_universe", "default") or "default"
+        st.session_state.universe = load_universe_with_customs(key, prefs)
+        st.session_state.active_universe_key = key
+    if "portfolio" not in st.session_state:
+        from portfolio.tracker import Portfolio
+
+        st.session_state.portfolio = Portfolio()
+
+
 def is_custom_ticker(symbol: str) -> bool:
     """True if ``symbol`` is one of the customs merged into the active universe."""
     used = st.session_state.get("custom_tickers_in_universe", []) or []

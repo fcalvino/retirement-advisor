@@ -16,6 +16,7 @@ from config import OPTIMIZER, OPTIMIZER_PROFILES
 from dashboard.shared import (
     _fetch_universe_parallel,
     _get_ai_config,
+    ensure_session_defaults,
     seed_session_defaults_from_profile,
     tailwind_badge,
 )
@@ -139,17 +140,9 @@ st.caption(
 )
 
 # ------------------------------------------------------------------ #
-#  Defensive guard for st.navigation() direct page access
+#  Defensive guard for st.navigation() direct page access — S18
 # ------------------------------------------------------------------ #
-if "user_prefs" not in st.session_state:
-    st.session_state.user_prefs = UserPreferences.load()
-if "universe" not in st.session_state:
-    _uk = getattr(st.session_state.user_prefs, "active_universe", "default") or "default"
-    from dashboard.shared import load_universe_with_customs
-    st.session_state.universe = load_universe_with_customs(_uk, st.session_state.user_prefs)
-    st.session_state.active_universe_key = _uk
-if "portfolio" not in st.session_state:
-    st.session_state.portfolio = Portfolio()
+ensure_session_defaults()
 
 _prefs: UserPreferences = st.session_state.user_prefs
 portfolio: Portfolio = st.session_state.portfolio
