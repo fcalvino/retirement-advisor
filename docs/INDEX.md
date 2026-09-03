@@ -65,6 +65,7 @@ Roles:
 | historical-audit | `docs/DEAD_CODE_AUDIT.md` | Auditoría de código muerto (2026-07) |
 | historical-audit | `docs/universe_coverage_analysis.md` | Cobertura del universo (snapshot 2026-07) |
 | archive | `docs/archive/code.review.md` | Review dump may-2026; **no** es guía de integración actual |
+| how-to | `scripts/migrations/` | Colección: migraciones one-shot ya ejecutadas (idempotentes); índice `README.md` |
 <!-- /catalog-table -->
 
 ---

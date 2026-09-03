@@ -51,11 +51,11 @@ Los ítems están agrupados en fases coherentes con el criterio de ratio impacto
 | S27 | simplicidad | M | medio | observable | SCENARIOS de stress test: ~85 shocks hardcodeados en módulo |
 | S28 | simplicidad | S | bajo | observable | `expected_annual_return=0.07` hardcodeado en `goals.py` |
 | P2 | performance | S | bajo | interno | Unread-alert count consultado 2 veces por rerun |
-| P3 | performance | S | bajo | interno | `print()` en `personal_sizer.py` — no usa loguru |
+| P3 ✅ | performance | S | bajo | interno | `print()` en `personal_sizer.py` — no usa loguru (evidencia incorrecta: era un docstring) |
 | O3 ✅ | ordenamiento | S | medio | interno | `cached_stress_test` acepta `dict` crudo como param de caché |
 | O6 | ordenamiento | S | bajo | interno | Sidebar importa `alert_store` directamente |
 | O7 | ordenamiento | S | bajo | interno | Stock Analysis importa `data.data_sources` y `data.fetcher` |
-| O8 | ordenamiento | S | bajo | interno | Migraciones one-shot mezcladas con scripts operacionales |
+| O8 ✅ | ordenamiento | S | bajo | interno | Migraciones one-shot mezcladas con scripts operacionales |
 | O9 | ordenamiento | S | bajo | interno | Settings importa `data.cache` y `data.fetcher` directamente |
 | O2 | ordenamiento | M | alto | interno | Dispatch de provider AI duplicado en moat.py y ai_analyzer.py |
 | O4 | ordenamiento | M | medio | interno | `run_holdings_committee` (negocio) en módulo de UI |
@@ -672,15 +672,9 @@ Dos queries SQLite en el mismo rerun para el mismo valor.
 **Evidencia:**
 - `portfolio/personal_sizer.py:37` — `print(analysis.overall_summary)`
 
-El proyecto estandariza `loguru` para todo output de producción (CONTEXT.md §5). Un `print()` en un módulo de análisis mezcla output de diagnóstico con stdout del proceso Streamlit, que no tiene nivel de log y no puede filtrarse.
+**Estado:** ✅ Cerrado por inspección — PR #81 (2026-09-03). La evidencia era incorrecta: la línea 37 está **dentro del docstring del módulo** (bloque "Uso standalone::", cerrado por `"""` en la línea 38), no es código ejecutable. El módulo ya usa `loguru` en todo el output real (`logger.info`/`logger.warning` en las líneas 710/756/761) y ya importa `from loguru import logger` (línea 45). Un `print()` en un ejemplo de uso de docstring es la convención correcta (así se lee en un REPL) — no se toca.
 
-**Cambio propuesto:** reemplazar por `logger.debug(analysis.overall_summary)` o `logger.info(...)` según el propósito. Agregar `from loguru import logger` si no está importado.
-
-**Contratos estables:** sin cambio de comportamiento.
-
-**Riesgos:** ninguno.
-
-**Verificación:** `make check`. Verificar que `grep -n "^print(" portfolio/personal_sizer.py` no devuelve nada.
+**Verificación:** `rtk proxy grep -n "print(" portfolio/personal_sizer.py` → única coincidencia es la línea 37 del docstring.
 
 ---
 
@@ -803,9 +797,11 @@ Dos imports directos de la capa de datos desde la misma página. `get_history` s
 
 **Eje:** ordenamiento · **Esfuerzo:** S · **Impacto:** bajo
 
-**Evidencia:**
+**Evidencia (estado original, pre-PR #81):**
 - `scripts/mark_test_fixture_rows.py:1` — migración one-shot de fixture rows (ejecutada 2026-08-30)
 - `scripts/purge_test_alert_rows.py:1` — migración one-shot de alert rows
+
+Ambos vivían junto a `run_scheduler.py` / `run_eval.py`. Tras PR #81 están en `scripts/migrations/`.
 
 Viven junto a `run_scheduler.py`, `run_eval.py` y herramientas operacionales. Un nuevo contribuidor no puede distinguir "herramienta que se corre seguido" de "script que ya cumplió su propósito".
 
@@ -813,7 +809,9 @@ Viven junto a `run_scheduler.py`, `run_eval.py` y herramientas operacionales. Un
 
 **Contrato estable:** los scripts siguen funcionando; solo cambia su ubicación.
 
-**Verificación:** `make check` (el script `check_doc_catalog.py` no debería enumerar scripts).
+**Estado:** ✅ Mergeado — PR #81 (2026-09-03). `scripts/migrations/{mark_test_fixture_rows,purge_test_alert_rows}.py` + `README.md`. `sys.path.insert(... parents[1])` → `parents[2]`. Callers actualizados: `tests/test_track_record_fixture_exclusion_oracle.py`, `tests/test_track_record_dedupe_read_oracle.py`, comentario en `analysis/track_record.py`, `docs/ROADMAP.md`, `docs/CONTEXT.md §8`. `scripts/migrations/` registrado como colección `how-to` en `docs/INDEX.md`.
+
+**Verificación:** `make check` (incluye `tests/test_doc_catalog.py` y los oráculos del track record).
 
 ---
 

@@ -68,7 +68,7 @@ from analysis.track_record import RecommendationLog, TrackRecordStore
 from analysis.track_record_scorer import equity_curve, hit_rate_by_action, summary_stats
 
 ROOT = Path(__file__).resolve().parents[1]
-MIGRATION = ROOT / "scripts" / "mark_test_fixture_rows.py"
+MIGRATION = ROOT / "scripts" / "migrations" / "mark_test_fixture_rows.py"
 
 
 def _fixture_source() -> str:
