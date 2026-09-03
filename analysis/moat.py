@@ -792,17 +792,17 @@ def call_ai_api(prompt: str, ai_config: AIConfig, max_tokens: int = 1024) -> str
     Raises:
         MoatAPIError — on network, auth, rate-limit, or unknown-provider errors.
     """
-    import dataclasses
-
-    from analysis.ai_analyzer import AIAnalyzer
-
     provider = ai_config.provider.lower()
-    # AIAnalyzer._call_api matches the provider name exactly; this shim kept the
-    # historical leniency of lower-casing it first.
-    cfg = ai_config if ai_config.provider == provider else dataclasses.replace(
-        ai_config, provider=provider
-    )
     try:
+        import dataclasses
+
+        from analysis.ai_analyzer import AIAnalyzer
+
+        # AIAnalyzer._call_api matches the provider name exactly; this shim keeps
+        # the historical leniency of lower-casing it first.
+        cfg = ai_config if ai_config.provider == provider else dataclasses.replace(
+            ai_config, provider=provider
+        )
         return AIAnalyzer(cfg)._call_api(prompt, max_tokens=max_tokens)
     except MoatAPIError:
         raise
