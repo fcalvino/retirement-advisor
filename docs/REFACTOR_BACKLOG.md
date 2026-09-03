@@ -48,7 +48,7 @@ Los ítems están agrupados en fases coherentes con el criterio de ratio impacto
 | S24 ✅ | simplicidad | S | medio | observable | Umbrales de drawdown severo/SORR hardcodeados en MC |
 | S25 ✅ | simplicidad | M | medio | observable | Pesos de señal técnica hardcodeados en `technical.py` |
 | S26 ✅ | simplicidad | S | bajo | interno | `_extract_annual_series` triplicada en 3 módulos de análisis |
-| S27 | simplicidad | M | medio | observable | SCENARIOS de stress test: ~85 shocks hardcodeados en módulo |
+| S27 ✅ | simplicidad | M | medio | observable | SCENARIOS de stress test: ~85 shocks hardcodeados en módulo |
 | S28 ✅ | simplicidad | S | bajo | observable | `expected_annual_return=0.07` hardcodeado en `goals.py` |
 | P2 ✅ | performance | S | bajo | interno | Unread-alert count consultado 2 veces por rerun |
 | P3 ✅ | performance | S | bajo | interno | `print()` en `personal_sizer.py` — no usa loguru (evidencia incorrecta: era un docstring) |
@@ -457,7 +457,9 @@ Son ~85 valores de negocio (shocks por sector por escenario histórico). Solo `r
 
 **Riesgos:** `StressScenario` es un dataclass definido en `stress_test.py`; moverlo implica decidir si va a `config.py` directamente o si se crea un módulo `data/stress_scenarios.py`. La opción más simple es que `config.py` importe `StressScenario` del módulo y los defina ahí.
 
-**Verificación:** `make check`. `tests/test_stress_test.py` debe seguir en verde.
+**Estado:** ✅ Mergeado — PR #87 (2026-09-03). El dataclass `StressScenario` **y** los 6 `StressScenario` (`STRESS_SCENARIOS: List[StressScenario]`, 84 shocks) viven ahora en `config.py` (no hay ciclo: `config.py` no importa de `portfolio/`). `portfolio/stress_test.py` hace `from config import STRESS_SCENARIOS, STRESS_TEST, StressScenario` y `SCENARIOS = STRESS_SCENARIOS` (re-export — `tests/test_stress_test.py` sigue importando `SCENARIOS` de ahí). Oráculo: los 6 escenarios byte-idénticos a `origin/main`.
+
+**Verificación:** `make check` + `TZ=UTC make test` → 3129 passed. `tests/test_stress_test.py` verde.
 
 ---
 

@@ -172,7 +172,7 @@ descripción viva del sistema.
 → `config.py` — `OPTIMIZER_PROFILES`
 
 ### Quiero agregar un nuevo escenario de stress test
-→ `portfolio/stress_test.py` — dict `SCENARIOS`
+→ `config.py` — lista `STRESS_SCENARIOS` (S27; `portfolio/stress_test.py` la re-exporta como `SCENARIOS`)
 → [`README.md` § Stress Testing](../README.md#stress-testing)
 
 ### Quiero configurar alertas por email o Telegram
