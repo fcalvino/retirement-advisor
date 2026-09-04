@@ -61,10 +61,10 @@ Los ítems están agrupados en fases coherentes con el criterio de ratio impacto
 | O4 ✅ | ordenamiento | M | medio | interno | `run_holdings_committee` (negocio) en módulo de UI |
 | O5 ✅ | ordenamiento | M | bajo | interno | Página de alertas importa `AlertEngine` directamente |
 | S16 ✅ | simplicidad | M | medio | interno | `_home_page()` 208 líneas monolíticas |
-| S17 ⏳ | simplicidad | M | medio | interno | `render_*_controls` mutan session_state dentro del render |
+| S17 ✅ | simplicidad | M | medio | interno | `render_*_controls` mutan session_state dentro del render |
 | O1 | ordenamiento | L | alto | interno | `FundamentalAnalyzer.analyze()` 215 líneas: God method |
 | S12 | simplicidad | L | alto | interno | `7_Simulaciones.py` 2.420 líneas sin helpers |
-| T1 | cobertura | M | alto | interno | Cero tests para `dashboard/shared.py` (1.891 líneas) |
+| T1 ✅ | cobertura | M | alto | interno | Cero tests para `dashboard/shared.py` (1.891 líneas) |
 | T2 ✅ | cobertura | M | alto | interno | Sin test de integración para `FundamentalAnalyzer.analyze()` |
 
 ---
@@ -904,7 +904,7 @@ El anti-patrón acopla la phase de render con la de lectura de estado y hace dif
 
 **Contrato estable:** los callers que usan el return value no cambian.
 
-**Estado:** ⏳ PR #94 abierto. Extraídos `_build_withdrawal_strategy(kind, *, amount, pct, base)` y `_build_economic_drags(enabled, component_pcts)` — puros, sin lecturas de `st.session_state`. `get_withdrawal_strategy` / `get_economic_drags` (que las páginas siguen llamando aparte) quedan como thin readers que delegan al builder. `render_withdrawal_controls` / `render_drags_controls` arman el dict con los valores frescos de los widgets (no releen las keys que acaban de escribir); las escrituras a session_state se conservan para persistencia cross-rerun. Byte-idéntico: oráculo 0 mismatches (11 casos) + `_build_* == get_*`. `make check` → 3141. Revisión visual playwright-cli de Simulaciones (nav por sidebar): ambos bloques renderizan; al elegir "Retiro fijo real" aparecen los inputs y el badge refleja el valor fresco ("$4,000/año"); panel de drags con sus 4 inputs + badge correcto; sin errores de página (los errores de consola son de Plotly con chart vacío, pre-existentes).
+**Estado:** ✅ Mergeado — PR #94 (2026-09-04). Extraídos `_build_withdrawal_strategy(kind, *, amount, pct, base)` y `_build_economic_drags(enabled, component_pcts)` — puros, sin lecturas de `st.session_state`. `get_withdrawal_strategy` / `get_economic_drags` (que las páginas siguen llamando aparte) quedan como thin readers que delegan al builder. `render_withdrawal_controls` / `render_drags_controls` arman el dict con los valores frescos de los widgets (no releen las keys que acaban de escribir); las escrituras a session_state se conservan para persistencia cross-rerun. Byte-idéntico: oráculo 0 mismatches (11 casos) + `_build_* == get_*`. `make check` → 3141. Revisión visual playwright-cli de Simulaciones (nav por sidebar): ambos bloques renderizan; al elegir "Retiro fijo real" aparecen los inputs y el badge refleja el valor fresco ("$4,000/año"); panel de drags con sus 4 inputs + badge correcto; sin errores de página (los errores de consola son de Plotly con chart vacío, pre-existentes).
 
 **Plan (P-14, 2026-09-04) — independiente de P-13 (toca `dashboard/shared.py`, no `app.py`):**
 - **Alcance:** `render_withdrawal_controls()` (`shared.py:1243`) y `render_drags_controls()` (`:1085`). Hoy escriben a `session_state` (`withdrawal_kind`, `drag_*`, …) y en el mismo call releen ese estado para armar el valor de retorno. Cambio: computar el valor de retorno **directo de los widgets**; la escritura a `session_state` queda **solo para persistencia cross-rerun**, nunca como fuente de lectura dentro del mismo call. Firmas y valores de retorno sin cambiar.
@@ -968,6 +968,8 @@ Las funciones con mayor riesgo son:
 **Contrato estable:** no cambia código de producción.
 
 **Verificación:** `make check`. Los nuevos tests deben pasar sin `st` en el entorno.
+
+**Estado:** ✅ Mergeado — PR #95 (2026-09-04). `tests/test_shared_pure.py` (31 tests): `drags_to_tuple` / `withdrawal_to_tuple` (None/vacío → None, exclusión de `total_annual_drag_pct` / `label`, drop de no-escalares, orden estable independiente del insertion order, hashabilidad, keys iguales para inputs equivalentes); `plan_journey_status` (5 pasos, paso "respaldá" done cuando no hay nada que respaldar y pending al guardar, flags de export por session y por prefs, lectura de cualquiera de las 2 keys de optimizer, `active_plan_id` con espacios ≠ activo); `next_priority_action` (journey incompleto → primer paso pendiente; alertas no leídas > 0; plan activo stale / nunca refrescado → health check; todo en línea; excepción de `get_active_plan` swallowed); `export_plan_bundle` (tupla `(bytes, filename, md)`, snapshot completo sin campos perdidos, bloque `personal` solo si `is_onboarded`, sanitización de `snap.id` inseguro, fallback a `"plan"`, `drag_note` condicional, UTF-8 round-trip). Sin runtime de Streamlit: `shared.st` → stub con `session_state` dict; colaboradores I/O monkeypatched. Cero cambios en producción.
 
 ---
 
