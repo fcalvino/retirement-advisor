@@ -736,21 +736,17 @@ class FundamentalAnalyzer:
             _logger.debug(f"cross-source attach skipped: {exc}")
 
     def analyze(self, symbol: str, ai_config=None) -> FundamentalResult:
+        """Orchestrator (O1). Each stage mutates the single ``result`` accumulator
+        in the exact order the old god-method did — the dimension scorers already
+        read fields their predecessors set (``total_score`` → Enhanced/Moat,
+        ``eps_cagr_5y`` → Graham), so the pipeline stays in-place by necessity.
+        The numbers are byte-identical to pre-refactor (``measure_score_impact``).
+        """
         symbol = symbol.upper()
 
-        # ── Crypto fast-path ──────────────────────────────────────────────
-        # Detected before any yfinance financial-statement calls.
-        # Returns the same FundamentalResult type with is_crypto=True.
-        from config import is_crypto, normalize_crypto_ticker
-        if is_crypto(symbol):
-            from analysis.crypto_analyzer import CryptoAnalyzer
-            from data.fetcher import get_info_age_hours
-            crypto_result = CryptoAnalyzer().analyze(normalize_crypto_ticker(symbol), ai_config)
-            crypto_result.data_quality = compute_data_quality(
-                crypto_result, freshness_hours=get_info_age_hours(crypto_result.symbol),
-            )
+        crypto_result = self._try_crypto_fast_path(symbol, ai_config)
+        if crypto_result is not None:
             return crypto_result
-        # ─────────────────────────────────────────────────────────────────
 
         result = FundamentalResult(symbol=symbol)
 
@@ -766,7 +762,44 @@ class FundamentalAnalyzer:
         balance_sheet = financials.get("balance_sheet", pd.DataFrame())
         cashflow = financials.get("cashflow", pd.DataFrame())
 
-        # Basic info
+        self._populate_identity(result, symbol, info)
+        self._populate_prescoring_metrics(result, income_stmt, balance_sheet, cashflow)
+        self._run_scoring_pipeline(result, info, income_stmt, balance_sheet, cashflow)
+        self._run_moat_pipeline(result, symbol, info, income_stmt, balance_sheet, cashflow, ai_config)
+        self._run_tailwind_pipeline(result, symbol, info, ai_config)
+        self._assemble_result(result)
+        self._finalize_data_quality(result, symbol, financials, balance_sheet)
+
+        logger.info(
+            f"{symbol}: base={result.total_score:.1f} consistency={result.consistency_score:.1f} "
+            f"piotroski={result.piotroski_score}/9 moat={result.moat_score:.1f}/{result.moat_classification} "
+            f"tailwind={result.tailwind_classification}({result.tailwind_bonus:+.1f}) "
+            f"adjusted={result.adjusted_score:.1f}"
+        )
+        return result
+
+    # ------------------------------------------------------------------ #
+    #  analyze() pipeline stages (O1) — all mutate ``result`` in place.    #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _try_crypto_fast_path(symbol: str, ai_config) -> "FundamentalResult | None":
+        """Crypto fast-path: detected before any yfinance financial-statement
+        call. Returns the same ``FundamentalResult`` type with ``is_crypto=True``,
+        or ``None`` for a non-crypto symbol (the equity path takes over)."""
+        from config import is_crypto, normalize_crypto_ticker
+        if not is_crypto(symbol):
+            return None
+        from analysis.crypto_analyzer import CryptoAnalyzer
+        from data.fetcher import get_info_age_hours
+        crypto_result = CryptoAnalyzer().analyze(normalize_crypto_ticker(symbol), ai_config)
+        crypto_result.data_quality = compute_data_quality(
+            crypto_result, freshness_hours=get_info_age_hours(crypto_result.symbol),
+        )
+        return crypto_result
+
+    def _populate_identity(self, result: FundamentalResult, symbol: str, info: dict) -> None:
+        """Name, country, sector/industry and asset class from the feed."""
         result.company_name = info.get("longName", symbol)
         result.country = info.get("country", "") or ""
         from config import SECTOR_MAP
@@ -804,6 +837,14 @@ class FundamentalAnalyzer:
             is_crypto=bool(getattr(result, "is_crypto", False)),
         )
 
+    def _populate_prescoring_metrics(
+        self,
+        result: FundamentalResult,
+        income_stmt: pd.DataFrame,
+        balance_sheet: pd.DataFrame,
+        cashflow: pd.DataFrame,
+    ) -> None:
+        """Metrics the scoring dimensions read: capital ratio + REIT FFO/P-FFO."""
         # Capital ratio — captured for calibration, not scored. See the field's note.
         _equity = self._extract_annual_series(
             balance_sheet,
@@ -832,7 +873,16 @@ class FundamentalAnalyzer:
                     "que para un REIT subestima el resultado"
                 )
 
-        # Run each scoring dimension
+    def _run_scoring_pipeline(
+        self,
+        result: FundamentalResult,
+        info: dict,
+        income_stmt: pd.DataFrame,
+        balance_sheet: pd.DataFrame,
+        cashflow: pd.DataFrame,
+    ) -> None:
+        """The five weighted dimensions + ``total_score`` + Graham intrinsic value
+        + Enhanced scoring (Consistency + Piotroski)."""
         result.profitability_score = self._score_profitability(info, income_stmt, balance_sheet, result)
         result.health_score = self._score_financial_health(info, balance_sheet, income_stmt, result)
         result.valuation_score = self._score_valuation(info, result)
@@ -889,7 +939,17 @@ class FundamentalAnalyzer:
         for rec in enhanced.recommendations:
             result.notes[f"enhanced_{len(result.notes)}"] = rec
 
-        # Moat scoring: quantitative always, AI qualitative when ai_config is enabled
+    @staticmethod
+    def _run_moat_pipeline(
+        result: FundamentalResult,
+        symbol: str,
+        info: dict,
+        income_stmt: pd.DataFrame,
+        balance_sheet: pd.DataFrame,
+        cashflow: pd.DataFrame,
+        ai_config,
+    ) -> None:
+        """Moat scoring: quantitative always, AI qualitative when ai_config is enabled."""
         moat_analyzer = MoatAnalyzer()
         moat = moat_analyzer.analyze(symbol, info, income_stmt, balance_sheet, cashflow)
         if ai_config and getattr(ai_config, "enabled", False):
@@ -899,8 +959,13 @@ class FundamentalAnalyzer:
         result.moat_classification = moat.classification
         result.moat_detail = moat
 
-        # Sector-country structural tailwind (Idea 2): curated always, AI enrichment optional.
-        # Neutral (no curated match / disabled) → bonus 0 → numbers identical to pre-feature.
+    @staticmethod
+    def _run_tailwind_pipeline(
+        result: FundamentalResult, symbol: str, info: dict, ai_config,
+    ) -> None:
+        """Sector-country structural tailwind (Idea 2): curated always, AI enrichment
+        optional. Neutral (no curated match / disabled) → bonus 0 → numbers
+        identical to pre-feature."""
         tailwind_analyzer = TailwindAnalyzer()
         tailwind = tailwind_analyzer.analyze(
             symbol,
@@ -915,8 +980,10 @@ class FundamentalAnalyzer:
         result.tailwind_classification = tailwind.classification
         result.tailwind_detail = tailwind
 
-        # Final adjusted_score = base + consistency + piotroski_bonus + moat_bonus
-        #                        + tailwind_bonus (can be negative), capped to [0, 100]
+    @staticmethod
+    def _assemble_result(result: FundamentalResult) -> None:
+        """Final adjusted_score = base + consistency + piotroski_bonus + moat_bonus
+        + tailwind_bonus (can be negative), capped to [0, 100]."""
         _raw = (
             result.total_score + result.consistency_score +
             result.piotroski_bonus + result.moat_bonus +
@@ -927,7 +994,15 @@ class FundamentalAnalyzer:
         result.raw_adjusted_score = round(_raw, 1)
         result.adjusted_score = round(min(max(_raw, 0.0), 100.0), 1)
 
-        # Data quality (Fase E): completeness of key metrics + cache freshness.
+    def _finalize_data_quality(
+        self,
+        result: FundamentalResult,
+        symbol: str,
+        financials: dict,
+        balance_sheet: pd.DataFrame,
+    ) -> None:
+        """Data quality (Fase E): completeness of key metrics + cache freshness,
+        the multi-source badge, and warning propagation."""
         from data.fetcher import get_info_age_hours
         result.data_quality = compute_data_quality(
             result,
@@ -942,14 +1017,6 @@ class FundamentalAnalyzer:
             for w in result.data_quality.get("warnings") or []:
                 if w not in result.warnings:
                     result.warnings.append(w)
-
-        logger.info(
-            f"{symbol}: base={result.total_score:.1f} consistency={result.consistency_score:.1f} "
-            f"piotroski={result.piotroski_score}/9 moat={result.moat_score:.1f}/{result.moat_classification} "
-            f"tailwind={result.tailwind_classification}({result.tailwind_bonus:+.1f}) "
-            f"adjusted={result.adjusted_score:.1f}"
-        )
-        return result
 
     # ------------------------------------------------------------------ #
     #  Profitability — 25 pts                                              #
