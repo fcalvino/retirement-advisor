@@ -55,6 +55,7 @@ Roles:
 | historical-plan | `docs/ROADMAP.md` | Fases ya completadas (no es backlog abierto) |
 | historical-plan | `docs/IMPLEMENTATION_PLAN.md` | Plan 2026-06 del Gran Salto — las 5 fases ya están shipped |
 | ideation | `docs/VISION_GRAN_SALTO.md` | Visión de producto 2026-06; las 3 apuestas ya están en el código |
+| ideation | `docs/DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md` | Diagnóstico + brainstorming 2026-09 basado en código; complementa `brainstorm/99_PRIORIZACION.md` |
 | ideation | `docs/prefilter_contract.md` | Contrato del prefiltro (portero): salto → C → 5 puertas → embudo 50–80–120 |
 | ideation | `docs/brainstorm/` | Colección: un archivo por pantalla + capas; índice `00_INDICE.md` |
 | refactor-backlog | `docs/REFACTOR_BACKLOG.md` | Backlog de refactorización: ordenamiento, simplicidad, performance (2026-09-02) |
@@ -122,6 +123,7 @@ No usar estos archivos como “el próximo sprint”. El próximo sprint está e
 | [`ROADMAP.md`](ROADMAP.md) | Diario de fases **ya completadas** |
 | [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) | Plan operativo 2026-06 (Fases 1–5 shipped) |
 | [`VISION_GRAN_SALTO.md`](VISION_GRAN_SALTO.md) | Visión 2026-06; las 3 apuestas ya están en el producto |
+| [`DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`](DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md) | Diagnóstico + brainstorming 2026-09 basado en código; complementa `brainstorm/99_PRIORIZACION.md` |
 | [`prefilter_contract.md`](prefilter_contract.md) | Contrato del prefiltro (portero): salto → C → 5 puertas → embudo — no implementado |
 | [`brainstorm/00_INDICE.md`](brainstorm/00_INDICE.md) | Ideación por pantalla y capa |
 
