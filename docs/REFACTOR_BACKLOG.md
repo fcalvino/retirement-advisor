@@ -62,8 +62,8 @@ Los ítems están agrupados en fases coherentes con el criterio de ratio impacto
 | O5 ✅ | ordenamiento | M | bajo | interno | Página de alertas importa `AlertEngine` directamente |
 | S16 ✅ | simplicidad | M | medio | interno | `_home_page()` 208 líneas monolíticas |
 | S17 ✅ | simplicidad | M | medio | interno | `render_*_controls` mutan session_state dentro del render |
-| O1 | ordenamiento | L | alto | interno | `FundamentalAnalyzer.analyze()` 215 líneas: God method |
-| S12 | simplicidad | L | alto | interno | `7_Simulaciones.py` 2.420 líneas sin helpers |
+| O1 ✅ | ordenamiento | L | alto | interno | `FundamentalAnalyzer.analyze()` 215 líneas: God method |
+| S12 ✅ | simplicidad | L | alto | interno | `7_Simulaciones.py` 2.420 líneas sin helpers |
 | T1 ✅ | cobertura | M | alto | interno | Cero tests para `dashboard/shared.py` (1.891 líneas) |
 | T2 ✅ | cobertura | M | alto | interno | Sin test de integración para `FundamentalAnalyzer.analyze()` |
 
@@ -866,6 +866,8 @@ Ninguna de estas responsabilidades se puede cambiar sin leer el método completo
 
 **Verificación:** `scripts/measure_score_impact.py --compare` → 0 scores movidos. `make check`. `TZ=UTC make test`.
 
+**Estado:** ✅ Mergeado — PR #96 (2026-09-04) **con aprobación explícita del usuario**. `analyze()` (215 líneas) → orquestador de ~30 líneas con 8 sub-métodos: `_try_crypto_fast_path`, `_populate_identity`, `_populate_prescoring_metrics`, `_run_scoring_pipeline`, `_run_moat_pipeline`, `_run_tailwind_pipeline`, `_assemble_result`, `_finalize_data_quality`. Desviación documentada del plan original: se mantiene mutación in-place del acumulador `result` (no value objects como `ScoringResults`/`MoatDetail`) — los scorers de dimensión ya leen campos que sus predecesores setean (`total_score` → Enhanced/Moat; `eps_cagr_5y` → Graham), así que un rediseño a value objects sería mucho más invasivo para 0 ganancia sobre el orquestador. `measure_score_impact.py --compare` → 0 scores / 0 señales movidas sobre 25 tickers cacheados. `make check` 3172 + `TZ=UTC make test` 3172 passed/2 skipped. `/code-review` sin findings. Revisión visual con playwright-cli: Screener con análisis fresco de 25 tickers sin errores; Stock Analysis con AAPL completo (BUY, Piotroski 8/9, Moat Narrow 9.0/20, Graham) sin errores de consola.
+
 ---
 
 ### S16 — `_home_page()` ~200 líneas `[interno]`
@@ -939,6 +941,8 @@ El cuerpo principal del módulo queda como un dispatcher de ~50 líneas.
 **Riesgos:** alto. El archivo más largo del repo. Hacer en un PR dedicado con revisión visual de cada sección. No combinar con otros refactors.
 
 **Verificación:** `make check`. Probar todas las tabs manualmente (MC, goals, stress, tornado). `TZ=UTC make test`.
+
+**Estado:** ✅ Mergeado — PR #97 (2026-09-04). Tres de las cinco tabs ya estaban extraídas como funciones (`_tab_mc_content`, `_render_sensitivity_lab`, `_tab_compare_content`); este PR mueve las dos que quedaban inline: `_tab_stress_content()` (bloque `with tab_stress:`, 123 líneas) y `_tab_custom_content()` (bloque `with tab_custom:`, 60 líneas) — ambas movidas a `def` justo donde vivían, con un dispatch `with tab_x: _tab_x_content()` inmediatamente después, sin reordenar nada respecto al resto del módulo. El bloque más grande y riesgoso, `with tab_goals:` (Planificador de Metas, ~954 líneas: goal cards, fan charts Monte Carlo por meta, timeline), se convirtió en `_tab_goals_content()` con el mismo mecanismo. Desviación documentada del plan: no se sub-dividió `tab_goals` en `_render_goal_section`/`_render_pdf_section` como sugería la propuesta original — se optó por el mismo patrón mecánico ya usado en el archivo (una función por tab, sin reestructurar la lógica interna), para minimizar el riesgo en el archivo más largo del repo. El cuerpo del módulo queda como un dispatcher: 5 bloques `with tab_x: _tab_x_content()` en el orden original de ejecución (idéntico antes/después). Byte-idéntico: cero cambios de lógica, solo `with tab_x:` → `def _tab_x_content():` + llamada en el mismo lugar. `make check` 3172 + `TZ=UTC make test` 3172 passed/2 skipped. Revisión visual con playwright-cli de las 5 tabs: Monte Carlo (ejecutar simulación → 95% probabilidad + distribución + sensibilidad), Stress Test (tabla + 2 gráficos + detalle por sector), Escenario personalizado (cálculo de impacto + gráfico de recuperación), Comparar Perfiles, Mis Metas (agregar meta → simular plan completo → resumen + resultados por meta + timeline). Sin errores de consola nuevos (el único error de Plotly con `translate(NaN,...)` es pre-existente, ya documentado en P-14).
 
 ---
 

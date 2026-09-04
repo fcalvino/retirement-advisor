@@ -1071,7 +1071,7 @@ with tab_mc:
 
 # ================================================================== #
 
-with tab_stress:
+def _tab_stress_content():
     st.subheader("Simulación de crisis históricas")
     st.caption(
         "Impacto estimado sobre el portafolio actual en cada crisis, "
@@ -1199,7 +1199,7 @@ with tab_stress:
 #  Tab 3: Escenario personalizado                                     #
 # ================================================================== #
 
-with tab_custom:
+def _tab_custom_content():
     st.subheader("Crear escenario personalizado")
     st.caption("Definí una caída uniforme y calculá el impacto sobre tu portafolio.")
 
@@ -1259,6 +1259,16 @@ with tab_custom:
                 height=300,
             )
             st.plotly_chart(fig_recov_path, width="stretch")
+
+# ================================================================== #
+#  Tab dispatch: Stress + Escenario personalizado                     #
+# ================================================================== #
+
+with tab_stress:
+    _tab_stress_content()
+
+with tab_custom:
+    _tab_custom_content()
 
 # ================================================================== #
 #  Tab 4: Comparar Perfiles                                           #
@@ -1444,7 +1454,7 @@ with tab_compare:
 
 # ================================================================== #
 
-with tab_goals:
+def _tab_goals_content():
     st.subheader("🏆 Planificador de Metas Financieras")
     st.caption(
         "Definí múltiples metas de inversión (casa, independencia financiera, retiro) "
@@ -2397,6 +2407,9 @@ con peso proporcional a su prioridad. Podés sobreescribir esto ingresando un va
 **Limitaciones:** Los aportes anuales no crecen con inflación por defecto. Para retiros de largo
 plazo ajustados por inflación, usá el tab Monte Carlo con retiro creciente.
                 """)
+
+with tab_goals:
+    _tab_goals_content()
 
 # ------------------------------------------------------------------ #
 #  Footer                                                              #
