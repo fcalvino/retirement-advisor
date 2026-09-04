@@ -1,0 +1,151 @@
+"""
+Oracle tests for ``analysis/point_in_time_piotroski.py`` — offline fixtures,
+no network, no persistence.
+
+The central oracle (``test_matches_a_hand_built_yfinance_style_statement``)
+does not re-derive Piotroski's math: it feeds the *same* two years of numbers
+through two paths — (a) point-in-time reconstruction from synthetic XBRL
+facts, and (b) a hand-built yfinance-shaped DataFrame, the way
+``EnhancedScoring._piotroski_score`` is fed in production — and asserts both
+produce a byte-identical ``PiotroskiDetail``. That is the property this module
+exists for: reconstructing inputs, never re-implementing the scoring.
+"""
+
+from datetime import date
+
+import pandas as pd
+
+from analysis.point_in_time_piotroski import piotroski_as_of, piotroski_statements_as_of
+from analysis.scoring import EnhancedScoring
+
+
+def _fact(val, end, filed):
+    return {"val": val, "start": f"{int(end[:4]) - 1}-{end[5:]}", "end": end, "filed": filed, "form": "10-K", "fp": "FY"}
+
+
+def _concept(rows):
+    return {"units": {"USD": rows}}
+
+
+def _two_year_us_gaap():
+    """FY2020 (improving on every axis vs FY2019) filed 2021-02-01; FY2019
+    filed 2020-02-01. Cutoff dates in the tests below sit relative to those
+    two filing dates.
+    """
+    return {
+        "Revenues": _concept([
+            _fact(900.0, "2019-12-31", "2020-02-01"),
+            _fact(1000.0, "2020-12-31", "2021-02-01"),
+        ]),
+        "NetIncomeLoss": _concept([
+            _fact(80.0, "2019-12-31", "2020-02-01"),
+            _fact(100.0, "2020-12-31", "2021-02-01"),
+        ]),
+        "GrossProfit": _concept([
+            _fact(300.0, "2019-12-31", "2020-02-01"),   # margin 33.3%
+            _fact(400.0, "2020-12-31", "2021-02-01"),   # margin 40.0% — improved
+        ]),
+        "Assets": _concept([
+            _fact(1000.0, "2019-12-31", "2020-02-01"),
+            _fact(1100.0, "2020-12-31", "2021-02-01"),
+        ]),
+        "LongTermDebtNoncurrent": _concept([
+            _fact(300.0, "2019-12-31", "2020-02-01"),   # 30% of assets
+            _fact(220.0, "2020-12-31", "2021-02-01"),   # 20% of assets — improved
+        ]),
+        "AssetsCurrent": _concept([
+            _fact(400.0, "2019-12-31", "2020-02-01"),
+            _fact(500.0, "2020-12-31", "2021-02-01"),
+        ]),
+        "LiabilitiesCurrent": _concept([
+            _fact(200.0, "2019-12-31", "2020-02-01"),   # current ratio 2.0
+            _fact(200.0, "2020-12-31", "2021-02-01"),   # current ratio 2.5 — improved
+        ]),
+        "CommonStockSharesOutstanding": _concept([
+            _fact(100.0, "2019-12-31", "2020-02-01"),
+            _fact(100.0, "2020-12-31", "2021-02-01"),   # no dilution
+        ]),
+        "NetCashProvidedByUsedInOperatingActivities": _concept([
+            _fact(90.0, "2019-12-31", "2020-02-01"),
+            _fact(120.0, "2020-12-31", "2021-02-01"),   # > net income (100) — accruals pass
+        ]),
+    }
+
+
+def test_matches_a_hand_built_yfinance_style_statement():
+    """Same numbers, two construction paths, must score identically."""
+    us_gaap = _two_year_us_gaap()
+    got = piotroski_as_of(us_gaap, cutoff=date(2021, 6, 1))
+
+    hand_income = pd.DataFrame({
+        pd.Timestamp("2020-12-31"): {"Total Revenue": 1000.0, "Net Income": 100.0, "Gross Profit": 400.0},
+        pd.Timestamp("2019-12-31"): {"Total Revenue": 900.0, "Net Income": 80.0, "Gross Profit": 300.0},
+    })
+    hand_balance = pd.DataFrame({
+        pd.Timestamp("2020-12-31"): {
+            "Total Assets": 1100.0, "Long Term Debt": 220.0,
+            "Current Assets": 500.0, "Current Liabilities": 200.0,
+            "Ordinary Shares Number": 100.0,
+        },
+        pd.Timestamp("2019-12-31"): {
+            "Total Assets": 1000.0, "Long Term Debt": 300.0,
+            "Current Assets": 400.0, "Current Liabilities": 200.0,
+            "Ordinary Shares Number": 100.0,
+        },
+    })
+    hand_cashflow = pd.DataFrame({
+        pd.Timestamp("2020-12-31"): {"Operating Cash Flow": 120.0},
+        pd.Timestamp("2019-12-31"): {"Operating Cash Flow": 90.0},
+    })
+    expected = EnhancedScoring()._piotroski_score(
+        info={}, income_stmt=hand_income, balance_sheet=hand_balance, cashflow=hand_cashflow
+    )
+
+    assert got == expected
+    # Every check improves in this fixture by construction.
+    assert got.score == 9
+
+
+def test_cutoff_before_the_second_year_was_filed_only_sees_one_year():
+    """Between the two filing dates: YoY checks (F3/F4/F5/F7/F8) cannot
+    resolve on one year of data and must come back False, not crash or guess.
+    """
+    us_gaap = _two_year_us_gaap()
+    got = piotroski_as_of(us_gaap, cutoff=date(2020, 6, 1))
+
+    assert got.f1_roa_positive is True     # FY2019 alone: NI>0, assets>0
+    assert got.f3_roa_improving is False
+    assert got.f4_leverage_decreasing is False
+    assert got.f5_liquidity_improving is False
+    assert got.f6_no_dilution is False     # needs 2 years of shares
+    assert got.f7_gross_margin_improving is False
+    assert got.f8_asset_turnover_improving is False
+
+
+def test_missing_concept_drops_only_its_own_checks():
+    """No GrossProfit tag at all: F7 cannot resolve, everything else is
+    unaffected — a missing input degrades one check, not the whole score.
+    """
+    us_gaap = _two_year_us_gaap()
+    del us_gaap["GrossProfit"]
+    got = piotroski_as_of(us_gaap, cutoff=date(2021, 6, 1))
+
+    assert got.f7_gross_margin_improving is False
+    assert got.f1_roa_positive is True
+    assert got.f3_roa_improving is True
+    assert got.f4_leverage_decreasing is True
+
+
+def test_statements_as_of_returns_the_shape_piotroski_expects():
+    us_gaap = _two_year_us_gaap()
+    income_stmt, balance_sheet, cashflow = piotroski_statements_as_of(us_gaap, cutoff=date(2021, 6, 1))
+
+    assert "Net Income" in income_stmt.index
+    assert "Total Assets" in balance_sheet.index
+    assert "Operating Cash Flow" in cashflow.index
+    assert income_stmt.shape[1] == 2   # two fiscal years visible
+
+
+def test_empty_facts_return_an_all_false_detail_not_a_crash():
+    got = piotroski_as_of({}, cutoff=date(2021, 6, 1))
+    assert got.score == 0

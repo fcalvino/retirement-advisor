@@ -38,7 +38,9 @@ class PointInTimeFact:
     filed: str         # when this value was actually filed with the SEC (ISO date)
 
 
-def annual_fact_as_of(concept_facts: dict, cutoff: date) -> Optional[PointInTimeFact]:
+def annual_fact_as_of(
+    concept_facts: dict, cutoff: date, *, before_period_end: Optional[str] = None
+) -> Optional[PointInTimeFact]:
     """The annual fact for *one* XBRL tag as it was known on ``cutoff``.
 
     Reuses :meth:`SecEdgarSource._annual_rows` for the annual-duration filter
@@ -47,11 +49,20 @@ def annual_fact_as_of(concept_facts: dict, cutoff: date) -> Optional[PointInTime
     already been filed by ``cutoff``; among rows covering the same fiscal
     period (a restatement), the most recently filed one still <= cutoff wins —
     that is the figure a reader would have actually seen on that date.
+
+    ``before_period_end``, when given, drops any row whose ``end`` is not
+    strictly earlier — the primitive :func:`annual_series_as_of` uses to walk
+    to the *prior* fiscal year without touching ``cutoff`` itself. The two are
+    deliberately different knobs: ``cutoff`` answers "known by when", period
+    exclusion answers "covering which year" — collapsing them into a single
+    "shift the cutoff back ~365 days" would silently drift on any fiscal
+    calendar that is not exactly 365 days.
     """
     cutoff_iso = cutoff.isoformat()
     rows = [
         r for r in SecEdgarSource._annual_rows(concept_facts)
         if r.get("filed") and r["filed"] <= cutoff_iso
+        and (before_period_end is None or r["end"] < before_period_end)
     ]
     best: Optional[dict] = None
     for row in rows:
@@ -67,7 +78,7 @@ def annual_fact_as_of(concept_facts: dict, cutoff: date) -> Optional[PointInTime
 
 
 def latest_annual_as_of(
-    us_gaap: dict, tags: List[str], cutoff: date
+    us_gaap: dict, tags: List[str], cutoff: date, *, before_period_end: Optional[str] = None
 ) -> Optional[PointInTimeFact]:
     """Scans every candidate *tag* the way :meth:`SecEdgarSource._latest_annual`
     does for "now", but anchored to ``cutoff``. Ties across tags for the same
@@ -80,10 +91,33 @@ def latest_annual_as_of(
         facts = (us_gaap or {}).get(tag)
         if not facts:
             continue
-        candidate = annual_fact_as_of(facts, cutoff)
+        candidate = annual_fact_as_of(facts, cutoff, before_period_end=before_period_end)
         if candidate is None:
             continue
         key = (candidate.period_end, candidate.filed)
         if best is None or key > (best.period_end, best.filed):
             best = candidate
     return best
+
+
+def annual_series_as_of(
+    us_gaap: dict, tags: List[str], cutoff: date, n_years: int = 2
+) -> List[PointInTimeFact]:
+    """Up to ``n_years`` most recent *distinct* fiscal periods for a concept,
+    all as known on the same ``cutoff`` — the shape a year-over-year check
+    (Piotroski's F3/F4/F5/F7/F8, or moat's stability dimensions) needs.
+
+    Every fact returned satisfies ``filed <= cutoff``; going back a year never
+    relaxes that. Walking to the prior year narrows on ``period_end`` instead
+    (see :func:`annual_fact_as_of`), so a company with an irregular fiscal
+    calendar does not skip or duplicate a year.
+    """
+    out: List[PointInTimeFact] = []
+    before: Optional[str] = None
+    for _ in range(n_years):
+        fact = latest_annual_as_of(us_gaap, tags, cutoff, before_period_end=before)
+        if fact is None:
+            break
+        out.append(fact)
+        before = fact.period_end
+    return out
