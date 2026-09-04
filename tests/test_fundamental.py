@@ -123,27 +123,40 @@ class TestByAssetClass:
 # --------------------------------------------------------------------------- #
 
 class TestEngineInvariants:
-    def test_adjusted_score_is_never_below_total_score(self):
-        """consistency + piotroski_bonus + moat_bonus are additive and >= 0."""
+    def test_adjusted_score_assembly_formula(self):
+        """``raw_adjusted_score`` is exactly base + the four bonuses (analysis/
+        fundamental.py:920); ``adjusted_score`` is that clamped to [0, 100].
+
+        Note ``tailwind_bonus`` *can* be negative (a headwind), so
+        ``adjusted_score >= total_score`` is NOT a guarantee — only the assembly
+        identity is.
+        """
         r = _analyze("Consumer Defensive")
         assert r.consistency_score >= 0
-        assert r.raw_adjusted_score == pytest.approx(
-            r.total_score + r.consistency_score + r.piotroski_bonus + r.moat_bonus,
-            abs=0.5,
-        )
-        assert r.adjusted_score >= r.total_score - 1e-6
-        assert r.adjusted_score <= 100.0 + 1e-6
+        assert r.piotroski_bonus >= 0
+        assert r.moat_bonus >= 0
 
-    def test_no_financial_statements_falls_back_cleanly(self):
+        raw = (r.total_score + r.consistency_score + r.piotroski_bonus
+               + r.moat_bonus + r.tailwind_bonus)
+        assert r.raw_adjusted_score == pytest.approx(round(raw, 1), abs=0.05)
+        assert r.adjusted_score == pytest.approx(
+            round(min(max(raw, 0.0), 100.0), 1), abs=0.05
+        )
+
+    def test_positive_bonuses_lift_adjusted_above_total(self):
+        """When the tailwind is not a headwind, the additive bonuses can only
+        raise the score."""
+        r = _analyze("Consumer Defensive")
+        assert r.tailwind_bonus >= 0            # no curated headwind for this sector
+        assert r.adjusted_score >= r.total_score - 1e-6
+
+    def test_no_financial_statements_falls_back_to_poor(self):
         with (
             patch("analysis.fundamental.get_info", return_value={
                 "longName": "Nodata Co", "sector": "Technology",
                 "currentPrice": 50.0, "regularMarketPrice": 50.0, "marketCap": 1e9,
             }),
-            patch("analysis.fundamental.get_financials", return_value={
-                "income_stmt": pd.DataFrame(), "balance_sheet": pd.DataFrame(),
-                "cashflow": pd.DataFrame(),
-            }),
+            patch("analysis.fundamental.get_financials", return_value={}),
             patch("analysis.fundamental.get_dividends", return_value=pd.Series(dtype=float)),
             patch("data.fetcher.get_info_age_hours", return_value=1.0),
         ):
@@ -151,8 +164,8 @@ class TestEngineInvariants:
 
         assert isinstance(r, FundamentalResult)
         assert r.symbol == "NODATA"
-        assert r.data_quality is not None
-        assert r.data_quality["level"] in {"poor", "partial", "good"}
+        assert r.data_quality["level"] == "poor"
+        assert any("estados financieros" in w for w in r.warnings)
 
     def test_empty_info_returns_a_result_not_an_exception(self):
         with (

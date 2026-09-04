@@ -983,9 +983,9 @@ Los tests especializados prueban casos de borde específicos pero no detectaría
 
 **Dependencias:** más urgente si se hace O1 (refactor de `analyze()`) — tener tests de integración antes del refactor garantiza que no se rompe nada.
 
-**Estado:** ✅ Mergeado — PR #91 (2026-09-03). `tests/test_fundamental.py` (6 tests) con el patrón de `test_reit_ffo.py` (`patch` de `get_info`/`get_financials`/`get_dividends`/`get_info_age_hours`): 1 test por asset class (equity/REIT/crypto), fast-path crypto que verifica que `get_info`/`get_financials` **nunca** se llaman, invariante `raw_adjusted_score == total_score + consistency + piotroski_bonus + moat_bonus` y `adjusted_score >= total_score`, fallback sin estados financieros, `info` vacío. **Desbloquea P-16 (O1).**
+**Estado:** ✅ Mergeado — PR #91 (2026-09-03). `tests/test_fundamental.py` (7 tests) con el patrón de `test_reit_ffo.py` (`patch` de `get_info`/`get_financials`/`get_dividends`/`get_info_age_hours`): 1 test por asset class (equity/REIT-vía-FFO/crypto), fast-path crypto que verifica que `get_info`/`get_financials` **nunca** se llaman, la identidad de ensamblado `raw_adjusted_score == total + consistency + piotroski_bonus + moat_bonus + tailwind_bonus` (findings de code-review: `tailwind_bonus` faltaba y **puede ser negativo**, así que `adjusted_score >= total_score` no es invariante — se testea aparte con `tailwind_bonus >= 0`), fallback sin estados financieros (`get_financials` → `{}` → `level == "poor"`), `info` vacío. **Desbloquea P-16 (O1).**
 
-**Verificación:** `make check` → 3139 passed. Los tests corren sin `st`.
+**Verificación:** `make check` → 3140 passed. Los tests corren sin `st`.
 
 ---
 
