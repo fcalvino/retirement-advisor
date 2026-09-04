@@ -1004,6 +1004,23 @@ _DRAG_KEYS = (
 )
 
 
+def _build_economic_drags(enabled: bool, component_pcts: dict) -> dict:
+    """Assemble the drags dict from resolved values — no ``st.session_state`` reads (S17).
+
+    ``component_pcts`` maps each ``_DRAG_KEYS`` entry to its annual %; a missing
+    key falls back to the ``config.DRAGS`` default (same resilience the old
+    ``get_economic_drags`` had via ``dict.get``). Shared by ``get_economic_drags``
+    (reads from session state) and ``render_drags_controls`` (fresh widget values).
+    """
+    from config import DRAGS
+
+    out = {"enabled": bool(enabled)}
+    for k in _DRAG_KEYS:
+        out[k] = float(component_pcts.get(k, getattr(DRAGS, k)))
+    out["total_annual_drag_pct"] = round(sum(out[k] for k in _DRAG_KEYS), 4)
+    return out
+
+
 def get_economic_drags() -> dict:
     """Resolve the active economic drags (Item 1) for this session.
 
@@ -1015,14 +1032,10 @@ def get_economic_drags() -> dict:
     """
     from config import DRAGS
 
-    enabled = bool(st.session_state.get("drags_enabled", DRAGS.enabled))
-    out = {"enabled": enabled}
-    for k in _DRAG_KEYS:
-        out[k] = float(st.session_state.get(f"drag_{k}", getattr(DRAGS, k)))
-    out["total_annual_drag_pct"] = round(
-        sum(out[k] for k in _DRAG_KEYS), 4
+    return _build_economic_drags(
+        bool(st.session_state.get("drags_enabled", DRAGS.enabled)),
+        {k: st.session_state.get(f"drag_{k}", getattr(DRAGS, k)) for k in _DRAG_KEYS},
     )
-    return out
 
 
 def drags_to_tuple(drags: dict | None) -> tuple | None:
@@ -1106,24 +1119,27 @@ def render_drags_controls(*, key_prefix: str = "") -> dict:
         st.session_state["drags_enabled"] = enabled
         c1, c2 = st.columns(2)
         with c1:
-            st.session_state["drag_annual_fee_pct"] = st.number_input(
+            _fee = st.number_input(
                 "Fee anual % (TER + advisory)", min_value=0.0, max_value=5.0,
                 value=float(st.session_state.get("drag_annual_fee_pct", DRAGS.annual_fee_pct)),
                 step=0.05, disabled=not enabled, key=f"{key_prefix}drag_fee",
             )
-            st.session_state["drag_dividend_tax_drag_pct"] = st.number_input(
+            st.session_state["drag_annual_fee_pct"] = _fee
+            _tax = st.number_input(
                 "Drag por impuesto a dividendos % anual", min_value=0.0, max_value=5.0,
                 value=float(st.session_state.get("drag_dividend_tax_drag_pct", DRAGS.dividend_tax_drag_pct)),
                 step=0.05, disabled=not enabled, key=f"{key_prefix}drag_tax",
                 help="No-residente US: ~15-30% del yield bruto, expresado como % anual del NAV.",
             )
+            st.session_state["drag_dividend_tax_drag_pct"] = _tax
         with c2:
-            st.session_state["drag_rebalance_cost_annual_pct"] = st.number_input(
+            _rebal = st.number_input(
                 "Costo de rebalanceo % anual", min_value=0.0, max_value=5.0,
                 value=float(st.session_state.get("drag_rebalance_cost_annual_pct", DRAGS.rebalance_cost_annual_pct)),
                 step=0.05, disabled=not enabled, key=f"{key_prefix}drag_rebal",
             )
-            st.session_state["drag_ar_buffer_pct"] = st.number_input(
+            st.session_state["drag_rebalance_cost_annual_pct"] = _rebal
+            _ar = st.number_input(
                 "Buffer AR % anual (cepo / FX / inflación)", min_value=0.0, max_value=10.0,
                 value=float(st.session_state.get("drag_ar_buffer_pct", DRAGS.ar_buffer_pct)),
                 step=0.10, disabled=not enabled, key=f"{key_prefix}drag_ar",
@@ -1133,9 +1149,17 @@ def render_drags_controls(*, key_prefix: str = "") -> dict:
                      "que NO esté ya reflejado en cómo elegiste la cartera (ej. inflación/FX a "
                      "nivel de todo el plan). Si ya ponderaste por ARS, dejalo en 0.",
             )
-        drags = get_economic_drags()
+            st.session_state["drag_ar_buffer_pct"] = _ar
+        # S17: build from the fresh widget values, not from the session_state
+        # keys we just wrote.
+        drags = _build_economic_drags(enabled, {
+            "annual_fee_pct": _fee,
+            "dividend_tax_drag_pct": _tax,
+            "rebalance_cost_annual_pct": _rebal,
+            "ar_buffer_pct": _ar,
+        })
         st.caption(format_drags_badge(drags))
-    return get_economic_drags()
+    return drags
 
 
 # ------------------------------------------------------------------ #
@@ -1151,6 +1175,54 @@ _WITHDRAWAL_LABELS = {
 }
 
 
+def _build_withdrawal_strategy(kind, *, amount: float, pct: float, base: float) -> dict | None:
+    """Build a strategy dict from resolved values — no ``st.session_state`` reads (S17).
+
+    ``amount`` (USD), ``pct`` and ``base`` (both whole-percent) are only used for
+    the branch matching ``kind``. Shared by ``get_withdrawal_strategy`` (reads
+    from session state) and ``render_withdrawal_controls`` (passes fresh widget
+    values, so it never re-reads what it just wrote).
+    """
+    from config import WITHDRAWAL
+
+    if kind in (None, "", "none"):
+        return None
+
+    if kind == "fixed_real":
+        if amount <= 0:
+            return None
+        return {
+            "kind": "fixed_real",
+            "annual_amount": amount,
+            "label": f"Retiro fijo real ${amount:,.0f}/año",
+        }
+
+    if kind == "constant_pct":
+        p = pct / 100.0
+        if p <= 0:
+            return None
+        return {
+            "kind": "constant_pct",
+            "pct": p,
+            "label": f"{p * 100:.1f}% del valor actual",
+        }
+
+    if kind == "guardrails":
+        b = base / 100.0
+        if b <= 0:
+            return None
+        return {
+            "kind": "guardrails",
+            "pct": b,
+            "guardrail_ceiling_band": WITHDRAWAL.guardrail_ceiling_band,
+            "guardrail_floor_band": WITHDRAWAL.guardrail_floor_band,
+            "guardrail_cut_pct": WITHDRAWAL.guardrail_cut_pct,
+            "guardrail_raise_pct": WITHDRAWAL.guardrail_raise_pct,
+            "label": f"Guardrails simplificado {b * 100:.1f}%",
+        }
+    return None
+
+
 def get_withdrawal_strategy(initial_value: float | None = None) -> dict | None:
     """Resolve the active decumulation strategy for this session (Fase H.1).
 
@@ -1163,44 +1235,12 @@ def get_withdrawal_strategy(initial_value: float | None = None) -> dict | None:
     """
     from config import WITHDRAWAL
 
-    kind = st.session_state.get("withdrawal_kind", "none")
-    if kind in (None, "", "none"):
-        return None
-
-    if kind == "fixed_real":
-        amount = float(st.session_state.get("withdrawal_amount", 0.0))
-        if amount <= 0:
-            return None
-        return {
-            "kind": "fixed_real",
-            "annual_amount": amount,
-            "label": f"Retiro fijo real ${amount:,.0f}/año",
-        }
-
-    if kind == "constant_pct":
-        pct = float(st.session_state.get("withdrawal_pct", WITHDRAWAL.constant_pct)) / 100.0
-        if pct <= 0:
-            return None
-        return {
-            "kind": "constant_pct",
-            "pct": pct,
-            "label": f"{pct * 100:.1f}% del valor actual",
-        }
-
-    if kind == "guardrails":
-        base = float(st.session_state.get("withdrawal_base_pct", WITHDRAWAL.base_withdrawal_pct)) / 100.0
-        if base <= 0:
-            return None
-        return {
-            "kind": "guardrails",
-            "pct": base,
-            "guardrail_ceiling_band": WITHDRAWAL.guardrail_ceiling_band,
-            "guardrail_floor_band": WITHDRAWAL.guardrail_floor_band,
-            "guardrail_cut_pct": WITHDRAWAL.guardrail_cut_pct,
-            "guardrail_raise_pct": WITHDRAWAL.guardrail_raise_pct,
-            "label": f"Guardrails simplificado {base * 100:.1f}%",
-        }
-    return None
+    return _build_withdrawal_strategy(
+        st.session_state.get("withdrawal_kind", "none"),
+        amount=float(st.session_state.get("withdrawal_amount", 0.0)),
+        pct=float(st.session_state.get("withdrawal_pct", WITHDRAWAL.constant_pct)),
+        base=float(st.session_state.get("withdrawal_base_pct", WITHDRAWAL.base_withdrawal_pct)),
+    )
 
 
 def get_longevity_years() -> int:
@@ -1249,6 +1289,13 @@ def render_withdrawal_controls(*, key_prefix: str = "", initial_value: float = 1
     mode), also retrievable via ``get_withdrawal_strategy``.
     """
     from config import WITHDRAWAL
+
+    # Seeded from session state; overridden by the active branch's widget below.
+    # The strategy dict is then built from these locals — S17: this function
+    # never re-reads the session_state keys it just wrote.
+    amount = float(st.session_state.get("withdrawal_amount", 0.0))
+    pct = float(st.session_state.get("withdrawal_pct", WITHDRAWAL.constant_pct))
+    base = float(st.session_state.get("withdrawal_base_pct", WITHDRAWAL.base_withdrawal_pct))
 
     with st.expander("🏖️ Estrategia de retiro (decumulación)", expanded=False):
         st.caption(
@@ -1307,9 +1354,9 @@ def render_withdrawal_controls(*, key_prefix: str = "", initial_value: float = 1
             )
             st.session_state["withdrawal_longevity_years"] = longevity
 
-        strategy = get_withdrawal_strategy(initial_value)
+        strategy = _build_withdrawal_strategy(kind, amount=amount, pct=pct, base=base)
         st.caption(format_withdrawal_badge(strategy))
-    return get_withdrawal_strategy(initial_value)
+    return strategy
 
 
 # ------------------------------------------------------------------ #
