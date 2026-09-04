@@ -43,7 +43,7 @@ Los ítems están agrupados en fases coherentes con el criterio de ratio impacto
 | S15 ✅ | simplicidad | S | bajo | observable | Defaults de sesión hardcodeados; imports mid-file |
 | S18 ✅ | simplicidad | M | medio | interno | Guard de sesión duplicado en ≥3 páginas |
 | S19 ✅ | simplicidad | S | medio | interno | `_price_lookup` en scheduler duplica lógica de shared.py |
-| S22 | simplicidad | M | medio | interno | `_analyse_one` mezcla extracción de datos con UI strings |
+| S22 ⏳ | simplicidad | M | medio | interno | `_analyse_one` mezcla extracción de datos con UI strings |
 | S23 ✅ | simplicidad | S | bajo | interno | `rf = 0.045` literal en `tracker.py` — no usa `RISK_FREE` |
 | S24 ✅ | simplicidad | S | medio | observable | Umbrales de drawdown severo/SORR hardcodeados en MC |
 | S25 ✅ | simplicidad | M | medio | observable | Pesos de señal técnica hardcodeados en `technical.py` |
@@ -630,6 +630,8 @@ La closure construye un dict con 20+ keys que incluyen strings de UI (emoji-pref
 **Cambio propuesto:** separar en dos funciones puras: `_extract_row_data(sym, fund, tech, dec) -> dict` (datos crudos, sin strings de UI) y `_format_row_for_display(row: dict) -> dict` (strings, badges, truncado). El worker llama a la primera; la segunda se aplica en el thread principal o en el display layer.
 
 **Contrato estable:** la tabla del screener muestra los mismos datos.
+
+**Estado:** ⏳ PR #92 abierto — **pendiente de aprobación del usuario** (revisión visual del screener). `dashboard/shared.py`: `_extract_row_data(sym, fund, tech, decision) -> dict` (crudo, corre en el thread pool) + `_format_row_for_display(d) -> dict` (badges/emoji/truncado, main thread) como funciones de módulo. El worker `_analyse_one` solo llama a la primera; el loop del pool aplica la segunda antes de `rows.append`. Byte-idéntico: oráculo (mismas keys, mismos valores salvo `_measured_at`) + `tests/test_screener_page_contract.py` (drive el `_analyse_universe_parallel` real) verde. Finding de code-review: sacar el formato del `try` del worker rompía la garantía "una excepción por ticker no aborta la corrida" → el loop del pool ahora envuelve `_format_row_for_display` en try/except y convierte una falla de formato en un failure entry (test nuevo `test_analyse_universe_parallel_isolates_formatting_failures`). `make check` → 3141 passed.
 
 **Verificación:** `make check`. Verificar visualmente la tabla del screener.
 

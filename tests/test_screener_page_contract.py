@@ -67,8 +67,9 @@ def test_screener_remaining_gaps_are_still_in_source():
     assert es["title"]
     assert "Actualizar análisis" in es["demo_hint"]
 
-    # 17. Company names are hard-truncated in the row builder.
-    assert "fund.company_name[:25]" in SHARED
+    # 17. Company names are hard-truncated in the row builder (S22 moved the
+    #     truncation from the thread-pool worker into _format_row_for_display).
+    assert 'd["company_name"][:25]' in SHARED
 
     # 22. Tailwind badge is Spanish now (audit item 25).
     from dashboard.shared import tailwind_badge
@@ -302,6 +303,31 @@ def test_analyse_universe_parallel_reports_failed_tickers(monkeypatch):
     assert failures[0]["Tipo"] == "RuntimeError"
     assert "yfinance exploded" in failures[0]["Error"]
     # Asked for 2, measured 1 — the page can now say so instead of showing "1".
+    assert len(rows) + len(failures) == 2
+
+
+def test_analyse_universe_parallel_isolates_formatting_failures(monkeypatch):
+    """S22 moved formatting out of the worker; a bad row must still not abort the run."""
+    from dashboard import shared as shared_mod
+
+    decision = Decision(symbol="OK", action="BUY", confidence="HIGH")
+
+    def fake_analysis(sym, *_a, **_k):
+        # BADFMT analyses fine but has a null company_name -> None[:25] in
+        # _format_row_for_display, which now runs on the main thread.
+        cn = None if sym == "BADFMT" else "Ok Inc"
+        return _fund(company_name=cn), _tech("BULLISH"), decision
+
+    monkeypatch.setattr(shared_mod, "cached_full_analysis", fake_analysis)
+    rows, failures, _ = shared_mod._analyse_universe_parallel(
+        ["OK", "BADFMT"],
+        SimpleNamespace(provider="x", model="y", enabled=False, api_key=""),
+        _FakeBar(),
+        _FakeStatus(),
+    )
+    assert [r["Ticker"] for r in rows] == ["OK"]
+    assert [f["Ticker"] for f in failures] == ["BADFMT"]
+    assert failures[0]["Tipo"] == "TypeError"
     assert len(rows) + len(failures) == 2
 
 
