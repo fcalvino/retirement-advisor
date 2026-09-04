@@ -189,7 +189,10 @@ class TestNextPriorityAction:
     ):
         self._complete_journey(fake_session, stub_plan_store, monkeypatch)
         monkeypatch.setattr(shared, "unread_alert_count", lambda: 3)
-        monkeypatch.setattr("data.plan_context.get_active_plan", lambda _p: None)
+        # A stale plan is *also* actionable — the alert branch must still win,
+        # so this pins the precedence, not just "alerts beat nothing".
+        stale = SimpleNamespace(last_refreshed_at="2020-01-01T00:00:00")
+        monkeypatch.setattr("data.plan_context.get_active_plan", lambda _p: stale)
         action = shared.next_priority_action(_prefs(is_onboarded=True, active_plan_id="p1"))
         assert action["tone"] == "warning"
         assert action["page"] == "8_Alertas.py"
@@ -274,9 +277,9 @@ class TestExportPlanBundle:
 
     def test_personal_block_only_when_prefs_onboarded(self):
         snap = _snapshot()
-        _, _, _ = shared.export_plan_bundle(snap, _prefs(is_onboarded=False))
         b_no = json.loads(shared.export_plan_bundle(snap, _prefs(is_onboarded=False))[0])
         assert "personal" not in b_no
+        assert "personal" not in json.loads(shared.export_plan_bundle(snap)[0])
 
         prefs = _prefs(
             is_onboarded=True, age=40, retirement_age=65,
