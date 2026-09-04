@@ -33,3 +33,6 @@ data/screener_last_run.json
 # must never be committed. See scripts/check_doc_catalog.py for the catalog rule.
 plan.md
 
+
+# playwright-cli scratch (visual review)
+.playwright-cli/
