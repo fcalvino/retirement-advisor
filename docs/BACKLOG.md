@@ -74,9 +74,13 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | id | banda | qué |
 |---|---|---|
 | **U5-1b** | 3 | Recalibrar Piotroski vs moat. Bloqueado: n=11, todas a 30 días |
-| **Asistente de gap** | ideación | `monthly_savings_for_probability` existe; falta la superficie |
 
-Cerradas: **U3-6** (`a5a63d9`), **U3-11** (`00fb551`, oráculo: sin `payoutRatio` ni
+Cerradas: **Asistente de gap** (`5eed792`, 2026-08-15 — la fila decía "falta la
+superficie" sobre una superficie que ya estaba en producción: el consejo de
+ahorro en la card "🎯 Resultados por meta" de `7_Simulaciones.py` ya llama a
+`monthly_savings_for_probability`/`cached_goal_savings_target` y muestra "Para
+llevar {meta} al 80% de probabilidad: $X/mes"; dato stale, no gap real, ver
+`docs/CONTEXT.md §9`), **U3-6** (`a5a63d9`), **U3-11** (`00fb551`, oráculo: sin `payoutRatio` ni
 FFO el score es 4.0 exacto), **U5-20** (`d86f8e9`), **U4-2** y **U4-1** (`9f05443`,
 un PR por la nota U4-1b; oráculos en `tests/test_cash_flow_oracle.py`), **U3-7**
 (escala del moat por modo; oráculo empírico sobre los 164 tickers), **U5-6**
@@ -212,7 +216,7 @@ priorizarlo:
 | Botón "probar con plan de ejemplo" | ✅ Fase H.4 + `app.py:189` |
 | Realista vs Conservador visible | ✅ Fase J, `7_Simulaciones.py:416-422` |
 | Deriva inteligente cuando cartera y plan no se superponen | ✅ U2-3, `drift_breakdown` sobre la unión |
-| Asistente "¿qué cambio para llegar?" | 🟡 El motor existe (`monthly_savings_for_probability`, bisección sobre la probabilidad MC real); falta la superficie que lo presente como asistente |
+| Asistente "¿qué cambio para llegar?" | ✅ `monthly_savings_for_probability` + `cached_goal_savings_target`, card "🎯 Resultados por meta" en `7_Simulaciones.py` (desde `5eed792`, 2026-08-15) |
 | Segunda fuente de datos + reintentos | ✅ Reconciliación, retry (N2), adapter cache-only (N2b). Scoring sigue siendo yfinance; SEC/FMP no puntúan |
 | Módulo Doble Moneda | 🟡 Conversión ✅ (U2-5), cotización ✅ (N1, oficial de `ARS=X`, paralelo lo carga el usuario) |
 | Modo oscuro y accesibilidad | ✅ `.streamlit/config.toml` (N3) — tema dark, contraste AA, telemetry off. Sin toggle en runtime |
