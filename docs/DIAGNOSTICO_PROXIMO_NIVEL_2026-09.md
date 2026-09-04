@@ -75,7 +75,7 @@ Se deja **fuera** por ahora: separar motor/interfaz y versión web multiusuario 
 
 > Fuente de verdad del loop de implementación (`/loop`). Cada idea se implementa en su propio ciclo: rama → PR → review → merge, en este orden de prioridad.
 
-- [ ] 1. Asistente "¿qué cambio para llegar?" (Simulaciones) — PR: _pendiente_
+- [x] 1. Asistente "¿qué cambio para llegar?" (Simulaciones) — **ya estaba implementado**, la fila del diagnóstico partía de `BACKLOG.md` desactualizado. Verificado en `dashboard/pages/7_Simulaciones.py:2142-2191`: `monthly_savings_for_probability`/`cached_goal_savings_target` ya alimentan el mensaje "💡 Para llevar {meta} al 80% de probabilidad: $X/mes" desde `5eed792` (2026-08-15). Docs corregidos, no requirió PR de código — PR: `docs/idea-1-ya-implementada` (ver historial de este archivo)
 - [ ] 2. Backtesting point-in-time para evidencia sintética — PR: _pendiente_
 - [ ] 3. Reorganizar el menú (19→~10 pantallas) — PR: _pendiente_
 - [ ] 4. Chat contextual embebido — PR: _pendiente_
