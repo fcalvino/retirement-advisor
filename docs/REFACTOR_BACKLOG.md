@@ -43,7 +43,7 @@ Los ítems están agrupados en fases coherentes con el criterio de ratio impacto
 | S15 ✅ | simplicidad | S | bajo | observable | Defaults de sesión hardcodeados; imports mid-file |
 | S18 ✅ | simplicidad | M | medio | interno | Guard de sesión duplicado en ≥3 páginas |
 | S19 ✅ | simplicidad | S | medio | interno | `_price_lookup` en scheduler duplica lógica de shared.py |
-| S22 ⏳ | simplicidad | M | medio | interno | `_analyse_one` mezcla extracción de datos con UI strings |
+| S22 ✅ | simplicidad | M | medio | interno | `_analyse_one` mezcla extracción de datos con UI strings |
 | S23 ✅ | simplicidad | S | bajo | interno | `rf = 0.045` literal en `tracker.py` — no usa `RISK_FREE` |
 | S24 ✅ | simplicidad | S | medio | observable | Umbrales de drawdown severo/SORR hardcodeados en MC |
 | S25 ✅ | simplicidad | M | medio | observable | Pesos de señal técnica hardcodeados en `technical.py` |
@@ -631,7 +631,7 @@ La closure construye un dict con 20+ keys que incluyen strings de UI (emoji-pref
 
 **Contrato estable:** la tabla del screener muestra los mismos datos.
 
-**Estado:** ⏳ PR #92 abierto — **pendiente de aprobación del usuario** (revisión visual del screener). `dashboard/shared.py`: `_extract_row_data(sym, fund, tech, decision) -> dict` (crudo, corre en el thread pool) + `_format_row_for_display(d) -> dict` (badges/emoji/truncado, main thread) como funciones de módulo. El worker `_analyse_one` solo llama a la primera; el loop del pool aplica la segunda antes de `rows.append`. Byte-idéntico: oráculo (mismas keys, mismos valores salvo `_measured_at`) + `tests/test_screener_page_contract.py` (drive el `_analyse_universe_parallel` real) verde. Finding de code-review: sacar el formato del `try` del worker rompía la garantía "una excepción por ticker no aborta la corrida" → el loop del pool ahora envuelve `_format_row_for_display` en try/except y convierte una falla de formato en un failure entry (test nuevo `test_analyse_universe_parallel_isolates_formatting_failures`). `make check` → 3141 passed.
+**Estado:** ✅ Mergeado — PR #92 (2026-09-04), con **revisión visual del screener aprobada** (playwright-cli sobre la app: análisis end-to-end sin errores, `Company` truncada a 25, `Signal` con emoji, badges/columnas completas, chart "Top 15" + histograma poblados). `dashboard/shared.py`: `_extract_row_data(sym, fund, tech, decision) -> dict` (crudo, thread pool) + `_format_row_for_display(d) -> dict` (badges/emoji/truncado, main thread) como funciones de módulo. El worker `_analyse_one` solo llama a la primera; el loop del pool aplica la segunda antes de `rows.append`. Byte-idéntico: oráculo (mismas keys, mismos valores salvo `_measured_at`) + `tests/test_screener_page_contract.py` (drive el `_analyse_universe_parallel` real). Finding de code-review: sacar el formato del `try` del worker rompía "una excepción por ticker no aborta la corrida" → el loop del pool envuelve `_format_row_for_display` en try/except (test nuevo `test_analyse_universe_parallel_isolates_formatting_failures`). `make check` → 3141 passed.
 
 **Verificación:** `make check`. Verificar visualmente la tabla del screener.
 
@@ -879,6 +879,11 @@ Ninguna de estas responsabilidades se puede cambiar sin leer el método completo
 
 **Contrato estable:** la página de inicio muestra los mismos componentes en el mismo orden.
 
+**Plan (P-13, 2026-09-04) — independiente de P-14 (archivos distintos: `app.py` vs `shared.py`; sin dependencia):**
+- **Alcance:** extraer de `_home_page()` (`dashboard/app.py:133`–~360) → `_render_plan_hub(hub, prefs, pages_dir)`, `_render_guided_journey(prefs, pages_dir)`, `_render_sample_plan_section(pages_dir)`. `_home_page` queda como orquestador de ~40 líneas: métricas → divider → hub → wizard/summary → guided journey → disclaimer, en ese orden. Puro estructural: mismos `st.*` en el mismo orden, mismo estado local (pasar `_hub`/`_prefs_home`/`_pages_dir` como params, no re-derivar).
+- **Evidencia mínima para aprobar:** `make check` verde · `/code-review` sin findings de correctness · árbol de widgets idéntico (mismos headings/botones/orden) verificado con playwright-cli sobre la **home**, en dos estados: (a) sesión fresca sin plan, (b) con un plan de ejemplo activado. Console sin errores nuevos.
+- **Condición de stop/split:** si una sección necesita hilar >3 params o comparte estado mutable con otra → dividir en sub-PR más chico o dejar esa sección sin extraer y anotarlo.
+
 **Verificación:** `make check`. Probar la home en frío y con plan activo.
 
 ---
@@ -896,6 +901,11 @@ El anti-patrón acopla la phase de render con la de lectura de estado y hace dif
 **Cambio propuesto:** separar en `render_withdrawal_controls() -> WithdrawalStrategy` (solo widgets, devuelve el valor) y mantener la escritura en session_state solo para persistencia cross-rerun. La función no debe leer de session_state lo que ella misma acaba de escribir en el mismo call.
 
 **Contrato estable:** los callers que usan el return value no cambian.
+
+**Plan (P-14, 2026-09-04) — independiente de P-13 (toca `dashboard/shared.py`, no `app.py`):**
+- **Alcance:** `render_withdrawal_controls()` (`shared.py:1243`) y `render_drags_controls()` (`:1085`). Hoy escriben a `session_state` (`withdrawal_kind`, `drag_*`, …) y en el mismo call releen ese estado para armar el valor de retorno. Cambio: computar el valor de retorno **directo de los widgets**; la escritura a `session_state` queda **solo para persistencia cross-rerun**, nunca como fuente de lectura dentro del mismo call. Firmas y valores de retorno sin cambiar.
+- **Evidencia mínima para aprobar:** `make check` verde (incl. `tests/test_product_ux.py`, `tests/test_plan_page_runtime.py`) · oráculo: para un set de inputs de widget, `render_*_controls()` devuelve el mismo dict antes/después · `/code-review` sin findings · revisión visual con playwright-cli de **Simulaciones** (tab de decumulación + panel de drags): mismos widgets, mismos defaults, el resultado del MC no cambia al setear cada estrategia.
+- **Condición de stop/split:** si algún caller depende del **efecto secundario** en `session_state` (no del return) → mantener la escritura (S17 solo prohíbe *releer* lo recién escrito); si aparece un caller así, documentarlo y no tocar esa rama.
 
 **Verificación:** `make check`. Probar los controles de retiro en la UI.
 
