@@ -122,27 +122,27 @@ seed_session_defaults_from_profile(_prefs)
 #  Navigation — must be defined before any sidebar content             #
 # ------------------------------------------------------------------ #
 
-def _home_page() -> None:
-    st.title("📈 Retirement Advisor")
+def _load_activate_sample(prefs, sample_key: str, *, toast_msg: str) -> None:
+    """Load a sample plan into the store, activate it, jump to Mi Plan (S16).
 
-    _u_key  = st.session_state.get("active_universe_key", "default")
-    _u_meta = UNIVERSE_META.get(_u_key, {})
-    _prefs_home: UserPreferences = st.session_state.user_prefs
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Universo activo", _u_meta.get("name", _u_key))
-    col2.metric("Tickers en universo", len(st.session_state.universe))
-    col3.metric("Perfil guardado", _prefs_home.default_profile)
-    if _prefs_home.is_onboarded:
-        col4.metric("Horizonte de retiro", f"{_prefs_home.primary_horizon_years} años")
-    else:
-        col4.metric("Perfil personal", "sin definir")
+    The two sample-plan buttons on the home page (plan hub + guided journey)
+    shared this body verbatim.
+    """
+    from dashboard.shared import load_sample_plan_into_store
+    from data.plan_context import activate_plan
 
-    st.divider()
+    try:
+        _snap = load_sample_plan_into_store(sample_key)
+        activate_plan(_snap.id, prefs)
+        st.session_state.user_prefs = prefs
+        st.toast(toast_msg.format(name=_snap.name), icon="🎁")
+        st.switch_page(str(_pages_dir / "12_Plan.py"))
+    except Exception as exc:
+        st.error(f"No se pudo cargar el ejemplo: {exc}")
 
-    # ---- Daily hub: how is my plan? + one action + sample plan (backlog 1) ----
-    _hub = build_home_hub_for_prefs(_prefs_home)
-    _action = _hub.get("primary_action") or next_priority_action(_prefs_home)
 
+def _render_plan_hub(_hub: dict, _action: dict, _prefs_home) -> None:
+    """"¿Cómo viene tu plan?" + "Hoy hacé esto" + track-record line (S16)."""
     with st.container(border=True):
         st.markdown("### 🗺️ ¿Cómo viene tu plan?")
         if _hub.get("has_plan"):
@@ -187,18 +187,12 @@ def _home_page() -> None:
                     type="primary",
                     key="home_hub_sample",
                 ):
-                    from dashboard.shared import load_sample_plan_into_store
-                    from data.plan_context import activate_plan, list_sample_plans
+                    from data.plan_context import list_sample_plans
 
-                    try:
-                        _samples = list_sample_plans()
-                        _snap = load_sample_plan_into_store(_samples[0]["key"])
-                        activate_plan(_snap.id, _prefs_home)
-                        st.session_state.user_prefs = _prefs_home
-                        st.toast(f"✅ Ejemplo cargado: {_snap.name}", icon="🎁")
-                        st.switch_page(str(_pages_dir / "12_Plan.py"))
-                    except Exception as exc:
-                        st.error(f"No se pudo cargar el ejemplo: {exc}")
+                    _load_activate_sample(
+                        _prefs_home, list_sample_plans()[0]["key"],
+                        toast_msg="✅ Ejemplo cargado: {name}",
+                    )
 
         # Track record one-liner (backlog 15)
         _tr_line = _hub.get("track_record_line") or track_record_home_line()
@@ -218,9 +212,9 @@ def _home_page() -> None:
             if st.button(f"➡️ {_action.get('label')}", type="primary", key="home_today_action"):
                 st.switch_page(str(_pages_dir / _action["page"]))
 
-    st.divider()
 
-    # ---- Personal profile: wizard (first run) or summary (onboarded) ----
+def _render_profile_section(_prefs_home) -> None:
+    """Personal-profile wizard (first run) or summary expander (onboarded) (S16)."""
     from dashboard.onboarding import render_onboarding_wizard, render_profile_summary
 
     if _prefs_home.is_onboarded:
@@ -238,8 +232,9 @@ def _home_page() -> None:
             if render_onboarding_wizard(key_prefix="home_onb"):
                 st.rerun()
 
-    st.divider()
 
+def _render_guided_journey(_prefs_home) -> None:
+    """From-zero-to-active-plan journey, or the active-plan success block (S16)."""
     # ---- Guided journey: from zero to an ACTIVE retirement plan (Fase E) ----
     _steps = plan_journey_status(_prefs_home)
     _n_done = sum(1 for s in _steps if s["done"])
@@ -270,16 +265,10 @@ def _home_page() -> None:
                     "🎁 Probar con un plan de ejemplo",
                     key="home_try_sample",
                 ):
-                    from dashboard.shared import load_sample_plan_into_store
-                    from data.plan_context import activate_plan
-                    try:
-                        _snap = load_sample_plan_into_store(_samples[0]["key"])
-                        activate_plan(_snap.id, _prefs_home)
-                        st.session_state.user_prefs = _prefs_home
-                        st.toast(f"✅ Ejemplo cargado y activado: {_snap.name}", icon="🎁")
-                        st.switch_page(str(_pages_dir / "12_Plan.py"))
-                    except Exception as exc:
-                        st.error(f"No se pudo cargar el ejemplo: {exc}")
+                    _load_activate_sample(
+                        _prefs_home, _samples[0]["key"],
+                        toast_msg="✅ Ejemplo cargado y activado: {name}",
+                    )
     else:
         st.success(
             "🎯 Tenés un **plan de retiro activo** — el tracker y las alertas lo monitorean. "
@@ -293,6 +282,9 @@ def _home_page() -> None:
             icon="🛟",
         )
 
+
+def _render_getting_started() -> None:
+    """Assumptions disclaimer + static "where to start" content (S16)."""
     # Item 1 — assumptions transparency, visible from Home.
     render_assumptions_disclaimer()
 
@@ -329,6 +321,38 @@ def _home_page() -> None:
         5. Cuando quieras lo tuyo: perfil → Optimizer → guardar como plan nuevo.
         """)
         st.caption("Valores en USD (con vista ARS opcional en plan/simulaciones). Educativo — no es asesoramiento financiero regulado.")
+
+
+def _home_page() -> None:
+    """Home — orchestrator only; each section is a _render_* helper (S16)."""
+    st.title("📈 Retirement Advisor")
+
+    _u_key  = st.session_state.get("active_universe_key", "default")
+    _u_meta = UNIVERSE_META.get(_u_key, {})
+    _prefs_home: UserPreferences = st.session_state.user_prefs
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Universo activo", _u_meta.get("name", _u_key))
+    col2.metric("Tickers en universo", len(st.session_state.universe))
+    col3.metric("Perfil guardado", _prefs_home.default_profile)
+    if _prefs_home.is_onboarded:
+        col4.metric("Horizonte de retiro", f"{_prefs_home.primary_horizon_years} años")
+    else:
+        col4.metric("Perfil personal", "sin definir")
+
+    st.divider()
+
+    # ---- Daily hub: how is my plan? + one action + sample plan (backlog 1) ----
+    _hub = build_home_hub_for_prefs(_prefs_home)
+    _action = _hub.get("primary_action") or next_priority_action(_prefs_home)
+    _render_plan_hub(_hub, _action, _prefs_home)
+
+    st.divider()
+    _render_profile_section(_prefs_home)
+
+    st.divider()
+    _render_guided_journey(_prefs_home)
+
+    _render_getting_started()
 
 
 _pages_dir = Path(__file__).parent / "pages"
