@@ -1007,13 +1007,16 @@ _DRAG_KEYS = (
 def _build_economic_drags(enabled: bool, component_pcts: dict) -> dict:
     """Assemble the drags dict from resolved values — no ``st.session_state`` reads (S17).
 
-    ``component_pcts`` maps each ``_DRAG_KEYS`` entry to its annual %. Shared by
-    ``get_economic_drags`` (reads from session state) and ``render_drags_controls``
-    (passes fresh widget values).
+    ``component_pcts`` maps each ``_DRAG_KEYS`` entry to its annual %; a missing
+    key falls back to the ``config.DRAGS`` default (same resilience the old
+    ``get_economic_drags`` had via ``dict.get``). Shared by ``get_economic_drags``
+    (reads from session state) and ``render_drags_controls`` (fresh widget values).
     """
+    from config import DRAGS
+
     out = {"enabled": bool(enabled)}
     for k in _DRAG_KEYS:
-        out[k] = float(component_pcts[k])
+        out[k] = float(component_pcts.get(k, getattr(DRAGS, k)))
     out["total_annual_drag_pct"] = round(sum(out[k] for k in _DRAG_KEYS), 4)
     return out
 

@@ -61,7 +61,7 @@ Los ítems están agrupados en fases coherentes con el criterio de ratio impacto
 | O4 ✅ | ordenamiento | M | medio | interno | `run_holdings_committee` (negocio) en módulo de UI |
 | O5 ✅ | ordenamiento | M | bajo | interno | Página de alertas importa `AlertEngine` directamente |
 | S16 ✅ | simplicidad | M | medio | interno | `_home_page()` 208 líneas monolíticas |
-| S17 ✅ | simplicidad | M | medio | interno | `render_*_controls` mutan session_state dentro del render |
+| S17 ⏳ | simplicidad | M | medio | interno | `render_*_controls` mutan session_state dentro del render |
 | O1 | ordenamiento | L | alto | interno | `FundamentalAnalyzer.analyze()` 215 líneas: God method |
 | S12 | simplicidad | L | alto | interno | `7_Simulaciones.py` 2.420 líneas sin helpers |
 | T1 | cobertura | M | alto | interno | Cero tests para `dashboard/shared.py` (1.891 líneas) |
