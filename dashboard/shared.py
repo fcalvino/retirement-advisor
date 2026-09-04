@@ -1781,6 +1781,99 @@ def log_screener_run(rows: list) -> int:
     return written
 
 
+def _extract_row_data(sym: str, fund, tech, decision) -> dict:
+    """Raw screener-row data — no UI strings, badges or truncation (S22).
+
+    Runs inside the thread pool. ``_format_row_for_display`` turns this into the
+    table dict on the main thread, so the worker no longer mixes presentation
+    with extraction.
+    """
+    from datetime import datetime
+
+    why = decision_explanation(decision)
+    return {
+        "sym": sym,
+        "company_name": fund.company_name,
+        "sector": fund.sector,
+        "asset_class": getattr(fund, "asset_class", "equity") or "equity",
+        "action": decision.action,
+        "action_emoji": decision.action_emoji,
+        "why_headline": why["headline"],
+        "why_confidence": why["confidence"],
+        "why": why["why"],
+        "why_risks": why["risks"],
+        "why_full_headline": why["full_headline"],
+        "adjusted_score": fund.adjusted_score,
+        # Uncapped twin (audit item 11) — falls back to the capped score when 0.
+        "raw_adjusted_score": getattr(fund, "raw_adjusted_score", None) or fund.adjusted_score,
+        "total_score": fund.total_score,
+        "consistency_score": fund.consistency_score,
+        "piotroski_score": fund.piotroski_score,
+        "moat_score": getattr(fund, "moat_score", 0.0),
+        "moat_classification": getattr(fund, "moat_classification", ""),
+        "tailwind_classification": getattr(fund, "tailwind_classification", "Neutral"),
+        "tailwind_score": getattr(fund, "tailwind_score", 0.0),
+        "technical_signal": tech.signal,
+        "pe_ratio": fund.pe_ratio,
+        "roe": fund.roe,
+        # Window is whatever the statements supported (typically 3y). Never "5Y".
+        "revenue_cagr_5y": fund.revenue_cagr_5y,
+        "revenue_cagr_years": getattr(fund, "revenue_cagr_years", 0) or None,
+        "dividend_yield": fund.dividend_yield,
+        "margin_of_safety_pct": fund.margin_of_safety_pct,
+        "current_price": fund.current_price,
+        "data_quality": getattr(fund, "data_quality", None),
+        # When this row was measured — enables "refresh only the stale ones" (item 16).
+        "measured_at": datetime.now().isoformat(timespec="seconds"),
+        # Flattened here because this is the only place with fund + decision in
+        # hand; the page logs these to SQLite sequentially after the run.
+        "track": _track_payload(fund, decision),
+    }
+
+
+def _format_row_for_display(d: dict) -> dict:
+    """Screener-row table dict — badges, emoji, truncation (S22). Main-thread only."""
+    mc = d["moat_classification"]
+    return {
+        "Ticker": d["sym"],
+        "Company": d["company_name"][:25],
+        "Sector": ("🪙 Crypto" if d["sector"] == "Crypto" else d["sector"]),
+        # Audit item 01 — funds/crypto have no statements; carried so the page
+        # can segment instead of ranking them against companies.
+        "Clase": d["asset_class"],
+        "Signal": f"{d['action_emoji']} {d['action']}",
+        # Audit item 04 — the sentence that reconciles a high score with a
+        # cautious action; this used to be discarded.
+        "Motivo": d["why_headline"],
+        "Conf.": d["why_confidence"],
+        "_why": d["why"],
+        "_risks": d["why_risks"],
+        "_why_headline": d["why_full_headline"],
+        "Adj. Score": d["adjusted_score"],
+        # Uncapped twin (audit item 11) — for sorting, not judging.
+        "Score bruto": d["raw_adjusted_score"],
+        "Base Score": d["total_score"],
+        "Consistency": d["consistency_score"],
+        "Piotroski": d["piotroski_score"],
+        "Moat Score": d["moat_score"],
+        "Moat": f"{_MOAT_EMOJI.get(mc, '⚪')} {mc}",
+        "Viento": tailwind_badge(d["tailwind_classification"], d["tailwind_score"]),
+        "Technical": d["technical_signal"],
+        "P/E": d["pe_ratio"],
+        "ROE %": d["roe"],
+        "Rev CAGR %": d["revenue_cagr_5y"],
+        "CAGR años": d["revenue_cagr_years"],
+        "Div Yield %": d["dividend_yield"],
+        "MoS %": d["margin_of_safety_pct"],
+        "Price": d["current_price"],
+        "Datos": data_quality_badge(d["data_quality"]),
+        "_measured_at": d["measured_at"],
+        # Raw quality dict — the page rolls these up instead of parsing the badge.
+        "_dq": d["data_quality"],
+        "_track": d["track"],
+    }
+
+
 def _analyse_universe_parallel(
     symbols: list[str],
     ai_cfg: AIConfig,
@@ -1806,7 +1899,6 @@ def _analyse_universe_parallel(
     audit item 13, where a caption promised "~15s" for a five-minute job.
     """
     import time
-    from datetime import datetime as _dt
 
     started = time.monotonic()
     max_workers = min(6, os.cpu_count() or 4)
@@ -1820,63 +1912,9 @@ def _analyse_universe_parallel(
             fund, tech, decision = cached_full_analysis(
                 sym, ai_cfg.provider, ai_cfg.model, ai_cfg.enabled, ai_cfg.api_key
             )
-            asset_class = getattr(fund, "asset_class", "equity") or "equity"
-            _why = decision_explanation(decision)
-            return {
-                "Ticker": sym,
-                "Company": fund.company_name[:25],
-                "Sector": ("🪙 Crypto" if fund.sector == "Crypto" else fund.sector),
-                # Audit item 01 — funds/crypto have no statements, so the equity
-                # score and its signal do not apply to them. Carried per row so
-                # the page can segment instead of ranking them against companies.
-                "Clase": asset_class,
-                "Signal": f"{decision.action_emoji} {decision.action}",
-                # Audit item 04 — the engine writes the sentence that reconciles a
-                # high score with a cautious action; this used to be discarded.
-                "Motivo": _why["headline"],
-                "Conf.": _why["confidence"],
-                "_why": _why["why"],
-                "_risks": _why["risks"],
-                "_why_headline": _why["full_headline"],
-                "Adj. Score": fund.adjusted_score,
-                # Uncapped twin (audit item 11) — breaks the ties the [0,100] clamp
-                # creates at the top of the ranking. Used for sorting, not judging.
-                "Score bruto": getattr(fund, "raw_adjusted_score", None) or fund.adjusted_score,
-                "Base Score": fund.total_score,
-                "Consistency": fund.consistency_score,
-                "Piotroski": fund.piotroski_score,
-                "Moat Score": getattr(fund, "moat_score", 0.0),
-                "Moat": (
-                    f"{_MOAT_EMOJI.get(getattr(fund, 'moat_classification', ''), '⚪')} "
-                    f"{getattr(fund, 'moat_classification', '—')}"
-                ),
-                "Viento": tailwind_badge(
-                    getattr(fund, "tailwind_classification", "Neutral"),
-                    getattr(fund, "tailwind_score", 0.0),
-                ),
-                "Technical": tech.signal,
-                "P/E": fund.pe_ratio,
-                "ROE %": fund.roe,
-                # Window is whatever the statements supported (typically 3y —
-                # yfinance ships 4 annual periods). Never label this "5Y".
-                "Rev CAGR %": fund.revenue_cagr_5y,
-                "CAGR años": getattr(fund, "revenue_cagr_years", 0) or None,
-                "Div Yield %": fund.dividend_yield,
-                "MoS %": fund.margin_of_safety_pct,
-                "Price": fund.current_price,
-                "Datos": data_quality_badge(getattr(fund, "data_quality", None)),
-                # When this row was measured — what makes "refresh only the
-                # stale ones" possible instead of redoing all 85 (item 16).
-                "_measured_at": _dt.now().isoformat(timespec="seconds"),
-                # Raw quality dict — the page rolls these up instead of parsing
-                # the emoji badge above (audit item 03).
-                "_dq": getattr(fund, "data_quality", None),
-                # Everything the track record needs, flattened here because this is
-                # the only place with `fund` and `decision` in hand — and writing to
-                # SQLite from inside the thread pool is a problem nobody needs. The
-                # page logs these sequentially once the run finishes.
-                "_track": _track_payload(fund, decision),
-            }, None
+            # Extraction only — the display dict (badges, emoji, truncation) is
+            # built on the main thread by _format_row_for_display (S22).
+            return _extract_row_data(sym, fund, tech, decision), None
         except Exception as exc:
             logger.error(f"Screener: {sym} failed — {exc}")
             return None, {
@@ -1900,7 +1938,7 @@ def _analyse_universe_parallel(
             progress_bar.progress(completed / total)
             result, failure = future.result()
             if result is not None:
-                rows.append(result)
+                rows.append(_format_row_for_display(result))
             if failure is not None:
                 failures.append(failure)
 

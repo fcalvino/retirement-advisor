@@ -67,8 +67,9 @@ def test_screener_remaining_gaps_are_still_in_source():
     assert es["title"]
     assert "Actualizar análisis" in es["demo_hint"]
 
-    # 17. Company names are hard-truncated in the row builder.
-    assert "fund.company_name[:25]" in SHARED
+    # 17. Company names are hard-truncated in the row builder (S22 moved the
+    #     truncation from the thread-pool worker into _format_row_for_display).
+    assert 'd["company_name"][:25]' in SHARED
 
     # 22. Tailwind badge is Spanish now (audit item 25).
     from dashboard.shared import tailwind_badge
