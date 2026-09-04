@@ -60,8 +60,8 @@ Los ítems están agrupados en fases coherentes con el criterio de ratio impacto
 | O2 ✅ | ordenamiento | M | alto | interno | Dispatch de provider AI duplicado en moat.py y ai_analyzer.py |
 | O4 ✅ | ordenamiento | M | medio | interno | `run_holdings_committee` (negocio) en módulo de UI |
 | O5 ✅ | ordenamiento | M | bajo | interno | Página de alertas importa `AlertEngine` directamente |
-| S16 ⏳ | simplicidad | M | medio | interno | `_home_page()` 208 líneas monolíticas |
-| S17 | simplicidad | M | medio | interno | `render_*_controls` mutan session_state dentro del render |
+| S16 ✅ | simplicidad | M | medio | interno | `_home_page()` 208 líneas monolíticas |
+| S17 ✅ | simplicidad | M | medio | interno | `render_*_controls` mutan session_state dentro del render |
 | O1 | ordenamiento | L | alto | interno | `FundamentalAnalyzer.analyze()` 215 líneas: God method |
 | S12 | simplicidad | L | alto | interno | `7_Simulaciones.py` 2.420 líneas sin helpers |
 | T1 | cobertura | M | alto | interno | Cero tests para `dashboard/shared.py` (1.891 líneas) |
@@ -879,7 +879,7 @@ Ninguna de estas responsabilidades se puede cambiar sin leer el método completo
 
 **Contrato estable:** la página de inicio muestra los mismos componentes en el mismo orden.
 
-**Estado:** ⏳ PR #93 abierto. `dashboard/app.py`: `_home_page` queda como orquestador de ~20 líneas; extraídos `_render_plan_hub(hub, action, prefs)`, `_render_profile_section(prefs)`, `_render_guided_journey(prefs)`, `_render_getting_started()` + `_load_activate_sample(prefs, key, *, toast_msg)` (dedup de los 2 handlers de "cargar plan de ejemplo"). Mismos `st.*` en el mismo orden, mismas keys de widget (`home_hub_sample`/`home_today_action`/`home_onb`/`home_journey_next`/`home_try_sample`), mismo anidado de contenedores. `make check` → 3141. Revisión visual con playwright-cli: home en sesión fresca y con plan de ejemplo activo — mismos headings en el mismo orden, botones presentes, el botón de plan de ejemplo navega a Mi Plan, hub muestra valores reales (72% / $780k), sin errores.
+**Estado:** ✅ Mergeado — PR #93 (2026-09-04). Revisión visual OK. `dashboard/app.py`: `_home_page` queda como orquestador de ~20 líneas; extraídos `_render_plan_hub(hub, action, prefs)`, `_render_profile_section(prefs)`, `_render_guided_journey(prefs)`, `_render_getting_started()` + `_load_activate_sample(prefs, key, *, toast_msg)` (dedup de los 2 handlers de "cargar plan de ejemplo"). Mismos `st.*` en el mismo orden, mismas keys de widget (`home_hub_sample`/`home_today_action`/`home_onb`/`home_journey_next`/`home_try_sample`), mismo anidado de contenedores. `make check` → 3141. Revisión visual con playwright-cli: home en sesión fresca y con plan de ejemplo activo — mismos headings en el mismo orden, botones presentes, el botón de plan de ejemplo navega a Mi Plan, hub muestra valores reales (72% / $780k), sin errores.
 
 **Plan (P-13, 2026-09-04) — independiente de P-14 (archivos distintos: `app.py` vs `shared.py`; sin dependencia):**
 - **Alcance:** extraer de `_home_page()` (`dashboard/app.py:133`–~360) → `_render_plan_hub(hub, prefs, pages_dir)`, `_render_guided_journey(prefs, pages_dir)`, `_render_sample_plan_section(pages_dir)`. `_home_page` queda como orquestador de ~40 líneas: métricas → divider → hub → wizard/summary → guided journey → disclaimer, en ese orden. Puro estructural: mismos `st.*` en el mismo orden, mismo estado local (pasar `_hub`/`_prefs_home`/`_pages_dir` como params, no re-derivar).
@@ -903,6 +903,8 @@ El anti-patrón acopla la phase de render con la de lectura de estado y hace dif
 **Cambio propuesto:** separar en `render_withdrawal_controls() -> WithdrawalStrategy` (solo widgets, devuelve el valor) y mantener la escritura en session_state solo para persistencia cross-rerun. La función no debe leer de session_state lo que ella misma acaba de escribir en el mismo call.
 
 **Contrato estable:** los callers que usan el return value no cambian.
+
+**Estado:** ⏳ PR #94 abierto. Extraídos `_build_withdrawal_strategy(kind, *, amount, pct, base)` y `_build_economic_drags(enabled, component_pcts)` — puros, sin lecturas de `st.session_state`. `get_withdrawal_strategy` / `get_economic_drags` (que las páginas siguen llamando aparte) quedan como thin readers que delegan al builder. `render_withdrawal_controls` / `render_drags_controls` arman el dict con los valores frescos de los widgets (no releen las keys que acaban de escribir); las escrituras a session_state se conservan para persistencia cross-rerun. Byte-idéntico: oráculo 0 mismatches (11 casos) + `_build_* == get_*`. `make check` → 3141. Revisión visual playwright-cli de Simulaciones (nav por sidebar): ambos bloques renderizan; al elegir "Retiro fijo real" aparecen los inputs y el badge refleja el valor fresco ("$4,000/año"); panel de drags con sus 4 inputs + badge correcto; sin errores de página (los errores de consola son de Plotly con chart vacío, pre-existentes).
 
 **Plan (P-14, 2026-09-04) — independiente de P-13 (toca `dashboard/shared.py`, no `app.py`):**
 - **Alcance:** `render_withdrawal_controls()` (`shared.py:1243`) y `render_drags_controls()` (`:1085`). Hoy escriben a `session_state` (`withdrawal_kind`, `drag_*`, …) y en el mismo call releen ese estado para armar el valor de retorno. Cambio: computar el valor de retorno **directo de los widgets**; la escritura a `session_state` queda **solo para persistencia cross-rerun**, nunca como fuente de lectura dentro del mismo call. Firmas y valores de retorno sin cambiar.
