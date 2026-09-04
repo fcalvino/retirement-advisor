@@ -1938,7 +1938,19 @@ def _analyse_universe_parallel(
             progress_bar.progress(completed / total)
             result, failure = future.result()
             if result is not None:
-                rows.append(_format_row_for_display(result))
+                # Formatting moved out of the worker (S22) but the per-ticker
+                # error-isolation guarantee has not: a bad row (e.g. a null
+                # company_name) becomes a failure entry, not an aborted run.
+                try:
+                    rows.append(_format_row_for_display(result))
+                except Exception as exc:
+                    _sym = result.get("sym", "?")
+                    logger.error(f"Screener: formatting {_sym} failed — {exc}")
+                    failures.append({
+                        "Ticker": _sym,
+                        "Tipo": type(exc).__name__,
+                        "Error": str(exc)[:160] or "sin detalle",
+                    })
             if failure is not None:
                 failures.append(failure)
 

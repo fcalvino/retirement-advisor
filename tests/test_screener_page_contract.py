@@ -306,6 +306,31 @@ def test_analyse_universe_parallel_reports_failed_tickers(monkeypatch):
     assert len(rows) + len(failures) == 2
 
 
+def test_analyse_universe_parallel_isolates_formatting_failures(monkeypatch):
+    """S22 moved formatting out of the worker; a bad row must still not abort the run."""
+    from dashboard import shared as shared_mod
+
+    decision = Decision(symbol="OK", action="BUY", confidence="HIGH")
+
+    def fake_analysis(sym, *_a, **_k):
+        # BADFMT analyses fine but has a null company_name -> None[:25] in
+        # _format_row_for_display, which now runs on the main thread.
+        cn = None if sym == "BADFMT" else "Ok Inc"
+        return _fund(company_name=cn), _tech("BULLISH"), decision
+
+    monkeypatch.setattr(shared_mod, "cached_full_analysis", fake_analysis)
+    rows, failures, _ = shared_mod._analyse_universe_parallel(
+        ["OK", "BADFMT"],
+        SimpleNamespace(provider="x", model="y", enabled=False, api_key=""),
+        _FakeBar(),
+        _FakeStatus(),
+    )
+    assert [r["Ticker"] for r in rows] == ["OK"]
+    assert [f["Ticker"] for f in failures] == ["BADFMT"]
+    assert failures[0]["Tipo"] == "TypeError"
+    assert len(rows) + len(failures) == 2
+
+
 def test_screener_page_surfaces_failures_and_offers_retry():
     """The failure payload has to reach the page, not just the log."""
     assert "screener_failures" in SCREENER
