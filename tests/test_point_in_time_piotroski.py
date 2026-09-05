@@ -175,3 +175,45 @@ def test_statements_as_of_returns_the_shape_piotroski_expects():
 def test_empty_facts_return_an_all_false_detail_not_a_crash():
     got = piotroski_as_of({}, cutoff=date(2021, 6, 1))
     assert got.score == 0
+
+
+def test_missing_ocf_never_passes_accruals_quality_for_a_loss_making_company():
+    """``EnhancedScoring._piotroski_score``'s F9 fallback (analysis/scoring.py)
+    computes ``info.get("operatingCashflow", 0) > net_income`` when the OCF row
+    is absent — safe with a live yfinance ``info`` dict, but with the
+    ``info={}`` this module always passes, a reconstructed net *loss* would
+    make ``0 > negative_number`` evaluate True: "accrual quality passed" from
+    cash flow data that was never actually available, for exactly the
+    loss-making companies this check exists to catch.
+    """
+    us_gaap = _two_year_us_gaap()
+    del us_gaap["NetCashProvidedByUsedInOperatingActivities"]   # OCF tag entirely absent
+    us_gaap["NetIncomeLoss"] = _concept([
+        _fact(-80.0, "2019-12-31", "2020-02-01"),
+        _fact(-50.0, "2020-12-31", "2021-02-01"),   # a real net loss, improving YoY
+    ])
+
+    got = piotroski_as_of(us_gaap, cutoff=date(2021, 6, 1))
+
+    assert got.f9_accruals_quality is False
+
+
+def test_unrelated_instant_fact_does_not_pollute_the_period_axis():
+    """A companyfacts payload carries every us-gaap tag a company has ever
+    reported, most of them irrelevant to Piotroski. An unrelated tag with an
+    instant fact (no ``start``, so the duration guard in
+    ``SecEdgarSource._annual_rows`` never applies to it) dated after the real
+    fiscal year-end and filed under a 10-K must not be allowed to outrank the
+    real year-end on the shared period axis — it belongs to a concept nobody
+    asked for.
+    """
+    us_gaap = _two_year_us_gaap()
+    us_gaap["UnrelatedDisclosureAmount"] = _concept([
+        {"val": 42.0, "end": "2021-03-15", "filed": "2021-03-20", "form": "10-K", "fp": "FY"},
+    ])
+
+    got = piotroski_as_of(us_gaap, cutoff=date(2021, 6, 1))
+
+    # Unaffected: still two full, correctly-anchored fiscal years, exactly as
+    # in the baseline fixture.
+    assert got.score == 9

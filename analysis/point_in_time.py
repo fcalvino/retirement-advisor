@@ -38,9 +38,7 @@ class PointInTimeFact:
     filed: str         # when this value was actually filed with the SEC (ISO date)
 
 
-def annual_fact_as_of(
-    concept_facts: dict, cutoff: date, *, before_period_end: Optional[str] = None
-) -> Optional[PointInTimeFact]:
+def annual_fact_as_of(concept_facts: dict, cutoff: date) -> Optional[PointInTimeFact]:
     """The annual fact for *one* XBRL tag as it was known on ``cutoff``.
 
     Reuses :meth:`SecEdgarSource._annual_rows` for the annual-duration filter
@@ -49,20 +47,11 @@ def annual_fact_as_of(
     already been filed by ``cutoff``; among rows covering the same fiscal
     period (a restatement), the most recently filed one still <= cutoff wins —
     that is the figure a reader would have actually seen on that date.
-
-    ``before_period_end``, when given, drops any row whose ``end`` is not
-    strictly earlier — the primitive :func:`annual_series_as_of` uses to walk
-    to the *prior* fiscal year without touching ``cutoff`` itself. The two are
-    deliberately different knobs: ``cutoff`` answers "known by when", period
-    exclusion answers "covering which year" — collapsing them into a single
-    "shift the cutoff back ~365 days" would silently drift on any fiscal
-    calendar that is not exactly 365 days.
     """
     cutoff_iso = cutoff.isoformat()
     rows = [
         r for r in SecEdgarSource._annual_rows(concept_facts)
         if r.get("filed") and r["filed"] <= cutoff_iso
-        and (before_period_end is None or r["end"] < before_period_end)
     ]
     best: Optional[dict] = None
     for row in rows:
@@ -78,7 +67,7 @@ def annual_fact_as_of(
 
 
 def latest_annual_as_of(
-    us_gaap: dict, tags: List[str], cutoff: date, *, before_period_end: Optional[str] = None
+    us_gaap: dict, tags: List[str], cutoff: date
 ) -> Optional[PointInTimeFact]:
     """Scans every candidate *tag* the way :meth:`SecEdgarSource._latest_annual`
     does for "now", but anchored to ``cutoff``. Ties across tags for the same
@@ -91,7 +80,7 @@ def latest_annual_as_of(
         facts = (us_gaap or {}).get(tag)
         if not facts:
             continue
-        candidate = annual_fact_as_of(facts, cutoff, before_period_end=before_period_end)
+        candidate = annual_fact_as_of(facts, cutoff)
         if candidate is None:
             continue
         key = (candidate.period_end, candidate.filed)
@@ -100,54 +89,35 @@ def latest_annual_as_of(
     return best
 
 
-def annual_series_as_of(
-    us_gaap: dict, tags: List[str], cutoff: date, n_years: int = 2
-) -> List[PointInTimeFact]:
-    """Up to ``n_years`` most recent *distinct* fiscal periods for **one**
-    concept, all as known on the same ``cutoff``.
+def annual_period_ends_as_of(
+    us_gaap: dict, concepts: List[List[str]], cutoff: date, n_years: int = 2
+) -> List[str]:
+    """The shared fiscal period-end axis across *concepts* (a list of
+    candidate-tag lists, one per concept actually in use), as known on
+    ``cutoff`` — every concept's value must be looked up against these exact
+    dates (:func:`latest_annual_at_period`), not each concept's own closest
+    available date, or two rows can end up the same length but silently
+    anchored to different fiscal years.
 
-    Every fact returned satisfies ``filed <= cutoff``; going back a year never
-    relaxes that. Walking to the prior year narrows on ``period_end`` instead
-    (see :func:`annual_fact_as_of`), so a company with an irregular fiscal
-    calendar does not skip or duplicate a year.
-
-    **Not safe to build a multi-row statement from independently per row.**
-    Each call walks *this concept's own* available periods; a company that
-    omits one tag for a single year (routine — e.g. zero long-term debt often
-    is not reported) would then leave that row's dates out of step with a
-    sibling row extracted the same way. Scoring code that compares rows
-    positionally (``ni.iloc[0] / total_assets.iloc[0]``, as
-    ``EnhancedScoring._piotroski_score`` does) needs every row anchored to the
-    *same* period axis — use :func:`annual_period_ends_as_of` +
-    :func:`latest_annual_at_period` for that instead.
-    """
-    out: List[PointInTimeFact] = []
-    before: Optional[str] = None
-    for _ in range(n_years):
-        fact = latest_annual_as_of(us_gaap, tags, cutoff, before_period_end=before)
-        if fact is None:
-            break
-        out.append(fact)
-        before = fact.period_end
-    return out
-
-
-def annual_period_ends_as_of(us_gaap: dict, cutoff: date, n_years: int = 2) -> List[str]:
-    """The shared fiscal period-end axis for an entire ``companyfacts``
-    payload, as known on ``cutoff`` — every concept's value must be looked up
-    against *these exact* dates (:func:`latest_annual_at_period`), not each
-    concept's own closest available date, or two rows can end up the same
-    length but silently anchored to different fiscal years.
-
-    Unions ``end`` across every tag rather than trusting one "reference"
-    concept to always be reported: no single line item is guaranteed present
-    in every filing (a company with no debt may simply omit the tag).
+    Deliberately scoped to *concepts*, not every tag in the payload: a
+    ``companyfacts`` response carries every us-gaap tag a company has ever
+    reported — segment disclosures, per-share data, lease schedules — most of
+    them irrelevant to the statement being built. Unioning blindly over all of
+    them would let an unrelated instant fact (many balance-sheet-shaped tags
+    have no ``start``, so :meth:`SecEdgarSource._annual_rows`'s duration guard
+    does not apply to them either) inject a spurious ``end`` date that
+    outranks the real fiscal year-end and silently evicts it from the axis.
+    Unions ``end`` across every *tag in use* rather than trusting one
+    "reference" concept to always be reported: no single line item is
+    guaranteed present in every filing (a company with no debt may simply
+    omit the tag).
     """
     cutoff_iso = cutoff.isoformat()
     ends = {
         row["end"]
-        for tag_facts in (us_gaap or {}).values()
-        for row in SecEdgarSource._annual_rows(tag_facts)
+        for tags in concepts
+        for tag in tags
+        for row in SecEdgarSource._annual_rows((us_gaap or {}).get(tag) or {})
         if row.get("filed") and row["filed"] <= cutoff_iso
     }
     return sorted(ends, reverse=True)[:n_years]

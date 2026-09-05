@@ -125,7 +125,7 @@ def piotroski_statements_as_of(
     from a live yfinance fetch, built here from reconstructed XBRL facts
     instead.
     """
-    period_ends = annual_period_ends_as_of(us_gaap, cutoff, n_years)
+    period_ends = annual_period_ends_as_of(us_gaap, list(_ALL_CONCEPTS.values()), cutoff, n_years)
     income_stmt = _build_statement(us_gaap, _INCOME_STMT_CONCEPTS, cutoff, period_ends)
     balance_sheet = _build_statement(us_gaap, _BALANCE_SHEET_CONCEPTS, cutoff, period_ends)
     cashflow = _build_statement(us_gaap, _CASHFLOW_CONCEPTS, cutoff, period_ends)
@@ -141,8 +141,23 @@ def piotroski_as_of(us_gaap: dict, cutoff: date) -> PiotroskiDetail:
     "now" snapshot field with no point-in-time equivalent, so it is left
     unknown rather than guessed, same principle the F-checks already apply to
     every other missing input.
+
+    F9 needs an extra guard the F2 fallback does not: with ``info={}``,
+    ``_piotroski_score``'s F9 else-branch computes ``0 > ni_val``. For F2 that
+    is always ``False`` (safe), but for F9 a real, reconstructed net *loss*
+    (``ni_val < 0``) makes ``0 > ni_val`` evaluate ``True`` — accrual quality
+    "passed" from cash flow data that was never actually available, and wrong
+    in exactly the loss-making population this check exists to flag. A live
+    yfinance fetch rarely hits this branch with a real ``info`` dict backing
+    it; reconstructed backtesting data always would when the OCF tag is
+    simply missing. There is no "unknown" state to fall back to here, so the
+    check is withheld outright rather than answered from a fabricated zero.
     """
     income_stmt, balance_sheet, cashflow = piotroski_statements_as_of(us_gaap, cutoff)
-    return EnhancedScoring()._piotroski_score(
+    detail = EnhancedScoring()._piotroski_score(
         info={}, income_stmt=income_stmt, balance_sheet=balance_sheet, cashflow=cashflow
     )
+    ocf_row = cashflow.loc["Operating Cash Flow"].dropna() if "Operating Cash Flow" in cashflow.index else None
+    if ocf_row is None or ocf_row.empty:
+        detail.f9_accruals_quality = False
+    return detail
