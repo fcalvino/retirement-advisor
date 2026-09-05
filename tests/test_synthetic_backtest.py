@@ -104,3 +104,35 @@ def test_log_piotroski_never_raises_on_a_write_failure(monkeypatch):
     result = store.log_piotroski("AAPL", date(2021, 6, 1), _detail(5))
 
     assert result is None
+
+
+def test_existing_pairs_returns_the_logged_as_of_dates():
+    """The batch backtest script's resumability check (PR 4/N): what a run
+    already has for a symbol, without touching the network.
+    """
+    store = SyntheticBacktestStore(":memory:")
+    store.log_piotroski("AAPL", date(2020, 6, 1), _detail(5))
+    store.log_piotroski("AAPL", date(2021, 6, 1), _detail(6))
+    store.log_piotroski("MSFT", date(2021, 6, 1), _detail(3))
+
+    assert store.existing_pairs("AAPL") == {"2020-06-01", "2021-06-01"}
+    assert store.existing_pairs("MSFT") == {"2021-06-01"}
+    assert store.existing_pairs("JNJ") == set()
+
+
+def test_duplicate_symbol_as_of_source_is_rejected_not_silently_duplicated():
+    """The unique constraint (symbol, as_of, source) is what makes the table
+    itself a safe resumability checkpoint — a caller that races or re-runs
+    without checking ``existing_pairs`` first must not end up with two rows
+    for the same ticker×cutoff silently inflating the calibration sample.
+    """
+    store = SyntheticBacktestStore(":memory:")
+    first_id = store.log_piotroski("AAPL", date(2021, 6, 1), _detail(5))
+    assert first_id is not None
+
+    second_id = store.log_piotroski("AAPL", date(2021, 6, 1), _detail(9))
+    assert second_id is None   # rejected by the unique constraint, logged, not raised
+
+    rows = store.get_all(symbol="AAPL")
+    assert len(rows) == 1
+    assert rows[0].piotroski_score == 5   # the first write survives untouched

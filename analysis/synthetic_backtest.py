@@ -37,7 +37,7 @@ from datetime import date
 from typing import Any, List, Optional
 
 from loguru import logger
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, UniqueConstraint, create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from analysis.scoring import PiotroskiDetail
@@ -52,9 +52,18 @@ class _Base(DeclarativeBase):
 class SyntheticRecommendation(_Base):
     """One point-in-time Piotroski F-Score, reconstructed rather than emitted
     to a user — never a row a person actually saw.
+
+    ``(symbol, as_of, source)`` is unique so a batch backtest run (PR 4/N,
+    which hits SEC EDGAR over the network per ticker) can use this table
+    itself as its resumability checkpoint: skip a pair already here, insert
+    otherwise — an interrupted run just picks up where it left off, and a
+    re-run never double-counts a ticker×cutoff into the calibration sample.
     """
 
     __tablename__ = "synthetic_recommendation"
+    __table_args__ = (
+        UniqueConstraint("symbol", "as_of", "source", name="uq_synthetic_symbol_asof_source"),
+    )
     id                        = Column(Integer, primary_key=True, autoincrement=True)
     symbol                    = Column(String, nullable=False, index=True)
     as_of                     = Column(String, nullable=False, index=True)  # ISO date, the cutoff
@@ -143,6 +152,22 @@ class SyntheticBacktestStore:
             if symbol is not None:
                 query = query.filter(SyntheticRecommendation.symbol == symbol.upper())
             return query.order_by(SyntheticRecommendation.as_of).all()
+
+    def existing_pairs(self, symbol: str, source: str = "point_in_time_piotroski") -> set:
+        """The ``as_of`` dates already logged for *symbol* — what a batch run
+        checks before spending a network call, so an interrupted run can
+        resume without re-fetching or re-scoring what it already has.
+        """
+        with self._Session() as session:
+            rows = (
+                session.query(SyntheticRecommendation.as_of)
+                .filter(
+                    SyntheticRecommendation.symbol == symbol.upper(),
+                    SyntheticRecommendation.source == source,
+                )
+                .all()
+            )
+            return {r[0] for r in rows}
 
 
 # Module-level singleton (mirrors analysis.track_record.track_record_store)

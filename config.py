@@ -2017,6 +2017,16 @@ class MultiSourceConfig:
     fred_api_key: str = field(default_factory=lambda: os.getenv("FRED_API_KEY", ""))
     fmp_api_key: str = field(default_factory=lambda: os.getenv("FMP_API_KEY", ""))
     request_timeout_s: float = 10.0
+    #: Pacing for a *bulk* SEC EDGAR run (scripts/point_in_time_backtest.py) —
+    #: not used by the single-ticker live reconciliation path above, which
+    #: already amortizes to well under SEC's cap on its own. SEC's fair-access
+    #: policy (https://www.sec.gov/os/accessing-edgar-data, confirmed live
+    #: 2026-09) states "Current max request rate: 10 requests/second" and asks
+    #: callers to "moderate requests to minimize server load" — 4 req/s stays
+    #: comfortably under the cap. One companyfacts call already covers a
+    #: ticker's entire filing history, so this paces once per *ticker*, not
+    #: once per (ticker, cutoff).
+    sec_bulk_request_delay_s: float = 0.25
 
     def as_dict(self) -> dict:
         return {
