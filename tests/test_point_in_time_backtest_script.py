@@ -121,28 +121,128 @@ def test_run_skips_gracefully_when_sec_has_no_data(monkeypatch):
     assert backtest.synthetic_backtest_store.get_all(symbol="YPF") == []
 
 
-def test_run_paces_between_real_network_calls(monkeypatch):
-    sleeps = []
-    monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: _fake_companyfacts())
-    monkeypatch.setattr(backtest.time, "sleep", lambda s: sleeps.append(s))
-
-    backtest.run(["AAPL", "MSFT"], [date(2021, 6, 1)])
-
-    assert len(sleeps) == 2   # one real fetch per symbol
-    from config import MULTI_SOURCE
-    assert all(s == MULTI_SOURCE.sec_bulk_request_delay_s for s in sleeps)
-
-
 def test_run_does_not_pace_when_nothing_needed_fetching(monkeypatch):
     """A symbol whose cutoffs are all already logged costs no network call
-    and therefore no pacing delay either.
+    and therefore no pacing delay either — verified at the run() level since
+    that's the resumability check that must short-circuit before ever
+    reaching ``_fetch_companyfacts``.
     """
     monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: _fake_companyfacts())
     monkeypatch.setattr(backtest.time, "sleep", lambda *_: None)
     backtest.run(["AAPL"], [date(2021, 6, 1)])
 
-    sleeps = []
-    monkeypatch.setattr(backtest.time, "sleep", lambda s: sleeps.append(s))
+    fetch_calls = []
+    monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: fetch_calls.append(symbol))
     backtest.run(["AAPL"], [date(2021, 6, 1)])
 
+    assert fetch_calls == [], "a fully-cached symbol must never reach _fetch_companyfacts"
+
+
+def test_a_reconstruction_failure_for_one_cutoff_does_not_abort_the_batch(monkeypatch):
+    """``piotroski_as_of`` has no reason to raise against well-formed data,
+    but a real payload is not a test fixture — one bad cutoff must be logged
+    and skipped, not kill every remaining symbol in the run, the same
+    resiliency guarantee ``log_piotroski`` itself already has.
+    """
+    monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: _fake_companyfacts())
+
+    real_piotroski_as_of = backtest.piotroski_as_of
+
+    def _flaky(us_gaap, cutoff):
+        if cutoff == date(2020, 6, 1):
+            raise ValueError("simulated reconstruction failure")
+        return real_piotroski_as_of(us_gaap, cutoff)
+
+    monkeypatch.setattr(backtest, "piotroski_as_of", _flaky)
+
+    backtest.run(["AAPL"], [date(2020, 6, 1), date(2021, 6, 1)])
+
+    rows = backtest.synthetic_backtest_store.get_all(symbol="AAPL")
+    assert [r.as_of for r in rows] == ["2021-06-01"]
+
+
+# ------------------------------------------------------------------ #
+#  Pacing — exercised at _fetch_companyfacts/_resolve_cik_paced level,  #
+#  since that's where the actual network calls (and their retries) live #
+# ------------------------------------------------------------------ #
+
+@pytest.fixture(autouse=True)
+def _reset_cik_cache():
+    """``SecEdgarSource._cik_map`` is a *class*-level cache shared across the
+    whole process — reset it around each test so one test's cached map can't
+    leak into another's "is this the first lookup" assertion.
+    """
+    from data.data_sources import SecEdgarSource
+
+    original = SecEdgarSource._cik_map
+    SecEdgarSource._cik_map = None
+    yield
+    SecEdgarSource._cik_map = original
+
+
+def test_fetch_companyfacts_paces_after_a_real_facts_request(monkeypatch):
+    from data.data_sources import SecEdgarSource
+
+    monkeypatch.setattr(SecEdgarSource, "_cik_map", {"AAPL": 320193})  # CIK already known
+
+    sleeps = []
+    monkeypatch.setattr(backtest.time, "sleep", lambda s: sleeps.append(s))
+
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return _fake_companyfacts()
+
+    import requests
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _Resp())
+
+    result = backtest._fetch_companyfacts("AAPL")
+
+    assert result is not None
+    from config import MULTI_SOURCE
+    assert sleeps == [MULTI_SOURCE.sec_bulk_request_delay_s]
+
+
+def test_fetch_companyfacts_does_not_pace_on_a_cached_cik_map_miss(monkeypatch):
+    """CIK map already cached, symbol just isn't in it (non-US filer): zero
+    network calls, so zero pacing delay.
+    """
+    from data.data_sources import SecEdgarSource
+
+    monkeypatch.setattr(SecEdgarSource, "_cik_map", {"AAPL": 320193})  # populated, YPF absent
+
+    sleeps = []
+    monkeypatch.setattr(backtest.time, "sleep", lambda s: sleeps.append(s))
+
+    result = backtest._fetch_companyfacts("YPF")
+
+    assert result is None
     assert sleeps == []
+
+
+def test_resolve_cik_paces_only_the_first_uncached_lookup(monkeypatch):
+    """The first symbol in a process pays the CIK-map fetch (and its pacing
+    delay); every symbol after that is a free in-memory lookup — SEC's
+    ticker→CIK map is one shared file, not one request per ticker.
+    """
+    from data.data_sources import SecEdgarSource
+
+    monkeypatch.setattr(SecEdgarSource, "_cik_map", None)
+
+    sleeps = []
+    monkeypatch.setattr(backtest.time, "sleep", lambda s: sleeps.append(s))
+
+    def _fake_resolve(self, symbol):
+        SecEdgarSource._cik_map = {"AAPL": 320193}  # simulates a successful fetch
+        return SecEdgarSource._cik_map.get(symbol)
+
+    monkeypatch.setattr(SecEdgarSource, "_resolve_cik", _fake_resolve)
+
+    first = backtest._resolve_cik_paced("AAPL")
+    second = backtest._resolve_cik_paced("AAPL")
+
+    assert first == 320193
+    assert second == 320193
+    assert len(sleeps) == 1, "only the first, uncached lookup should pace"

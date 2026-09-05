@@ -14,8 +14,9 @@ Usage:
         --cutoffs 2020-06-01,2021-06-01
 
 Resumable: a (symbol, as_of, source) pair already in the store — enforced by
-its own unique constraint (``analysis/synthetic_backtest.py``) — is skipped
-without spending a network call re-fetching it (``SyntheticBacktestStore.existing_pairs``).
+its own unique index, migration-created so it applies to any pre-existing
+database file too (``analysis/synthetic_backtest.py``) — is skipped without
+spending a network call re-fetching it (``SyntheticBacktestStore.existing_pairs``).
 An interrupted run just picks up where it left off; a re-run never
 double-counts a ticker×cutoff into the calibration sample.
 
@@ -56,6 +57,36 @@ from data.data_sources import SecEdgarSource  # noqa: E402
 from data.fetcher import _fetch_with_retry  # noqa: E402
 
 
+def _resolve_cik_paced(symbol: str) -> Optional[int]:
+    """CIK for *symbol*, retried only while SEC's ticker→CIK map itself has
+    not been fetched yet (a real network failure, ``SecEdgarSource._resolve_cik``'s
+    own ``_http_json`` call — the same silent-degrade-to-``None`` path the
+    module docstring says a bulk run must not use unretried).
+
+    Once the class-level map is cached (after the first symbol in the
+    process), every further call is a pure in-memory lookup — no network, no
+    pacing needed — so a miss at that point means the ticker genuinely has no
+    CIK (non-US filer), not a fetch that happened to fail.
+    """
+    if SecEdgarSource._cik_map is not None:
+        return SecEdgarSource()._resolve_cik(symbol)
+
+    def _resolve():
+        cik = SecEdgarSource()._resolve_cik(symbol)
+        if cik is None and SecEdgarSource._cik_map is None:
+            raise RuntimeError("SEC ticker->CIK map fetch failed")
+        return cik
+
+    cik = _fetch_with_retry(_resolve, symbol, "SEC ticker->CIK map")
+    time.sleep(MULTI_SOURCE.sec_bulk_request_delay_s)  # a real network attempt was just made
+    if cik is None:
+        if SecEdgarSource._cik_map is None:
+            logger.error(f"{symbol}: SEC ticker->CIK map fetch failed after retries")
+        else:
+            logger.warning(f"{symbol}: no SEC CIK — non-US filer or not an equity, skipping")
+    return cik
+
+
 def _fetch_companyfacts(symbol: str) -> Optional[dict]:
     """One retried network call for *symbol*'s entire SEC filing history.
 
@@ -63,12 +94,10 @@ def _fetch_companyfacts(symbol: str) -> Optional[dict]:
     condition — non-US filers like the Argentina ADRs in ``DEFAULT_TICKERS``
     file 20-F/6-K, not 10-K, and never appear in SEC's ticker→CIK map) or a
     request that failed even after ``FETCH.max_retries`` attempts, logged
-    distinctly by ``_fetch_with_retry`` either way.
+    distinctly by ``_fetch_with_retry``/``_resolve_cik_paced`` either way.
     """
-    source = SecEdgarSource()
-    cik = source._resolve_cik(symbol)
+    cik = _resolve_cik_paced(symbol)
     if cik is None:
-        logger.warning(f"{symbol}: no SEC CIK — non-US filer or not an equity, skipping")
         return None
 
     def _fetch():
@@ -80,7 +109,9 @@ def _fetch_companyfacts(symbol: str) -> Optional[dict]:
         resp.raise_for_status()
         return resp.json()
 
-    return _fetch_with_retry(_fetch, symbol, "SEC companyfacts (bulk backtest)")
+    result = _fetch_with_retry(_fetch, symbol, "SEC companyfacts (bulk backtest)")
+    time.sleep(MULTI_SOURCE.sec_bulk_request_delay_s)  # a real network attempt was just made
+    return result
 
 
 def run(symbols: List[str], cutoffs: List[date]) -> None:
@@ -95,7 +126,6 @@ def run(symbols: List[str], cutoffs: List[date]) -> None:
             continue
 
         facts = _fetch_companyfacts(symbol)
-        time.sleep(MULTI_SOURCE.sec_bulk_request_delay_s)  # pace every real network call
         if facts is None:
             logger.error(f"{symbol}: SEC companyfacts unavailable — skipping {len(pending)} cutoff(s)")
             failed += len(pending)
@@ -103,7 +133,13 @@ def run(symbols: List[str], cutoffs: List[date]) -> None:
 
         us_gaap = facts.get("facts", {}).get("us-gaap", {})
         for cutoff in pending:
-            detail = piotroski_as_of(us_gaap, cutoff)
+            try:
+                detail = piotroski_as_of(us_gaap, cutoff)
+            except Exception as exc:  # never let one bad cutoff abort the whole batch
+                logger.error(f"{symbol} @ {cutoff}: reconstruction failed — {exc}")
+                failed += 1
+                continue
+
             row_id = synthetic_backtest_store.log_piotroski(symbol, cutoff, detail)
             if row_id is None:
                 failed += 1

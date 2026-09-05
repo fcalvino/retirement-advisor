@@ -37,7 +37,7 @@ from datetime import date
 from typing import Any, List, Optional
 
 from loguru import logger
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, UniqueConstraint, create_engine
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from analysis.scoring import PiotroskiDetail
@@ -53,17 +53,24 @@ class SyntheticRecommendation(_Base):
     """One point-in-time Piotroski F-Score, reconstructed rather than emitted
     to a user — never a row a person actually saw.
 
-    ``(symbol, as_of, source)`` is unique so a batch backtest run (PR 4/N,
-    which hits SEC EDGAR over the network per ticker) can use this table
-    itself as its resumability checkpoint: skip a pair already here, insert
-    otherwise — an interrupted run just picks up where it left off, and a
-    re-run never double-counts a ticker×cutoff into the calibration sample.
+    ``(symbol, as_of, source)`` is unique — enforced via a migration-created
+    index (see ``SyntheticBacktestStore._migrate``), not a table-level
+    ``UniqueConstraint`` here, because ``create_all`` only creates *missing*
+    tables and never alters one that already exists (same limitation
+    ``analysis/track_record.py``'s own ``_migrate`` works around). A
+    constraint declared only in this class would never apply to a database
+    file created before it — which for this table is not hypothetical: PR
+    3/N shipped the schema with no constraint, and this PR's own manual
+    verification run already wrote rows to the real database before this
+    class gained one. So a batch backtest run (PR 4/N, which hits SEC EDGAR
+    over the network per ticker) can use this table itself as its
+    resumability checkpoint: skip a pair already here, insert otherwise — an
+    interrupted run just picks up where it left off, and a re-run never
+    double-counts a ticker×cutoff into the calibration sample, on *any*
+    copy of the database regardless of when it was created.
     """
 
     __tablename__ = "synthetic_recommendation"
-    __table_args__ = (
-        UniqueConstraint("symbol", "as_of", "source", name="uq_synthetic_symbol_asof_source"),
-    )
     id                        = Column(Integer, primary_key=True, autoincrement=True)
     symbol                    = Column(String, nullable=False, index=True)
     as_of                     = Column(String, nullable=False, index=True)  # ISO date, the cutoff
@@ -98,7 +105,25 @@ class SyntheticBacktestStore:
         url = "sqlite:///:memory:" if path == ":memory:" else f"sqlite:///{path}"
         self._engine = create_engine(url, echo=False)
         _Base.metadata.create_all(self._engine)
+        self._migrate(self._engine)
         self._Session = sessionmaker(bind=self._engine)
+
+    def _migrate(self, engine) -> None:
+        """Apply the uniqueness guarantee to a database file that may already
+        exist (SQLite safe). Same shape as ``analysis/track_record.py``'s own
+        ``_migrate`` — ``CREATE UNIQUE INDEX IF NOT EXISTS`` is the SQLite-native
+        way to add this after the fact, idempotent whether the table was just
+        created fresh or already had rows in it.
+        """
+        with engine.connect() as conn:
+            try:
+                conn.execute(text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_synthetic_symbol_asof_source "
+                    "ON synthetic_recommendation (symbol, as_of, source)"
+                ))
+                conn.commit()
+            except Exception as exc:
+                logger.error(f"synthetic_backtest migration: could not create unique index — {exc}")
 
     def log_piotroski(
         self,
