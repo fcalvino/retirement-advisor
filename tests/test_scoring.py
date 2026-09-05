@@ -123,6 +123,34 @@ class TestPiotroskiFromStatements:
         result = scorer.get_enhanced_score(50.0, {}, income, balance, cashflow)
         assert result.piotroski_detail.f9_accruals_quality is True
 
+    def test_f9_fallback_withholds_rather_than_fabricates_for_a_net_loss(self, scorer):
+        """No cashflow statement at all (``cashflow=None``) and ``info`` with no
+        ``operatingCashflow`` key: the fallback used to compute
+        ``(info.get("operatingCashflow") or 0) > ni_val``, and for a real net
+        *loss* that is ``0 > negative == True`` — "accrual quality passed" from
+        a comparison that was never actually made. A missing input must stay
+        unknown (False), not be answered from a fabricated zero.
+        """
+        from tests.conftest import _make_balance_sheet, _make_income_stmt
+        income = _make_income_stmt(net_income=[-500, -400], revenue=[1000, 900])
+        balance = _make_balance_sheet(stockholders_equity=[2000, 1800], total_assets=[4000, 3800])
+        result = scorer.get_enhanced_score(50.0, {}, income, balance, cashflow=None)
+        assert result.piotroski_detail.f9_accruals_quality is False
+
+    def test_f9_fallback_still_answers_when_info_genuinely_reports_ocf(self, scorer):
+        """The ``info``-based fallback is not removed, only gated on presence:
+        when the feed genuinely reports ``operatingCashflow``, the comparison
+        still runs — this is the same case ``F2``'s identical fallback pattern
+        already covers safely.
+        """
+        from tests.conftest import _make_balance_sheet, _make_income_stmt
+        income = _make_income_stmt(net_income=[-500, -400], revenue=[1000, 900])
+        balance = _make_balance_sheet(stockholders_equity=[2000, 1800], total_assets=[4000, 3800])
+        result = scorer.get_enhanced_score(
+            50.0, {"operatingCashflow": 100}, income, balance, cashflow=None
+        )
+        assert result.piotroski_detail.f9_accruals_quality is True   # 100 > -500
+
 
 # ------------------------------------------------------------------ #
 #  Consistency Score                                                   #
