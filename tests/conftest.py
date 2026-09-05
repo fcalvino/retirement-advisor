@@ -20,6 +20,7 @@ import pandas as pd
 import pytest
 
 import alerts.store as _alerts_store
+import analysis.synthetic_backtest as _synthetic_backtest
 import analysis.track_record as _track_record
 
 # ------------------------------------------------------------------ #
@@ -52,6 +53,22 @@ import analysis.track_record as _track_record
 _track_record.track_record_store._engine.dispose()  # release the user's file
 _track_record.DB_PATH = ":memory:"
 _track_record.track_record_store = _track_record.TrackRecordStore()
+
+
+# ------------------------------------------------------------------ #
+#  Synthetic backtest: same leak class as N6, guarded from the start    #
+# ------------------------------------------------------------------ #
+#
+# ``analysis/synthetic_backtest.py`` (Idea 2, point-in-time backtesting) was
+# built deliberately separate from ``analysis.track_record`` so a leak here
+# can never contaminate the real track record's published hit rate — but it
+# is still its own singleton on ``config.DB_PATH``, so it needs the exact same
+# import-time redirect N6 taught this file to apply, before any test that
+# might construct or import it runs. ``tests/test_synthetic_backtest_isolation_oracle.py``
+# fails if this regresses.
+_synthetic_backtest.synthetic_backtest_store._engine.dispose()
+_synthetic_backtest.DB_PATH = ":memory:"
+_synthetic_backtest.synthetic_backtest_store = _synthetic_backtest.SyntheticBacktestStore()
 
 
 # ------------------------------------------------------------------ #
