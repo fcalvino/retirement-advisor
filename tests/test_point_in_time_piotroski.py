@@ -198,6 +198,26 @@ def test_missing_ocf_never_passes_accruals_quality_for_a_loss_making_company():
     assert got.f9_accruals_quality is False
 
 
+def test_ocf_present_only_for_the_prior_year_is_withheld_not_backdated():
+    """The single-row-statement case the axis-sharing fix alone did not cover:
+    OCF is tagged under a candidate list that happens to miss the *current*
+    year but has the *prior* year. Keeping that lone prior-year value would
+    let it silently stand in for "current" in F2/F9 — compared against a
+    genuinely current-year net income from a different DataFrame. It must be
+    withheld instead: this company's current-year cash flow is simply
+    unknown, not equal to what it reported the year before.
+    """
+    us_gaap = _two_year_us_gaap()
+    us_gaap["NetCashProvidedByUsedInOperatingActivities"] = _concept([
+        _fact(90.0, "2019-12-31", "2020-02-01"),   # prior year only
+    ])
+
+    got = piotroski_as_of(us_gaap, cutoff=date(2021, 6, 1))
+
+    assert got.f9_accruals_quality is False
+    assert got.f2_ocf_positive is False
+
+
 def test_unrelated_instant_fact_does_not_pollute_the_period_axis():
     """A companyfacts payload carries every us-gaap tag a company has ever
     reported, most of them irrelevant to Piotroski. An unrelated tag with an

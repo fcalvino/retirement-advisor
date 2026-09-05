@@ -98,18 +98,31 @@ def _build_statement(
     letting each concept pick its own most-recent-available dates would let a
     company that omits one tag for a single year (routine — e.g. no reported
     long-term debt) silently misalign two same-length rows onto different
-    years. A concept missing at a given period is simply absent from that
-    column (dropped by ``extract_financial_row``'s own ``.dropna()``), never
-    backfilled from a different period.
+    years.
+
+    ``period_ends`` is walked newest-first and a concept's values stop at the
+    first gap, rather than skipping it and keeping any older value that
+    exists. ``extract_financial_row`` (what ``_piotroski_score`` reads every
+    row through) drops NaNs and re-sorts what's left, so a row given only an
+    *older* period — no value at the shared "current" period, but one at the
+    prior period — would still end up with something at ``iloc[0]``: that
+    prior-period value, silently standing in for "current". A single-row
+    statement (cashflow) makes this concrete: if OCF is missing only for the
+    current year, keeping the prior year's OCF alone would compare it against
+    a *different* DataFrame's current-year net income in F2/F9. Stopping at
+    the first gap means a concept is only ever present if every more-recent
+    shared period was present too — absent entirely (correctly read as
+    unknown) rather than present but silently backdated.
     """
     rows: Dict[str, Dict[str, float]] = {}
     for concept in concepts:
         tags = _ALL_CONCEPTS[concept]
         values = {}
-        for period_end in period_ends:
+        for period_end in period_ends:   # newest first
             fact = latest_annual_at_period(us_gaap, tags, cutoff, period_end)
-            if fact is not None:
-                values[period_end] = fact.value
+            if fact is None:
+                break
+            values[period_end] = fact.value
         if values:
             rows[_ROW_LABELS[concept]] = values
     if not rows:
