@@ -136,6 +136,32 @@ def test_missing_concept_drops_only_its_own_checks():
     assert got.f4_leverage_decreasing is True
 
 
+def test_a_gap_year_in_one_concept_does_not_misalign_against_another():
+    """The regression this module exists to prevent: LongTermDebtNoncurrent
+    has no fact for FY2019 (routine — some filers omit the tag when reporting
+    would otherwise duplicate a zero), but FY2018 is present. A per-concept
+    "give me this row's own N most recent dates" walk would silently pair
+    FY2020 debt against FY2019 assets in position 0, and FY2018 debt against
+    FY2019 assets in position 1 — two different fiscal years compared as if
+    adjacent, *fabricating* a "leverage decreased" signal from years that were
+    never actually compared. Anchoring every row to the same period-end axis
+    must instead leave FY2019 debt genuinely absent, so F4 abstains (False)
+    rather than answering from misaligned data.
+    """
+    us_gaap = _two_year_us_gaap()
+    # FY2018 debt=300 (present, but three years back), FY2019 debt absent
+    # entirely (the gap), FY2020 debt=220 (present) — total_assets keeps its
+    # normal FY2020/FY2019 values from _two_year_us_gaap().
+    us_gaap["LongTermDebtNoncurrent"] = _concept([
+        _fact(300.0, "2018-12-31", "2019-02-01"),
+        _fact(220.0, "2020-12-31", "2021-02-01"),
+    ])
+
+    got = piotroski_as_of(us_gaap, cutoff=date(2021, 6, 1))
+
+    assert got.f4_leverage_decreasing is False
+
+
 def test_statements_as_of_returns_the_shape_piotroski_expects():
     us_gaap = _two_year_us_gaap()
     income_stmt, balance_sheet, cashflow = piotroski_statements_as_of(us_gaap, cutoff=date(2021, 6, 1))

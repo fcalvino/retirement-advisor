@@ -103,14 +103,23 @@ def latest_annual_as_of(
 def annual_series_as_of(
     us_gaap: dict, tags: List[str], cutoff: date, n_years: int = 2
 ) -> List[PointInTimeFact]:
-    """Up to ``n_years`` most recent *distinct* fiscal periods for a concept,
-    all as known on the same ``cutoff`` — the shape a year-over-year check
-    (Piotroski's F3/F4/F5/F7/F8, or moat's stability dimensions) needs.
+    """Up to ``n_years`` most recent *distinct* fiscal periods for **one**
+    concept, all as known on the same ``cutoff``.
 
     Every fact returned satisfies ``filed <= cutoff``; going back a year never
     relaxes that. Walking to the prior year narrows on ``period_end`` instead
     (see :func:`annual_fact_as_of`), so a company with an irregular fiscal
     calendar does not skip or duplicate a year.
+
+    **Not safe to build a multi-row statement from independently per row.**
+    Each call walks *this concept's own* available periods; a company that
+    omits one tag for a single year (routine — e.g. zero long-term debt often
+    is not reported) would then leave that row's dates out of step with a
+    sibling row extracted the same way. Scoring code that compares rows
+    positionally (``ni.iloc[0] / total_assets.iloc[0]``, as
+    ``EnhancedScoring._piotroski_score`` does) needs every row anchored to the
+    *same* period axis — use :func:`annual_period_ends_as_of` +
+    :func:`latest_annual_at_period` for that instead.
     """
     out: List[PointInTimeFact] = []
     before: Optional[str] = None
@@ -121,3 +130,71 @@ def annual_series_as_of(
         out.append(fact)
         before = fact.period_end
     return out
+
+
+def annual_period_ends_as_of(us_gaap: dict, cutoff: date, n_years: int = 2) -> List[str]:
+    """The shared fiscal period-end axis for an entire ``companyfacts``
+    payload, as known on ``cutoff`` — every concept's value must be looked up
+    against *these exact* dates (:func:`latest_annual_at_period`), not each
+    concept's own closest available date, or two rows can end up the same
+    length but silently anchored to different fiscal years.
+
+    Unions ``end`` across every tag rather than trusting one "reference"
+    concept to always be reported: no single line item is guaranteed present
+    in every filing (a company with no debt may simply omit the tag).
+    """
+    cutoff_iso = cutoff.isoformat()
+    ends = {
+        row["end"]
+        for tag_facts in (us_gaap or {}).values()
+        for row in SecEdgarSource._annual_rows(tag_facts)
+        if row.get("filed") and row["filed"] <= cutoff_iso
+    }
+    return sorted(ends, reverse=True)[:n_years]
+
+
+def annual_fact_at_period(
+    concept_facts: dict, cutoff: date, period_end: str
+) -> Optional[PointInTimeFact]:
+    """The annual fact for *one* XBRL tag covering **exactly** ``period_end``,
+    as known on ``cutoff``. Restatement-aware like :func:`annual_fact_as_of`
+    (most recently filed row for that period wins). Returns ``None`` when the
+    concept has no fact for that specific period — never substitutes the
+    nearest available one, which is exactly the substitution that would
+    misalign a multi-row statement built from a shared period axis.
+    """
+    cutoff_iso = cutoff.isoformat()
+    rows = [
+        r for r in SecEdgarSource._annual_rows(concept_facts)
+        if r.get("filed") and r["filed"] <= cutoff_iso and r["end"] == period_end
+    ]
+    best: Optional[dict] = None
+    for row in rows:
+        if best is None or row["filed"] > best["filed"]:
+            best = row
+    if best is None:
+        return None
+    value = _f(best.get("val"))
+    if value is None:
+        return None
+    return PointInTimeFact(value=value, period_end=best["end"], filed=best["filed"])
+
+
+def latest_annual_at_period(
+    us_gaap: dict, tags: List[str], cutoff: date, period_end: str
+) -> Optional[PointInTimeFact]:
+    """Scans every candidate tag for the fact covering exactly ``period_end``,
+    the period-anchored counterpart to :func:`latest_annual_as_of`. Ties
+    across tags go to the earlier tag in *tags*, same convention as elsewhere.
+    """
+    best: Optional[PointInTimeFact] = None
+    for tag in tags:
+        facts = (us_gaap or {}).get(tag)
+        if not facts:
+            continue
+        candidate = annual_fact_at_period(facts, cutoff, period_end)
+        if candidate is None:
+            continue
+        if best is None or candidate.filed > best.filed:
+            best = candidate
+    return best

@@ -26,7 +26,7 @@ from typing import Dict, List
 
 import pandas as pd
 
-from analysis.point_in_time import annual_series_as_of
+from analysis.point_in_time import annual_period_ends_as_of, latest_annual_at_period
 from analysis.scoring import EnhancedScoring, PiotroskiDetail
 from data.data_sources import SecEdgarSource
 
@@ -83,16 +83,35 @@ _BALANCE_SHEET_CONCEPTS = (
 _CASHFLOW_CONCEPTS = ("operating_cash_flow",)
 
 
-def _build_statement(us_gaap: dict, concepts: tuple, cutoff: date, n_years: int) -> pd.DataFrame:
+def _build_statement(
+    us_gaap: dict, concepts: tuple, cutoff: date, period_ends: List[str]
+) -> pd.DataFrame:
     """One yfinance-shaped statement DataFrame (rows = line items, columns =
     fiscal period-end dates) built from point-in-time reconstructed facts.
+
+    Every row is looked up against the *same* ``period_ends`` — computed once
+    in :func:`piotroski_statements_as_of` from the whole payload, not derived
+    independently per concept here. ``EnhancedScoring._piotroski_score``
+    compares rows positionally (``ni.iloc[0] / total_assets.iloc[0]``, across
+    *different* DataFrames too — income_stmt vs balance_sheet), so a shared
+    axis is what keeps ``iloc[0]`` meaning the same fiscal year everywhere;
+    letting each concept pick its own most-recent-available dates would let a
+    company that omits one tag for a single year (routine — e.g. no reported
+    long-term debt) silently misalign two same-length rows onto different
+    years. A concept missing at a given period is simply absent from that
+    column (dropped by ``extract_financial_row``'s own ``.dropna()``), never
+    backfilled from a different period.
     """
     rows: Dict[str, Dict[str, float]] = {}
     for concept in concepts:
-        series = annual_series_as_of(us_gaap, _ALL_CONCEPTS[concept], cutoff, n_years)
-        if not series:
-            continue
-        rows[_ROW_LABELS[concept]] = {fact.period_end: fact.value for fact in series}
+        tags = _ALL_CONCEPTS[concept]
+        values = {}
+        for period_end in period_ends:
+            fact = latest_annual_at_period(us_gaap, tags, cutoff, period_end)
+            if fact is not None:
+                values[period_end] = fact.value
+        if values:
+            rows[_ROW_LABELS[concept]] = values
     if not rows:
         return pd.DataFrame()
     return pd.DataFrame.from_dict(rows, orient="index")
@@ -106,9 +125,10 @@ def piotroski_statements_as_of(
     from a live yfinance fetch, built here from reconstructed XBRL facts
     instead.
     """
-    income_stmt = _build_statement(us_gaap, _INCOME_STMT_CONCEPTS, cutoff, n_years)
-    balance_sheet = _build_statement(us_gaap, _BALANCE_SHEET_CONCEPTS, cutoff, n_years)
-    cashflow = _build_statement(us_gaap, _CASHFLOW_CONCEPTS, cutoff, n_years)
+    period_ends = annual_period_ends_as_of(us_gaap, cutoff, n_years)
+    income_stmt = _build_statement(us_gaap, _INCOME_STMT_CONCEPTS, cutoff, period_ends)
+    balance_sheet = _build_statement(us_gaap, _BALANCE_SHEET_CONCEPTS, cutoff, period_ends)
+    cashflow = _build_statement(us_gaap, _CASHFLOW_CONCEPTS, cutoff, period_ends)
     return income_stmt, balance_sheet, cashflow
 
 
