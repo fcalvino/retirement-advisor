@@ -72,3 +72,35 @@ def test_two_stores_do_not_share_state():
 def test_synthetic_recommendation_table_name_is_separate_from_track_record():
     """Structural guard against ever merging this back into recommendation_log."""
     assert SyntheticRecommendation.__tablename__ == "synthetic_recommendation"
+
+
+def test_symbol_is_upper_cased_so_get_all_can_find_it():
+    """A lowercase/mixed-case symbol must still be findable by an upper-case
+    query — same convention as ``RecommendationLog`` (``analysis/track_record.py``),
+    and the same exact-match ``==`` filter ``get_all`` uses would otherwise
+    silently drop the row from any aggregation.
+    """
+    store = SyntheticBacktestStore(":memory:")
+    store.log_piotroski("aapl", date(2021, 6, 1), _detail(5))
+
+    rows = store.get_all(symbol="AAPL")
+    assert len(rows) == 1
+    assert rows[0].symbol == "AAPL"
+
+
+def test_log_piotroski_never_raises_on_a_write_failure(monkeypatch):
+    """A future batch backtest loops over the universe × many historical
+    cutoffs — hundreds or thousands of calls. One transient sqlite error must
+    skip that row, not abort the whole run, same as
+    ``TrackRecordStore.log_recommendation``'s defensive ``except Exception``.
+    """
+    store = SyntheticBacktestStore(":memory:")
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("simulated write failure")
+
+    monkeypatch.setattr(store, "_Session", _boom)
+
+    result = store.log_piotroski("AAPL", date(2021, 6, 1), _detail(5))
+
+    assert result is None

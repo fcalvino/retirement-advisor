@@ -36,6 +36,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, List, Optional
 
+from loguru import logger
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
@@ -96,33 +97,51 @@ class SyntheticBacktestStore:
         as_of: date,
         detail: PiotroskiDetail,
         source: str = "point_in_time_piotroski",
-    ) -> int:
-        """Persist one reconstructed F-Score. Returns the new row's id."""
-        with self._Session() as session:
-            row = SyntheticRecommendation(
-                symbol=symbol,
-                as_of=as_of.isoformat(),
-                piotroski_score=detail.score,
-                f1_roa_positive=detail.f1_roa_positive,
-                f2_ocf_positive=detail.f2_ocf_positive,
-                f3_roa_improving=detail.f3_roa_improving,
-                f4_leverage_decreasing=detail.f4_leverage_decreasing,
-                f5_liquidity_improving=detail.f5_liquidity_improving,
-                f6_no_dilution=detail.f6_no_dilution,
-                f7_gross_margin_improving=detail.f7_gross_margin_improving,
-                f8_asset_turnover_improving=detail.f8_asset_turnover_improving,
-                f9_accruals_quality=detail.f9_accruals_quality,
-                source=source,
-            )
-            session.add(row)
-            session.commit()
-            return row.id
+    ) -> Optional[int]:
+        """Persist one reconstructed F-Score. Returns the new row's id, or
+        ``None`` on failure.
+
+        Defensive by design, same as ``TrackRecordStore.log_recommendation``
+        (``analysis/track_record.py``): the PR that wires this in loops over
+        the universe × many historical cutoffs — hundreds or thousands of
+        calls — and one transient sqlite error (lock contention with a
+        concurrently-running dashboard reading the same ``DB_PATH`` file,
+        say) must skip that row, not abort the whole batch.
+
+        ``symbol`` is upper-cased to match ``get_all``'s exact-match filter
+        and ``RecommendationLog``'s own convention — a caller passing a
+        lowercase ticker would otherwise write a row ``get_all(symbol="AAPL")``
+        can never find.
+        """
+        try:
+            with self._Session() as session:
+                row = SyntheticRecommendation(
+                    symbol=symbol.upper(),
+                    as_of=as_of.isoformat(),
+                    piotroski_score=detail.score,
+                    f1_roa_positive=detail.f1_roa_positive,
+                    f2_ocf_positive=detail.f2_ocf_positive,
+                    f3_roa_improving=detail.f3_roa_improving,
+                    f4_leverage_decreasing=detail.f4_leverage_decreasing,
+                    f5_liquidity_improving=detail.f5_liquidity_improving,
+                    f6_no_dilution=detail.f6_no_dilution,
+                    f7_gross_margin_improving=detail.f7_gross_margin_improving,
+                    f8_asset_turnover_improving=detail.f8_asset_turnover_improving,
+                    f9_accruals_quality=detail.f9_accruals_quality,
+                    source=source,
+                )
+                session.add(row)
+                session.commit()
+                return row.id
+        except Exception as exc:  # never break a batch backtest run
+            logger.error(f"synthetic_backtest: failed to log {symbol} @ {as_of} — {exc}")
+            return None
 
     def get_all(self, symbol: Optional[str] = None) -> List[SyntheticRecommendation]:
         with self._Session() as session:
             query = session.query(SyntheticRecommendation)
             if symbol is not None:
-                query = query.filter(SyntheticRecommendation.symbol == symbol)
+                query = query.filter(SyntheticRecommendation.symbol == symbol.upper())
             return query.order_by(SyntheticRecommendation.as_of).all()
 
 
