@@ -46,12 +46,28 @@ _REUSED_CONCEPTS = {
 # — **not verified against a live companyfacts payload in this session**; a
 # tag missing from a real filing surfaces as a dropped check (F-score checks
 # already degrade to ``False`` on missing data, never guess), not a crash.
+#
+# ``long_term_debt``'s two tags are not provably the same figure either —
+# ``LongTermDebtNoncurrent`` excludes current maturities, ``LongTermDebt`` is
+# filer-dependent and can include them — the same kind of ambiguity flagged
+# below for shares. Kept as a fallback anyway (unlike shares) because F4 needs
+# *some* debt figure to ever resolve and dropping it risks leaving F4 unable
+# to answer for most filers; a tag switch between the two comparison years
+# would read as a spurious leverage change, a real but narrower risk than the
+# axis-pollution class of bug and one that needs a live payload to confirm.
 _NEW_CONCEPTS: Dict[str, List[str]] = {
     "gross_profit": ["GrossProfit"],
     "long_term_debt": ["LongTermDebtNoncurrent", "LongTermDebt"],
     "current_assets": ["AssetsCurrent"],
     "current_liabilities": ["LiabilitiesCurrent"],
-    "shares_outstanding": ["CommonStockSharesOutstanding", "CommonStockSharesIssued"],
+    # No fallback to CommonStockSharesIssued: issued and outstanding differ by
+    # treasury stock, so a filer that reports one tag one year and the other
+    # the next would make F6 compare two different quantities and read a
+    # buyback as dilution (or hide real dilution) — the same principle F6's
+    # existing "no Common Stock fallback" comment already applies (a
+    # convenient substitute that is not actually the same thing is worse than
+    # a missing check).
+    "shares_outstanding": ["CommonStockSharesOutstanding"],
     "operating_cash_flow": [
         "NetCashProvidedByUsedInOperatingActivities",
         "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations",
@@ -150,27 +166,14 @@ def piotroski_as_of(us_gaap: dict, cutoff: date) -> PiotroskiDetail:
     by the *same*, unmodified ``EnhancedScoring._piotroski_score`` production
     code runs against reconstructed statements — no scoring logic duplicated
     or forked for backtesting. ``info={}`` throughout: the only production
-    fallback that reads ``info`` (F2/F9's ``operatingCashflow``) is a
-    "now" snapshot field with no point-in-time equivalent, so it is left
-    unknown rather than guessed, same principle the F-checks already apply to
-    every other missing input.
-
-    F9 needs an extra guard the F2 fallback does not: with ``info={}``,
-    ``_piotroski_score``'s F9 else-branch computes ``0 > ni_val``. For F2 that
-    is always ``False`` (safe), but for F9 a real, reconstructed net *loss*
-    (``ni_val < 0``) makes ``0 > ni_val`` evaluate ``True`` — accrual quality
-    "passed" from cash flow data that was never actually available, and wrong
-    in exactly the loss-making population this check exists to flag. A live
-    yfinance fetch rarely hits this branch with a real ``info`` dict backing
-    it; reconstructed backtesting data always would when the OCF tag is
-    simply missing. There is no "unknown" state to fall back to here, so the
-    check is withheld outright rather than answered from a fabricated zero.
+    fallback that reads ``info`` (F2/F9's ``operatingCashflow``) is a "now"
+    snapshot field with no point-in-time equivalent, so it is left unknown
+    rather than guessed — ``_piotroski_score`` itself now withholds F9 rather
+    than answering it from a fabricated zero when ``info`` has no
+    ``operatingCashflow`` key (see ``analysis/scoring.py``), so this caller
+    needs no patch of its own.
     """
     income_stmt, balance_sheet, cashflow = piotroski_statements_as_of(us_gaap, cutoff)
-    detail = EnhancedScoring()._piotroski_score(
+    return EnhancedScoring()._piotroski_score(
         info={}, income_stmt=income_stmt, balance_sheet=balance_sheet, cashflow=cashflow
     )
-    ocf_row = cashflow.loc["Operating Cash Flow"].dropna() if "Operating Cash Flow" in cashflow.index else None
-    if ocf_row is None or ocf_row.empty:
-        detail.f9_accruals_quality = False
-    return detail

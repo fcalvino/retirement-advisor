@@ -356,9 +356,22 @@ class EnhancedScoring:
         if ocf is not None and len(ocf) >= 1 and ni is not None and len(ni) >= 1:
             d.f9_accruals_quality = self._safe(lambda: float(ocf.iloc[0]) > float(ni.iloc[0]))
         else:
-            ocf_info = info.get("operatingCashflow") or 0
-            ni_val = float(ni.iloc[0]) if ni is not None and len(ni) >= 1 else 0
-            d.f9_accruals_quality = self._safe(lambda: ocf_info > ni_val)
+            # `info.get(...) or 0` would conflate "the feed didn't report this"
+            # with "the feed reports zero" — the same class of bug P1-2 fixed
+            # in fundamental.py's scoring bands via reported_metric (a missing
+            # value must never score as if it were the friendliest possible
+            # one). Unlike F2 (whose fallback compares the same fabricated
+            # value against a constant, `0 > 0`, always safely False), F9
+            # compares it against a *real* net income: with no OCF reported at
+            # all and a genuine net loss, `0 > ni_val` evaluated True —
+            # "accrual quality passed" from a comparison that was never
+            # actually made. Withheld instead when either side is unresolved.
+            ocf_info = info.get("operatingCashflow")
+            ni_val = float(ni.iloc[0]) if ni is not None and len(ni) >= 1 else None
+            if ocf_info is None or ni_val is None:
+                d.f9_accruals_quality = False
+            else:
+                d.f9_accruals_quality = self._safe(lambda: ocf_info > ni_val)
 
         return d
 

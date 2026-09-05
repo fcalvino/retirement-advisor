@@ -237,3 +237,50 @@ def test_unrelated_instant_fact_does_not_pollute_the_period_axis():
     # Unaffected: still two full, correctly-anchored fiscal years, exactly as
     # in the baseline fixture.
     assert got.score == 9
+
+
+def test_an_instant_fact_on_an_in_use_concept_does_not_pollute_the_axis_either():
+    """The unrelated-tag guard above is not the whole story: a concept that
+    *is* one of the 9 in use can itself carry an instant fact (no ``start``)
+    whose ``end`` means something other than "fiscal year closed here" — a
+    cover-page "shares outstanding as of the filing date" is the textbook
+    real-world case. Left unguarded, that date could outrank the real
+    year-end axis-wide and silently empty out every duration-based statement
+    (income/cashflow), collapsing a clean two-year fixture down to a
+    near-zero score.
+    """
+    us_gaap = _two_year_us_gaap()
+    # A cover-page instant, filed with (and dated after) the FY2020 10-K, on
+    # a concept already in Piotroski's own list — no ``start``, so the
+    # duration guard that would reject it as non-annual never runs.
+    us_gaap["CommonStockSharesOutstanding"] = _concept([
+        _fact(100.0, "2019-12-31", "2020-02-01"),
+        _fact(100.0, "2020-12-31", "2021-02-01"),
+        {"val": 101.0, "end": "2021-02-15", "filed": "2021-02-15", "form": "10-K", "fp": "FY"},
+    ])
+
+    got = piotroski_as_of(us_gaap, cutoff=date(2021, 6, 1))
+
+    # Unaffected: the cover-page instant must not become the axis's "current"
+    # period — the two real fiscal years still score fully.
+    assert got.score == 9
+
+
+def test_a_fiscal_year_transition_stub_does_not_pollute_the_axis():
+    """A company changing its fiscal year-end files a short transition-period
+    10-K. Duration concepts for that stub period are correctly rejected by
+    ``SecEdgarSource._annual_rows``'s 330-400 day guard, but an *instant*
+    concept (e.g. a balance-sheet figure) reported alongside that stub has no
+    duration to check and could still inject the stub's date into the axis.
+    """
+    us_gaap = _two_year_us_gaap()
+    # A balance-sheet instant at the stub's period end (181 days after the
+    # last real fiscal year-end) — no ``start``, so no duration guard applies.
+    us_gaap["AssetsCurrent"]["units"]["USD"].append(
+        {"val": 999.0, "end": "2021-06-30", "filed": "2021-08-01", "form": "10-K", "fp": "TP"}
+    )
+
+    got = piotroski_as_of(us_gaap, cutoff=date(2021, 9, 1))
+
+    # Unaffected: the transition stub must not evict FY2020 from the axis.
+    assert got.score == 9

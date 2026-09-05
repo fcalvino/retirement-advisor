@@ -103,14 +103,26 @@ def annual_period_ends_as_of(
     ``companyfacts`` response carries every us-gaap tag a company has ever
     reported — segment disclosures, per-share data, lease schedules — most of
     them irrelevant to the statement being built. Unioning blindly over all of
-    them would let an unrelated instant fact (many balance-sheet-shaped tags
-    have no ``start``, so :meth:`SecEdgarSource._annual_rows`'s duration guard
-    does not apply to them either) inject a spurious ``end`` date that
-    outranks the real fiscal year-end and silently evicts it from the axis.
-    Unions ``end`` across every *tag in use* rather than trusting one
+    them would let an unrelated instant fact inject a spurious ``end`` date
+    that outranks the real fiscal year-end and silently evicts it from the
+    axis. Unions ``end`` across every *tag in use* rather than trusting one
     "reference" concept to always be reported: no single line item is
     guaranteed present in every filing (a company with no debt may simply
     omit the tag).
+
+    Only rows with a ``start`` (genuine duration facts, already passed
+    :meth:`SecEdgarSource._annual_rows`'s 330-400 day annual-span check) can
+    contribute a date to the axis — an *instant* fact (no ``start``, so that
+    duration guard never applies to it) is not necessarily stamped at the
+    fiscal year-end even when it belongs to one of the concepts in use: a
+    cover-page "shares outstanding as of the filing date" instant, or a
+    fiscal-year-transition stub filing's balance-sheet date, both carry an
+    ``end`` that means something other than "this fiscal year closed here".
+    Letting either into the axis can evict the real year-end and silently
+    empty out every duration-based statement (income/cashflow) for that
+    period. Instant-only concepts (most of the balance sheet) still get their
+    *values* looked up against whatever axis the duration concepts establish —
+    they just cannot define that axis themselves.
     """
     cutoff_iso = cutoff.isoformat()
     ends = {
@@ -118,7 +130,7 @@ def annual_period_ends_as_of(
         for tags in concepts
         for tag in tags
         for row in SecEdgarSource._annual_rows((us_gaap or {}).get(tag) or {})
-        if row.get("filed") and row["filed"] <= cutoff_iso
+        if row.get("filed") and row["filed"] <= cutoff_iso and row.get("start")
     }
     return sorted(ends, reverse=True)[:n_years]
 
