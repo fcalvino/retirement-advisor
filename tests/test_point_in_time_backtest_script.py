@@ -1,10 +1,10 @@
 """Tests for scripts/point_in_time_backtest.py (PR 4/N, Idea 2).
 
-No network: ``_fetch_companyfacts``/``requests`` are stubbed throughout. Only
-the store's own ``:memory:`` singleton is touched (conftest.py already
-redirects it there for the whole suite), so these tests exercise the batch
-loop's *decisions* — what gets fetched, skipped, and persisted — never a real
-HTTP call.
+No network: ``_fetch_companyfacts``/``_ensure_cik_map_loaded``/``requests``
+are stubbed throughout. Only the store's own ``:memory:`` singleton is
+touched (conftest.py already redirects it there for the whole suite), so
+these tests exercise the batch loop's *decisions* — what gets fetched,
+skipped, and persisted — never a real HTTP call.
 """
 
 from __future__ import annotations
@@ -19,6 +19,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import scripts.point_in_time_backtest as backtest  # noqa: E402
 
+# Captured before the autouse fixture below stubs it out, so the tests in the
+# "actual network boundary" section can restore the real implementation.
+_REAL_ENSURE_CIK_MAP_LOADED = backtest._ensure_cik_map_loaded
+
 
 @pytest.fixture(autouse=True)
 def _isolated_store(monkeypatch):
@@ -31,6 +35,17 @@ def _isolated_store(monkeypatch):
     fresh = SyntheticBacktestStore(":memory:")
     monkeypatch.setattr(backtest, "synthetic_backtest_store", fresh)
     yield fresh
+
+
+@pytest.fixture(autouse=True)
+def _cik_map_preloaded(monkeypatch):
+    """Most tests exercise decisions *after* the CIK map is already loaded —
+    the handful that test ``_ensure_cik_map_loaded``/``_fetch_companyfacts``
+    directly override this within their own body (a later ``monkeypatch``
+    call on the same attribute wins).
+    """
+    monkeypatch.setattr(backtest, "_ensure_cik_map_loaded", lambda: True)
+    monkeypatch.setattr(backtest.time, "sleep", lambda *_: None)
 
 
 def _fake_companyfacts(revenue_2019=900.0, revenue_2020=1000.0):
@@ -50,7 +65,6 @@ def _fake_companyfacts(revenue_2019=900.0, revenue_2020=1000.0):
 
 def test_run_persists_one_row_per_symbol_per_cutoff(monkeypatch):
     monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: _fake_companyfacts())
-    monkeypatch.setattr(backtest.time, "sleep", lambda *_: None)
 
     backtest.run(["AAPL"], [date(2021, 6, 1)])
 
@@ -67,7 +81,6 @@ def test_run_skips_a_pair_already_logged_without_fetching(monkeypatch):
         return _fake_companyfacts()
 
     monkeypatch.setattr(backtest, "_fetch_companyfacts", _fetch)
-    monkeypatch.setattr(backtest.time, "sleep", lambda *_: None)
 
     backtest.run(["AAPL"], [date(2021, 6, 1)])
     assert calls == ["AAPL"]
@@ -86,7 +99,6 @@ def test_run_fetches_once_for_multiple_pending_cutoffs(monkeypatch):
     """
     calls = []
     monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: (calls.append(symbol), _fake_companyfacts())[1])
-    monkeypatch.setattr(backtest.time, "sleep", lambda *_: None)
 
     backtest.run(["AAPL"], [date(2020, 6, 1), date(2021, 6, 1)])
 
@@ -100,7 +112,6 @@ def test_run_only_fetches_the_still_pending_cutoffs(monkeypatch):
     already there.
     """
     monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: _fake_companyfacts())
-    monkeypatch.setattr(backtest.time, "sleep", lambda *_: None)
 
     backtest.run(["AAPL"], [date(2020, 6, 1)])
     backtest.run(["AAPL"], [date(2020, 6, 1), date(2021, 6, 1)])
@@ -114,21 +125,18 @@ def test_run_skips_gracefully_when_sec_has_no_data(monkeypatch):
     same as any other degrade-gracefully path in this codebase.
     """
     monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: None)
-    monkeypatch.setattr(backtest.time, "sleep", lambda *_: None)
 
     backtest.run(["YPF"], [date(2021, 6, 1)])
 
     assert backtest.synthetic_backtest_store.get_all(symbol="YPF") == []
 
 
-def test_run_does_not_pace_when_nothing_needed_fetching(monkeypatch):
-    """A symbol whose cutoffs are all already logged costs no network call
-    and therefore no pacing delay either — verified at the run() level since
-    that's the resumability check that must short-circuit before ever
-    reaching ``_fetch_companyfacts``.
+def test_run_does_not_fetch_when_nothing_is_pending(monkeypatch):
+    """A symbol whose cutoffs are all already logged must never reach
+    ``_fetch_companyfacts`` at all — the resumability check short-circuits
+    before any network call would happen.
     """
     monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: _fake_companyfacts())
-    monkeypatch.setattr(backtest.time, "sleep", lambda *_: None)
     backtest.run(["AAPL"], [date(2021, 6, 1)])
 
     fetch_calls = []
@@ -159,11 +167,41 @@ def test_run_returns_counts_main_uses_for_the_exit_code(monkeypatch):
     assert summary == {"written": 2, "skipped": 0, "failed": 0}
 
 
-def test_main_refuses_to_run_when_the_unique_index_is_not_verified(monkeypatch):
+def test_run_refuses_when_the_unique_index_is_not_verified(monkeypatch):
     """If the resumability guarantee (the migration-created unique index)
-    could not be confirmed, a batch run must refuse outright — proceeding
-    would silently risk duplicate rows inflating the calibration sample.
+    could not be confirmed, ``run()`` itself must refuse — checked here, not
+    only through ``main()``, so any direct caller (a scheduler, a notebook)
+    gets the same protection a CLI invocation does.
     """
+    monkeypatch.setattr(backtest.synthetic_backtest_store, "unique_index_verified", False)
+    fetch_calls = []
+    monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: fetch_calls.append(symbol))
+
+    summary = backtest.run(["AAPL"], [date(2021, 6, 1)])
+
+    assert summary == {"written": 0, "skipped": 0, "failed": 1}
+    assert fetch_calls == []
+    assert backtest.synthetic_backtest_store.get_all() == []
+
+
+def test_run_fails_fast_once_when_the_cik_map_cannot_be_loaded(monkeypatch):
+    """A total SEC outage must abort the whole batch after one failed
+    attempt to load the shared CIK map — not retry per symbol, which would
+    turn one outage into a retry storm repeated for every remaining ticker.
+    """
+    load_calls = []
+    monkeypatch.setattr(backtest, "_ensure_cik_map_loaded", lambda: (load_calls.append(1), False)[1])
+    fetch_calls = []
+    monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: fetch_calls.append(symbol))
+
+    summary = backtest.run(["AAPL", "MSFT", "JNJ"], [date(2021, 6, 1)])
+
+    assert len(load_calls) == 1, "the CIK map load must be attempted once for the whole batch, not per symbol"
+    assert fetch_calls == [], "no per-symbol fetch should be attempted once the map load failed"
+    assert summary == {"written": 0, "skipped": 0, "failed": 3}
+
+
+def test_main_refuses_to_run_when_the_unique_index_is_not_verified(monkeypatch):
     monkeypatch.setattr(backtest.synthetic_backtest_store, "unique_index_verified", False)
     monkeypatch.setattr(sys, "argv", ["point_in_time_backtest.py", "--symbols", "AAPL", "--cutoffs", "2021-06-01"])
 
@@ -215,8 +253,8 @@ def test_a_reconstruction_failure_for_one_cutoff_does_not_abort_the_batch(monkey
 
 
 # ------------------------------------------------------------------ #
-#  Pacing — exercised at _fetch_companyfacts/_resolve_cik_paced level,  #
-#  since that's where the actual network calls (and their retries) live #
+#  _ensure_cik_map_loaded / _fetch_companyfacts — the actual network    #
+#  boundary, and where pacing/retry live                                #
 # ------------------------------------------------------------------ #
 
 @pytest.fixture(autouse=True)
@@ -233,13 +271,53 @@ def _reset_cik_cache():
     SecEdgarSource._cik_map = original
 
 
-def test_fetch_companyfacts_paces_after_a_real_facts_request(monkeypatch):
+def test_ensure_cik_map_loaded_is_a_noop_when_already_cached(monkeypatch):
     from data.data_sources import SecEdgarSource
 
-    monkeypatch.setattr(SecEdgarSource, "_cik_map", {"AAPL": 320193})  # CIK already known
-
+    monkeypatch.setattr(backtest, "_ensure_cik_map_loaded", _REAL_ENSURE_CIK_MAP_LOADED)
+    monkeypatch.setattr(SecEdgarSource, "_cik_map", {"AAPL": 320193})
     sleeps = []
     monkeypatch.setattr(backtest.time, "sleep", lambda s: sleeps.append(s))
+
+    assert backtest._ensure_cik_map_loaded() is True
+    assert sleeps == [], "an already-cached map must not trigger a network attempt"
+
+
+def test_ensure_cik_map_loaded_paces_after_a_real_attempt(monkeypatch):
+    from data.data_sources import SecEdgarSource
+
+    monkeypatch.setattr(backtest, "_ensure_cik_map_loaded", _REAL_ENSURE_CIK_MAP_LOADED)
+
+    def _fake_resolve(self, symbol):
+        SecEdgarSource._cik_map = {"AAPL": 320193}
+        return SecEdgarSource._cik_map.get(symbol)
+
+    monkeypatch.setattr(SecEdgarSource, "_resolve_cik", _fake_resolve)
+    sleeps = []
+    monkeypatch.setattr(backtest.time, "sleep", lambda s: sleeps.append(s))
+
+    assert backtest._ensure_cik_map_loaded() is True
+    from config import MULTI_SOURCE
+    assert sleeps == [MULTI_SOURCE.sec_bulk_request_delay_s]
+
+
+def test_ensure_cik_map_loaded_returns_false_after_retries_are_exhausted(monkeypatch):
+    from data.data_sources import SecEdgarSource
+
+    monkeypatch.setattr(backtest, "_ensure_cik_map_loaded", _REAL_ENSURE_CIK_MAP_LOADED)
+    monkeypatch.setattr(SecEdgarSource, "_resolve_cik", lambda self, symbol: None)  # map never populates
+    monkeypatch.setattr(backtest.time, "sleep", lambda *_: None)
+
+    assert backtest._ensure_cik_map_loaded() is False
+
+
+def test_fetch_companyfacts_is_a_pure_lookup_once_the_map_is_cached(monkeypatch):
+    """No pacing/retry inside ``_fetch_companyfacts`` for the CIK step
+    itself — that cost was already paid once by ``_ensure_cik_map_loaded``.
+    """
+    from data.data_sources import SecEdgarSource
+
+    monkeypatch.setattr(SecEdgarSource, "_cik_map", {"AAPL": 320193})
 
     class _Resp:
         def raise_for_status(self):
@@ -250,52 +328,24 @@ def test_fetch_companyfacts_paces_after_a_real_facts_request(monkeypatch):
 
     import requests
     monkeypatch.setattr(requests, "get", lambda *a, **k: _Resp())
+    sleeps = []
+    monkeypatch.setattr(backtest.time, "sleep", lambda s: sleeps.append(s))
 
     result = backtest._fetch_companyfacts("AAPL")
 
     assert result is not None
     from config import MULTI_SOURCE
-    assert sleeps == [MULTI_SOURCE.sec_bulk_request_delay_s]
+    assert sleeps == [MULTI_SOURCE.sec_bulk_request_delay_s]  # one pace, for the companyfacts request
 
 
-def test_fetch_companyfacts_does_not_pace_on_a_cached_cik_map_miss(monkeypatch):
-    """CIK map already cached, symbol just isn't in it (non-US filer): zero
-    network calls, so zero pacing delay.
-    """
+def test_fetch_companyfacts_returns_none_for_a_ticker_absent_from_the_cached_map(monkeypatch):
     from data.data_sources import SecEdgarSource
 
     monkeypatch.setattr(SecEdgarSource, "_cik_map", {"AAPL": 320193})  # populated, YPF absent
-
     sleeps = []
     monkeypatch.setattr(backtest.time, "sleep", lambda s: sleeps.append(s))
 
     result = backtest._fetch_companyfacts("YPF")
 
     assert result is None
-    assert sleeps == []
-
-
-def test_resolve_cik_paces_only_the_first_uncached_lookup(monkeypatch):
-    """The first symbol in a process pays the CIK-map fetch (and its pacing
-    delay); every symbol after that is a free in-memory lookup — SEC's
-    ticker→CIK map is one shared file, not one request per ticker.
-    """
-    from data.data_sources import SecEdgarSource
-
-    monkeypatch.setattr(SecEdgarSource, "_cik_map", None)
-
-    sleeps = []
-    monkeypatch.setattr(backtest.time, "sleep", lambda s: sleeps.append(s))
-
-    def _fake_resolve(self, symbol):
-        SecEdgarSource._cik_map = {"AAPL": 320193}  # simulates a successful fetch
-        return SecEdgarSource._cik_map.get(symbol)
-
-    monkeypatch.setattr(SecEdgarSource, "_resolve_cik", _fake_resolve)
-
-    first = backtest._resolve_cik_paced("AAPL")
-    second = backtest._resolve_cik_paced("AAPL")
-
-    assert first == 320193
-    assert second == 320193
-    assert len(sleeps) == 1, "only the first, uncached lookup should pace"
+    assert sleeps == [], "no network call was made, so no pacing delay either"

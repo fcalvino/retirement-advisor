@@ -57,47 +57,47 @@ from data.data_sources import SecEdgarSource  # noqa: E402
 from data.fetcher import _fetch_with_retry  # noqa: E402
 
 
-def _resolve_cik_paced(symbol: str) -> Optional[int]:
-    """CIK for *symbol*, retried only while SEC's ticker→CIK map itself has
-    not been fetched yet (a real network failure, ``SecEdgarSource._resolve_cik``'s
-    own ``_http_json`` call — the same silent-degrade-to-``None`` path the
-    module docstring says a bulk run must not use unretried).
+def _ensure_cik_map_loaded() -> bool:
+    """Populates ``SecEdgarSource``'s shared ticker→CIK cache once, retried as
+    a single unit, and returns whether it succeeded.
 
-    Once the class-level map is cached (after the first symbol in the
-    process), every further call is a pure in-memory lookup — no network, no
-    pacing needed — so a miss at that point means the ticker genuinely has no
-    CIK (non-US filer), not a fetch that happened to fail.
+    SEC's ticker→CIK map is *one* JSON file covering every filer — not a
+    per-symbol lookup — so failing to fetch it once means SEC is unreachable
+    for the entire batch. Retrying it per-symbol (an earlier version of this
+    script did) turns a single outage into a multi-attempt retry storm
+    repeated for every remaining ticker in the universe; calling this once,
+    up front, fails fast instead.
     """
     if SecEdgarSource._cik_map is not None:
-        return SecEdgarSource()._resolve_cik(symbol)
+        return True
 
-    def _resolve():
-        cik = SecEdgarSource()._resolve_cik(symbol)
-        if cik is None and SecEdgarSource._cik_map is None:
-            raise RuntimeError("SEC ticker->CIK map fetch failed")
-        return cik
-
-    cik = _fetch_with_retry(_resolve, symbol, "SEC ticker->CIK map")
-    time.sleep(MULTI_SOURCE.sec_bulk_request_delay_s)  # a real network attempt was just made
-    if cik is None:
+    def _load():
+        # Any symbol forces SecEdgarSource._resolve_cik to fetch and cache
+        # the shared map as a side effect — which symbol is irrelevant here,
+        # only whether the class-level cache ends up populated.
+        SecEdgarSource()._resolve_cik("AAPL")
         if SecEdgarSource._cik_map is None:
-            logger.error(f"{symbol}: SEC ticker->CIK map fetch failed after retries")
-        else:
-            logger.warning(f"{symbol}: no SEC CIK — non-US filer or not an equity, skipping")
-    return cik
+            raise RuntimeError("SEC ticker->CIK map fetch failed")
+
+    _fetch_with_retry(_load, "SEC", "ticker->CIK map")
+    time.sleep(MULTI_SOURCE.sec_bulk_request_delay_s)  # a real network attempt was just made
+    return SecEdgarSource._cik_map is not None
 
 
 def _fetch_companyfacts(symbol: str) -> Optional[dict]:
     """One retried network call for *symbol*'s entire SEC filing history.
 
-    ``None`` means either "no SEC CIK for this ticker" (a real, permanent
-    condition — non-US filers like the Argentina ADRs in ``DEFAULT_TICKERS``
-    file 20-F/6-K, not 10-K, and never appear in SEC's ticker→CIK map) or a
-    request that failed even after ``FETCH.max_retries`` attempts, logged
-    distinctly by ``_fetch_with_retry``/``_resolve_cik_paced`` either way.
+    Assumes ``_ensure_cik_map_loaded()`` already succeeded — the CIK lookup
+    here is then a pure in-memory dict read, no network, no pacing. ``None``
+    means "no SEC CIK for this ticker", a real, permanent condition: non-US
+    filers like the Argentina ADRs in ``DEFAULT_TICKERS`` file 20-F/6-K, not
+    10-K, and never appear in SEC's ticker→CIK map — or the companyfacts
+    request itself failed even after ``FETCH.max_retries`` attempts, logged
+    distinctly by ``_fetch_with_retry`` either way.
     """
-    cik = _resolve_cik_paced(symbol)
+    cik = SecEdgarSource()._resolve_cik(symbol)
     if cik is None:
+        logger.warning(f"{symbol}: no SEC CIK — non-US filer or not an equity, skipping")
         return None
 
     def _fetch():
@@ -119,7 +119,28 @@ def run(symbols: List[str], cutoffs: List[date]) -> dict:
     ``failed`` to decide the process exit code, so a fully-failed run (SEC
     unreachable, bad User-Agent) doesn't report success to whatever launched
     it (cron, CI, a future scheduled job).
+
+    Refuses outright (all of *symbols* × *cutoffs* counted as ``failed``,
+    nothing fetched) rather than risk it silently, in two cases: the store's
+    resumability guarantee could not be verified (see
+    ``SyntheticBacktestStore.unique_index_verified``), or SEC's ticker→CIK
+    map itself could not be fetched — checked *here*, not only in ``main()``,
+    so any caller of ``run()`` directly (a scheduler, a notebook, the test
+    suite) gets the same protection a CLI invocation does.
     """
+    total = len(symbols) * len(cutoffs)
+    if not synthetic_backtest_store.unique_index_verified:
+        logger.error(
+            "synthetic_backtest_store: resumability guarantee not verified (unique index "
+            "missing, likely pre-existing duplicate data) — refusing to run a batch backtest "
+            "against an unprotected database"
+        )
+        return {"written": 0, "skipped": 0, "failed": total}
+
+    if not _ensure_cik_map_loaded():
+        logger.error("SEC ticker->CIK map fetch failed after retries — aborting the whole batch")
+        return {"written": 0, "skipped": 0, "failed": total}
+
     written = skipped = failed = 0
     # De-duped, not just accepted as-is: a duplicate --cutoffs entry would
     # otherwise score and try to log the same (symbol, as_of) pair twice —
@@ -171,16 +192,9 @@ def _parse_args() -> argparse.Namespace:
 def main() -> int:
     """Exit code reflects whether anything actually failed — a caller
     wrapping this in cron/CI to run the real universe later must be able to
-    tell a 100%-failed run (SEC down, User-Agent blocked) from success.
+    tell a 100%-failed run (SEC down, User-Agent blocked, resumability
+    guarantee unverified — all checked inside ``run()``) from success.
     """
-    if not synthetic_backtest_store.unique_index_verified:
-        logger.error(
-            "synthetic_backtest_store: resumability guarantee not verified (unique index "
-            "missing, likely pre-existing duplicate data) — refusing to run a batch backtest "
-            "against an unprotected database"
-        )
-        return 1
-
     args = _parse_args()
     symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
     cutoffs = [
