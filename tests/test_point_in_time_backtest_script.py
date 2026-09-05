@@ -138,6 +138,59 @@ def test_run_does_not_pace_when_nothing_needed_fetching(monkeypatch):
     assert fetch_calls == [], "a fully-cached symbol must never reach _fetch_companyfacts"
 
 
+def test_a_duplicate_cutoff_in_the_input_is_not_counted_as_a_failure(monkeypatch):
+    """A duplicate --cutoffs entry must be de-duped up front, not scored
+    twice and have its second write rejected by the unique index as if
+    something had actually gone wrong.
+    """
+    monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: _fake_companyfacts())
+
+    summary = backtest.run(["AAPL"], [date(2021, 6, 1), date(2021, 6, 1)])
+
+    assert summary == {"written": 1, "skipped": 0, "failed": 0}
+    assert len(backtest.synthetic_backtest_store.get_all(symbol="AAPL")) == 1
+
+
+def test_run_returns_counts_main_uses_for_the_exit_code(monkeypatch):
+    monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: _fake_companyfacts())
+
+    summary = backtest.run(["AAPL"], [date(2020, 6, 1), date(2021, 6, 1)])
+
+    assert summary == {"written": 2, "skipped": 0, "failed": 0}
+
+
+def test_main_refuses_to_run_when_the_unique_index_is_not_verified(monkeypatch):
+    """If the resumability guarantee (the migration-created unique index)
+    could not be confirmed, a batch run must refuse outright — proceeding
+    would silently risk duplicate rows inflating the calibration sample.
+    """
+    monkeypatch.setattr(backtest.synthetic_backtest_store, "unique_index_verified", False)
+    monkeypatch.setattr(sys, "argv", ["point_in_time_backtest.py", "--symbols", "AAPL", "--cutoffs", "2021-06-01"])
+
+    exit_code = backtest.main()
+
+    assert exit_code == 1
+    assert backtest.synthetic_backtest_store.get_all() == []
+
+
+def test_main_exits_nonzero_when_everything_failed(monkeypatch):
+    monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: None)  # SEC unreachable for everyone
+    monkeypatch.setattr(sys, "argv", ["point_in_time_backtest.py", "--symbols", "AAPL", "--cutoffs", "2021-06-01"])
+
+    exit_code = backtest.main()
+
+    assert exit_code == 1
+
+
+def test_main_exits_zero_when_nothing_failed(monkeypatch):
+    monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: _fake_companyfacts())
+    monkeypatch.setattr(sys, "argv", ["point_in_time_backtest.py", "--symbols", "AAPL", "--cutoffs", "2021-06-01"])
+
+    exit_code = backtest.main()
+
+    assert exit_code == 0
+
+
 def test_a_reconstruction_failure_for_one_cutoff_does_not_abort_the_batch(monkeypatch):
     """``piotroski_as_of`` has no reason to raise against well-formed data,
     but a real payload is not a test fixture — one bad cutoff must be logged

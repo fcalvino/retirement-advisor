@@ -105,15 +105,30 @@ class SyntheticBacktestStore:
         url = "sqlite:///:memory:" if path == ":memory:" else f"sqlite:///{path}"
         self._engine = create_engine(url, echo=False)
         _Base.metadata.create_all(self._engine)
-        self._migrate(self._engine)
+        self.unique_index_verified = self._migrate(self._engine)
         self._Session = sessionmaker(bind=self._engine)
 
-    def _migrate(self, engine) -> None:
+    def _migrate(self, engine) -> bool:
         """Apply the uniqueness guarantee to a database file that may already
         exist (SQLite safe). Same shape as ``analysis/track_record.py``'s own
         ``_migrate`` — ``CREATE UNIQUE INDEX IF NOT EXISTS`` is the SQLite-native
         way to add this after the fact, idempotent whether the table was just
         created fresh or already had rows in it.
+
+        Unlike ``TrackRecordStore._migrate``'s bare ``ADD COLUMN`` (which
+        always raises on a column that already exists — that *is* the benign,
+        expected case its ``except: pass`` covers), ``IF NOT EXISTS`` already
+        makes "already there" a silent no-op here. So an exception this
+        raises is never that — the one realistic cause is a database that
+        already holds duplicate ``(symbol, as_of, source)`` rows from before
+        this constraint existed (not hypothetical: this table shipped with no
+        constraint in PR 3/N). Silently swallowing that would leave every
+        resumability guarantee this module advertises quietly false for that
+        database. Returns whether the index was actually confirmed present
+        (queried back, not assumed from a lack of exception) — callers that
+        depend on the invariant (the batch backtest script) must check this
+        and refuse to run rather than silently risk duplicate calibration
+        rows.
         """
         with engine.connect() as conn:
             try:
@@ -124,6 +139,15 @@ class SyntheticBacktestStore:
                 conn.commit()
             except Exception as exc:
                 logger.error(f"synthetic_backtest migration: could not create unique index — {exc}")
+                return False
+
+            exists = conn.execute(text(
+                "SELECT 1 FROM sqlite_master WHERE type='index' AND name='uq_synthetic_symbol_asof_source'"
+            )).fetchone()
+            if exists is None:
+                logger.error("synthetic_backtest migration: unique index missing after CREATE — unverified")
+                return False
+            return True
 
     def log_piotroski(
         self,

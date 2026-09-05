@@ -114,10 +114,20 @@ def _fetch_companyfacts(symbol: str) -> Optional[dict]:
     return result
 
 
-def run(symbols: List[str], cutoffs: List[date]) -> None:
+def run(symbols: List[str], cutoffs: List[date]) -> dict:
+    """Returns ``{"written", "skipped", "failed"}`` counts — ``main()`` uses
+    ``failed`` to decide the process exit code, so a fully-failed run (SEC
+    unreachable, bad User-Agent) doesn't report success to whatever launched
+    it (cron, CI, a future scheduled job).
+    """
     written = skipped = failed = 0
+    # De-duped, not just accepted as-is: a duplicate --cutoffs entry would
+    # otherwise score and try to log the same (symbol, as_of) pair twice —
+    # the second log_piotroski call gets rejected by the unique index and
+    # would count as a "failure" that never actually happened.
+    cutoffs = sorted(set(cutoffs))
 
-    for symbol in symbols:
+    for symbol in dict.fromkeys(symbols):  # de-dup, preserve order
         already = synthetic_backtest_store.existing_pairs(symbol)
         pending = [c for c in cutoffs if c.isoformat() not in already]
         skipped += len(cutoffs) - len(pending)
@@ -148,6 +158,7 @@ def run(symbols: List[str], cutoffs: List[date]) -> None:
                 logger.info(f"{symbol} @ {cutoff}: score={detail.score}/9 (id={row_id})")
 
     logger.info(f"Done — {written} written, {skipped} already logged, {failed} failed")
+    return {"written": written, "skipped": skipped, "failed": failed}
 
 
 def _parse_args() -> argparse.Namespace:
@@ -157,15 +168,28 @@ def _parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def main() -> None:
+def main() -> int:
+    """Exit code reflects whether anything actually failed — a caller
+    wrapping this in cron/CI to run the real universe later must be able to
+    tell a 100%-failed run (SEC down, User-Agent blocked) from success.
+    """
+    if not synthetic_backtest_store.unique_index_verified:
+        logger.error(
+            "synthetic_backtest_store: resumability guarantee not verified (unique index "
+            "missing, likely pre-existing duplicate data) — refusing to run a batch backtest "
+            "against an unprotected database"
+        )
+        return 1
+
     args = _parse_args()
     symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
     cutoffs = [
         datetime.strptime(c.strip(), "%Y-%m-%d").date()
         for c in args.cutoffs.split(",") if c.strip()
     ]
-    run(symbols, cutoffs)
+    summary = run(symbols, cutoffs)
+    return 1 if summary["failed"] > 0 else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

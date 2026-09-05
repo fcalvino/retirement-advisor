@@ -120,6 +120,39 @@ def test_existing_pairs_returns_the_logged_as_of_dates():
     assert store.existing_pairs("JNJ") == set()
 
 
+def test_unique_index_verified_is_true_on_a_healthy_store():
+    store = SyntheticBacktestStore(":memory:")
+    assert store.unique_index_verified is True
+
+
+def test_unique_index_verified_is_false_when_duplicate_data_predates_the_constraint():
+    """The scenario the migration exists to guard against: a database that
+    already has two rows for the same (symbol, as_of, source) — written
+    before this constraint existed — must not silently claim to be protected.
+    """
+    import sqlite3
+
+    from sqlalchemy import create_engine
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE synthetic_recommendation ("
+        "id INTEGER PRIMARY KEY, symbol TEXT, as_of TEXT, piotroski_score INTEGER, source TEXT)"
+    )
+    conn.executemany(
+        "INSERT INTO synthetic_recommendation (symbol, as_of, piotroski_score, source) VALUES (?, ?, ?, ?)",
+        [("AAPL", "2021-06-01", 5, "point_in_time_piotroski"),
+         ("AAPL", "2021-06-01", 9, "point_in_time_piotroski")],  # pre-existing duplicate
+    )
+    conn.commit()
+
+    store = SyntheticBacktestStore.__new__(SyntheticBacktestStore)
+    store._engine = create_engine("sqlite://", creator=lambda: conn)
+    verified = store._migrate(store._engine)
+
+    assert verified is False
+
+
 def test_duplicate_symbol_as_of_source_is_rejected_not_silently_duplicated():
     """The unique constraint (symbol, as_of, source) is what makes the table
     itself a safe resumability checkpoint — a caller that races or re-runs
