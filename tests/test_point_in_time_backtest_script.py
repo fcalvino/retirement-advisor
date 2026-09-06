@@ -201,6 +201,18 @@ def test_run_fails_fast_once_when_the_cik_map_cannot_be_loaded(monkeypatch):
     assert summary == {"written": 0, "skipped": 0, "failed": 3}
 
 
+def test_run_refuses_with_a_deduped_failure_count_when_symbols_repeat(monkeypatch):
+    """A duplicate --symbols entry combined with an early refusal (unique
+    index unverified) must report the failure count for the distinct
+    ticker×cutoff pairs actually at stake, not inflated by the duplicate.
+    """
+    monkeypatch.setattr(backtest.synthetic_backtest_store, "unique_index_verified", False)
+
+    summary = backtest.run(["AAPL", "AAPL"], [date(2021, 6, 1)])
+
+    assert summary == {"written": 0, "skipped": 0, "failed": 1}
+
+
 def test_main_refuses_to_run_when_the_unique_index_is_not_verified(monkeypatch):
     monkeypatch.setattr(backtest.synthetic_backtest_store, "unique_index_verified", False)
     monkeypatch.setattr(sys, "argv", ["point_in_time_backtest.py", "--symbols", "AAPL", "--cutoffs", "2021-06-01"])
@@ -306,6 +318,23 @@ def test_ensure_cik_map_loaded_returns_false_after_retries_are_exhausted(monkeyp
 
     monkeypatch.setattr(backtest, "_ensure_cik_map_loaded", _REAL_ENSURE_CIK_MAP_LOADED)
     monkeypatch.setattr(SecEdgarSource, "_resolve_cik", lambda self, symbol: None)  # map never populates
+    monkeypatch.setattr(backtest.time, "sleep", lambda *_: None)
+
+    assert backtest._ensure_cik_map_loaded() is False
+
+
+def test_ensure_cik_map_loaded_treats_an_empty_map_as_failure(monkeypatch):
+    """SEC's response can be non-empty but its rows can lack the expected
+    ticker/cik_str keys (a schema change, a truncated body) — that leaves
+    ``_cik_map`` as ``{}``, not ``None``. Reading that as success would let
+    every subsequent symbol lookup "genuinely" resolve to no CIK, silently
+    hiding a systemic problem behind what looks like 100% non-US filers.
+    """
+    from data.data_sources import SecEdgarSource
+
+    monkeypatch.setattr(backtest, "_ensure_cik_map_loaded", _REAL_ENSURE_CIK_MAP_LOADED)
+    monkeypatch.setattr(SecEdgarSource, "_cik_map", {})  # populated, but empty
+    monkeypatch.setattr(SecEdgarSource, "_resolve_cik", lambda self, symbol: None)
     monkeypatch.setattr(backtest.time, "sleep", lambda *_: None)
 
     assert backtest._ensure_cik_map_loaded() is False

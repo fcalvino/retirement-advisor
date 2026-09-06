@@ -153,6 +153,53 @@ def test_unique_index_verified_is_false_when_duplicate_data_predates_the_constra
     assert verified is False
 
 
+def test_migrate_retries_a_transient_lock_and_still_succeeds(monkeypatch):
+    """A concurrently-writing dashboard or scheduler on the same DB_PATH file
+    can make CREATE UNIQUE INDEX raise a transient "database is locked"
+    error — this must be retried, not treated the same as real duplicate
+    data (which retrying would never fix).
+    """
+    from sqlalchemy.exc import OperationalError
+
+    store = SyntheticBacktestStore(":memory:")  # already migrated once by __init__
+    real_create = SyntheticBacktestStore._create_unique_index
+    calls = {"n": 0}
+
+    def _flaky_create(engine):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise OperationalError("CREATE UNIQUE INDEX ...", {}, RuntimeError("database is locked"))
+        return real_create(engine)
+
+    monkeypatch.setattr(store, "_create_unique_index", _flaky_create)
+    monkeypatch.setattr("analysis.synthetic_backtest.time.sleep", lambda *_: None)
+
+    verified = store._migrate(store._engine)
+
+    assert verified is True
+    assert calls["n"] == 2, "must retry exactly once after the transient failure, then succeed"
+
+
+def test_migrate_gives_up_after_repeated_lock_failures(monkeypatch):
+    """If the lock never clears within the retry budget, the migration must
+    still fail loudly (``unique_index_verified = False``) rather than hang
+    or silently claim success.
+    """
+    from sqlalchemy.exc import OperationalError
+
+    store = SyntheticBacktestStore(":memory:")
+
+    def _always_locked(engine):
+        raise OperationalError("CREATE UNIQUE INDEX ...", {}, RuntimeError("database is locked"))
+
+    monkeypatch.setattr(store, "_create_unique_index", _always_locked)
+    monkeypatch.setattr("analysis.synthetic_backtest.time.sleep", lambda *_: None)
+
+    verified = store._migrate(store._engine)
+
+    assert verified is False
+
+
 def test_duplicate_symbol_as_of_source_is_rejected_not_silently_duplicated():
     """The unique constraint (symbol, as_of, source) is what makes the table
     itself a safe resumability checkpoint — a caller that races or re-runs

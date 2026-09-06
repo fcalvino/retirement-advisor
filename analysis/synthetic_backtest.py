@@ -33,11 +33,13 @@ for its own "Calibration inputs" columns, not guessed at now.
 
 from __future__ import annotations
 
+import time
 from datetime import date
 from typing import Any, List, Optional
 
 from loguru import logger
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, text
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from analysis.scoring import PiotroskiDetail
@@ -129,18 +131,36 @@ class SyntheticBacktestStore:
         depend on the invariant (the batch backtest script) must check this
         and refuse to run rather than silently risk duplicate calibration
         rows.
+
+        Retries ``OperationalError`` (e.g. "database is locked" from a
+        concurrently-writing dashboard or scheduler on the same ``DB_PATH``
+        file — this store's own singleton is built at import time, so this
+        genuinely can race another process) a few times before giving up;
+        ``IntegrityError`` (real duplicate data — retrying changes nothing)
+        fails immediately, the same transient-vs-permanent distinction
+        ``log_piotroski`` already makes per row, applied here to the one-time
+        migration step instead.
         """
-        with engine.connect() as conn:
+        for attempt in range(1, 4):
             try:
-                conn.execute(text(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_synthetic_symbol_asof_source "
-                    "ON synthetic_recommendation (symbol, as_of, source)"
-                ))
-                conn.commit()
+                self._create_unique_index(engine)
+                break
+            except IntegrityError as exc:
+                logger.error(
+                    f"synthetic_backtest migration: duplicate (symbol, as_of, source) "
+                    f"rows already exist — {exc}"
+                )
+                return False
+            except OperationalError as exc:
+                if attempt == 3:
+                    logger.error(f"synthetic_backtest migration: still locked after retries — {exc}")
+                    return False
+                time.sleep(0.5 * attempt)
             except Exception as exc:
                 logger.error(f"synthetic_backtest migration: could not create unique index — {exc}")
                 return False
 
+        with engine.connect() as conn:
             exists = conn.execute(text(
                 "SELECT 1 FROM sqlite_master WHERE type='index' AND name='uq_synthetic_symbol_asof_source'"
             )).fetchone()
@@ -148,6 +168,19 @@ class SyntheticBacktestStore:
                 logger.error("synthetic_backtest migration: unique index missing after CREATE — unverified")
                 return False
             return True
+
+    @staticmethod
+    def _create_unique_index(engine) -> None:
+        """One attempt at the ``CREATE UNIQUE INDEX``. Split out from
+        ``_migrate`` so a retry test can stub *this* directly instead of
+        wrapping a live SQLAlchemy connection.
+        """
+        with engine.connect() as conn:
+            conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_synthetic_symbol_asof_source "
+                "ON synthetic_recommendation (symbol, as_of, source)"
+            ))
+            conn.commit()
 
     def log_piotroski(
         self,

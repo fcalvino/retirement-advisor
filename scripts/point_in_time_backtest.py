@@ -68,7 +68,13 @@ def _ensure_cik_map_loaded() -> bool:
     repeated for every remaining ticker in the universe; calling this once,
     up front, fails fast instead.
     """
-    if SecEdgarSource._cik_map is not None:
+    # Truthiness, not `is not None`: SecEdgarSource._resolve_cik's dict
+    # comprehension can populate `_cik_map` as `{}` if SEC's response body is
+    # non-empty but its rows don't carry the expected ticker/cik_str keys (a
+    # schema change, a truncated body) — an empty map is exactly as useless
+    # as no map, and must not be read as "every ticker legitimately has no
+    # CIK", which is what every subsequent lookup would otherwise conclude.
+    if SecEdgarSource._cik_map:
         return True
 
     def _load():
@@ -76,12 +82,12 @@ def _ensure_cik_map_loaded() -> bool:
         # the shared map as a side effect — which symbol is irrelevant here,
         # only whether the class-level cache ends up populated.
         SecEdgarSource()._resolve_cik("AAPL")
-        if SecEdgarSource._cik_map is None:
-            raise RuntimeError("SEC ticker->CIK map fetch failed")
+        if not SecEdgarSource._cik_map:
+            raise RuntimeError("SEC ticker->CIK map fetch failed or returned no usable entries")
 
     _fetch_with_retry(_load, "SEC", "ticker->CIK map")
     time.sleep(MULTI_SOURCE.sec_bulk_request_delay_s)  # a real network attempt was just made
-    return SecEdgarSource._cik_map is not None
+    return bool(SecEdgarSource._cik_map)
 
 
 def _fetch_companyfacts(symbol: str) -> Optional[dict]:
@@ -128,7 +134,16 @@ def run(symbols: List[str], cutoffs: List[date]) -> dict:
     so any caller of ``run()`` directly (a scheduler, a notebook, the test
     suite) gets the same protection a CLI invocation does.
     """
+    # De-duped up front, before `total` is computed from them: a duplicate
+    # --cutoffs or --symbols entry must not inflate the reported failure
+    # count above the number of distinct ticker×cutoff pairs actually at
+    # stake, in the early-refusal paths below as much as in the main loop
+    # (where it would otherwise also get scored twice and have its second
+    # write rejected by the unique index as if something had gone wrong).
+    cutoffs = sorted(set(cutoffs))
+    symbols = list(dict.fromkeys(symbols))
     total = len(symbols) * len(cutoffs)
+
     if not synthetic_backtest_store.unique_index_verified:
         logger.error(
             "synthetic_backtest_store: resumability guarantee not verified (unique index "
@@ -142,13 +157,8 @@ def run(symbols: List[str], cutoffs: List[date]) -> dict:
         return {"written": 0, "skipped": 0, "failed": total}
 
     written = skipped = failed = 0
-    # De-duped, not just accepted as-is: a duplicate --cutoffs entry would
-    # otherwise score and try to log the same (symbol, as_of) pair twice —
-    # the second log_piotroski call gets rejected by the unique index and
-    # would count as a "failure" that never actually happened.
-    cutoffs = sorted(set(cutoffs))
 
-    for symbol in dict.fromkeys(symbols):  # de-dup, preserve order
+    for symbol in symbols:
         already = synthetic_backtest_store.existing_pairs(symbol)
         pending = [c for c in cutoffs if c.isoformat() not in already]
         skipped += len(cutoffs) - len(pending)
