@@ -278,7 +278,15 @@ class SecEdgarSource(DataSource):
                     for row in data.values()
                     if row.get("ticker") and row.get("cik_str") is not None
                 }
-        return cls._cik_map.get(symbol.upper())
+            # Read *inside* the lock, not after it releases: `_cik_map` was
+            # write-once (None -> populated dict) for as long as nothing else
+            # ever reset it, so this was never actually racy. That stopped
+            # being true once a caller started resetting a poisoned `{}` map
+            # back to `None` to force a re-fetch (scripts/point_in_time_backtest.py) —
+            # a concurrent thread that already passed the check above could
+            # otherwise observe `cls._cik_map` flip to `None` right before
+            # this read, raising on `.get()`.
+            return cls._cik_map.get(symbol.upper())
 
     @classmethod
     def _annual_rows(cls, concept_facts: dict) -> List[dict]:

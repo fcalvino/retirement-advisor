@@ -184,6 +184,28 @@ def test_a_duplicate_cutoff_in_the_input_is_not_counted_as_a_failure(monkeypatch
     assert len(backtest.synthetic_backtest_store.get_all(symbol="AAPL")) == 1
 
 
+def test_a_stale_existing_pairs_read_does_not_count_as_a_failure(monkeypatch):
+    """``existing_pairs()`` itself degrades to an empty set on a transient
+    read failure (same defensive shape as ``log_piotroski``) — that can make
+    ``run()`` re-attempt a pair that was already safely stored elsewhere.
+    The unique index correctly rejects that duplicate write
+    (``log_piotroski`` returns ``ALREADY_LOGGED``, not ``None``); ``run()``
+    must not count that as a real failure, or a resumability race that
+    worked exactly as designed would flip ``main()``'s exit code.
+    """
+    from analysis.synthetic_backtest import ALREADY_LOGGED
+
+    monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: _fake_companyfacts())
+    monkeypatch.setattr(
+        backtest.synthetic_backtest_store, "log_piotroski",
+        lambda symbol, cutoff, detail, source="point_in_time_piotroski": ALREADY_LOGGED,
+    )
+
+    summary = backtest.run(["AAPL"], [date(2021, 6, 1)])
+
+    assert summary == {"written": 0, "skipped": 1, "failed": 0}
+
+
 def test_run_returns_counts_main_uses_for_the_exit_code(monkeypatch):
     monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: _fake_companyfacts())
 

@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import time
 from datetime import date
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Union
 
 from loguru import logger
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, text
@@ -45,6 +45,17 @@ from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from analysis.scoring import PiotroskiDetail
 from config import DB_PATH, FETCH
 from data.clock import utc_now
+
+#: Sentinel: ``log_piotroski``'s write was rejected because this exact
+#: (symbol, as_of, source) already exists — the unique index doing exactly
+#: its job, not a failure. Distinct from ``None`` (a genuine write error) so
+#: a caller (``scripts/point_in_time_backtest.py``'s ``run()``) can tell them
+#: apart: a transient read failure in ``existing_pairs`` (which itself
+#: degrades to an empty set rather than raising) can make ``run()``
+#: re-attempt a pair that was already safely stored, and that duplicate
+#: write must not be counted as a real failure — see ``log_piotroski``'s
+#: own docstring.
+ALREADY_LOGGED = object()
 
 
 class _Base(DeclarativeBase):
@@ -195,9 +206,22 @@ class SyntheticBacktestStore:
         as_of: date,
         detail: PiotroskiDetail,
         source: str = "point_in_time_piotroski",
-    ) -> Optional[int]:
-        """Persist one reconstructed F-Score. Returns the new row's id, or
-        ``None`` on failure.
+    ) -> Union[int, object, None]:
+        """Persist one reconstructed F-Score. Returns the new row's id,
+        ``ALREADY_LOGGED`` if this exact (symbol, as_of, source) already
+        existed, or ``None`` on any other failure.
+
+        ``ALREADY_LOGGED`` is not a failure — it is the unique index doing
+        exactly its job — but it is not success either, and conflating it
+        with a real error matters to a caller like
+        ``scripts/point_in_time_backtest.py``'s ``run()``: that script's own
+        ``existing_pairs()`` resumability check already has a defensive
+        ``except Exception: return set()`` fallback for a transient read
+        failure, which would otherwise make ``run()`` re-attempt a pair that
+        was already safely stored. Rejecting that duplicate write with the
+        *same* exception class ``log_piotroski`` used for every other error
+        would count a one-off read hiccup as a real failure and flip
+        ``main()``'s exit code, even though nothing was ever actually lost.
 
         Defensive by design, same as ``TrackRecordStore.log_recommendation``
         (``analysis/track_record.py``): the PR that wires this in loops over
@@ -231,6 +255,9 @@ class SyntheticBacktestStore:
                 session.add(row)
                 session.commit()
                 return row.id
+        except IntegrityError as exc:
+            logger.warning(f"synthetic_backtest: {symbol} @ {as_of} already logged — {exc}")
+            return ALREADY_LOGGED
         except Exception as exc:  # never break a batch backtest run
             logger.error(f"synthetic_backtest: failed to log {symbol} @ {as_of} — {exc}")
             return None

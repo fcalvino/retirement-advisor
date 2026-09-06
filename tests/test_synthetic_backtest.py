@@ -7,7 +7,11 @@ convention for any test that needs a real store, per docs/CONTEXT.md §5).
 from datetime import date
 
 from analysis.scoring import PiotroskiDetail
-from analysis.synthetic_backtest import SyntheticBacktestStore, SyntheticRecommendation
+from analysis.synthetic_backtest import (
+    ALREADY_LOGGED,
+    SyntheticBacktestStore,
+    SyntheticRecommendation,
+)
 
 
 def _detail(score_true_count: int) -> PiotroskiDetail:
@@ -225,13 +229,18 @@ def test_duplicate_symbol_as_of_source_is_rejected_not_silently_duplicated():
     itself a safe resumability checkpoint — a caller that races or re-runs
     without checking ``existing_pairs`` first must not end up with two rows
     for the same ticker×cutoff silently inflating the calibration sample.
+
+    The rejection returns ``ALREADY_LOGGED``, not ``None`` — a caller (the
+    batch backtest script) needs to tell "this exact pair already existed"
+    (not a failure) apart from "the write genuinely broke" (a real failure
+    that should count toward main()'s exit code).
     """
     store = SyntheticBacktestStore(":memory:")
     first_id = store.log_piotroski("AAPL", date(2021, 6, 1), _detail(5))
     assert first_id is not None
 
     second_id = store.log_piotroski("AAPL", date(2021, 6, 1), _detail(9))
-    assert second_id is None   # rejected by the unique constraint, logged, not raised
+    assert second_id is ALREADY_LOGGED   # rejected by the unique constraint, logged, not raised
 
     rows = store.get_all(symbol="AAPL")
     assert len(rows) == 1

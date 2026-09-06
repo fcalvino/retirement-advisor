@@ -51,7 +51,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from loguru import logger  # noqa: E402
 
 from analysis.point_in_time_piotroski import piotroski_as_of  # noqa: E402
-from analysis.synthetic_backtest import synthetic_backtest_store  # noqa: E402
+from analysis.synthetic_backtest import ALREADY_LOGGED, synthetic_backtest_store  # noqa: E402
 from config import MULTI_SOURCE  # noqa: E402
 from data.data_sources import SecEdgarSource  # noqa: E402
 from data.fetcher import _fetch_with_retry  # noqa: E402
@@ -264,7 +264,15 @@ def run(symbols: List[str], cutoffs: List[date]) -> dict:
                 continue
 
             row_id = synthetic_backtest_store.log_piotroski(symbol, cutoff, detail)
-            if row_id is None:
+            if row_id is ALREADY_LOGGED:
+                # existing_pairs() itself degrades to an empty set on a
+                # transient read failure (same defensive shape as
+                # log_piotroski) — that can make this loop re-attempt a pair
+                # that was already safely stored. The unique index correctly
+                # rejects the duplicate write; that is not a real failure.
+                logger.info(f"{symbol} @ {cutoff}: already logged (resumability re-check), not a failure")
+                skipped += 1
+            elif row_id is None:
                 failed += 1
             else:
                 written += 1
