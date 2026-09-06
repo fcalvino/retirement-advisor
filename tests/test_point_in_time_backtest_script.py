@@ -122,13 +122,21 @@ def test_run_only_fetches_the_still_pending_cutoffs(monkeypatch):
 
 def test_run_skips_gracefully_when_sec_has_no_data(monkeypatch):
     """A non-US filer (no SEC CIK) must not raise — just log and move on,
-    same as any other degrade-gracefully path in this codebase.
+    same as any other degrade-gracefully path in this codebase. And it must
+    not count toward ``failed``: config.DEFAULT_TICKERS ships several
+    tickers (Argentina ADRs, ETFs, crypto) that structurally can never have
+    SEC companyfacts, so a normal run against that universe must not report
+    ``failed > 0`` — and therefore must not make main() exit 1 — just because
+    they were included.
     """
-    monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: None)
+    monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: backtest._NO_SEC_DATA)
 
-    backtest.run(["YPF"], [date(2021, 6, 1)])
+    summary = backtest.run(["YPF"], [date(2021, 6, 1)])
 
     assert backtest.synthetic_backtest_store.get_all(symbol="YPF") == []
+    assert summary == {"written": 0, "skipped": 1, "failed": 0}, (
+        "a confirmed absence of SEC data is not a failure — it must not flip main()'s exit code"
+    )
 
 
 def test_run_does_not_fetch_when_nothing_is_pending(monkeypatch):
@@ -476,7 +484,11 @@ def test_fetch_companyfacts_is_a_pure_lookup_once_the_map_is_cached(monkeypatch)
     assert sleeps == [MULTI_SOURCE.sec_bulk_request_delay_s]  # one pace, for the companyfacts request
 
 
-def test_fetch_companyfacts_returns_none_for_a_ticker_absent_from_the_cached_map(monkeypatch):
+def test_fetch_companyfacts_returns_no_sec_data_sentinel_for_a_ticker_absent_from_the_cached_map(monkeypatch):
+    """Absence of a CIK is SEC-confirmed, not a fetch failure — it must be
+    distinguishable from ``None`` (a genuine, retried-and-failed fetch) so
+    ``run()`` never counts it toward ``failed``/the exit code.
+    """
     from data.data_sources import SecEdgarSource
 
     monkeypatch.setattr(SecEdgarSource, "_cik_map", {"AAPL": 320193})  # populated, YPF absent
@@ -485,7 +497,7 @@ def test_fetch_companyfacts_returns_none_for_a_ticker_absent_from_the_cached_map
 
     result = backtest._fetch_companyfacts("YPF")
 
-    assert result is None
+    assert result is backtest._NO_SEC_DATA
     assert sleeps == [], "no network call was made, so no pacing delay either"
 
 
@@ -513,5 +525,5 @@ def test_fetch_companyfacts_does_not_retry_a_404(monkeypatch):
 
     result = backtest._fetch_companyfacts("AAPL")
 
-    assert result is None
+    assert result is backtest._NO_SEC_DATA, "a 404 is SEC-confirmed absence, not a failure"
     assert len(calls) == 1, "a 404 must not be retried"

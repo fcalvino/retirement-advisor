@@ -91,8 +91,16 @@ def _ensure_cik_map_loaded() -> bool:
             # every *future* call to this function in the same process (a
             # scheduler reusing the import) with no further attempt ever
             # made. Reset to `None` so the next retry — here or in a later
-            # call — genuinely re-fetches.
-            SecEdgarSource._cik_map = None
+            # call — genuinely re-fetches. Under the same `_cik_lock`
+            # `_resolve_cik` itself uses: this reset races that lock-guarded
+            # read/write otherwise — a concurrent in-process caller of
+            # `SecEdgarSource` (the screener's own thread pool, per
+            # data/data_sources.py's own comment) could be mid-``with
+            # cls._cik_lock:`` and observe ``_cik_map`` flip to ``None``
+            # right before its own unguarded final ``.get()`` call, an
+            # ``AttributeError`` on ``NoneType``.
+            with SecEdgarSource._cik_lock:
+                SecEdgarSource._cik_map = None
             raise RuntimeError("SEC ticker->CIK map fetch failed or returned no usable entries")
 
     _fetch_with_retry(_load, "SEC", "ticker->CIK map")
@@ -100,21 +108,33 @@ def _ensure_cik_map_loaded() -> bool:
     return bool(SecEdgarSource._cik_map)
 
 
+#: Sentinel: SEC itself confirms there is nothing to fetch for this ticker —
+#: no CIK, or a 404 on a CIK that exists. A real, permanent, *expected*
+#: condition (the Argentina ADRs in ``DEFAULT_TICKERS`` file 20-F/6-K, never
+#: 10-K, and hit this on every run) — never a failure. Distinct from a bare
+#: ``None``, which means the companyfacts request itself failed even after
+#: retries: ``run()`` must count only the latter toward ``failed`` (and
+#: therefore toward ``main()``'s exit code), or a normal run against a
+#: universe that includes any permanently CIK-less ticker (ADRs, ETFs,
+#: crypto) would always exit 1 — indistinguishable from a real SEC outage.
+_NO_SEC_DATA = object()
+
+
 def _fetch_companyfacts(symbol: str) -> Optional[dict]:
     """One retried network call for *symbol*'s entire SEC filing history.
 
     Assumes ``_ensure_cik_map_loaded()`` already succeeded — the CIK lookup
-    here is then a pure in-memory dict read, no network, no pacing. ``None``
-    means "no SEC CIK for this ticker", a real, permanent condition: non-US
-    filers like the Argentina ADRs in ``DEFAULT_TICKERS`` file 20-F/6-K, not
-    10-K, and never appear in SEC's ticker→CIK map — or the companyfacts
-    request itself failed even after ``FETCH.max_retries`` attempts, logged
-    distinctly by ``_fetch_with_retry`` either way.
+    here is then a pure in-memory dict read, no network, no pacing. Returns
+    ``_NO_SEC_DATA`` (not ``None``) when SEC itself confirms nothing exists
+    for this ticker — see that sentinel's own docstring — and ``None`` only
+    when the companyfacts request itself failed even after
+    ``FETCH.max_retries`` attempts, logged distinctly by ``_fetch_with_retry``
+    either way.
     """
     cik = SecEdgarSource()._resolve_cik(symbol)
     if cik is None:
         logger.warning(f"{symbol}: no SEC CIK — non-US filer or not an equity, skipping")
-        return None
+        return _NO_SEC_DATA
 
     def _fetch():
         import requests
@@ -132,7 +152,7 @@ def _fetch_companyfacts(symbol: str) -> Optional[dict]:
             # "genuinely has no SEC data" case this module's own docstring
             # says must be told apart from "SEC rate-limited us, retry".
             logger.warning(f"{symbol}: SEC companyfacts 404 — CIK {cik} has no filings published")
-            return None
+            return _NO_SEC_DATA
         resp.raise_for_status()  # any other non-2xx (429, 5xx, ...) should retry
         return resp.json()
 
@@ -209,11 +229,26 @@ def run(symbols: List[str], cutoffs: List[date]) -> dict:
 
     if pending_by_symbol and not _ensure_cik_map_loaded():
         logger.error("SEC ticker->CIK map fetch failed after retries — aborting the whole batch")
-        remaining = sum(len(c) for c in pending_by_symbol.values())
-        return {"written": 0, "skipped": total - remaining, "failed": remaining}
+        # `skipped` above already accounts for every pair that was NOT left
+        # pending; what's pending (and now can't even be attempted) is just
+        # the complement, `total - skipped` — recomputing it a second way
+        # from `pending_by_symbol` would be two derivations of the same
+        # number that must always agree.
+        return {"written": 0, "skipped": skipped, "failed": total - skipped}
 
     for symbol, pending in pending_by_symbol.items():
         facts = _fetch_companyfacts(symbol)
+        if facts is _NO_SEC_DATA:
+            # SEC itself confirms nothing exists here (no CIK, or a 404) —
+            # a real, permanent, *expected* condition (Argentina ADRs, ETFs,
+            # crypto in config.DEFAULT_TICKERS all hit this every run), never
+            # a failure: counting it toward `failed` would make main()'s
+            # exit code 1 on every normal run against a universe that
+            # includes any such ticker, indistinguishable from a real SEC
+            # outage.
+            logger.info(f"{symbol}: no SEC data (confirmed, not a failure) — skipping {len(pending)} cutoff(s)")
+            skipped += len(pending)
+            continue
         if facts is None:
             logger.error(f"{symbol}: SEC companyfacts unavailable — skipping {len(pending)} cutoff(s)")
             failed += len(pending)
