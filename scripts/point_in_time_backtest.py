@@ -83,6 +83,16 @@ def _ensure_cik_map_loaded() -> bool:
         # only whether the class-level cache ends up populated.
         SecEdgarSource()._resolve_cik("AAPL")
         if not SecEdgarSource._cik_map:
+            # SecEdgarSource._resolve_cik's own guard is `if _cik_map is None`
+            # (data/data_sources.py) — it treats a landed-on `{}` as "already
+            # resolved", so leaving it at `{}` here would make every retry
+            # below a pure in-memory no-op against the poisoned empty cache,
+            # never re-issuing the request, and would leave `{}` poisoning
+            # every *future* call to this function in the same process (a
+            # scheduler reusing the import) with no further attempt ever
+            # made. Reset to `None` so the next retry — here or in a later
+            # call — genuinely re-fetches.
+            SecEdgarSource._cik_map = None
             raise RuntimeError("SEC ticker->CIK map fetch failed or returned no usable entries")
 
     _fetch_with_retry(_load, "SEC", "ticker->CIK map")
@@ -112,7 +122,18 @@ def _fetch_companyfacts(symbol: str) -> Optional[dict]:
         url = SecEdgarSource._FACTS_URL.format(cik=cik)
         headers = {"User-Agent": MULTI_SOURCE.sec_user_agent}
         resp = requests.get(url, headers=headers, timeout=MULTI_SOURCE.request_timeout_s)
-        resp.raise_for_status()
+        if resp.status_code == 404:
+            # Permanent, not a failure to retry: this CIK genuinely has no
+            # companyfacts published (a shell company, a very recent IPO
+            # with no XBRL filings yet). raise_for_status() would turn this
+            # into an exception _fetch_with_retry treats identically to a
+            # transient 429/5xx — burning the full retry budget (backoff
+            # included) on a condition retrying can never fix, exactly the
+            # "genuinely has no SEC data" case this module's own docstring
+            # says must be told apart from "SEC rate-limited us, retry".
+            logger.warning(f"{symbol}: SEC companyfacts 404 — CIK {cik} has no filings published")
+            return None
+        resp.raise_for_status()  # any other non-2xx (429, 5xx, ...) should retry
         return resp.json()
 
     result = _fetch_with_retry(_fetch, symbol, "SEC companyfacts (bulk backtest)")
@@ -140,9 +161,27 @@ def run(symbols: List[str], cutoffs: List[date]) -> dict:
     # stake, in the early-refusal paths below as much as in the main loop
     # (where it would otherwise also get scored twice and have its second
     # write rejected by the unique index as if something had gone wrong).
+    # Symbols are upper-cased *here*, not left to main()'s CLI parsing —
+    # SyntheticBacktestStore.existing_pairs/log_piotroski already upper-case
+    # internally, so "aapl" and "AAPL" collide there; a direct caller of
+    # run() (a scheduler, a notebook — not just the CLI) passing mixed case
+    # must see the same one-ticker de-dup, not an inflated failure count.
     cutoffs = sorted(set(cutoffs))
-    symbols = list(dict.fromkeys(symbols))
+    symbols = list(dict.fromkeys(s.upper() for s in symbols))
     total = len(symbols) * len(cutoffs)
+
+    if not synthetic_backtest_store.unique_index_verified:
+        # unique_index_verified was computed once, at store construction —
+        # for the module-level singleton, that's import time. A lock held by
+        # a concurrently-writing dashboard/scheduler at that exact moment
+        # could have outlasted the migration's retry budget, and nothing
+        # since then has re-checked: without this, that process would refuse
+        # every batch run for its entire remaining lifetime even seconds
+        # after the lock cleared. One more live attempt, right where it's
+        # actually needed, costs nothing when the index was already fine.
+        synthetic_backtest_store.unique_index_verified = synthetic_backtest_store._migrate(
+            synthetic_backtest_store._engine
+        )
 
     if not synthetic_backtest_store.unique_index_verified:
         logger.error(
@@ -152,20 +191,28 @@ def run(symbols: List[str], cutoffs: List[date]) -> dict:
         )
         return {"written": 0, "skipped": 0, "failed": total}
 
-    if not _ensure_cik_map_loaded():
-        logger.error("SEC ticker->CIK map fetch failed after retries — aborting the whole batch")
-        return {"written": 0, "skipped": 0, "failed": total}
-
     written = skipped = failed = 0
 
+    # Resolved for every symbol *before* touching the CIK map, not inside the
+    # loop below — a fully-resumed run (every requested pair already logged)
+    # must not still pay for a real ~1 MB SEC ticker→CIK download plus its
+    # pacing delay when the loop was always going to skip every symbol.
+    pending_by_symbol = {}
     for symbol in symbols:
         already = synthetic_backtest_store.existing_pairs(symbol)
         pending = [c for c in cutoffs if c.isoformat() not in already]
         skipped += len(cutoffs) - len(pending)
-        if not pending:
+        if pending:
+            pending_by_symbol[symbol] = pending
+        else:
             logger.info(f"{symbol}: all {len(cutoffs)} cutoffs already logged, no fetch needed")
-            continue
 
+    if pending_by_symbol and not _ensure_cik_map_loaded():
+        logger.error("SEC ticker->CIK map fetch failed after retries — aborting the whole batch")
+        remaining = sum(len(c) for c in pending_by_symbol.values())
+        return {"written": 0, "skipped": total - remaining, "failed": remaining}
+
+    for symbol, pending in pending_by_symbol.items():
         facts = _fetch_companyfacts(symbol)
         if facts is None:
             logger.error(f"{symbol}: SEC companyfacts unavailable — skipping {len(pending)} cutoff(s)")

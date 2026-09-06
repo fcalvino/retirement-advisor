@@ -43,7 +43,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from analysis.scoring import PiotroskiDetail
-from config import DB_PATH
+from config import DB_PATH, FETCH
 from data.clock import utc_now
 
 
@@ -112,36 +112,42 @@ class SyntheticBacktestStore:
 
     def _migrate(self, engine) -> bool:
         """Apply the uniqueness guarantee to a database file that may already
-        exist (SQLite safe). Same shape as ``analysis/track_record.py``'s own
-        ``_migrate`` — ``CREATE UNIQUE INDEX IF NOT EXISTS`` is the SQLite-native
-        way to add this after the fact, idempotent whether the table was just
-        created fresh or already had rows in it.
+        exist (SQLite safe). ``CREATE UNIQUE INDEX IF NOT EXISTS`` is the
+        SQLite-native way to add this after the fact, idempotent whether the
+        table was just created fresh or already had rows in it — unlike
+        ``analysis/track_record.py``'s own ``_migrate`` (a bare ``ADD COLUMN``
+        that always raises on a column that already exists, the benign case
+        its ``except: pass`` covers), ``IF NOT EXISTS`` already makes "already
+        there" a silent no-op here, so this function's retry loop below has
+        no equivalent there — it exists because this migration's one
+        realistic failure mode (pre-existing duplicate data, or a transient
+        lock) has no safe "already applied" reading to fall back on.
 
-        Unlike ``TrackRecordStore._migrate``'s bare ``ADD COLUMN`` (which
-        always raises on a column that already exists — that *is* the benign,
-        expected case its ``except: pass`` covers), ``IF NOT EXISTS`` already
-        makes "already there" a silent no-op here. So an exception this
-        raises is never that — the one realistic cause is a database that
-        already holds duplicate ``(symbol, as_of, source)`` rows from before
-        this constraint existed (not hypothetical: this table shipped with no
-        constraint in PR 3/N). Silently swallowing that would leave every
-        resumability guarantee this module advertises quietly false for that
-        database. Returns whether the index was actually confirmed present
-        (queried back, not assumed from a lack of exception) — callers that
-        depend on the invariant (the batch backtest script) must check this
-        and refuse to run rather than silently risk duplicate calibration
-        rows.
+        An exception here is never "already exists". The one realistic cause
+        is a database that already holds duplicate ``(symbol, as_of, source)``
+        rows from before this constraint existed (not hypothetical: this
+        table shipped with no constraint in PR 3/N). Silently swallowing that
+        would leave every resumability guarantee this module advertises
+        quietly false for that database. Returns whether the index was
+        actually confirmed present (queried back, not assumed from a lack of
+        exception) — callers that depend on the invariant (the batch backtest
+        script) must check this and refuse to run rather than silently risk
+        duplicate calibration rows.
 
         Retries ``OperationalError`` (e.g. "database is locked" from a
         concurrently-writing dashboard or scheduler on the same ``DB_PATH``
         file — this store's own singleton is built at import time, so this
-        genuinely can race another process) a few times before giving up;
+        genuinely can race another process) via ``config.FETCH`` — the same
+        retry policy every other network/IO fetch in this project already
+        uses, not a second one invented here — before giving up;
         ``IntegrityError`` (real duplicate data — retrying changes nothing)
         fails immediately, the same transient-vs-permanent distinction
         ``log_piotroski`` already makes per row, applied here to the one-time
         migration step instead.
         """
-        for attempt in range(1, 4):
+        attempts = max(1, int(FETCH.max_retries))
+        delay = float(FETCH.retry_base_delay_s)
+        for attempt in range(1, attempts + 1):
             try:
                 self._create_unique_index(engine)
                 break
@@ -152,10 +158,11 @@ class SyntheticBacktestStore:
                 )
                 return False
             except OperationalError as exc:
-                if attempt == 3:
+                if attempt == attempts:
                     logger.error(f"synthetic_backtest migration: still locked after retries — {exc}")
                     return False
-                time.sleep(0.5 * attempt)
+                time.sleep(delay)
+                delay *= 2
             except Exception as exc:
                 logger.error(f"synthetic_backtest migration: could not create unique index — {exc}")
                 return False
@@ -239,17 +246,30 @@ class SyntheticBacktestStore:
         """The ``as_of`` dates already logged for *symbol* — what a batch run
         checks before spending a network call, so an interrupted run can
         resume without re-fetching or re-scoring what it already has.
+
+        Defensive like ``log_piotroski``, for the same reason: a batch run
+        calls this once per symbol in its universe, and a transient sqlite
+        error (lock contention with a concurrently-writing dashboard or
+        scheduler on the same ``DB_PATH`` file) here must not crash the whole
+        run. An empty result on failure is the safe direction — the caller
+        re-fetches and re-scores that symbol as if nothing were logged yet,
+        and any pair that genuinely already exists is caught downstream by
+        the unique index (logged, not written twice), never lost silently.
         """
-        with self._Session() as session:
-            rows = (
-                session.query(SyntheticRecommendation.as_of)
-                .filter(
-                    SyntheticRecommendation.symbol == symbol.upper(),
-                    SyntheticRecommendation.source == source,
+        try:
+            with self._Session() as session:
+                rows = (
+                    session.query(SyntheticRecommendation.as_of)
+                    .filter(
+                        SyntheticRecommendation.symbol == symbol.upper(),
+                        SyntheticRecommendation.source == source,
+                    )
+                    .all()
                 )
-                .all()
-            )
-            return {r[0] for r in rows}
+                return {r[0] for r in rows}
+        except Exception as exc:  # never break a batch backtest run
+            logger.error(f"synthetic_backtest: failed to read existing pairs for {symbol} — {exc}")
+            return set()
 
 
 # Module-level singleton (mirrors analysis.track_record.track_record_store)

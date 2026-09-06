@@ -120,6 +120,26 @@ def test_existing_pairs_returns_the_logged_as_of_dates():
     assert store.existing_pairs("JNJ") == set()
 
 
+def test_existing_pairs_never_raises_on_a_read_failure(monkeypatch):
+    """A batch run calls this once per symbol in its universe — a transient
+    sqlite error (lock contention with a concurrently-writing dashboard or
+    scheduler on the same DB_PATH file) must not crash the whole run, same
+    as ``log_piotroski``'s own defensive ``except Exception``. An empty
+    result is the safe direction: the caller re-fetches and re-scores that
+    symbol, and the unique index catches any pair that genuinely already
+    exists rather than losing it silently.
+    """
+    store = SyntheticBacktestStore(":memory:")
+    store.log_piotroski("AAPL", date(2021, 6, 1), _detail(5))
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("simulated read failure")
+
+    monkeypatch.setattr(store, "_Session", _boom)
+
+    assert store.existing_pairs("AAPL") == set()
+
+
 def test_unique_index_verified_is_true_on_a_healthy_store():
     store = SyntheticBacktestStore(":memory:")
     assert store.unique_index_verified is True

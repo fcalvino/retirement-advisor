@@ -146,6 +146,23 @@ def test_run_does_not_fetch_when_nothing_is_pending(monkeypatch):
     assert fetch_calls == [], "a fully-cached symbol must never reach _fetch_companyfacts"
 
 
+def test_run_does_not_load_the_cik_map_when_nothing_is_pending(monkeypatch):
+    """A fully-resumed run (every requested pair already logged) must not
+    pay for the real ~1 MB SEC ticker→CIK download either — not just skip
+    the per-symbol companyfacts fetch, but never even reach the shared
+    map-loading step that precedes it.
+    """
+    monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: _fake_companyfacts())
+    backtest.run(["AAPL"], [date(2021, 6, 1)])  # first run logs it
+
+    load_calls = []
+    monkeypatch.setattr(backtest, "_ensure_cik_map_loaded", lambda: (load_calls.append(1), True)[1])
+
+    backtest.run(["AAPL"], [date(2021, 6, 1)])  # second run: fully cached
+
+    assert load_calls == [], "a fully-resumed run must never call _ensure_cik_map_loaded"
+
+
 def test_a_duplicate_cutoff_in_the_input_is_not_counted_as_a_failure(monkeypatch):
     """A duplicate --cutoffs entry must be de-duped up front, not scored
     twice and have its second write rejected by the unique index as if
@@ -169,11 +186,12 @@ def test_run_returns_counts_main_uses_for_the_exit_code(monkeypatch):
 
 def test_run_refuses_when_the_unique_index_is_not_verified(monkeypatch):
     """If the resumability guarantee (the migration-created unique index)
-    could not be confirmed, ``run()`` itself must refuse — checked here, not
-    only through ``main()``, so any direct caller (a scheduler, a notebook)
-    gets the same protection a CLI invocation does.
+    still cannot be confirmed even on a live re-check, ``run()`` itself must
+    refuse — checked here, not only through ``main()``, so any direct caller
+    (a scheduler, a notebook) gets the same protection a CLI invocation does.
     """
     monkeypatch.setattr(backtest.synthetic_backtest_store, "unique_index_verified", False)
+    monkeypatch.setattr(backtest.synthetic_backtest_store, "_migrate", lambda engine: False)  # still stuck
     fetch_calls = []
     monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: fetch_calls.append(symbol))
 
@@ -182,6 +200,23 @@ def test_run_refuses_when_the_unique_index_is_not_verified(monkeypatch):
     assert summary == {"written": 0, "skipped": 0, "failed": 1}
     assert fetch_calls == []
     assert backtest.synthetic_backtest_store.get_all() == []
+
+
+def test_run_re_verifies_the_unique_index_live_if_it_was_stuck_at_construction(monkeypatch):
+    """A lock at store-construction time (import time, for the module
+    singleton) could have outlasted the migration's retry budget — but by
+    the time ``run()`` actually executes, that lock is very likely long
+    gone. One more live check, right where it's needed, must not leave the
+    process refusing every batch forever over a transient blip that already
+    cleared.
+    """
+    monkeypatch.setattr(backtest.synthetic_backtest_store, "unique_index_verified", False)
+    monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: _fake_companyfacts())
+
+    summary = backtest.run(["AAPL"], [date(2021, 6, 1)])
+
+    assert backtest.synthetic_backtest_store.unique_index_verified is True
+    assert summary == {"written": 1, "skipped": 0, "failed": 0}
 
 
 def test_run_fails_fast_once_when_the_cik_map_cannot_be_loaded(monkeypatch):
@@ -201,20 +236,60 @@ def test_run_fails_fast_once_when_the_cik_map_cannot_be_loaded(monkeypatch):
     assert summary == {"written": 0, "skipped": 0, "failed": 3}
 
 
+def test_run_reports_already_cached_pairs_as_skipped_not_failed_on_a_cik_outage(monkeypatch):
+    """A resumed run where some pairs are already logged and the rest hit a
+    total SEC outage must not report the already-safe pairs as failures —
+    the resumability check (computed before the CIK map is ever touched)
+    already told them apart from the pairs that genuinely couldn't be
+    fetched this time.
+    """
+    monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: _fake_companyfacts())
+    backtest.run(["AAPL"], [date(2020, 6, 1)])  # AAPL/2020 logged for real
+
+    monkeypatch.setattr(backtest, "_ensure_cik_map_loaded", lambda: False)
+    fetch_calls = []
+    monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: fetch_calls.append(symbol))
+
+    summary = backtest.run(["AAPL", "MSFT"], [date(2020, 6, 1), date(2021, 6, 1)])
+
+    assert fetch_calls == []
+    # AAPL/2020 was already logged (skipped); the other 3 pairs never got a
+    # chance because the CIK map itself failed (failed).
+    assert summary == {"written": 0, "skipped": 1, "failed": 3}
+
+
 def test_run_refuses_with_a_deduped_failure_count_when_symbols_repeat(monkeypatch):
     """A duplicate --symbols entry combined with an early refusal (unique
     index unverified) must report the failure count for the distinct
     ticker×cutoff pairs actually at stake, not inflated by the duplicate.
     """
     monkeypatch.setattr(backtest.synthetic_backtest_store, "unique_index_verified", False)
+    monkeypatch.setattr(backtest.synthetic_backtest_store, "_migrate", lambda engine: False)  # still stuck
 
     summary = backtest.run(["AAPL", "AAPL"], [date(2021, 6, 1)])
 
     assert summary == {"written": 0, "skipped": 0, "failed": 1}
 
 
+def test_run_dedups_symbols_case_insensitively(monkeypatch):
+    """``run()`` (not just ``main()``'s CLI parsing) must collapse
+    "aapl"/"AAPL" into one ticker — ``SyntheticBacktestStore``'s own
+    ``existing_pairs``/``log_piotroski`` already upper-case internally, so a
+    direct caller of ``run()`` (a scheduler, a notebook) passing mixed case
+    must get the same one-ticker de-dup a CLI invocation gets for free.
+    """
+    calls = []
+    monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: (calls.append(symbol), _fake_companyfacts())[1])
+
+    summary = backtest.run(["aapl", "AAPL"], [date(2021, 6, 1)])
+
+    assert calls == ["AAPL"]
+    assert summary == {"written": 1, "skipped": 0, "failed": 0}
+
+
 def test_main_refuses_to_run_when_the_unique_index_is_not_verified(monkeypatch):
     monkeypatch.setattr(backtest.synthetic_backtest_store, "unique_index_verified", False)
+    monkeypatch.setattr(backtest.synthetic_backtest_store, "_migrate", lambda engine: False)  # still stuck
     monkeypatch.setattr(sys, "argv", ["point_in_time_backtest.py", "--symbols", "AAPL", "--cutoffs", "2021-06-01"])
 
     exit_code = backtest.main()
@@ -340,6 +415,38 @@ def test_ensure_cik_map_loaded_treats_an_empty_map_as_failure(monkeypatch):
     assert backtest._ensure_cik_map_loaded() is False
 
 
+def test_ensure_cik_map_loaded_resets_a_poisoned_empty_map_between_retries(monkeypatch):
+    """The real bug this guards against: ``SecEdgarSource._resolve_cik``'s
+    own cache guard is ``if cls._cik_map is None`` (data/data_sources.py) —
+    it treats a landed-on ``{}`` as "already resolved, nothing to fetch". If
+    a failed attempt left the poisoned ``{}`` in place, every retry would
+    become a pure in-memory no-op that never re-issues the HTTP request —
+    stubbed here at ``_http_json``, the actual method ``_resolve_cik`` calls,
+    so this exercises the real guard interaction, not a replacement of
+    ``_resolve_cik`` itself.
+    """
+    from data.data_sources import SecEdgarSource
+
+    monkeypatch.setattr(backtest, "_ensure_cik_map_loaded", _REAL_ENSURE_CIK_MAP_LOADED)
+    monkeypatch.setattr(backtest.time, "sleep", lambda *_: None)
+
+    attempts = {"n": 0}
+
+    def _flaky_http_json(self, url):
+        attempts["n"] += 1
+        if attempts["n"] < 3:
+            return {"0": {"unexpected_field": "x"}}  # non-empty, but no usable ticker/cik_str rows
+        return {"0": {"ticker": "AAPL", "cik_str": 320193}}
+
+    monkeypatch.setattr(SecEdgarSource, "_http_json", _flaky_http_json)
+
+    assert backtest._ensure_cik_map_loaded() is True
+    assert attempts["n"] == 3, (
+        "each retry must have actually re-issued the request — a poisoned {} cache "
+        "left in place would have made retries 2 and 3 silent no-ops"
+    )
+
+
 def test_fetch_companyfacts_is_a_pure_lookup_once_the_map_is_cached(monkeypatch):
     """No pacing/retry inside ``_fetch_companyfacts`` for the CIK step
     itself — that cost was already paid once by ``_ensure_cik_map_loaded``.
@@ -349,6 +456,8 @@ def test_fetch_companyfacts_is_a_pure_lookup_once_the_map_is_cached(monkeypatch)
     monkeypatch.setattr(SecEdgarSource, "_cik_map", {"AAPL": 320193})
 
     class _Resp:
+        status_code = 200
+
         def raise_for_status(self):
             pass
 
@@ -378,3 +487,31 @@ def test_fetch_companyfacts_returns_none_for_a_ticker_absent_from_the_cached_map
 
     assert result is None
     assert sleeps == [], "no network call was made, so no pacing delay either"
+
+
+def test_fetch_companyfacts_does_not_retry_a_404(monkeypatch):
+    """A 404 (this CIK has no companyfacts published — a shell company, a
+    very recent IPO with no XBRL filings yet) is permanent, unlike a 429/5xx.
+    Retrying it 3 times with backoff wastes ~6s per such ticker for a
+    condition retrying can never fix — exactly the "genuinely has no SEC
+    data" case this module exists to tell apart from "SEC rate-limited us".
+    """
+    from data.data_sources import SecEdgarSource
+
+    monkeypatch.setattr(SecEdgarSource, "_cik_map", {"AAPL": 320193})
+
+    class _NotFoundResp:
+        status_code = 404
+
+        def raise_for_status(self):
+            raise AssertionError("must not be called for a 404 — that would make it retry")
+
+    calls = []
+    import requests
+    monkeypatch.setattr(requests, "get", lambda *a, **k: (calls.append(1), _NotFoundResp())[1])
+    monkeypatch.setattr(backtest.time, "sleep", lambda *_: None)
+
+    result = backtest._fetch_companyfacts("AAPL")
+
+    assert result is None
+    assert len(calls) == 1, "a 404 must not be retried"
