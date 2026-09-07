@@ -27,8 +27,9 @@ isn't there can't leak into them, no filter to forget.
 PR 3/N's schema was deliberately minimal: just what PR 2's ``PiotroskiDetail``
 already produces, with a note that outcome fields "are not added yet ...
 not guessed at now". PR 5/N adds them — ``price_at_cutoff``,
-``price_at_horizon``, ``return_pct``, ``benchmark_return_pct``,
-``excess_return_pct``, ``benchmark_missing`` — via the same ``ADD COLUMN``
+``price_at_horizon``, ``horizon_date``, ``return_pct``,
+``benchmark_return_pct``, ``excess_return_pct``, ``benchmark_missing``,
+``outcome_scored_at`` — via the same ``ADD COLUMN``
 ``_migrate`` pattern ``analysis/track_record.py`` uses for its own
 "Calibration inputs" columns. **Schema only**: nothing in this PR measures
 an outcome or writes a value into any of these columns — every one stays
@@ -121,7 +122,7 @@ class SyntheticRecommendation(_Base):
     # docstring: "not guessed at now". Every column here is nullable, and
     # every one *stays unset* by default — except benchmark_missing, whose
     # own comment below explains why it defaults to False, not NULL.
-    # Nothing that writes a row today (PR 4/N's log_piotroski) sets any of
+    # Nothing that writes a row today (PR 3/N's log_piotroski, below) sets any of
     # these, and no PR yet *measures* them — that is PR 6/N. This PR is
     # schema-only.
     #
@@ -218,6 +219,17 @@ class SyntheticBacktestStore:
             # __init__ and crashing the module-level singleton at import time.
             logger.error(f"synthetic_backtest migration: could not read existing columns — {exc}")
             existing = set()
+
+        if all(column in existing for column, _ in columns):
+            # The common case from the second run on: everything is already
+            # migrated, the loop below would skip every column untouched,
+            # and `existing` (just read, with nothing else able to have
+            # written to this table in between) already answers the exact
+            # question a fresh re-verification query would — so don't pay
+            # for a second identical PRAGMA round-trip on every cold start
+            # of every process that imports this module, forever, to learn
+            # something `existing` already knows.
+            return True
 
         attempts = max(1, int(FETCH.max_retries))
         for column, col_def in columns:

@@ -97,6 +97,30 @@ def test_outcome_columns_migrate_onto_a_pre_existing_database():
     assert row == ("AAPL", 7)  # the pre-existing row survives untouched
 
 
+def test_migrate_outcome_columns_reads_pragma_only_once_when_already_fully_migrated(monkeypatch):
+    """The common case from the second run on: every column already exists,
+    so the up-front ``PRAGMA table_info`` read already answers the same
+    question a final re-verification would — paying for that query twice
+    on every cold start of every process that imports this module, forever,
+    to learn something already known is pure waste.
+    """
+    store = SyntheticBacktestStore(":memory:")  # already fully migrated
+
+    calls = {"n": 0}
+    real_migrated_columns = SyntheticBacktestStore._migrated_columns
+
+    def _counting(engine):
+        calls["n"] += 1
+        return real_migrated_columns(engine)
+
+    monkeypatch.setattr(store, "_migrated_columns", _counting)
+
+    result = store._migrate_outcome_columns(store._engine)
+
+    assert result is True
+    assert calls["n"] == 1, "must not re-query PRAGMA table_info once `existing` already covers every column"
+
+
 def test_migrate_outcome_columns_retries_a_transient_failure_and_still_succeeds(monkeypatch):
     """A concurrently-writing dashboard or scheduler on the same DB_PATH file
     can make ``ALTER TABLE ADD COLUMN`` raise a transient "database is
@@ -165,6 +189,7 @@ def test_migrate_outcome_columns_does_not_retry_when_a_concurrent_writer_won_the
     store._engine = create_engine("sqlite://", creator=lambda: conn)
 
     calls = {"n": 0}
+    real_add = SyntheticBacktestStore._add_outcome_column
 
     def _lost_the_race(engine, column, col_def):
         if column == "price_at_cutoff":
@@ -175,17 +200,28 @@ def test_migrate_outcome_columns_does_not_retry_when_a_concurrent_writer_won_the
             conn.execute(f"ALTER TABLE synthetic_recommendation ADD COLUMN {column} {col_def}")
             conn.commit()
             raise OperationalError("ALTER TABLE ...", {}, RuntimeError("duplicate column name: price_at_cutoff"))
+        # Every other column adds normally — delegating to the real
+        # implementation (rather than silently no-op'ing) so this test
+        # actually exercises the whole batch, not just the raced column;
+        # a regression that dropped a column from the loop (e.g. an
+        # accidental early return right after handling the race) would
+        # otherwise pass this test undetected.
+        return real_add(engine, column, col_def)
 
     monkeypatch.setattr(store, "_add_outcome_column", _lost_the_race)
     monkeypatch.setattr("analysis.synthetic_backtest.time.sleep", lambda *_: (_ for _ in ()).throw(
         AssertionError("must not sleep/retry once the concurrent add is detected")
     ))
 
-    store._migrate_outcome_columns(store._engine)
+    result = store._migrate_outcome_columns(store._engine)
 
     cols = {row[1] for row in conn.execute("PRAGMA table_info(synthetic_recommendation)")}
-    assert "price_at_cutoff" in cols
+    assert {
+        "price_at_cutoff", "price_at_horizon", "horizon_date", "return_pct",
+        "benchmark_return_pct", "excess_return_pct", "benchmark_missing", "outcome_scored_at",
+    } <= cols, "the race on one column must not stop the rest of the batch from migrating"
     assert calls["n"] == 1, "must recognize the concurrent add on the first failure, not retry"
+    assert result is True
 
 
 def test_migrate_outcome_columns_survives_a_locked_db_on_the_concurrent_add_recheck(monkeypatch):
