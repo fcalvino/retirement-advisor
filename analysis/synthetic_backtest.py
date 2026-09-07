@@ -196,8 +196,7 @@ class SyntheticBacktestStore:
             ("benchmark_missing", "BOOLEAN DEFAULT 0"),
             ("outcome_scored_at", "DATETIME"),
         ]
-        with engine.connect() as conn:
-            existing = {row[1] for row in conn.execute(text("PRAGMA table_info(synthetic_recommendation)"))}
+        existing = self._migrated_columns(engine)
 
         attempts = max(1, int(FETCH.max_retries))
         for column, col_def in columns:
@@ -210,6 +209,19 @@ class SyntheticBacktestStore:
                     logger.info(f"synthetic_backtest migration: added synthetic_recommendation.{column}")
                     break
                 except OperationalError as exc:
+                    # The up-front PRAGMA check only disambiguates the initial
+                    # state — a second writer can still add this exact column
+                    # in the window between our check and our own ALTER TABLE,
+                    # which raises the identical OperationalError ("duplicate
+                    # column name") as a genuine lock. Re-checking here tells
+                    # "someone else already finished this" apart from "still
+                    # failing", so a benign race does not get logged as a
+                    # permanent failure for a column that in fact now exists.
+                    if column in self._migrated_columns(engine):
+                        logger.info(
+                            f"synthetic_backtest migration: {column} added concurrently by another writer"
+                        )
+                        break
                     if attempt == attempts:
                         logger.error(
                             f"synthetic_backtest migration: could not add {column} after retries — {exc}"
@@ -220,6 +232,17 @@ class SyntheticBacktestStore:
                 except Exception as exc:
                     logger.error(f"synthetic_backtest migration: unexpected error adding {column} — {exc}")
                     break
+
+    @staticmethod
+    def _migrated_columns(engine) -> set:
+        """The outcome/base columns ``synthetic_recommendation`` already has,
+        per a fresh ``PRAGMA table_info`` — the single source of truth used
+        both before attempting a migration and to re-check after a failed
+        ``ALTER TABLE`` (a concurrent writer may have added the same column
+        in between).
+        """
+        with engine.connect() as conn:
+            return {row[1] for row in conn.execute(text("PRAGMA table_info(synthetic_recommendation)"))}
 
     @staticmethod
     def _add_outcome_column(engine, column: str, col_def: str) -> None:

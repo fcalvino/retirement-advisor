@@ -140,6 +140,54 @@ def test_migrate_outcome_columns_retries_a_transient_failure_and_still_succeeds(
     assert calls["n"] == 2, "must retry exactly once after the transient failure, then succeed"
 
 
+def test_migrate_outcome_columns_does_not_retry_when_a_concurrent_writer_won_the_race(monkeypatch):
+    """The up-front PRAGMA check only rules out the *initial* state — a
+    second writer can add the same column in the gap between our check and
+    our own ALTER TABLE, which raises the identical OperationalError
+    ("duplicate column name") as a genuine lock. That must be recognized as
+    success (a re-check finds the column already there), not burn the whole
+    retry budget and log a false permanent failure for a column that in
+    fact exists.
+    """
+    import sqlite3
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.exc import OperationalError
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE synthetic_recommendation ("
+        "id INTEGER PRIMARY KEY, symbol TEXT, as_of TEXT, piotroski_score INTEGER, source TEXT)"
+    )
+    conn.commit()
+
+    store = SyntheticBacktestStore.__new__(SyntheticBacktestStore)
+    store._engine = create_engine("sqlite://", creator=lambda: conn)
+
+    calls = {"n": 0}
+
+    def _lost_the_race(engine, column, col_def):
+        if column == "price_at_cutoff":
+            calls["n"] += 1
+            # A concurrent writer adds the column first, then our own
+            # attempt collides with it — same OperationalError SQLite
+            # raises for "database is locked".
+            conn.execute(f"ALTER TABLE synthetic_recommendation ADD COLUMN {column} {col_def}")
+            conn.commit()
+            raise OperationalError("ALTER TABLE ...", {}, RuntimeError("duplicate column name: price_at_cutoff"))
+
+    monkeypatch.setattr(store, "_add_outcome_column", _lost_the_race)
+    monkeypatch.setattr("analysis.synthetic_backtest.time.sleep", lambda *_: (_ for _ in ()).throw(
+        AssertionError("must not sleep/retry once the concurrent add is detected")
+    ))
+
+    store._migrate_outcome_columns(store._engine)
+
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(synthetic_recommendation)")}
+    assert "price_at_cutoff" in cols
+    assert calls["n"] == 1, "must recognize the concurrent add on the first failure, not retry"
+
+
 def test_get_all_filters_by_symbol():
     store = SyntheticBacktestStore(":memory:")
     store.log_piotroski("AAPL", date(2021, 6, 1), _detail(5))
