@@ -168,12 +168,18 @@ def run(symbols: List[str], cutoffs: List[date]) -> dict:
     it (cron, CI, a future scheduled job).
 
     Refuses outright (all of *symbols* × *cutoffs* counted as ``failed``,
-    nothing fetched) rather than risk it silently, in two cases: the store's
-    resumability guarantee could not be verified (see
-    ``SyntheticBacktestStore.unique_index_verified``), or SEC's ticker→CIK
-    map itself could not be fetched — checked *here*, not only in ``main()``,
-    so any caller of ``run()`` directly (a scheduler, a notebook, the test
-    suite) gets the same protection a CLI invocation does.
+    nothing fetched) rather than risk it silently, in three cases: the
+    store's resumability guarantee could not be verified (see
+    ``SyntheticBacktestStore.unique_index_verified``), its PR 5/N outcome
+    columns could not be verified either (``outcome_columns_verified`` —
+    without this, a partial migration wouldn't stop ``log_piotroski`` from
+    being called, and its INSERT includes all 8 outcome columns
+    unconditionally, so every write would fail silently and the whole run
+    would burn its SEC EDGAR fetches for zero rows written), or SEC's
+    ticker→CIK map itself could not be fetched — checked *here*, not only
+    in ``main()``, so any caller of ``run()`` directly (a scheduler, a
+    notebook, the test suite) gets the same protection a CLI invocation
+    does.
     """
     # De-duped up front, before `total` is computed from them: a duplicate
     # --cutoffs or --symbols entry must not inflate the reported failure
@@ -208,6 +214,31 @@ def run(symbols: List[str], cutoffs: List[date]) -> dict:
             "synthetic_backtest_store: resumability guarantee not verified (unique index "
             "missing, likely pre-existing duplicate data) — refusing to run a batch backtest "
             "against an unprotected database"
+        )
+        return {"written": 0, "skipped": 0, "failed": total}
+
+    if not synthetic_backtest_store.outcome_columns_verified:
+        # Same live-recovery rationale as unique_index_verified above: this
+        # flag was computed once, at store construction, and a lock held by
+        # a concurrently-writing dashboard/scheduler at that exact moment
+        # could have outlasted the migration's retry budget. Without this
+        # gate, a failed/partial outcome-column migration wouldn't stop
+        # log_piotroski from being called below — its INSERT includes all 8
+        # outcome columns unconditionally (SQLAlchemy maps every column, not
+        # just the ones with a Python-side default), so a missing column
+        # breaks every single write, log_piotroski swallows the exception,
+        # and this whole batch would burn every SEC EDGAR fetch only to
+        # write zero rows — a silent total failure instead of the clean
+        # refusal this check gives it up front.
+        synthetic_backtest_store.outcome_columns_verified = synthetic_backtest_store._migrate_outcome_columns(
+            synthetic_backtest_store._engine
+        )
+
+    if not synthetic_backtest_store.outcome_columns_verified:
+        logger.error(
+            "synthetic_backtest_store: outcome columns not verified (PR 5/N schema migration "
+            "incomplete) — refusing to run a batch backtest that would silently fail every "
+            "log_piotroski write"
         )
         return {"written": 0, "skipped": 0, "failed": total}
 
