@@ -42,6 +42,61 @@ def test_log_piotroski_persists_the_score_and_all_nine_checks():
     assert row.source == "point_in_time_piotroski"
 
 
+def test_log_piotroski_leaves_outcome_columns_unset():
+    """PR 5/N is schema-only — log_piotroski (PR 3/N) doesn't know about
+    outcomes and must not silently invent a value for any of them.
+    """
+    store = SyntheticBacktestStore(":memory:")
+    store.log_piotroski("AAPL", date(2021, 6, 1), _detail(7))
+
+    row = store.get_all()[0]
+    assert row.price_at_cutoff is None
+    assert row.price_at_horizon is None
+    assert row.horizon_date is None
+    assert row.return_pct is None
+    assert row.benchmark_return_pct is None
+    assert row.excess_return_pct is None
+    assert row.benchmark_missing is False
+    assert row.outcome_scored_at is None
+
+
+def test_outcome_columns_migrate_onto_a_pre_existing_database():
+    """A database created before PR 5/N (PR 3/N and PR 4/N both shipped
+    without these columns, and both are already merged) must gain them
+    without losing any existing row — the same guarantee
+    ``analysis/track_record.py``'s own ``_migrate`` already gives
+    ``recommendation_log`` for its "Calibration inputs" columns.
+    """
+    import sqlite3
+
+    from sqlalchemy import create_engine
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE synthetic_recommendation ("
+        "id INTEGER PRIMARY KEY, symbol TEXT, as_of TEXT, piotroski_score INTEGER, "
+        "source TEXT)"
+    )
+    conn.execute(
+        "INSERT INTO synthetic_recommendation (symbol, as_of, piotroski_score, source) "
+        "VALUES ('AAPL', '2021-06-01', 7, 'point_in_time_piotroski')"
+    )
+    conn.commit()
+
+    store = SyntheticBacktestStore.__new__(SyntheticBacktestStore)
+    store._engine = create_engine("sqlite://", creator=lambda: conn)
+    store._migrate_outcome_columns(store._engine)
+
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(synthetic_recommendation)")}
+    assert {
+        "price_at_cutoff", "price_at_horizon", "horizon_date", "return_pct",
+        "benchmark_return_pct", "excess_return_pct", "benchmark_missing", "outcome_scored_at",
+    } <= cols
+
+    row = conn.execute("SELECT symbol, piotroski_score FROM synthetic_recommendation").fetchone()
+    assert row == ("AAPL", 7)  # the pre-existing row survives untouched
+
+
 def test_get_all_filters_by_symbol():
     store = SyntheticBacktestStore(":memory:")
     store.log_piotroski("AAPL", date(2021, 6, 1), _detail(5))

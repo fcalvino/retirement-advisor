@@ -1,12 +1,12 @@
 """
-Storage for synthetic point-in-time backtest recommendations (PR 3/N, Idea 2).
+Storage for synthetic point-in-time backtest recommendations (PR 3/N + 5/N, Idea 2).
 
 Third slice of "Backtesting point-in-time" (``docs/DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md``
 §2/§4). PR 1 (``analysis/point_in_time.py``) and PR 2
 (``analysis/point_in_time_piotroski.py``) reconstruct fundamentals and score
 them; neither persists anything. This module is where the resulting scores
-*could* be persisted, for a future PR that runs the reconstruction across many
-historical cutoffs and measures 1-year outcomes against them.
+are persisted (PR 3/N) and, from PR 4/N on, actually generated in volume
+against real SEC EDGAR data (``scripts/point_in_time_backtest.py``).
 
 Deliberately a **separate table, separate store class, separate singleton** —
 never ``analysis.track_record.RecommendationLog``/``track_record_store``.
@@ -24,11 +24,21 @@ exclusion **structural**: ``analysis.track_record_scorer``'s aggregates
 query ``RecommendationLog``/``RecommendationOutcome`` directly — a table that
 isn't there can't leak into them, no filter to forget.
 
-Schema deliberately minimal: just what PR 2's ``PiotroskiDetail`` already
-produces. Outcome fields (price at cutoff, price at +1y, excess vs benchmark)
-are not added yet — they belong to the PR that actually measures them, added
-via the same ``_migrate`` pattern ``analysis/track_record.py`` already uses
-for its own "Calibration inputs" columns, not guessed at now.
+PR 3/N's schema was deliberately minimal: just what PR 2's ``PiotroskiDetail``
+already produces, with a note that outcome fields "are not added yet ...
+not guessed at now". PR 5/N adds them — ``price_at_cutoff``,
+``price_at_horizon``, ``return_pct``, ``benchmark_return_pct``,
+``excess_return_pct``, ``benchmark_missing`` — via the same ``ADD COLUMN``
+``_migrate`` pattern ``analysis/track_record.py`` uses for its own
+"Calibration inputs" columns. **Schema only**: nothing in this PR measures
+an outcome or writes a value into any of these columns — every one stays
+``NULL``/unset until the PR that actually fetches prices via yfinance and
+computes a return does so (PR 6/N). A single horizon (1 year), not
+``RecommendationOutcome``'s multi-horizon 30/90/252-day table, because the
+diagnóstico names exactly one horizon and Piotroski is itself a 1-year
+signal (``config.PiotroskiConfig``) — a second table for horizons nothing
+here asks for would be premature generality this project's conventions
+already warn against.
 """
 
 from __future__ import annotations
@@ -38,7 +48,7 @@ from datetime import date
 from typing import Any, List, Optional, Union
 
 from loguru import logger
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, text
+from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, create_engine, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
@@ -103,6 +113,35 @@ class SyntheticRecommendation(_Base):
     source                    = Column(String, default="point_in_time_piotroski")
     created_at                = Column(DateTime, default=utc_now)
 
+    # --- Outcome fields (PR 5/N) ---------------------------------------
+    # Deliberately added via _migrate's ADD COLUMN pattern (below), not
+    # designed into the original PR 3/N schema — see that module's own
+    # docstring: "not guessed at now". Every column here is nullable and
+    # unset by default; nothing that writes a row today (PR 4/N's
+    # log_piotroski) sets any of these, and no PR yet *measures* them —
+    # that is PR 6/N. This PR is schema-only.
+    #
+    # Single horizon (1 year), unlike analysis/track_record.py's
+    # RecommendationOutcome (a separate table for 30/90/252-day horizons):
+    # the diagnóstico that motivated this whole idea names one horizon —
+    # "medir outcomes a 1 año" — and Piotroski is itself a 1-year signal
+    # (config.PiotroskiConfig: "a 1-year value screen"), so a second table
+    # for horizons nothing here will ever ask for would be exactly the
+    # premature generality this project's own conventions warn against.
+    price_at_cutoff           = Column(Float, nullable=True)   # price on `as_of`, for this ticker's own return
+    price_at_horizon          = Column(Float, nullable=True)   # price ~1 year later
+    horizon_date              = Column(String, nullable=True)  # ISO date actually used for "+1 year"
+    return_pct                = Column(Float, nullable=True)
+    benchmark_return_pct      = Column(Float, nullable=True)
+    excess_return_pct         = Column(Float, nullable=True)
+    # Same U2-4 precedent as RecommendationOutcome.benchmark_missing
+    # (analysis/track_record.py): a benchmark that could not be priced is
+    # unknown, not zero — benchmark_return_pct/excess_return_pct stay NULL
+    # rather than defaulting to a number that would read as "tied the
+    # market" when the truth is "we don't know".
+    benchmark_missing         = Column(Boolean, default=False)
+    outcome_scored_at         = Column(DateTime, nullable=True)
+
 
 class SyntheticBacktestStore:
     """SQLite-backed store for synthetic point-in-time recommendations.
@@ -118,8 +157,36 @@ class SyntheticBacktestStore:
         url = "sqlite:///:memory:" if path == ":memory:" else f"sqlite:///{path}"
         self._engine = create_engine(url, echo=False)
         _Base.metadata.create_all(self._engine)
+        self._migrate_outcome_columns(self._engine)
         self.unique_index_verified = self._migrate(self._engine)
         self._Session = sessionmaker(bind=self._engine)
+
+    def _migrate_outcome_columns(self, engine) -> None:
+        """Add the PR 5/N outcome columns to a database file that may
+        already have this table without them (SQLite safe). Same shape as
+        ``analysis/track_record.py``'s own ``_migrate`` — a plain ``ADD
+        COLUMN`` per field, wrapped in ``try/except: pass`` because *that*
+        exception (column already exists) genuinely is the benign,
+        expected case here, unlike the unique-index migration below.
+        """
+        columns = [
+            ("price_at_cutoff", "FLOAT"),
+            ("price_at_horizon", "FLOAT"),
+            ("horizon_date", "VARCHAR"),
+            ("return_pct", "FLOAT"),
+            ("benchmark_return_pct", "FLOAT"),
+            ("excess_return_pct", "FLOAT"),
+            ("benchmark_missing", "BOOLEAN DEFAULT 0"),
+            ("outcome_scored_at", "DATETIME"),
+        ]
+        with engine.connect() as conn:
+            for column, col_def in columns:
+                try:
+                    conn.execute(text(f"ALTER TABLE synthetic_recommendation ADD COLUMN {column} {col_def}"))
+                    conn.commit()
+                    logger.info(f"synthetic_backtest migration: added synthetic_recommendation.{column}")
+                except Exception:
+                    pass  # column already exists
 
     def _migrate(self, engine) -> bool:
         """Apply the uniqueness guarantee to a database file that may already
