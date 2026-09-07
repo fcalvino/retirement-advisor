@@ -42,6 +42,187 @@ def test_log_piotroski_persists_the_score_and_all_nine_checks():
     assert row.source == "point_in_time_piotroski"
 
 
+def test_log_piotroski_leaves_outcome_columns_unset():
+    """PR 5/N is schema-only — log_piotroski (PR 3/N) doesn't know about
+    outcomes and must not silently invent a value for any of them.
+    """
+    store = SyntheticBacktestStore(":memory:")
+    store.log_piotroski("AAPL", date(2021, 6, 1), _detail(7))
+
+    row = store.get_all()[0]
+    assert row.price_at_cutoff is None
+    assert row.price_at_horizon is None
+    assert row.horizon_date is None
+    assert row.return_pct is None
+    assert row.benchmark_return_pct is None
+    assert row.excess_return_pct is None
+    assert row.benchmark_missing is False
+    assert row.outcome_scored_at is None
+
+
+def test_outcome_columns_migrate_onto_a_pre_existing_database():
+    """A database created before PR 5/N (PR 3/N and PR 4/N both shipped
+    without these columns, and both are already merged) must gain them
+    without losing any existing row — the same guarantee
+    ``analysis/track_record.py``'s own ``_migrate`` already gives
+    ``recommendation_log`` for its "Calibration inputs" columns.
+    """
+    import sqlite3
+
+    from sqlalchemy import create_engine
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE synthetic_recommendation ("
+        "id INTEGER PRIMARY KEY, symbol TEXT, as_of TEXT, piotroski_score INTEGER, "
+        "source TEXT)"
+    )
+    conn.execute(
+        "INSERT INTO synthetic_recommendation (symbol, as_of, piotroski_score, source) "
+        "VALUES ('AAPL', '2021-06-01', 7, 'point_in_time_piotroski')"
+    )
+    conn.commit()
+
+    store = SyntheticBacktestStore.__new__(SyntheticBacktestStore)
+    store._engine = create_engine("sqlite://", creator=lambda: conn)
+    store._migrate_outcome_columns(store._engine)
+
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(synthetic_recommendation)")}
+    assert {
+        "price_at_cutoff", "price_at_horizon", "horizon_date", "return_pct",
+        "benchmark_return_pct", "excess_return_pct", "benchmark_missing", "outcome_scored_at",
+    } <= cols
+
+    row = conn.execute("SELECT symbol, piotroski_score FROM synthetic_recommendation").fetchone()
+    assert row == ("AAPL", 7)  # the pre-existing row survives untouched
+
+
+def test_migrate_outcome_columns_retries_a_transient_failure_and_still_succeeds(monkeypatch):
+    """A concurrently-writing dashboard or scheduler on the same DB_PATH file
+    can make ``ALTER TABLE ADD COLUMN`` raise a transient "database is
+    locked" error too, same as the unique-index migration — checked via
+    ``PRAGMA table_info`` up front specifically so this failure can be told
+    apart from "column already exists" (SQLite raises the identical
+    ``OperationalError`` for both) and retried rather than silently skipped.
+    """
+    import sqlite3
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.exc import OperationalError
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE synthetic_recommendation ("
+        "id INTEGER PRIMARY KEY, symbol TEXT, as_of TEXT, piotroski_score INTEGER, source TEXT)"
+    )
+    conn.commit()
+
+    store = SyntheticBacktestStore.__new__(SyntheticBacktestStore)
+    store._engine = create_engine("sqlite://", creator=lambda: conn)
+
+    calls = {"n": 0}
+    real_add = SyntheticBacktestStore._add_outcome_column
+
+    def _flaky_add(engine, column, col_def):
+        if column == "price_at_cutoff":
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise OperationalError("ALTER TABLE ...", {}, RuntimeError("database is locked"))
+        return real_add(engine, column, col_def)
+
+    monkeypatch.setattr(store, "_add_outcome_column", _flaky_add)
+    monkeypatch.setattr("analysis.synthetic_backtest.time.sleep", lambda *_: None)
+
+    store._migrate_outcome_columns(store._engine)
+
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(synthetic_recommendation)")}
+    assert "price_at_cutoff" in cols
+    assert calls["n"] == 2, "must retry exactly once after the transient failure, then succeed"
+
+
+def test_migrate_outcome_columns_does_not_retry_when_a_concurrent_writer_won_the_race(monkeypatch):
+    """The up-front PRAGMA check only rules out the *initial* state — a
+    second writer can add the same column in the gap between our check and
+    our own ALTER TABLE, which raises the identical OperationalError
+    ("duplicate column name") as a genuine lock. That must be recognized as
+    success (a re-check finds the column already there), not burn the whole
+    retry budget and log a false permanent failure for a column that in
+    fact exists.
+    """
+    import sqlite3
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.exc import OperationalError
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE synthetic_recommendation ("
+        "id INTEGER PRIMARY KEY, symbol TEXT, as_of TEXT, piotroski_score INTEGER, source TEXT)"
+    )
+    conn.commit()
+
+    store = SyntheticBacktestStore.__new__(SyntheticBacktestStore)
+    store._engine = create_engine("sqlite://", creator=lambda: conn)
+
+    calls = {"n": 0}
+
+    def _lost_the_race(engine, column, col_def):
+        if column == "price_at_cutoff":
+            calls["n"] += 1
+            # A concurrent writer adds the column first, then our own
+            # attempt collides with it — same OperationalError SQLite
+            # raises for "database is locked".
+            conn.execute(f"ALTER TABLE synthetic_recommendation ADD COLUMN {column} {col_def}")
+            conn.commit()
+            raise OperationalError("ALTER TABLE ...", {}, RuntimeError("duplicate column name: price_at_cutoff"))
+
+    monkeypatch.setattr(store, "_add_outcome_column", _lost_the_race)
+    monkeypatch.setattr("analysis.synthetic_backtest.time.sleep", lambda *_: (_ for _ in ()).throw(
+        AssertionError("must not sleep/retry once the concurrent add is detected")
+    ))
+
+    store._migrate_outcome_columns(store._engine)
+
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(synthetic_recommendation)")}
+    assert "price_at_cutoff" in cols
+    assert calls["n"] == 1, "must recognize the concurrent add on the first failure, not retry"
+
+
+def test_migrate_outcome_columns_survives_a_locked_db_on_the_concurrent_add_recheck(monkeypatch):
+    """A genuine lock (not a concurrent add) raised by the very re-check that
+    tells the two apart must not itself crash the migration — it must be
+    treated as "still failing", not propagate out of ``_migrate_outcome_columns``
+    (which would crash ``__init__`` and the module-level singleton it builds,
+    exactly the failure mode this whole retry mechanism exists to avoid).
+    """
+    import sqlite3
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.exc import OperationalError
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE synthetic_recommendation ("
+        "id INTEGER PRIMARY KEY, symbol TEXT, as_of TEXT, piotroski_score INTEGER, source TEXT)"
+    )
+    conn.commit()
+
+    store = SyntheticBacktestStore.__new__(SyntheticBacktestStore)
+    store._engine = create_engine("sqlite://", creator=lambda: conn)
+
+    def _always_locked(engine, column, col_def):
+        raise OperationalError("ALTER TABLE ...", {}, RuntimeError("database is locked"))
+
+    def _recheck_also_locked(engine):
+        raise OperationalError("PRAGMA table_info ...", {}, RuntimeError("database is locked"))
+
+    monkeypatch.setattr(store, "_add_outcome_column", _always_locked)
+    monkeypatch.setattr(store, "_migrated_columns", _recheck_also_locked)
+    monkeypatch.setattr("analysis.synthetic_backtest.time.sleep", lambda *_: None)
+
+    store._migrate_outcome_columns(store._engine)  # must not raise
+
+
 def test_get_all_filters_by_symbol():
     store = SyntheticBacktestStore(":memory:")
     store.log_piotroski("AAPL", date(2021, 6, 1), _detail(5))

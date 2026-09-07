@@ -1,12 +1,12 @@
 """
-Storage for synthetic point-in-time backtest recommendations (PR 3/N, Idea 2).
+Storage for synthetic point-in-time backtest recommendations (PR 3/N + 5/N, Idea 2).
 
 Third slice of "Backtesting point-in-time" (``docs/DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md``
 §2/§4). PR 1 (``analysis/point_in_time.py``) and PR 2
 (``analysis/point_in_time_piotroski.py``) reconstruct fundamentals and score
 them; neither persists anything. This module is where the resulting scores
-*could* be persisted, for a future PR that runs the reconstruction across many
-historical cutoffs and measures 1-year outcomes against them.
+are persisted (PR 3/N) and, from PR 4/N on, actually generated in volume
+against real SEC EDGAR data (``scripts/point_in_time_backtest.py``).
 
 Deliberately a **separate table, separate store class, separate singleton** —
 never ``analysis.track_record.RecommendationLog``/``track_record_store``.
@@ -24,11 +24,21 @@ exclusion **structural**: ``analysis.track_record_scorer``'s aggregates
 query ``RecommendationLog``/``RecommendationOutcome`` directly — a table that
 isn't there can't leak into them, no filter to forget.
 
-Schema deliberately minimal: just what PR 2's ``PiotroskiDetail`` already
-produces. Outcome fields (price at cutoff, price at +1y, excess vs benchmark)
-are not added yet — they belong to the PR that actually measures them, added
-via the same ``_migrate`` pattern ``analysis/track_record.py`` already uses
-for its own "Calibration inputs" columns, not guessed at now.
+PR 3/N's schema was deliberately minimal: just what PR 2's ``PiotroskiDetail``
+already produces, with a note that outcome fields "are not added yet ...
+not guessed at now". PR 5/N adds them — ``price_at_cutoff``,
+``price_at_horizon``, ``return_pct``, ``benchmark_return_pct``,
+``excess_return_pct``, ``benchmark_missing`` — via the same ``ADD COLUMN``
+``_migrate`` pattern ``analysis/track_record.py`` uses for its own
+"Calibration inputs" columns. **Schema only**: nothing in this PR measures
+an outcome or writes a value into any of these columns — every one stays
+``NULL``/unset until the PR that actually fetches prices via yfinance and
+computes a return does so (PR 6/N). A single horizon (1 year), not
+``RecommendationOutcome``'s multi-horizon 30/90/252-day table, because the
+diagnóstico names exactly one horizon and Piotroski is itself a 1-year
+signal (``config.PiotroskiConfig``) — a second table for horizons nothing
+here asks for would be premature generality this project's conventions
+already warn against.
 """
 
 from __future__ import annotations
@@ -38,7 +48,7 @@ from datetime import date
 from typing import Any, List, Optional, Union
 
 from loguru import logger
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, text
+from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, create_engine, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
@@ -103,6 +113,35 @@ class SyntheticRecommendation(_Base):
     source                    = Column(String, default="point_in_time_piotroski")
     created_at                = Column(DateTime, default=utc_now)
 
+    # --- Outcome fields (PR 5/N) ---------------------------------------
+    # Deliberately added via _migrate's ADD COLUMN pattern (below), not
+    # designed into the original PR 3/N schema — see that module's own
+    # docstring: "not guessed at now". Every column here is nullable and
+    # unset by default; nothing that writes a row today (PR 4/N's
+    # log_piotroski) sets any of these, and no PR yet *measures* them —
+    # that is PR 6/N. This PR is schema-only.
+    #
+    # Single horizon (1 year), unlike analysis/track_record.py's
+    # RecommendationOutcome (a separate table for 30/90/252-day horizons):
+    # the diagnóstico that motivated this whole idea names one horizon —
+    # "medir outcomes a 1 año" — and Piotroski is itself a 1-year signal
+    # (config.PiotroskiConfig: "a 1-year value screen"), so a second table
+    # for horizons nothing here will ever ask for would be exactly the
+    # premature generality this project's own conventions warn against.
+    price_at_cutoff           = Column(Float, nullable=True)   # price on `as_of`, for this ticker's own return
+    price_at_horizon          = Column(Float, nullable=True)   # price ~1 year later
+    horizon_date              = Column(String, nullable=True)  # ISO date actually used for "+1 year"
+    return_pct                = Column(Float, nullable=True)
+    benchmark_return_pct      = Column(Float, nullable=True)
+    excess_return_pct         = Column(Float, nullable=True)
+    # Same U2-4 precedent as RecommendationOutcome.benchmark_missing
+    # (analysis/track_record.py): a benchmark that could not be priced is
+    # unknown, not zero — benchmark_return_pct/excess_return_pct stay NULL
+    # rather than defaulting to a number that would read as "tied the
+    # market" when the truth is "we don't know".
+    benchmark_missing         = Column(Boolean, default=False)
+    outcome_scored_at         = Column(DateTime, nullable=True)
+
 
 class SyntheticBacktestStore:
     """SQLite-backed store for synthetic point-in-time recommendations.
@@ -118,8 +157,142 @@ class SyntheticBacktestStore:
         url = "sqlite:///:memory:" if path == ":memory:" else f"sqlite:///{path}"
         self._engine = create_engine(url, echo=False)
         _Base.metadata.create_all(self._engine)
+        self._migrate_outcome_columns(self._engine)
         self.unique_index_verified = self._migrate(self._engine)
         self._Session = sessionmaker(bind=self._engine)
+
+    def _migrate_outcome_columns(self, engine) -> None:
+        """Add the PR 5/N outcome columns to a database file that may
+        already have this table without them (SQLite safe).
+
+        Checks ``PRAGMA table_info`` first rather than letting a
+        "duplicate column" error do that job via a bare
+        ``except: pass`` — SQLite raises the exact same
+        ``OperationalError`` for "this column already exists" as it does
+        for "the database is locked", so a caller cannot tell a genuinely
+        transient failure (a concurrently-writing dashboard/scheduler on
+        the same ``DB_PATH`` — the same race ``_migrate`` below already
+        retries for) apart from the benign, expected case without first
+        knowing which one it is. Checking up front removes the ambiguity:
+        a column already present is simply skipped, never attempted, and
+        any exception raised while actually adding a genuinely missing
+        column is unambiguously a real failure worth retrying (via
+        ``config.FETCH``, the same policy ``_migrate`` uses) — unlike
+        ``analysis/track_record.py``'s own ``_migrate``, whose columns
+        are already read by production code today and have run this way
+        without incident; these columns aren't read by anything yet, but
+        are about to be (the PR that actually measures outcomes), so a
+        silently-incomplete migration here would surface downstream as an
+        opaque "no such column" on the very next PR instead of here,
+        where the cause is obvious.
+        """
+        columns = [
+            ("price_at_cutoff", "FLOAT"),
+            ("price_at_horizon", "FLOAT"),
+            ("horizon_date", "VARCHAR"),
+            ("return_pct", "FLOAT"),
+            ("benchmark_return_pct", "FLOAT"),
+            ("excess_return_pct", "FLOAT"),
+            ("benchmark_missing", "BOOLEAN DEFAULT 0"),
+            ("outcome_scored_at", "DATETIME"),
+        ]
+        try:
+            existing = self._migrated_columns(engine)
+        except Exception as exc:
+            # A locked/unreachable database here is exactly the scenario this
+            # whole method exists to survive — falling back to "assume none
+            # migrated yet" is safe (each ALTER attempt below re-derives the
+            # truth itself, including via the same guarded re-check on
+            # failure) and keeps a transient read failure from raising out of
+            # __init__ and crashing the module-level singleton at import time.
+            logger.error(f"synthetic_backtest migration: could not read existing columns — {exc}")
+            existing = set()
+
+        attempts = max(1, int(FETCH.max_retries))
+        for column, col_def in columns:
+            if column in existing:
+                continue  # already migrated — the expected case on every re-run
+            delay = float(FETCH.retry_base_delay_s)
+            for attempt in range(1, attempts + 1):
+                try:
+                    self._add_outcome_column(engine, column, col_def)
+                    logger.info(f"synthetic_backtest migration: added synthetic_recommendation.{column}")
+                    break
+                except OperationalError as exc:
+                    # The up-front PRAGMA check only disambiguates the initial
+                    # state — a second writer can still add this exact column
+                    # in the window between our check and our own ALTER TABLE,
+                    # which raises the identical OperationalError ("duplicate
+                    # column name") as a genuine lock. Re-checking here tells
+                    # "someone else already finished this" apart from "still
+                    # failing", so a benign race does not get logged as a
+                    # permanent failure for a column that in fact now exists.
+                    #
+                    # This re-check is itself a query against the same
+                    # possibly-locked database, so it must not be allowed to
+                    # raise past this handler — a genuine lock (not a
+                    # concurrent add) would otherwise escape as an unhandled
+                    # exception, uncaught by the sibling `except Exception`
+                    # below (Python does not re-dispatch a fresh exception
+                    # raised while already handling one), crashing __init__
+                    # and the module-level singleton it builds.
+                    try:
+                        already_added = column in self._migrated_columns(engine)
+                        recheck_failed = False
+                    except Exception:
+                        # The recheck query failed too (same possibly-locked
+                        # database) — we genuinely don't know whether `column`
+                        # exists or not, unlike the `already_added = False`
+                        # case above where the recheck *succeeded* and
+                        # confirmed absence. Tracked separately so the final
+                        # log line never asserts "could not add" for a column
+                        # that, for all we actually know, is already there.
+                        already_added = False
+                        recheck_failed = True
+                    if already_added:
+                        logger.info(
+                            f"synthetic_backtest migration: {column} added concurrently by another writer"
+                        )
+                        break
+                    if attempt == attempts:
+                        if recheck_failed:
+                            logger.error(
+                                f"synthetic_backtest migration: {column} — ADD COLUMN failed after "
+                                f"retries and its final state could not be confirmed (recheck also "
+                                f"failed) — {exc}"
+                            )
+                        else:
+                            logger.error(
+                                f"synthetic_backtest migration: could not add {column} after retries — {exc}"
+                            )
+                    else:
+                        time.sleep(delay)
+                        delay *= 2
+                except Exception as exc:
+                    logger.error(f"synthetic_backtest migration: unexpected error adding {column} — {exc}")
+                    break
+
+    @staticmethod
+    def _migrated_columns(engine) -> set:
+        """The outcome/base columns ``synthetic_recommendation`` already has,
+        per a fresh ``PRAGMA table_info`` — the single source of truth used
+        both before attempting a migration and to re-check after a failed
+        ``ALTER TABLE`` (a concurrent writer may have added the same column
+        in between).
+        """
+        with engine.connect() as conn:
+            return {row[1] for row in conn.execute(text("PRAGMA table_info(synthetic_recommendation)"))}
+
+    @staticmethod
+    def _add_outcome_column(engine, column: str, col_def: str) -> None:
+        """One attempt at adding a single outcome column. Split out from
+        ``_migrate_outcome_columns`` so a retry test can stub *this*
+        directly instead of wrapping a live SQLAlchemy connection — same
+        seam ``_create_unique_index`` below already uses for ``_migrate``.
+        """
+        with engine.connect() as conn:
+            conn.execute(text(f"ALTER TABLE synthetic_recommendation ADD COLUMN {column} {col_def}"))
+            conn.commit()
 
     def _migrate(self, engine) -> bool:
         """Apply the uniqueness guarantee to a database file that may already
