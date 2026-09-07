@@ -196,7 +196,17 @@ class SyntheticBacktestStore:
             ("benchmark_missing", "BOOLEAN DEFAULT 0"),
             ("outcome_scored_at", "DATETIME"),
         ]
-        existing = self._migrated_columns(engine)
+        try:
+            existing = self._migrated_columns(engine)
+        except Exception as exc:
+            # A locked/unreachable database here is exactly the scenario this
+            # whole method exists to survive — falling back to "assume none
+            # migrated yet" is safe (each ALTER attempt below re-derives the
+            # truth itself, including via the same guarded re-check on
+            # failure) and keeps a transient read failure from raising out of
+            # __init__ and crashing the module-level singleton at import time.
+            logger.error(f"synthetic_backtest migration: could not read existing columns — {exc}")
+            existing = set()
 
         attempts = max(1, int(FETCH.max_retries))
         for column, col_def in columns:
@@ -217,7 +227,20 @@ class SyntheticBacktestStore:
                     # "someone else already finished this" apart from "still
                     # failing", so a benign race does not get logged as a
                     # permanent failure for a column that in fact now exists.
-                    if column in self._migrated_columns(engine):
+                    #
+                    # This re-check is itself a query against the same
+                    # possibly-locked database, so it must not be allowed to
+                    # raise past this handler — a genuine lock (not a
+                    # concurrent add) would otherwise escape as an unhandled
+                    # exception, uncaught by the sibling `except Exception`
+                    # below (Python does not re-dispatch a fresh exception
+                    # raised while already handling one), crashing __init__
+                    # and the module-level singleton it builds.
+                    try:
+                        already_added = column in self._migrated_columns(engine)
+                    except Exception:
+                        already_added = False
+                    if already_added:
                         logger.info(
                             f"synthetic_backtest migration: {column} added concurrently by another writer"
                         )

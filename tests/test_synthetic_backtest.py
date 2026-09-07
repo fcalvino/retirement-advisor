@@ -188,6 +188,41 @@ def test_migrate_outcome_columns_does_not_retry_when_a_concurrent_writer_won_the
     assert calls["n"] == 1, "must recognize the concurrent add on the first failure, not retry"
 
 
+def test_migrate_outcome_columns_survives_a_locked_db_on_the_concurrent_add_recheck(monkeypatch):
+    """A genuine lock (not a concurrent add) raised by the very re-check that
+    tells the two apart must not itself crash the migration — it must be
+    treated as "still failing", not propagate out of ``_migrate_outcome_columns``
+    (which would crash ``__init__`` and the module-level singleton it builds,
+    exactly the failure mode this whole retry mechanism exists to avoid).
+    """
+    import sqlite3
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.exc import OperationalError
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE synthetic_recommendation ("
+        "id INTEGER PRIMARY KEY, symbol TEXT, as_of TEXT, piotroski_score INTEGER, source TEXT)"
+    )
+    conn.commit()
+
+    store = SyntheticBacktestStore.__new__(SyntheticBacktestStore)
+    store._engine = create_engine("sqlite://", creator=lambda: conn)
+
+    def _always_locked(engine, column, col_def):
+        raise OperationalError("ALTER TABLE ...", {}, RuntimeError("database is locked"))
+
+    def _recheck_also_locked(engine):
+        raise OperationalError("PRAGMA table_info ...", {}, RuntimeError("database is locked"))
+
+    monkeypatch.setattr(store, "_add_outcome_column", _always_locked)
+    monkeypatch.setattr(store, "_migrated_columns", _recheck_also_locked)
+    monkeypatch.setattr("analysis.synthetic_backtest.time.sleep", lambda *_: None)
+
+    store._migrate_outcome_columns(store._engine)  # must not raise
+
+
 def test_get_all_filters_by_symbol():
     store = SyntheticBacktestStore(":memory:")
     store.log_piotroski("AAPL", date(2021, 6, 1), _detail(5))
