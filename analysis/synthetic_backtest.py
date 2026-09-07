@@ -238,17 +238,33 @@ class SyntheticBacktestStore:
                     # and the module-level singleton it builds.
                     try:
                         already_added = column in self._migrated_columns(engine)
+                        recheck_failed = False
                     except Exception:
+                        # The recheck query failed too (same possibly-locked
+                        # database) — we genuinely don't know whether `column`
+                        # exists or not, unlike the `already_added = False`
+                        # case above where the recheck *succeeded* and
+                        # confirmed absence. Tracked separately so the final
+                        # log line never asserts "could not add" for a column
+                        # that, for all we actually know, is already there.
                         already_added = False
+                        recheck_failed = True
                     if already_added:
                         logger.info(
                             f"synthetic_backtest migration: {column} added concurrently by another writer"
                         )
                         break
                     if attempt == attempts:
-                        logger.error(
-                            f"synthetic_backtest migration: could not add {column} after retries — {exc}"
-                        )
+                        if recheck_failed:
+                            logger.error(
+                                f"synthetic_backtest migration: {column} — ADD COLUMN failed after "
+                                f"retries and its final state could not be confirmed (recheck also "
+                                f"failed) — {exc}"
+                            )
+                        else:
+                            logger.error(
+                                f"synthetic_backtest migration: could not add {column} after retries — {exc}"
+                            )
                     else:
                         time.sleep(delay)
                         delay *= 2
