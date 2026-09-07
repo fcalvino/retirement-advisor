@@ -97,6 +97,49 @@ def test_outcome_columns_migrate_onto_a_pre_existing_database():
     assert row == ("AAPL", 7)  # the pre-existing row survives untouched
 
 
+def test_migrate_outcome_columns_retries_a_transient_failure_and_still_succeeds(monkeypatch):
+    """A concurrently-writing dashboard or scheduler on the same DB_PATH file
+    can make ``ALTER TABLE ADD COLUMN`` raise a transient "database is
+    locked" error too, same as the unique-index migration — checked via
+    ``PRAGMA table_info`` up front specifically so this failure can be told
+    apart from "column already exists" (SQLite raises the identical
+    ``OperationalError`` for both) and retried rather than silently skipped.
+    """
+    import sqlite3
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.exc import OperationalError
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE synthetic_recommendation ("
+        "id INTEGER PRIMARY KEY, symbol TEXT, as_of TEXT, piotroski_score INTEGER, source TEXT)"
+    )
+    conn.commit()
+
+    store = SyntheticBacktestStore.__new__(SyntheticBacktestStore)
+    store._engine = create_engine("sqlite://", creator=lambda: conn)
+
+    calls = {"n": 0}
+    real_add = SyntheticBacktestStore._add_outcome_column
+
+    def _flaky_add(engine, column, col_def):
+        if column == "price_at_cutoff":
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise OperationalError("ALTER TABLE ...", {}, RuntimeError("database is locked"))
+        return real_add(engine, column, col_def)
+
+    monkeypatch.setattr(store, "_add_outcome_column", _flaky_add)
+    monkeypatch.setattr("analysis.synthetic_backtest.time.sleep", lambda *_: None)
+
+    store._migrate_outcome_columns(store._engine)
+
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(synthetic_recommendation)")}
+    assert "price_at_cutoff" in cols
+    assert calls["n"] == 2, "must retry exactly once after the transient failure, then succeed"
+
+
 def test_get_all_filters_by_symbol():
     store = SyntheticBacktestStore(":memory:")
     store.log_piotroski("AAPL", date(2021, 6, 1), _detail(5))

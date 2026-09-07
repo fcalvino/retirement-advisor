@@ -163,11 +163,28 @@ class SyntheticBacktestStore:
 
     def _migrate_outcome_columns(self, engine) -> None:
         """Add the PR 5/N outcome columns to a database file that may
-        already have this table without them (SQLite safe). Same shape as
-        ``analysis/track_record.py``'s own ``_migrate`` — a plain ``ADD
-        COLUMN`` per field, wrapped in ``try/except: pass`` because *that*
-        exception (column already exists) genuinely is the benign,
-        expected case here, unlike the unique-index migration below.
+        already have this table without them (SQLite safe).
+
+        Checks ``PRAGMA table_info`` first rather than letting a
+        "duplicate column" error do that job via a bare
+        ``except: pass`` — SQLite raises the exact same
+        ``OperationalError`` for "this column already exists" as it does
+        for "the database is locked", so a caller cannot tell a genuinely
+        transient failure (a concurrently-writing dashboard/scheduler on
+        the same ``DB_PATH`` — the same race ``_migrate`` below already
+        retries for) apart from the benign, expected case without first
+        knowing which one it is. Checking up front removes the ambiguity:
+        a column already present is simply skipped, never attempted, and
+        any exception raised while actually adding a genuinely missing
+        column is unambiguously a real failure worth retrying (via
+        ``config.FETCH``, the same policy ``_migrate`` uses) — unlike
+        ``analysis/track_record.py``'s own ``_migrate``, whose columns
+        are already read by production code today and have run this way
+        without incident; these columns aren't read by anything yet, but
+        are about to be (the PR that actually measures outcomes), so a
+        silently-incomplete migration here would surface downstream as an
+        opaque "no such column" on the very next PR instead of here,
+        where the cause is obvious.
         """
         columns = [
             ("price_at_cutoff", "FLOAT"),
@@ -180,13 +197,40 @@ class SyntheticBacktestStore:
             ("outcome_scored_at", "DATETIME"),
         ]
         with engine.connect() as conn:
-            for column, col_def in columns:
+            existing = {row[1] for row in conn.execute(text("PRAGMA table_info(synthetic_recommendation)"))}
+
+        attempts = max(1, int(FETCH.max_retries))
+        for column, col_def in columns:
+            if column in existing:
+                continue  # already migrated — the expected case on every re-run
+            delay = float(FETCH.retry_base_delay_s)
+            for attempt in range(1, attempts + 1):
                 try:
-                    conn.execute(text(f"ALTER TABLE synthetic_recommendation ADD COLUMN {column} {col_def}"))
-                    conn.commit()
+                    self._add_outcome_column(engine, column, col_def)
                     logger.info(f"synthetic_backtest migration: added synthetic_recommendation.{column}")
-                except Exception:
-                    pass  # column already exists
+                    break
+                except OperationalError as exc:
+                    if attempt == attempts:
+                        logger.error(
+                            f"synthetic_backtest migration: could not add {column} after retries — {exc}"
+                        )
+                    else:
+                        time.sleep(delay)
+                        delay *= 2
+                except Exception as exc:
+                    logger.error(f"synthetic_backtest migration: unexpected error adding {column} — {exc}")
+                    break
+
+    @staticmethod
+    def _add_outcome_column(engine, column: str, col_def: str) -> None:
+        """One attempt at adding a single outcome column. Split out from
+        ``_migrate_outcome_columns`` so a retry test can stub *this*
+        directly instead of wrapping a live SQLAlchemy connection — same
+        seam ``_create_unique_index`` below already uses for ``_migrate``.
+        """
+        with engine.connect() as conn:
+            conn.execute(text(f"ALTER TABLE synthetic_recommendation ADD COLUMN {column} {col_def}"))
+            conn.commit()
 
     def _migrate(self, engine) -> bool:
         """Apply the uniqueness guarantee to a database file that may already
