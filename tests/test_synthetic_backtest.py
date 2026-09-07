@@ -220,7 +220,46 @@ def test_migrate_outcome_columns_survives_a_locked_db_on_the_concurrent_add_rech
     monkeypatch.setattr(store, "_migrated_columns", _recheck_also_locked)
     monkeypatch.setattr("analysis.synthetic_backtest.time.sleep", lambda *_: None)
 
-    store._migrate_outcome_columns(store._engine)  # must not raise
+    result = store._migrate_outcome_columns(store._engine)  # must not raise
+    assert result is False, "a database this locked cannot be confirmed migrated"
+
+
+def test_migrate_outcome_columns_returns_true_once_every_column_is_confirmed_present():
+    """``outcome_columns_verified`` (``__init__``) mirrors
+    ``unique_index_verified`` precisely so a future writer (PR 6/N) has a
+    flag to check instead of grepping logs for an import-time failure.
+    """
+    store = SyntheticBacktestStore(":memory:")
+    assert store.outcome_columns_verified is True
+
+
+def test_migrate_outcome_columns_returns_false_when_a_column_permanently_fails_to_add(monkeypatch):
+    """A genuinely non-recoverable failure (not a lock, not a concurrent
+    add — e.g. a read-only mount) must be visible on the return value, not
+    just in a log line nobody may be watching at import time.
+    """
+    import sqlite3
+
+    from sqlalchemy import create_engine
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE synthetic_recommendation ("
+        "id INTEGER PRIMARY KEY, symbol TEXT, as_of TEXT, piotroski_score INTEGER, source TEXT)"
+    )
+    conn.commit()
+
+    store = SyntheticBacktestStore.__new__(SyntheticBacktestStore)
+    store._engine = create_engine("sqlite://", creator=lambda: conn)
+
+    def _boom(engine, column, col_def):
+        raise PermissionError("read-only filesystem")
+
+    monkeypatch.setattr(store, "_add_outcome_column", _boom)
+
+    result = store._migrate_outcome_columns(store._engine)
+
+    assert result is False
 
 
 def test_get_all_filters_by_symbol():

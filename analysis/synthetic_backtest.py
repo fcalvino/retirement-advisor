@@ -32,7 +32,9 @@ not guessed at now". PR 5/N adds them — ``price_at_cutoff``,
 ``_migrate`` pattern ``analysis/track_record.py`` uses for its own
 "Calibration inputs" columns. **Schema only**: nothing in this PR measures
 an outcome or writes a value into any of these columns — every one stays
-``NULL``/unset until the PR that actually fetches prices via yfinance and
+``NULL``/unset (except ``benchmark_missing``, which defaults to ``False``
+like its ``RecommendationOutcome`` precedent — see that column's own
+comment below) until the PR that actually fetches prices via yfinance and
 computes a return does so (PR 6/N). A single horizon (1 year), not
 ``RecommendationOutcome``'s multi-horizon 30/90/252-day table, because the
 diagnóstico names exactly one horizon and Piotroski is itself a 1-year
@@ -116,10 +118,12 @@ class SyntheticRecommendation(_Base):
     # --- Outcome fields (PR 5/N) ---------------------------------------
     # Deliberately added via _migrate's ADD COLUMN pattern (below), not
     # designed into the original PR 3/N schema — see that module's own
-    # docstring: "not guessed at now". Every column here is nullable and
-    # unset by default; nothing that writes a row today (PR 4/N's
-    # log_piotroski) sets any of these, and no PR yet *measures* them —
-    # that is PR 6/N. This PR is schema-only.
+    # docstring: "not guessed at now". Every column here is nullable, and
+    # every one *stays unset* by default — except benchmark_missing, whose
+    # own comment below explains why it defaults to False, not NULL.
+    # Nothing that writes a row today (PR 4/N's log_piotroski) sets any of
+    # these, and no PR yet *measures* them — that is PR 6/N. This PR is
+    # schema-only.
     #
     # Single horizon (1 year), unlike analysis/track_record.py's
     # RecommendationOutcome (a separate table for 30/90/252-day horizons):
@@ -157,13 +161,20 @@ class SyntheticBacktestStore:
         url = "sqlite:///:memory:" if path == ":memory:" else f"sqlite:///{path}"
         self._engine = create_engine(url, echo=False)
         _Base.metadata.create_all(self._engine)
-        self._migrate_outcome_columns(self._engine)
+        self.outcome_columns_verified = self._migrate_outcome_columns(self._engine)
         self.unique_index_verified = self._migrate(self._engine)
         self._Session = sessionmaker(bind=self._engine)
 
-    def _migrate_outcome_columns(self, engine) -> None:
+    def _migrate_outcome_columns(self, engine) -> bool:
         """Add the PR 5/N outcome columns to a database file that may
-        already have this table without them (SQLite safe).
+        already have this table without them (SQLite safe). Returns
+        whether every target column is confirmed present when this
+        returns — ``self.outcome_columns_verified`` mirrors
+        ``self.unique_index_verified`` below precisely so a future caller
+        (PR 6/N, the first one to actually write these columns) has the
+        same kind of flag to check before trusting they exist, instead of
+        having to grep logs for a migration failure that happened at
+        import time.
 
         Checks ``PRAGMA table_info`` first rather than letting a
         "duplicate column" error do that job via a bare
@@ -271,6 +282,20 @@ class SyntheticBacktestStore:
                 except Exception as exc:
                     logger.error(f"synthetic_backtest migration: unexpected error adding {column} — {exc}")
                     break
+
+        # Don't trust the loop's own bookkeeping for the final answer — the
+        # same "re-check instead of assume" principle the OperationalError
+        # handler above already applies to a single column, applied once
+        # more to the whole batch: re-read PRAGMA table_info fresh and
+        # confirm every target column is actually there. This is what
+        # `_migrate` below already does for the unique index (querying
+        # sqlite_master rather than trusting the try/except path taken).
+        try:
+            final = self._migrated_columns(engine)
+        except Exception as exc:
+            logger.error(f"synthetic_backtest migration: could not verify final column state — {exc}")
+            return False
+        return all(column in final for column, _ in columns)
 
     @staticmethod
     def _migrated_columns(engine) -> set:
