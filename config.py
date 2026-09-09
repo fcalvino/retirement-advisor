@@ -1244,6 +1244,28 @@ class DataQualityConfig:
 
 
 @dataclass
+class FilingEvidenceConfig:
+    """10-K/10-Q/8-K text pack for AI moat/catalysts (ideas 5 + 9).
+
+    Retrieve is local SEC HTML, not Collections/Claude PDF. Snippets go into
+    prompts **before** the Decision JSON. They never score: the 0–12
+    quantitative moat, weights, Monte Carlo and alert firing stay untouched.
+
+    no_source_max_confidence — idea 9: if the pack has no catalyst snippet,
+    ``apply_unsourced_catalyst_policy`` empties catalysts and caps confidence
+    in code, even when the LLM invents events.
+    """
+
+    enabled: bool = True
+    cache_ttl_hours: int = 168
+    max_snippets: int = 8
+    max_snippet_chars: int = 1200
+    include_8k: bool = True
+    max_8k: int = 3
+    no_source_max_confidence: str = "LOW"
+
+
+@dataclass
 class ScreenerConfig:
     """
     The Opportunity Screener's shortlist funnel (audit item 06).
@@ -2518,6 +2540,7 @@ OPTIMIZER = OptimizerConfig()
 REPORT = ReportConfig()
 MONTE_CARLO = MonteCarloConfig()
 DATA_QUALITY = DataQualityConfig()
+FILING_EVIDENCE = FilingEvidenceConfig()
 ASSET_CLASS = AssetClassConfig()
 SCREENER = ScreenerConfig()
 TAILWINDS = TailwindConfig()

@@ -478,6 +478,9 @@ if symbol:
                 )
                 if _moat_detail.ai_reasoning:
                     st.info(f"💬 {_moat_detail.ai_reasoning}")
+                    _pack = getattr(fund, "filing_evidence", None)
+                    if _pack is not None and getattr(_pack, "snippets", None):
+                        st.caption("Moat cualitativo anclado al evidence pack de filings.")
 
                 # Structured macro for moat (structural)
                 _mmfs = getattr(_moat_detail, "macro_factors", None) or []
@@ -734,6 +737,23 @@ if symbol:
             st.subheader(f"🤖 Análisis AI — {ai_cfg.model}")
             render_ai_badge("texto del modelo; los scores y métricas de abajo son cálculos")
             st.markdown(decision.ai_reasoning)
+            from analysis.filing_evidence import filing_panel_state
+
+            _panel = filing_panel_state(
+                ai_on=True,
+                pack=getattr(fund, "filing_evidence", None),
+                catalysts=getattr(decision, "catalysts", None),
+            )
+            if _panel["show_empty_caption"]:
+                st.caption(_panel["empty_caption"])
+            if _panel["show_expander"]:
+                with st.expander("Fuentes del filing", expanded=False):
+                    for _sn in _panel["snippets"]:
+                        _filed = _sn.filed.isoformat() if _sn.filed else "s/f"
+                        st.markdown(
+                            f"**{_sn.form} · {_sn.item} · {_filed}** (`{_sn.kind}`)"
+                        )
+                        st.caption((_sn.text or "")[:400])
 
             # New: structured macro_factors display (structural improvement)
             _mfs = getattr(decision, "macro_factors", None) or []

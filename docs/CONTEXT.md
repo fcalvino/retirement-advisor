@@ -140,6 +140,7 @@ dashboard/shared.py (cached_*)            alerts/store.py (SQLite)
 | Economic Moat (cuantitativo + AI) | ✅ Completo | `analysis/moat.py` |
 | Análisis Técnico | ✅ Completo | `analysis/technical.py` |
 | AI Decision Layer (4 proveedores) | ✅ Completo | `analysis/ai_analyzer.py`, `analysis/prompts.py`. Incluye salida estructurada `macro_factors` (0-2 factores) + voz libre en `reasoning`. Decision/MoatDetail/CryptoMoatDetail exponen los campos. |
+| Filings texto para moat/catalizadores (ideas 5+9) | ✅ Completo | `data/sec_filings.py` + `analysis/filing_evidence.py`. Retrieve SEC HTML **antes** del JSON; `apply_unsourced_catalyst_policy` vacía catalizadores y capea confidence si no hay fuente. El 0–12 cuantitativo no se muta. |
 | Backtesting Engine | ✅ Completo | `analysis/backtesting.py` |
 | Portfolio Optimizer (SLSQP + 3 perfiles) | ✅ Completo | `portfolio/optimizer.py` |
 | Goal-Aware Optimizer + Glide Path | ✅ Completo (Fase 2) | `portfolio/optimizer.py`, `dashboard/pages/5_Optimizer.py` |

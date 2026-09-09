@@ -25,7 +25,7 @@ from loguru import logger
 
 from analysis.fundamental import FundamentalResult, effective_payout_pct, max_payout_for
 from analysis.technical import TechnicalResult
-from config import DATA_QUALITY
+from config import DATA_QUALITY, FILING_EVIDENCE
 from config import STRATEGY as CFG
 from data.product_ux import TREND_MA_LABEL_EN
 
@@ -75,6 +75,7 @@ def apply_safety_overlay(
                 decision.rationale = [f"BLOCKED (safety overlay): {reason}"] + list(
                     decision.rationale or []
                 )
+        apply_unsourced_catalyst_policy(decision, getattr(fundamental, "filing_evidence", None))
         return decision
 
     blocked, reason = RetirementStrategy()._check_safety_blocks(fundamental, technical)
@@ -87,6 +88,8 @@ def apply_safety_overlay(
         decision.rationale = [f"BLOCKED (safety overlay): {reason}"] + list(
             decision.rationale or []
         )
+
+    apply_unsourced_catalyst_policy(decision, getattr(fundamental, "filing_evidence", None))
 
     # Soft policies also on AI path (same as decide())
     if not decision.blocked:
@@ -191,11 +194,62 @@ def apply_negative_equity_policy(
     return decision
 
 
+def apply_unsourced_catalyst_policy(
+    decision: "Decision",
+    pack,
+    *,
+    config=None,
+) -> "Decision":
+    """Idea 9: empty catalysts + confidence cap when the filing pack has no source.
+
+    ``pack is None`` (rule-based / committee callers) is a no-op. An empty pack
+    object still caps an AI decision even if the model invented events.
+    Idempotent: re-running does not duplicate the rationale note.
+    """
+    if pack is None:
+        return decision
+    if config is None:
+        config = FILING_EVIDENCE
+
+    from analysis.filing_evidence import (
+        EMPTY_CATALYSTS_BODY,
+        NO_SOURCE_NOTE,
+        filter_cited_catalysts,
+        replace_catalysts_section,
+    )
+
+    cats = list(getattr(decision, "catalysts", None) or [])
+    is_ai = bool((getattr(decision, "ai_reasoning", None) or "").strip() or cats)
+    if not is_ai:
+        return decision
+    has_source = bool(getattr(pack, "has_catalyst_source", False))
+    if has_source:
+        cats = filter_cited_catalysts(cats, pack)
+        decision.catalysts = cats
+        if cats:
+            return decision
+
+    decision.catalysts = []
+    cap = getattr(config, "no_source_max_confidence", "LOW") or "LOW"
+    cur = decision.confidence or "MEDIUM"
+    if _CONFIDENCE_RANK.get(cur, 1) > _CONFIDENCE_RANK.get(cap, 1):
+        decision.confidence = cap
+    decision.ai_reasoning = replace_catalysts_section(
+        decision.ai_reasoning or "", EMPTY_CATALYSTS_BODY
+    )
+    note = NO_SOURCE_NOTE
+    if note not in (decision.rationale or []):
+        decision.rationale = [note] + list(decision.rationale or [])
+    if not decision.decisive_reason:
+        decision.decisive_reason = note
+    return decision
+
+
 @dataclass
 class Decision:
     symbol: str
-    action: str = "HOLD"         # STRONG BUY | BUY | HOLD | REDUCE | SELL
-    confidence: str = "MEDIUM"   # HIGH | MEDIUM | LOW
+    action: str = "HOLD"  # STRONG BUY | BUY | HOLD | REDUCE | SELL
+    confidence: str = "MEDIUM"  # HIGH | MEDIUM | LOW
     fundamental_score: float = 0.0
     technical_signal: str = "NEUTRAL"
     has_margin_of_safety: bool = False
@@ -224,6 +278,10 @@ class Decision:
     # Populated from LLM when AI is used; [] when rule-based, on error, or when LLM judged no material macro.
     # Each item: {"factor": str, "why_relevant": str, "impact": str, "effect_on_allocation_or_conviction": str}
     macro_factors: List[Dict[str, Any]] = field(default_factory=list)
+
+    # Idea 5/9: cited catalysts from the filing pack. [] when rule-based,
+    # when the pack has no source, or when every claim failed the citation check.
+    catalysts: List[Dict[str, Any]] = field(default_factory=list)
 
     @property
     def action_emoji(self) -> str:
@@ -299,8 +357,11 @@ class RetirementStrategy:
                 return decision
         else:
             # Crypto-specific safety: parabolic detection still applies
-            if (technical.price_vs_52w_low_pct > 120 and
-                    technical.rsi_weekly and technical.rsi_weekly > 80):
+            if (
+                technical.price_vs_52w_low_pct > 120
+                and technical.rsi_weekly
+                and technical.rsi_weekly > 80
+            ):
                 decision.action = "AVOID"
                 decision.blocked = True
                 decision.block_reason = f"Movimiento parabólico crypto (RSI={technical.rsi_weekly:.0f}, +{technical.price_vs_52w_low_pct:.0f}% desde 52w low)"
@@ -324,7 +385,9 @@ class RetirementStrategy:
                     "Fundamentales de STRONG BUY, pero todavía sin margen de seguridad — "
                     "esperar una baja"
                 )
-                decision.rationale.append("Strong fundamentals but no margin of safety yet — wait for pullback")
+                decision.rationale.append(
+                    "Strong fundamentals but no margin of safety yet — wait for pullback"
+                )
 
         elif score >= CFG.buy_score and tech != "BEARISH":
             decision.action = "BUY"
@@ -334,8 +397,12 @@ class RetirementStrategy:
             decision.action = "HOLD"
             decision.confidence = "MEDIUM"
             if tech == "BEARISH":
-                decision.decisive_reason = "Fundamentales sólidos pero técnico débil — mantener, no agregar"
-                decision.rationale.append("Solid fundamentals but technical weakness — hold, do not add")
+                decision.decisive_reason = (
+                    "Fundamentales sólidos pero técnico débil — mantener, no agregar"
+                )
+                decision.rationale.append(
+                    "Solid fundamentals but technical weakness — hold, do not add"
+                )
 
         elif score >= CFG.reduce_score:
             decision.action = "REDUCE"
@@ -372,7 +439,9 @@ class RetirementStrategy:
             if any("Volatilidad extrema" in (w or "") for w in (fundamental.warnings or [])):
                 decision.action = "HOLD"
                 decision.confidence = "MEDIUM"
-                decision.decisive_reason = "BUY capado a HOLD por volatilidad extrema (perfil retiro)"
+                decision.decisive_reason = (
+                    "BUY capado a HOLD por volatilidad extrema (perfil retiro)"
+                )
                 decision.rationale.append(
                     "BUY capado a HOLD por volatilidad extrema crypto (perfil retiro)"
                 )
@@ -381,13 +450,13 @@ class RetirementStrategy:
         dq = getattr(fundamental, "data_quality", None) or {}
         if isinstance(dq, dict) and dq.get("level") in ("partial", "poor"):
             missing = ", ".join((dq.get("missing_fields") or [])[:5]) or "métricas clave"
-            decision.risks.append(
-                f"Calidad de datos {dq['level']}: faltan {missing}"
-            )
+            decision.risks.append(f"Calidad de datos {dq['level']}: faltan {missing}")
         apply_negative_equity_policy(decision, fundamental)
         apply_data_quality_policy(decision, fundamental)
 
-        logger.info(f"{symbol}: {decision.action} (F={score:.1f}, T={tech}{'  🪙crypto' if _is_crypto else ''})")
+        logger.info(
+            f"{symbol}: {decision.action} (F={score:.1f}, T={tech}{'  🪙crypto' if _is_crypto else ''})"
+        )
         return decision
 
     # ------------------------------------------------------------------ #
@@ -400,10 +469,7 @@ class RetirementStrategy:
         technical: TechnicalResult,
     ) -> tuple[bool, str]:
         # Excessive leverage (threshold from STRATEGY.max_debt_equity — P0 D3)
-        if (
-            fundamental.debt_equity is not None
-            and fundamental.debt_equity > CFG.max_debt_equity
-        ):
+        if fundamental.debt_equity is not None and fundamental.debt_equity > CFG.max_debt_equity:
             return True, f"Excessive leverage (D/E = {fundamental.debt_equity:.1f})"
 
         # Negative equity (book value < 0)
@@ -411,8 +477,15 @@ class RetirementStrategy:
             return True, "Negative book value — potential insolvency risk"
 
         # Parabolic overextension — price >40% above 52-week average
-        if technical.price_vs_52w_low_pct > 100 and technical.rsi_weekly and technical.rsi_weekly > 80:
-            return True, f"Parabolic move detected (RSI={technical.rsi_weekly:.0f}, +{technical.price_vs_52w_low_pct:.0f}% from 52w low)"
+        if (
+            technical.price_vs_52w_low_pct > 100
+            and technical.rsi_weekly
+            and technical.rsi_weekly > 80
+        ):
+            return (
+                True,
+                f"Parabolic move detected (RSI={technical.rsi_weekly:.0f}, +{technical.price_vs_52w_low_pct:.0f}% from 52w low)",
+            )
 
         return False, ""
 
@@ -437,7 +510,9 @@ class RetirementStrategy:
         if f.fcf_yield is not None and f.fcf_yield >= 3:
             decision.rationale.append(f"Attractive FCF yield: {f.fcf_yield:.1f}%")
         if f.is_value_stock() and f.margin_of_safety_pct is not None:
-            decision.rationale.append(f"Margin of Safety: {f.margin_of_safety_pct:.0f}% vs Graham value ${f.graham_value:.2f}")
+            decision.rationale.append(
+                f"Margin of Safety: {f.margin_of_safety_pct:.0f}% vs Graham value ${f.graham_value:.2f}"
+            )
 
         # Sector-country structural tailwind (Idea 2) — surface only when material
         tw_class = getattr(f, "tailwind_classification", "Neutral")
@@ -457,13 +532,17 @@ class RetirementStrategy:
 
         # Technical context
         if t.above_sma200 is True:
-            decision.rationale.append(f"Price above the {TREND_MA_LABEL_EN} (~3.8y) — long-term uptrend intact")
+            decision.rationale.append(
+                f"Price above the {TREND_MA_LABEL_EN} (~3.8y) — long-term uptrend intact"
+            )
         if t.golden_cross:
             decision.rationale.append("Golden Cross — momentum confirming")
         if t.rsi_weekly is not None and t.rsi_weekly < 40:
             decision.rationale.append(f"RSI {t.rsi_weekly:.0f} — pullback offers entry opportunity")
         if t.sma200_slope_pct is not None and t.sma200_slope_pct > 3:
-            decision.rationale.append(f"{TREND_MA_LABEL_EN} trending up +{t.sma200_slope_pct:.1f}% — secular uptrend")
+            decision.rationale.append(
+                f"{TREND_MA_LABEL_EN} trending up +{t.sma200_slope_pct:.1f}% — secular uptrend"
+            )
 
         # Risks
         for w in fundamental.warnings:
@@ -491,7 +570,9 @@ class RetirementStrategy:
         # filing that as a risk turns the length of its price series into a
         # statement about its business (U3-1).
         if t.above_sma200 is False:
-            decision.risks.append(f"Price below the {TREND_MA_LABEL_EN} (~3.8y) — long-term downtrend caution")
+            decision.risks.append(
+                f"Price below the {TREND_MA_LABEL_EN} (~3.8y) — long-term downtrend caution"
+            )
 
 
 def full_analysis(
@@ -515,6 +596,7 @@ def full_analysis(
 
     if ai_config and ai_config.enabled and not getattr(ai_config, "enrich_only", False):
         from analysis.ai_analyzer import AIAnalyzer
+
         decision = AIAnalyzer(ai_config).analyze(fund, tech)
     else:
         # enrich_only: the AI still fed the score through the cached moat and

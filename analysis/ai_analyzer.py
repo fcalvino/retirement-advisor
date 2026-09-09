@@ -21,6 +21,7 @@ from analysis.strategy import (
     Decision,
     RetirementStrategy,
     apply_safety_overlay,
+    apply_unsourced_catalyst_policy,
     effective_decision_score,
 )
 from analysis.technical import TechnicalResult
@@ -76,6 +77,9 @@ class AIAnalyzer:
             prompt = self._build_prompt(fund, tech)
             raw = self._call_api(prompt)
             decision = self._parse_response(raw, fund, tech)
+            decision = apply_unsourced_catalyst_policy(
+                decision, getattr(fund, "filing_evidence", None)
+            )
             # P0 D1: never let LLM bypass hard safety blocks
             decision = apply_safety_overlay(decision, fund, tech)
             logger.info(f"{fund.symbol}: AI decision = {decision.action} ({self.config.provider}/{self.config.model})")
@@ -91,7 +95,9 @@ class AIAnalyzer:
             from analysis.prompts import crypto_decision_prompt
             return crypto_decision_prompt(fund, tech)
         from analysis.prompts import equity_decision_prompt
-        return equity_decision_prompt(fund, tech)
+        return equity_decision_prompt(
+            fund, tech, filing_pack=getattr(fund, "filing_evidence", None)
+        )
 
     # ------------------------------------------------------------------ #
     #  Phase 0: Long-term plan narrative (portfolio-level explanation)    #
@@ -483,6 +489,17 @@ class AIAnalyzer:
         if conf not in {"HIGH", "MEDIUM", "LOW"}:
             conf = "MEDIUM"
 
+        catalysts = []
+        raw_cats = data.get("catalysts") or []
+        if isinstance(raw_cats, list):
+            for item in raw_cats:
+                if not isinstance(item, dict):
+                    continue
+                claim = str(item.get("claim") or "").strip()
+                citation = str(item.get("citation") or "").strip()
+                if claim or citation:
+                    catalysts.append({"claim": claim[:400], "citation": citation[:240]})
+
         return Decision(
             symbol=fund.symbol,
             action=action,
@@ -495,4 +512,5 @@ class AIAnalyzer:
             ai_reasoning=data.get("reasoning", "") or "",
             recommended_max_allocation_pct=_alloc,
             macro_factors=data.get("macro_factors", []) or [],
+            catalysts=catalysts,
         )

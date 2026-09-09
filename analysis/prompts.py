@@ -245,7 +245,15 @@ confidence MEDIUM/LOW, allocation ≤ 3%. Nunca STRONG BUY por narrativa de marc
 # ---------------------------------------------------------------------------
 
 
-def equity_moat_prompt(quant, symbol: str, info: dict) -> str:
+def _filing_pack_prompt_block(filing_pack) -> str:
+    """None → omit (committee). Empty/full pack → idea 5/9 block."""
+    if filing_pack is None:
+        return ""
+    block = filing_pack.prompt_block()
+    return "\n" + block if block else ""
+
+
+def equity_moat_prompt(quant, symbol: str, info: dict, filing_pack=None) -> str:
     """
     Build the LLM prompt for qualitative equity moat evaluation.
 
@@ -274,6 +282,14 @@ def equity_moat_prompt(quant, symbol: str, info: dict) -> str:
     industry = info.get("industry", "Unknown")
     country = info.get("country", "Unknown")
     summary = (info.get("longBusinessSummary") or "")[:700]
+    pack_block = _filing_pack_prompt_block(filing_pack)
+    if filing_pack is not None and getattr(filing_pack, "snippets", None):
+        biz_line = (
+            "DESCRIPCIÓN DEL NEGOCIO: omitida — usá el evidence pack de filings; "
+            "no uses memoria ni el blurb de yfinance como fuente de moat."
+        )
+    else:
+        biz_line = f"DESCRIPCIÓN DEL NEGOCIO: {summary}"
 
     is_argentina_adr = symbol in ARGENTINA_ADRS or (country or "").upper() == "ARGENTINA"
 
@@ -283,7 +299,8 @@ IDIOMA OBLIGATORIO: Responde SIEMPRE en español. Todos los campos de texto (rat
 
 EMPRESA: {name} ({symbol})
 SECTOR: {sector} | INDUSTRIA: {industry} | PAÍS: {country}
-DESCRIPCIÓN DEL NEGOCIO: {summary}
+{biz_line}
+{pack_block}
 
 MOAT CUANTITATIVO (calculado con datos financieros reales):
   Gross Margin nivel:       {quant.gross_margin_level}/2  — proxy de pricing power
@@ -384,7 +401,7 @@ El output principal debe ser un objeto JSON válido con exactamente estos campos
 # ---------------------------------------------------------------------------
 
 
-def equity_decision_prompt(fund, tech) -> str:
+def equity_decision_prompt(fund, tech, filing_pack=None) -> str:
     """
     Build the LLM prompt for equity investment decision (BUY/SELL/HOLD).
 
@@ -475,21 +492,23 @@ Instrucción estructural (obligatoria):
 Usá EXACTAMENTE el formato de salida para macro que se detalla abajo. 
 {_macro_factors_output_spec(for_moat=False)}
 {_hard_decision_constraints_block(fund, tech)}
+{_filing_pack_prompt_block(filing_pack)}
 --- INSTRUCCIÓN ---
 Emití una recomendación objetiva y equilibrada sobre el momento actual de la acción, basada en fundamentales y técnico.
 Estructurá el campo `reasoning` manteniendo las 4 secciones (Tesis: ... Riesgos: ... Catalizadores: ... Asignación: ...) pero escribilo con fluidez y tu voz característica de Grok: prosa natural, analítica, directa, conectando los datos duros provistos con el contexto macro que corresponda, sin lugares comunes ni optimismo infundado. Usá oraciones completas.
 Incluí en el reasoning (integrado naturalmente en Tesis o Asignación) una justificación clara y breve de por qué elegiste HIGH, MEDIUM o LOW para `confidence`, anclada en la evidencia concreta: solidez del moat, calidad de los fundamentales, señal técnica, magnitud de los riesgos y contexto macro. Ejemplo: "Elegí MEDIUM porque aunque los fundamentales son sólidos (ROE alto, moat Wide), la valuación está en el percentil alto del sector y el contexto de tasas + riesgo país AR agrega incertidumbre; la convicción no llega a HIGH hasta ver un pullback o datos Q2 más claros. macro_factors: [tasas + riesgo país] → asignación bajada a 3-5%."
 Respetá los CONSTRAINTS DUROS y los PASOS DE RAZONAMIENTO de arriba.
 
-El output principal debe ser un objeto JSON válido con exactamente estos campos (incluí siempre `macro_factors`). Podés agregar un breve comentario adicional después del JSON si ayuda a expresar matices de tu análisis, pero el JSON debe ser completo y parseable primero.
+El output principal debe ser un objeto JSON válido con exactamente estos campos (incluí siempre `macro_factors` y `catalysts`). Podés agregar un breve comentario adicional después del JSON si ayuda a expresar matices de tu análisis, pero el JSON debe ser completo y parseable primero.
 {{
   "action": "STRONG BUY|BUY|HOLD|REDUCE|SELL",
   "confidence": "HIGH|MEDIUM|LOW",
   "rationale": ["factor positivo 1", "factor positivo 2"],
   "risks": ["riesgo 1", "riesgo 2"],
   "recommended_max_allocation_conservative": 6,
-  "reasoning": "Tesis: visión clara y equilibrada de la oportunidad actual, incluyendo macro relevante solo cuando se conecta a los números. Riesgos: 1-2 riesgos concretos (macro o estructurales). Catalizadores: factores que podrían impulsar la acción al alza en próximos 12-18 meses. Asignación: % máx sugerido según la convicción actual — ej. 0-8%, 8-15% — con el razonamiento detrás; la convicción es MEDIUM porque aunque los fundamentales son sólidos, la valuación está en el percentil alto del sector y los riesgos macro (ej. tasas) no permiten HIGH hasta mayor claridad.",
-  "macro_factors": []
+  "reasoning": "Tesis: visión clara y equilibrada de la oportunidad actual, incluyendo macro relevante solo cuando se conecta a los números. Riesgos: 1-2 riesgos concretos (macro o estructurales). Catalizadores: solo claims citados en catalysts[] (form+item+fecha); vacío si no hay filing. Asignación: % máx sugerido según la convicción actual — ej. 0-8%, 8-15% — con el razonamiento detrás; la convicción es MEDIUM porque aunque los fundamentales son sólidos, la valuación está en el percentil alto del sector y los riesgos macro (ej. tasas) no permiten HIGH hasta mayor claridad.",
+  "macro_factors": [],
+  "catalysts": []
 }}"""
 
 

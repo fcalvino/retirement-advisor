@@ -302,6 +302,7 @@ class MoatAnalyzer:
         symbol: str,
         info: dict,
         ai_config: AIConfig,
+        filing_pack=None,
     ) -> MoatDetail:
         """
         Enrich an existing quantitative MoatDetail with AI qualitative scores.
@@ -322,7 +323,8 @@ class MoatAnalyzer:
             On failure: quant_result unchanged, ai_available=False, ai_reasoning
             set to a human-readable error message.
         """
-        cache_key = f"moat_ai_{symbol}_{ai_config.provider}_{ai_config.model}"
+        pack_fp = getattr(filing_pack, "fingerprint", "none") if filing_pack is not None else "none"
+        cache_key = f"moat_ai_{symbol}_{ai_config.provider}_{ai_config.model}_{pack_fp}"
 
         # --- Cache hit ---
         cached = self._get_cache().get(cache_key)
@@ -339,7 +341,9 @@ class MoatAnalyzer:
         else:
             # --- Fresh API call ---
             try:
-                prompt = self._build_prompt(quant_result, symbol, info)
+                prompt = self._build_prompt(
+                    quant_result, symbol, info, filing_pack=filing_pack
+                )
                 raw = self._call_api(prompt, ai_config)
                 parsed = self._parse_ai_response(raw, symbol)
 
@@ -499,10 +503,10 @@ class MoatAnalyzer:
     #  AI prompt + call + parse                                            #
     # ------------------------------------------------------------------ #
 
-    def _build_prompt(self, quant: MoatDetail, symbol: str, info: dict) -> str:
+    def _build_prompt(self, quant: MoatDetail, symbol: str, info: dict, filing_pack=None) -> str:
         """Delegate to the centralized prompt library."""
         from analysis.prompts import equity_moat_prompt
-        return equity_moat_prompt(quant, symbol, info)
+        return equity_moat_prompt(quant, symbol, info, filing_pack=filing_pack)
 
     def _call_api(self, prompt: str, ai_config: AIConfig) -> str:
         """Delegate to the module-level call_ai_api() shared with CryptoAnalyzer."""

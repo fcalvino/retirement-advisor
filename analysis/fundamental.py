@@ -167,6 +167,10 @@ class FundamentalResult:
     # Data-quality transparency (Fase E) — see compute_data_quality()
     data_quality: Optional[Dict[str, Any]] = None
 
+    # Ideas 5+9: SEC filing snippets for AI moat/catalysts. None when AI is off
+    # (committee keeps the old prompt). Empty pack object when retrieve failed.
+    filing_evidence: Optional[Any] = None
+
     # Human-readable breakdown
     notes: Dict[str, str] = field(default_factory=dict)
     warnings: list = field(default_factory=list)
@@ -765,6 +769,7 @@ class FundamentalAnalyzer:
         self._populate_identity(result, symbol, info)
         self._populate_prescoring_metrics(result, income_stmt, balance_sheet, cashflow)
         self._run_scoring_pipeline(result, info, income_stmt, balance_sheet, cashflow)
+        self._attach_filing_evidence(result, symbol, ai_config)
         self._run_moat_pipeline(result, symbol, info, income_stmt, balance_sheet, cashflow, ai_config)
         self._run_tailwind_pipeline(result, symbol, info, ai_config)
         self._assemble_result(result)
@@ -796,6 +801,10 @@ class FundamentalAnalyzer:
         crypto_result.data_quality = compute_data_quality(
             crypto_result, freshness_hours=get_info_age_hours(crypto_result.symbol),
         )
+        if ai_config and getattr(ai_config, "enabled", False):
+            from analysis.filing_evidence import empty_pack
+
+            crypto_result.filing_evidence = empty_pack(crypto_result.symbol, "crypto")
         return crypto_result
 
     def _populate_identity(self, result: FundamentalResult, symbol: str, info: dict) -> None:
@@ -940,6 +949,25 @@ class FundamentalAnalyzer:
             result.notes[f"enhanced_{len(result.notes)}"] = rec
 
     @staticmethod
+    def _attach_filing_evidence(result: FundamentalResult, symbol: str, ai_config) -> None:
+        """One SEC text retrieve per ticker when AI is on. Never scores."""
+        if not (ai_config and getattr(ai_config, "enabled", False)):
+            return
+        from config import FILING_EVIDENCE
+
+        if not getattr(FILING_EVIDENCE, "enabled", True):
+            return
+        try:
+            from data.sec_filings import retrieve_filing_pack
+
+            result.filing_evidence = retrieve_filing_pack(symbol)
+        except Exception as exc:  # noqa: BLE001 — pack must never break scoring
+            from analysis.filing_evidence import empty_pack
+
+            logger.debug(f"{symbol}: filing evidence retrieve failed — {exc}")
+            result.filing_evidence = empty_pack(symbol, "fetch_failed")
+
+    @staticmethod
     def _run_moat_pipeline(
         result: FundamentalResult,
         symbol: str,
@@ -953,7 +981,10 @@ class FundamentalAnalyzer:
         moat_analyzer = MoatAnalyzer()
         moat = moat_analyzer.analyze(symbol, info, income_stmt, balance_sheet, cashflow)
         if ai_config and getattr(ai_config, "enabled", False):
-            moat = moat_analyzer.analyze_with_ai(moat, symbol, info, ai_config)
+            moat = moat_analyzer.analyze_with_ai(
+                moat, symbol, info, ai_config,
+                filing_pack=getattr(result, "filing_evidence", None),
+            )
         result.moat_score = moat.total
         result.moat_bonus = moat.bonus
         result.moat_classification = moat.classification

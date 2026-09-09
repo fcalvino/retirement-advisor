@@ -47,6 +47,7 @@ Roles:
 | methodology | `docs/moat_methodology.md` | Economic Moat cuantitativo + AI |
 | methodology | `docs/portfolio_optimizer.md` | SLSQP, constraints, fallback |
 | methodology | `docs/alert_system.md` | Tipos de alerta, cooldowns, scheduler |
+| methodology | `docs/ai_integration.md` | Rol del LLM de producto: enriquecimiento, límites, path sin AI |
 | ai-context | `docs/PROMPT_INSTRUCTIONS.md` | **Path canónico** — leer `docs/CONTEXT.md` primero |
 | ai-context | `docs/CONTEXT.md` | Contexto canónico del proyecto (arquitectura, features, estándares) |
 | ai-context | `AI_CODING_GUIDELINES.md` | Puntero corto al path canónico |
@@ -56,6 +57,7 @@ Roles:
 | historical-plan | `docs/IMPLEMENTATION_PLAN.md` | Plan 2026-06 del Gran Salto — las 5 fases ya están shipped |
 | ideation | `docs/VISION_GRAN_SALTO.md` | Visión de producto 2026-06; las 3 apuestas ya están en el código |
 | ideation | `docs/DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md` | Diagnóstico + brainstorming 2026-09 basado en código; complementa `brainstorm/99_PRIORIZACION.md` |
+| ideation | `docs/AI_DECISION_QUALITY_IDEAS_2026-09.md` | 22 ideas de AI para calidad de decisión y recuperación de información faltante (2026-09) |
 | ideation | `docs/prefilter_contract.md` | Contrato del prefiltro (portero): salto → C → 5 puertas → embudo 50–80–120 |
 | ideation | `docs/brainstorm/` | Colección: un archivo por pantalla + capas; índice `00_INDICE.md` |
 | refactor-backlog | `docs/REFACTOR_BACKLOG.md` | Backlog de refactorización: ordenamiento, simplicidad, performance (2026-09-02) |
@@ -94,6 +96,7 @@ antes de modificar los módulos correspondientes.
 | [`moat_methodology.md`](moat_methodology.md) | `analysis/moat.py` | Moat cuantitativo + AI, umbrales Wide/Narrow |
 | [`portfolio_optimizer.md`](portfolio_optimizer.md) | `portfolio/optimizer.py` | SLSQP, constraints, ARS discount, fallback |
 | [`alert_system.md`](alert_system.md) | `alerts/` + `scripts/run_scheduler.py` | Tipos, cooldowns, cold start, scheduler |
+| [`ai_integration.md`](ai_integration.md) | `analysis/ai_analyzer.py` + comité/chat | Rol, superficies, fallback sin AI |
 
 ---
 
@@ -124,6 +127,7 @@ No usar estos archivos como “el próximo sprint”. El próximo sprint está e
 | [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) | Plan operativo 2026-06 (Fases 1–5 shipped) |
 | [`VISION_GRAN_SALTO.md`](VISION_GRAN_SALTO.md) | Visión 2026-06; las 3 apuestas ya están en el producto |
 | [`DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`](DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md) | Diagnóstico + brainstorming 2026-09 basado en código; complementa `brainstorm/99_PRIORIZACION.md` |
+| [`AI_DECISION_QUALITY_IDEAS_2026-09.md`](AI_DECISION_QUALITY_IDEAS_2026-09.md) | 22 ideas de AI para calidad de decisión y recuperación de información faltante — ideación, no spec |
 | [`prefilter_contract.md`](prefilter_contract.md) | Contrato del prefiltro (portero): salto → C → 5 puertas → embudo — no implementado |
 | [`brainstorm/00_INDICE.md`](brainstorm/00_INDICE.md) | Ideación por pantalla y capa |
 
@@ -164,6 +168,10 @@ descripción viva del sistema.
 → [`architecture.md`](architecture.md) — flujo de la capa AI
 → `analysis/ai_analyzer.py` — clase `AIAnalyzer`
 → `config.py` — `AIConfig`
+
+### Quiero entender el rol de la AI en el producto
+→ [`ai_integration.md`](ai_integration.md) — qué calcula, qué no, path sin AI
+→ [`AI_DECISION_QUALITY_IDEAS_2026-09.md`](AI_DECISION_QUALITY_IDEAS_2026-09.md) — ideación: 22 ideas para fundamentos correctos (no es spec)
 
 ### Quiero entender el Moat cuantitativo
 → [`moat_methodology.md`](moat_methodology.md)

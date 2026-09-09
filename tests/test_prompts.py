@@ -230,6 +230,7 @@ class TestEquityDecisionPrompt:
             "recommended_max_allocation_conservative",
             "reasoning",
             "macro_factors",
+            "catalysts",
         ]
         for field in required:
             assert field in prompt, f"Missing JSON field in equity_decision_prompt: {field}"
