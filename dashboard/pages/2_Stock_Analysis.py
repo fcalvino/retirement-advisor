@@ -237,11 +237,17 @@ if symbol:
 
     # Decision banner
     action_color = ACTION_COLOR.get(decision.action, "#888")
+    _ai_conf = getattr(decision, "ai_confidence", "") or ""
+    _ai_conf_note = (
+        f"&nbsp;|&nbsp; 🤖 IA sugería confianza {_ai_conf}"
+        if _ai_conf and _ai_conf != decision.confidence
+        else ""
+    )
     st.markdown(
         f"""<div style="background:{action_color}22;border-left:4px solid {action_color};
         padding:12px;border-radius:4px;margin:8px 0">
         <b style="color:{action_color};font-size:1.2em">{decision.action_emoji} {decision.action}</b>
-        &nbsp;|&nbsp; Confidence: {decision.confidence}
+        &nbsp;|&nbsp; Confidence: {decision.confidence}{_ai_conf_note}
         &nbsp;|&nbsp; Fundamental: {decision.score_badge}
         </div>""",
         unsafe_allow_html=True,

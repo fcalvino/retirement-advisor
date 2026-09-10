@@ -199,12 +199,14 @@ _rerun_only = st.session_state.pop("screener_rerun_subset", None)
 
 
 def _persist(new_rows, new_failures, duration_s, *, measured_n: int = 0,
-             replace_throughput: bool = False) -> None:
+             replace_throughput: bool = False, ai_cfg=None) -> None:
     """Merge newly measured rows into the previous run. Log only those rows.
 
     ``measured_n`` is how many tickers ``duration_s`` actually covers — see
     ``ScreenerRun.seconds_per_ticker``. A subset must never replace the last
     full run's throughput, and must never drop uncovered rows from disk.
+    ``ai_cfg`` is the AIConfig used for this run; when provided its provider
+    and model are persisted so anomalous cache entries are auditable.
     """
     if new_rows:
         log_screener_run(new_rows)
@@ -234,9 +236,13 @@ def _persist(new_rows, new_failures, duration_s, *, measured_n: int = 0,
     else:
         dur, mn = float(duration_s), int(measured_n)
 
+    _ai_used = bool(ai_cfg and getattr(ai_cfg, "enabled", False) and not getattr(ai_cfg, "enrich_only", False))
     screener_run_store.save(ScreenerRun(
         universe_key=_universe_key, duration_s=dur,
         measured_n=mn, rows=merged_rows, failures=merged_failures,
+        ai_used=_ai_used,
+        ai_provider=getattr(ai_cfg, "provider", "") if _ai_used else "",
+        ai_model=getattr(ai_cfg, "model", "") if _ai_used else "",
     ))
 
 
@@ -282,7 +288,7 @@ if _rerun_only:
     # audit item 13 all over again. A subset, which may also be answering from
     # the warm 1h cache, is not a measurement of what a full run costs, so the
     # last full run's throughput is carried forward rather than overwritten.
-    _persist(_new_rows, _new_failures, _elapsed)
+    _persist(_new_rows, _new_failures, _elapsed, ai_cfg=ai_cfg)
     _recovered = {r["Ticker"] for r in _new_rows} & set(_rerun_only)
     if _recovered:
         st.success(f"✓ Actualizados: {', '.join(sorted(_recovered))}")
@@ -292,9 +298,14 @@ elif _cached_rows is not None and is_subset_cache_hit(selected, _covered):
     rows = filter_to_selected(_cached_rows, selected)
     failures = filter_to_selected(st.session_state.get("screener_failures") or [], selected)
     _when = st.session_state.get("screener_rows_at", "")
+    _ai_caption = ""
+    if _stored and getattr(_stored, "ai_used", False):
+        _ai_caption = f" · IA: {_stored.ai_provider}/{_stored.ai_model}"
+    elif _stored:
+        _ai_caption = " · sin IA"
     st.caption(
         f"📋 Mostrando la última corrida{f' ({_when})' if _when else ''} · "
-        f"{len(rows)} tickers. Tocá **🔄 Actualizar análisis** para volver a medir."
+        f"{len(rows)} tickers{_ai_caption}. Tocá **🔄 Actualizar análisis** para volver a medir."
     )
 else:
     _need = uncovered_selected(selected, _covered)
@@ -327,6 +338,7 @@ else:
         _new_rows, _new_failures, _elapsed,
         measured_n=len(_new_rows) + len(_new_failures),
         replace_throughput=not (_stored or _cached_rows),
+        ai_cfg=ai_cfg,
     )
     rows = filter_to_selected(rows, selected)
     failures = filter_to_selected(failures, selected)

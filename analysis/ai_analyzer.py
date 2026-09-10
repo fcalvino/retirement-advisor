@@ -78,11 +78,15 @@ class AIAnalyzer:
             decision = self._parse_response(raw, fund, tech)
             # P0 D1: never let LLM bypass hard safety blocks
             decision = apply_safety_overlay(decision, fund, tech)
+            decision.ai_used = True
+            decision.ai_provider = self.config.provider
+            decision.ai_model = self.config.model
             logger.info(f"{fund.symbol}: AI decision = {decision.action} ({self.config.provider}/{self.config.model})")
             return decision
         except Exception as exc:
             logger.warning(f"{fund.symbol}: AI analysis failed ({type(exc).__name__}: {exc}), falling back to rule-based engine")
             decision = RetirementStrategy().decide(fund, tech)
+            # ai_used stays False: this verdict came from the rule-based engine, not the LLM.
             return apply_safety_overlay(decision, fund, tech)
 
     def _build_prompt(self, fund: FundamentalResult, tech: TechnicalResult) -> str:
@@ -486,7 +490,7 @@ class AIAnalyzer:
         return Decision(
             symbol=fund.symbol,
             action=action,
-            confidence=conf,
+            ai_confidence=conf,   # LLM's own label — explanation only, never the operative confidence
             fundamental_score=score,
             technical_signal=tech.signal,
             has_margin_of_safety=fund.is_value_stock(),

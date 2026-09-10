@@ -77,7 +77,8 @@ def test_poor_quality_demotion_to_hold():
 
     assert d.action == "HOLD"
     assert "degradado a HOLD" in d.decisive_reason
-    assert d.confidence == "LOW"
+    # apply_data_quality_policy no longer sets confidence directly;
+    # confidence_for() in apply_safety_overlay handles the LOW cap for poor DQ.
 
 
 def test_a_clean_decision_has_no_decisive_reason():

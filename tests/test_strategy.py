@@ -285,11 +285,14 @@ class TestDataQualityAndCryptoVol:
         assert any("partial" in r.lower() for r in d.rationale)
 
     def test_apply_data_quality_policy_partial_caps_confidence(self):
+        # apply_data_quality_policy no longer modifies confidence directly —
+        # confidence capping is now consolidated in confidence_for() via
+        # apply_safety_overlay. This test verifies that only action is affected.
         fund = _fund(data_quality={"level": "partial", "missing_fields": ["roe"]})
         d = Decision(symbol="X", action="BUY", confidence="HIGH")
         apply_data_quality_policy(d, fund, config=DATA_QUALITY)
         assert d.action == "BUY"
-        assert d.confidence == DATA_QUALITY.partial_max_confidence
+        assert d.confidence == "HIGH"  # unchanged; confidence_for handles the cap
 
     def test_apply_data_quality_policy_on_ai_overlay(self):
         fund = _fund(
