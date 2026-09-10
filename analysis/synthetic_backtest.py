@@ -231,7 +231,7 @@ class SyntheticBacktestStore:
                     self._add_outcome_column(engine, column, col_def)
                     logger.info(f"synthetic_backtest migration: added synthetic_recommendation.{column}")
                 except OperationalError as exc:
-                    retry_next.append((column, col_def))  # locked, or already there — the final read settles it
+                    retry_next.append((column, col_def))  # locked, or already there — settled below
                     last_exc = exc
                 except Exception as exc:
                     logger.error(f"synthetic_backtest migration: unexpected error adding {column} — {exc}")
@@ -239,20 +239,37 @@ class SyntheticBacktestStore:
             if not missing:
                 break
             if attempt < attempts:
+                # An OperationalError can also mean "column already exists" (a
+                # stale ``existing`` from a failed up-front read, or a
+                # concurrent writer that won the race). One cheap re-read
+                # prunes those so the batch doesn't burn its whole retry
+                # budget — and its import-time sleeps — re-``ALTER``ing a
+                # column that is in fact already there.
+                try:
+                    present = self._migrated_columns(engine)
+                    missing = [(c, d) for c, d in missing if c not in present]
+                except Exception:
+                    pass
+                if not missing:
+                    break
                 time.sleep(delay)
                 delay *= 2
-            else:
-                logger.error(
-                    f"synthetic_backtest migration: {[c for c, _ in missing]} still not added "
-                    f"after {attempts} attempts — {last_exc}"
-                )
 
         try:
             final = self._migrated_columns(engine)
         except Exception as exc:
             logger.error(f"synthetic_backtest migration: could not verify final column state — {exc}")
             return False
-        return all(column in final for column, _ in columns)
+        still_missing = [column for column, _ in columns if column not in final]
+        if still_missing:
+            # Only an authoritative absence in the final read is a real
+            # failure — the loop's own bookkeeping counts a benign
+            # "already exists" race as still-missing.
+            logger.error(
+                f"synthetic_backtest migration: {still_missing} still not added "
+                f"after {attempts} attempts — {last_exc}"
+            )
+        return not still_missing
 
     @staticmethod
     def _migrated_columns(engine) -> set:

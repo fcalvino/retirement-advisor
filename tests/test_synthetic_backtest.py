@@ -328,6 +328,54 @@ def test_migrate_outcome_columns_returns_false_when_a_column_permanently_fails_t
     assert result is False
 
 
+def test_migrate_outcome_columns_prunes_already_present_columns_after_a_failed_upfront_read(monkeypatch, caplog):
+    """A transient lock on the *up-front* PRAGMA read of an already-migrated
+    DB makes `existing` fall back to empty, so every ADD COLUMN then fails
+    with "duplicate column name". A cheap re-read before the first backoff
+    must prune those so the batch neither burns its retry budget (import-time
+    sleeps) nor logs a false "still not added" ERROR.
+    """
+    import sqlite3
+
+    from sqlalchemy import create_engine
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE synthetic_recommendation ("
+        "id INTEGER PRIMARY KEY, symbol TEXT, as_of TEXT, piotroski_score INTEGER, source TEXT, "
+        "price_at_cutoff FLOAT, price_at_horizon FLOAT, horizon_date VARCHAR, return_pct FLOAT, "
+        "benchmark_return_pct FLOAT, excess_return_pct FLOAT, benchmark_missing BOOLEAN DEFAULT 0, "
+        "outcome_scored_at DATETIME)"
+    )
+    conn.commit()
+
+    store = SyntheticBacktestStore.__new__(SyntheticBacktestStore)
+    store._engine = create_engine("sqlite://", creator=lambda: conn)
+
+    real_migrated_columns = SyntheticBacktestStore._migrated_columns
+    reads = {"n": 0}
+
+    def _flaky_read(engine):
+        reads["n"] += 1
+        if reads["n"] == 1:  # the up-front read is the one that's locked
+            raise Exception("database is locked")
+        return real_migrated_columns(engine)
+
+    sleeps = {"n": 0}
+    monkeypatch.setattr(store, "_migrated_columns", _flaky_read)
+    monkeypatch.setattr(
+        "analysis.synthetic_backtest.time.sleep",
+        lambda *_: sleeps.__setitem__("n", sleeps["n"] + 1),
+    )
+
+    with caplog.at_level("ERROR"):
+        result = store._migrate_outcome_columns(store._engine)
+
+    assert result is True
+    assert sleeps["n"] == 0, "a stale up-front read must not cost the retry budget's sleeps"
+    assert "still not added" not in caplog.text, "a benign 'already exists' race is not a failure"
+
+
 def test_get_all_filters_by_symbol():
     store = SyntheticBacktestStore(":memory:")
     store.log_piotroski("AAPL", date(2021, 6, 1), _detail(5))
