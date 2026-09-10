@@ -73,7 +73,9 @@ archivo tiene que nombrar estas y ninguna cerrada:
 
 | id | banda | qué |
 |---|---|---|
-| **U5-1b** | 3 | Recalibrar Piotroski vs moat. Bloqueado: n=11, todas a 30 días |
+| **U5-1b** | 3 | Recalibrar Piotroski vs moat. Bloqueado: n=11 orgánico a 30 días, o hasta PIT-1/PIT-2 (evidencia sintética a 1 año) |
+| **PIT-1** | 2 | Medir los outcomes del backtesting point-in-time vía yfinance y escribir las 8 columnas de `synthetic_recommendation`. Bloquea a U5-1b. Alcance abierto (`AskUserQuestion`) |
+| **PIT-2** | 3 | Correr el volumen amplio y exponer la evidencia (F-Score vs retorno forward) en una lectura — hoy no la lee nadie |
 
 Cerradas: **Asistente de gap** (`5eed792`, 2026-08-15 — la fila decía "falta la
 superficie" sobre una superficie que ya estaba en producción: el consejo de
@@ -176,7 +178,9 @@ Nada de acá miente sobre lo que calcula; todo está mal calibrado o mal alcanza
 
 | id | sev | qué | evidencia |
 |---|---|---|---|
-| **U5-1b** | P2 | El bonus de Piotroski (0–12) pesa **más que el del moat (0–10)** en un producto de retiro: paga más por «mejoró contra el año pasado» que por «tiene una ventaja durable». Medido sobre 150 equities: 31 % cobra `bonus_strong` y **24 cruzan el umbral de BUY sólo por ese bonus**. U5-1 arregló la etiqueta; recalibrar necesita outcomes que no existen — y son **menos** de los que esta fila creía: de las 22 puntuadas, 11 las escribió la suite (U5-18d), así que la muestra real es **11**, todas a 30 días, y una señal a 1 año no se juzga en 30. Reabrir cuando el track record tenga horizontes largos | `config.py` `PiotroskiConfig` |
+| **U5-1b** | P2 | El bonus de Piotroski (0–12) pesa **más que el del moat (0–10)** en un producto de retiro: paga más por «mejoró contra el año pasado» que por «tiene una ventaja durable». Medido sobre 150 equities: 31 % cobra `bonus_strong` y **24 cruzan el umbral de BUY sólo por ese bonus**. U5-1 arregló la etiqueta; recalibrar necesita outcomes que no existen — y son **menos** de los que esta fila creía: de las 22 puntuadas, 11 las escribió la suite (U5-18d), así que la muestra real es **11**, todas a 30 días, y una señal a 1 año no se juzga en 30. Reabrir cuando el track record orgánico tenga horizontes largos **o cuando PIT-1/PIT-2 produzcan la evidencia sintética a 1 año**. La recalibración en sí (tocar `PiotroskiConfig.strong_threshold` / `bonus_strong`) es una decisión humana explícita — nunca la hace un loop ni un script. | `config.py` `PiotroskiConfig` |
+| **PIT-1** | P2 | El motor de backtesting point-in-time (Idea 2 del diagnóstico 2026-09; PRs #100/#102/#104/#106/#108) genera F-Scores sintéticos a volumen pero **ninguno tiene outcome medido** — las 8 columnas (`price_at_cutoff`, `price_at_horizon`, `return_pct`, `benchmark_return_pct`, `excess_return_pct`, `benchmark_missing`, `outcome_scored_at`, `horizon_date`) existen y no las escribe nada. Falta: para cada `synthetic_recommendation`, traer precio a `as_of` y a +1 año vía yfinance (point-in-time-safe por construcción: precio histórico, no reconstrucción), computar retorno propio y exceso vs un benchmark, escribir las columnas. **Decisiones de alcance abiertas** (necesitan `AskUserQuestion` antes de codear): tickers deslistados antes del horizonte; qué benchmark (SPY total-return / sector / equal-weight del universo); cortes a menos de 1 año de hoy (outcome incompleto). El schema y el flag `outcome_columns_verified` ya están; `scripts/point_in_time_backtest.py` ya rehúsa si no verifica. **Bloquea a U5-1b** (le da la muestra a 1 año que hoy no existe). | `analysis/synthetic_backtest.py:138-157` (columnas nullable sin escritor), `scripts/point_in_time_backtest.py:220-240` |
+| **PIT-2** | banda 3 | Con PIT-1 hecho: correr `scripts/point_in_time_backtest.py` sobre un universo amplio (no solo `DEFAULT_TICKERS`) × una grilla de cortes históricos, y **agregar una lectura** (report o página) que muestre F-Score vs retorno forward / exceso con bandas honestas (t de Student, como `mean_with_band` — no 1.96). Sin esto, PIT-1 deja evidencia en una tabla que **nada lee hoy** (0 consumidores en producción, verificado por grep). La corrida grande en sí es una decisión operativa (rate-limit de yfinance, tiempo de cómputo). | grep: nada fuera de `scripts/point_in_time_backtest.py` y sus tests consume `synthetic_recommendation` |
 
 ---
 
