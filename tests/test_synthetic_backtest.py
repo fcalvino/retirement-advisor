@@ -96,6 +96,42 @@ def test_outcome_columns_migrate_onto_a_pre_existing_database():
     row = conn.execute("SELECT symbol, piotroski_score FROM synthetic_recommendation").fetchone()
     assert row == ("AAPL", 7)  # the pre-existing row survives untouched
 
+    # benchmark_missing backfills to 0 (not NULL) on the pre-existing row —
+    # "not scored yet" is a definite False, per the U2-4 precedent.
+    assert conn.execute("SELECT benchmark_missing FROM synthetic_recommendation").fetchone()[0] == 0
+
+
+def test_benchmark_missing_ddl_is_identical_on_the_fresh_and_migrated_paths():
+    """A create_all()'d table and an ALTER-migrated one must give
+    benchmark_missing the same SQL-level default — otherwise a raw SQL path
+    that omits the column sees NULL on one and 0 on the other for the same
+    "not scored yet" state.
+    """
+    import sqlite3
+
+    from sqlalchemy import create_engine, text
+
+    fresh = SyntheticBacktestStore(":memory:")
+    with fresh._engine.connect() as conn:
+        fresh_dflt = {
+            r[1]: r[4] for r in conn.execute(text("PRAGMA table_info(synthetic_recommendation)"))
+        }["benchmark_missing"]
+
+    raw = sqlite3.connect(":memory:")
+    raw.execute(
+        "CREATE TABLE synthetic_recommendation ("
+        "id INTEGER PRIMARY KEY, symbol TEXT, as_of TEXT, piotroski_score INTEGER, source TEXT)"
+    )
+    raw.commit()
+    migrated = SyntheticBacktestStore.__new__(SyntheticBacktestStore)
+    migrated._engine = create_engine("sqlite://", creator=lambda: raw)
+    assert migrated._migrate_outcome_columns(migrated._engine) is True
+    migrated_dflt = {
+        r[1]: r[4] for r in raw.execute("PRAGMA table_info(synthetic_recommendation)")
+    }["benchmark_missing"]
+
+    assert fresh_dflt == migrated_dflt == "0"
+
 
 def test_migrate_outcome_columns_reads_pragma_only_once_when_already_fully_migrated(monkeypatch):
     """The common case from the second run on: every column already exists,
@@ -164,19 +200,21 @@ def test_migrate_outcome_columns_retries_a_transient_failure_and_still_succeeds(
     assert calls["n"] == 2, "must retry exactly once after the transient failure, then succeed"
 
 
-def test_migrate_outcome_columns_does_not_retry_when_a_concurrent_writer_won_the_race(monkeypatch):
-    """The up-front PRAGMA check only rules out the *initial* state — a
-    second writer can add the same column in the gap between our check and
-    our own ALTER TABLE, which raises the identical OperationalError
-    ("duplicate column name") as a genuine lock. That must be recognized as
-    success (a re-check finds the column already there), not burn the whole
-    retry budget and log a false permanent failure for a column that in
-    fact exists.
+def test_migrate_outcome_columns_tolerates_a_concurrent_writer_adding_the_same_column(monkeypatch):
+    """The up-front PRAGMA check only rules out the *initial* state — a second
+    writer can add the same column in the gap before our own ALTER TABLE,
+    raising the identical OperationalError ("duplicate column name") as a
+    genuine lock. The batch just retries it (bounded by ``config.FETCH``) and
+    the final PRAGMA re-read confirms it landed — so the migration still
+    returns True without special-casing the race, and the other columns are
+    unaffected.
     """
     import sqlite3
 
     from sqlalchemy import create_engine
     from sqlalchemy.exc import OperationalError
+
+    from config import FETCH
 
     conn = sqlite3.connect(":memory:")
     conn.execute(
@@ -188,30 +226,23 @@ def test_migrate_outcome_columns_does_not_retry_when_a_concurrent_writer_won_the
     store = SyntheticBacktestStore.__new__(SyntheticBacktestStore)
     store._engine = create_engine("sqlite://", creator=lambda: conn)
 
-    calls = {"n": 0}
     real_add = SyntheticBacktestStore._add_outcome_column
+    raced = {"done": False}
 
     def _lost_the_race(engine, column, col_def):
-        if column == "price_at_cutoff":
-            calls["n"] += 1
-            # A concurrent writer adds the column first, then our own
-            # attempt collides with it — same OperationalError SQLite
-            # raises for "database is locked".
+        if column == "price_at_cutoff" and not raced["done"]:
+            raced["done"] = True
             conn.execute(f"ALTER TABLE synthetic_recommendation ADD COLUMN {column} {col_def}")
             conn.commit()
             raise OperationalError("ALTER TABLE ...", {}, RuntimeError("duplicate column name: price_at_cutoff"))
-        # Every other column adds normally — delegating to the real
-        # implementation (rather than silently no-op'ing) so this test
-        # actually exercises the whole batch, not just the raced column;
-        # a regression that dropped a column from the loop (e.g. an
-        # accidental early return right after handling the race) would
-        # otherwise pass this test undetected.
         return real_add(engine, column, col_def)
 
+    sleeps = {"n": 0}
     monkeypatch.setattr(store, "_add_outcome_column", _lost_the_race)
-    monkeypatch.setattr("analysis.synthetic_backtest.time.sleep", lambda *_: (_ for _ in ()).throw(
-        AssertionError("must not sleep/retry once the concurrent add is detected")
-    ))
+    monkeypatch.setattr(
+        "analysis.synthetic_backtest.time.sleep",
+        lambda *_: sleeps.__setitem__("n", sleeps["n"] + 1),
+    )
 
     result = store._migrate_outcome_columns(store._engine)
 
@@ -220,16 +251,15 @@ def test_migrate_outcome_columns_does_not_retry_when_a_concurrent_writer_won_the
         "price_at_cutoff", "price_at_horizon", "horizon_date", "return_pct",
         "benchmark_return_pct", "excess_return_pct", "benchmark_missing", "outcome_scored_at",
     } <= cols, "the race on one column must not stop the rest of the batch from migrating"
-    assert calls["n"] == 1, "must recognize the concurrent add on the first failure, not retry"
     assert result is True
+    assert sleeps["n"] <= max(1, int(FETCH.max_retries)), "the retry must stay bounded by config.FETCH, not spin"
 
 
-def test_migrate_outcome_columns_survives_a_locked_db_on_the_concurrent_add_recheck(monkeypatch):
-    """A genuine lock (not a concurrent add) raised by the very re-check that
-    tells the two apart must not itself crash the migration — it must be
-    treated as "still failing", not propagate out of ``_migrate_outcome_columns``
-    (which would crash ``__init__`` and the module-level singleton it builds,
-    exactly the failure mode this whole retry mechanism exists to avoid).
+def test_migrate_outcome_columns_returns_false_on_a_fully_locked_database(monkeypatch):
+    """Every ALTER and the PRAGMA re-reads all fail (database genuinely
+    locked for the whole window) — ``_migrate_outcome_columns`` must return
+    False, never raise out of ``__init__`` and crash the import-time
+    singleton.
     """
     import sqlite3
 
@@ -249,11 +279,11 @@ def test_migrate_outcome_columns_survives_a_locked_db_on_the_concurrent_add_rech
     def _always_locked(engine, column, col_def):
         raise OperationalError("ALTER TABLE ...", {}, RuntimeError("database is locked"))
 
-    def _recheck_also_locked(engine):
+    def _read_also_locked(engine):
         raise OperationalError("PRAGMA table_info ...", {}, RuntimeError("database is locked"))
 
     monkeypatch.setattr(store, "_add_outcome_column", _always_locked)
-    monkeypatch.setattr(store, "_migrated_columns", _recheck_also_locked)
+    monkeypatch.setattr(store, "_migrated_columns", _read_also_locked)
     monkeypatch.setattr("analysis.synthetic_backtest.time.sleep", lambda *_: None)
 
     result = store._migrate_outcome_columns(store._engine)  # must not raise

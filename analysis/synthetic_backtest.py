@@ -117,11 +117,13 @@ class SyntheticRecommendation(_Base):
     created_at                = Column(DateTime, default=utc_now)
 
     # --- Outcome fields (PR 5/N) ---------------------------------------
-    # Deliberately added via _migrate's ADD COLUMN pattern (below), not
-    # designed into the original PR 3/N schema — see that module's own
-    # docstring: "not guessed at now". Every column here is nullable, and
-    # every one *stays unset* by default — except benchmark_missing, whose
-    # own comment below explains why it defaults to False, not NULL.
+    # Added onto pre-existing databases via _migrate_outcome_columns's
+    # ADD COLUMN loop (below) — the same pattern analysis/track_record.py's
+    # own _migrate uses for its "Calibration inputs" columns — not designed
+    # into the original PR 3/N schema (see that module's own docstring:
+    # "not guessed at now"). Every column here is nullable, and every one
+    # *stays unset* by default — except benchmark_missing, whose own
+    # comment below explains why it defaults to False, not NULL.
     # Nothing that writes a row today (PR 3/N's log_piotroski, below) sets any of
     # these, and no PR yet *measures* them — that is PR 6/N. This PR is
     # schema-only.
@@ -144,7 +146,14 @@ class SyntheticRecommendation(_Base):
     # unknown, not zero — benchmark_return_pct/excess_return_pct stay NULL
     # rather than defaulting to a number that would read as "tied the
     # market" when the truth is "we don't know".
-    benchmark_missing         = Column(Boolean, default=False)
+    #
+    # server_default=text("0") mirrors the migration path's exact
+    # "BOOLEAN DEFAULT 0" so a freshly create_all()'d table and a migrated
+    # one end up with byte-identical column DDL (PRAGMA dflt_value == '0'
+    # either way) — without it, a raw SQL path that omits the column would
+    # see NULL on a fresh DB and 0 on a migrated one for the same "not
+    # scored yet" state.
+    benchmark_missing         = Column(Boolean, default=False, server_default=text("0"))
     outcome_scored_at         = Column(DateTime, nullable=True)
 
 
@@ -167,36 +176,26 @@ class SyntheticBacktestStore:
         self._Session = sessionmaker(bind=self._engine)
 
     def _migrate_outcome_columns(self, engine) -> bool:
-        """Add the PR 5/N outcome columns to a database file that may
-        already have this table without them (SQLite safe). Returns
-        whether every target column is confirmed present when this
-        returns — ``self.outcome_columns_verified`` mirrors
-        ``self.unique_index_verified`` below precisely so a future caller
-        (PR 6/N, the first one to actually write these columns) has the
-        same kind of flag to check before trusting they exist, instead of
-        having to grep logs for a migration failure that happened at
-        import time.
+        """Add the PR 5/N outcome columns to a database file that may already
+        have this table without them (SQLite safe). Returns whether every
+        target column is confirmed present — ``self.outcome_columns_verified``
+        mirrors ``self.unique_index_verified`` below so PR 6/N (the first
+        caller to actually write these columns) has a flag to check rather
+        than grepping import-time logs for a silent migration failure.
 
-        Checks ``PRAGMA table_info`` first rather than letting a
-        "duplicate column" error do that job via a bare
-        ``except: pass`` — SQLite raises the exact same
-        ``OperationalError`` for "this column already exists" as it does
-        for "the database is locked", so a caller cannot tell a genuinely
-        transient failure (a concurrently-writing dashboard/scheduler on
-        the same ``DB_PATH`` — the same race ``_migrate`` below already
-        retries for) apart from the benign, expected case without first
-        knowing which one it is. Checking up front removes the ambiguity:
-        a column already present is simply skipped, never attempted, and
-        any exception raised while actually adding a genuinely missing
-        column is unambiguously a real failure worth retrying (via
-        ``config.FETCH``, the same policy ``_migrate`` uses) — unlike
-        ``analysis/track_record.py``'s own ``_migrate``, whose columns
-        are already read by production code today and have run this way
-        without incident; these columns aren't read by anything yet, but
-        are about to be (the PR that actually measures outcomes), so a
-        silently-incomplete migration here would surface downstream as an
-        opaque "no such column" on the very next PR instead of here,
-        where the cause is obvious.
+        Reads ``PRAGMA table_info`` up front so an ``ALTER TABLE`` is only
+        attempted for a genuinely missing column: SQLite raises the same
+        ``OperationalError`` for "column already exists" as for "database is
+        locked", so without the up-front check the benign case can't be told
+        apart from a transient lock worth retrying (via ``config.FETCH`` — the
+        same policy ``_migrate`` uses). Retries the whole batch of still-
+        missing columns together, not one budget per column: a lock is on the
+        database file, not a column. The answer returned is a fresh re-read,
+        not the loop's bookkeeping — the same "verify, don't assume" the
+        sibling ``_migrate`` applies to its index, and it also absorbs the one
+        odd case (a stale ``existing`` from a failed up-front read, or a
+        concurrent writer adding the same column) for free: those columns just
+        show up present in the final read.
         """
         columns = [
             ("price_at_cutoff", "FLOAT"),
@@ -211,97 +210,43 @@ class SyntheticBacktestStore:
         try:
             existing = self._migrated_columns(engine)
         except Exception as exc:
-            # A locked/unreachable database here is exactly the scenario this
-            # whole method exists to survive — falling back to "assume none
-            # migrated yet" is safe (each ALTER attempt below re-derives the
-            # truth itself, including via the same guarded re-check on
-            # failure) and keeps a transient read failure from raising out of
-            # __init__ and crashing the module-level singleton at import time.
+            # A transient read failure here must not raise out of __init__ and
+            # crash the import-time singleton — fall back to "assume nothing
+            # migrated"; the ALTER attempts and the final re-read re-derive
+            # the truth themselves.
             logger.error(f"synthetic_backtest migration: could not read existing columns — {exc}")
             existing = set()
 
-        if all(column in existing for column, _ in columns):
-            # The common case from the second run on: everything is already
-            # migrated, the loop below would skip every column untouched,
-            # and `existing` (just read, with nothing else able to have
-            # written to this table in between) already answers the exact
-            # question a fresh re-verification query would — so don't pay
-            # for a second identical PRAGMA round-trip on every cold start
-            # of every process that imports this module, forever, to learn
-            # something `existing` already knows.
-            return True
+        missing = [(c, d) for c, d in columns if c not in existing]
+        if not missing:
+            return True  # steady state — skip a second identical PRAGMA read
 
         attempts = max(1, int(FETCH.max_retries))
-        for column, col_def in columns:
-            if column in existing:
-                continue  # already migrated — the expected case on every re-run
-            delay = float(FETCH.retry_base_delay_s)
-            for attempt in range(1, attempts + 1):
+        delay = float(FETCH.retry_base_delay_s)
+        last_exc: Exception | None = None
+        for attempt in range(1, attempts + 1):
+            retry_next: List = []
+            for column, col_def in missing:
                 try:
                     self._add_outcome_column(engine, column, col_def)
                     logger.info(f"synthetic_backtest migration: added synthetic_recommendation.{column}")
-                    break
                 except OperationalError as exc:
-                    # The up-front PRAGMA check only disambiguates the initial
-                    # state — a second writer can still add this exact column
-                    # in the window between our check and our own ALTER TABLE,
-                    # which raises the identical OperationalError ("duplicate
-                    # column name") as a genuine lock. Re-checking here tells
-                    # "someone else already finished this" apart from "still
-                    # failing", so a benign race does not get logged as a
-                    # permanent failure for a column that in fact now exists.
-                    #
-                    # This re-check is itself a query against the same
-                    # possibly-locked database, so it must not be allowed to
-                    # raise past this handler — a genuine lock (not a
-                    # concurrent add) would otherwise escape as an unhandled
-                    # exception, uncaught by the sibling `except Exception`
-                    # below (Python does not re-dispatch a fresh exception
-                    # raised while already handling one), crashing __init__
-                    # and the module-level singleton it builds.
-                    try:
-                        already_added = column in self._migrated_columns(engine)
-                        recheck_failed = False
-                    except Exception:
-                        # The recheck query failed too (same possibly-locked
-                        # database) — we genuinely don't know whether `column`
-                        # exists or not, unlike the `already_added = False`
-                        # case above where the recheck *succeeded* and
-                        # confirmed absence. Tracked separately so the final
-                        # log line never asserts "could not add" for a column
-                        # that, for all we actually know, is already there.
-                        already_added = False
-                        recheck_failed = True
-                    if already_added:
-                        logger.info(
-                            f"synthetic_backtest migration: {column} added concurrently by another writer"
-                        )
-                        break
-                    if attempt == attempts:
-                        if recheck_failed:
-                            logger.error(
-                                f"synthetic_backtest migration: {column} — ADD COLUMN failed after "
-                                f"retries and its final state could not be confirmed (recheck also "
-                                f"failed) — {exc}"
-                            )
-                        else:
-                            logger.error(
-                                f"synthetic_backtest migration: could not add {column} after retries — {exc}"
-                            )
-                    else:
-                        time.sleep(delay)
-                        delay *= 2
+                    retry_next.append((column, col_def))  # locked, or already there — the final read settles it
+                    last_exc = exc
                 except Exception as exc:
                     logger.error(f"synthetic_backtest migration: unexpected error adding {column} — {exc}")
-                    break
+            missing = retry_next
+            if not missing:
+                break
+            if attempt < attempts:
+                time.sleep(delay)
+                delay *= 2
+            else:
+                logger.error(
+                    f"synthetic_backtest migration: {[c for c, _ in missing]} still not added "
+                    f"after {attempts} attempts — {last_exc}"
+                )
 
-        # Don't trust the loop's own bookkeeping for the final answer — the
-        # same "re-check instead of assume" principle the OperationalError
-        # handler above already applies to a single column, applied once
-        # more to the whole batch: re-read PRAGMA table_info fresh and
-        # confirm every target column is actually there. This is what
-        # `_migrate` below already does for the unique index (querying
-        # sqlite_master rather than trusting the try/except path taken).
         try:
             final = self._migrated_columns(engine)
         except Exception as exc:
@@ -311,11 +256,9 @@ class SyntheticBacktestStore:
 
     @staticmethod
     def _migrated_columns(engine) -> set:
-        """The outcome/base columns ``synthetic_recommendation`` already has,
-        per a fresh ``PRAGMA table_info`` — the single source of truth used
-        both before attempting a migration and to re-check after a failed
-        ``ALTER TABLE`` (a concurrent writer may have added the same column
-        in between).
+        """The columns ``synthetic_recommendation`` already has, per a fresh
+        ``PRAGMA table_info`` — the single source of truth, read once up
+        front and once more at the end to confirm the migration landed.
         """
         with engine.connect() as conn:
             return {row[1] for row in conn.execute(text("PRAGMA table_info(synthetic_recommendation)"))}
