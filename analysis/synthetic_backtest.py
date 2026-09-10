@@ -265,9 +265,10 @@ class SyntheticBacktestStore:
             # Only an authoritative absence in the final read is a real
             # failure — the loop's own bookkeeping counts a benign
             # "already exists" race as still-missing.
+            cause = f" — {last_exc}" if last_exc is not None else ""
             logger.error(
                 f"synthetic_backtest migration: {still_missing} still not added "
-                f"after {attempts} attempts — {last_exc}"
+                f"after {attempts} attempts{cause}"
             )
         return not still_missing
 
