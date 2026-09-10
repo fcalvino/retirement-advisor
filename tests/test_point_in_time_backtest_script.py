@@ -249,6 +249,40 @@ def test_run_re_verifies_the_unique_index_live_if_it_was_stuck_at_construction(m
     assert summary == {"written": 1, "skipped": 0, "failed": 0}
 
 
+def test_run_refuses_when_outcome_columns_are_not_verified(monkeypatch):
+    """A partial/failed PR 5/N outcome-column migration must not be allowed
+    to silently break every log_piotroski insert (its INSERT includes all 8
+    outcome columns unconditionally) — refused up front, same as
+    unique_index_verified, instead of burning the whole batch's SEC EDGAR
+    fetches to write zero rows.
+    """
+    monkeypatch.setattr(backtest.synthetic_backtest_store, "outcome_columns_verified", False)
+    monkeypatch.setattr(backtest.synthetic_backtest_store, "_migrate_outcome_columns", lambda engine: False)
+    fetch_calls = []
+    monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: fetch_calls.append(symbol))
+
+    summary = backtest.run(["AAPL"], [date(2021, 6, 1)])
+
+    assert summary == {"written": 0, "skipped": 0, "failed": 1}
+    assert fetch_calls == []
+    assert backtest.synthetic_backtest_store.get_all() == []
+
+
+def test_run_re_verifies_outcome_columns_live_if_it_was_stuck_at_construction(monkeypatch):
+    """Same live-recovery guarantee as unique_index_verified: a lock at
+    store-construction time (import time, for the module singleton) could
+    have outlasted the migration's retry budget, but by the time run()
+    actually executes that lock is very likely long gone.
+    """
+    monkeypatch.setattr(backtest.synthetic_backtest_store, "outcome_columns_verified", False)
+    monkeypatch.setattr(backtest, "_fetch_companyfacts", lambda symbol: _fake_companyfacts())
+
+    summary = backtest.run(["AAPL"], [date(2021, 6, 1)])
+
+    assert backtest.synthetic_backtest_store.outcome_columns_verified is True
+    assert summary == {"written": 1, "skipped": 0, "failed": 0}
+
+
 def test_run_fails_fast_once_when_the_cik_map_cannot_be_loaded(monkeypatch):
     """A total SEC outage must abort the whole batch after one failed
     attempt to load the shared CIK map — not retry per symbol, which would
