@@ -341,7 +341,7 @@ def test_a_partial_rerun_carries_the_measurement_forward_instead_of_overwriting_
     branch = SCREENER_SRC[
         SCREENER_SRC.index("if _rerun_only:") : SCREENER_SRC.index("elif _cached_rows is not None")
     ]
-    assert "_persist(_new_rows, _new_failures, _elapsed)" in branch
+    assert "_persist(_new_rows, _new_failures, _elapsed" in branch
     assert "replace_throughput" not in branch
     persist_def = SCREENER_SRC[
         SCREENER_SRC.index("def _persist(") : SCREENER_SRC.index("if refresh:")

@@ -32,6 +32,55 @@ from data.product_ux import TREND_MA_LABEL_EN
 _CONFIDENCE_RANK = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
 
 
+def confidence_for(
+    action: str,
+    effective_score: float,
+    technical_signal: str,
+    *,
+    blocked: bool,
+    downgraded: bool,
+    data_quality_level: str,
+    negative_equity: bool,
+) -> str:
+    """Pure, deterministic confidence from first principles — no LLM input.
+
+    Called as the final step of apply_safety_overlay so both the rule-based and
+    AI paths produce the same label for identical (action, score, technical, dq)
+    inputs. The LLM's own confidence lives in Decision.ai_confidence and is shown
+    as an explanation, never as the operative label.
+    """
+    if blocked:
+        return "HIGH"
+
+    if data_quality_level == "poor":
+        return "LOW"
+
+    score = effective_score
+    sig = technical_signal
+    if score >= CFG.strong_buy_score:
+        base = "HIGH" if sig == "BULLISH" else "MEDIUM"
+    elif score >= CFG.buy_score:
+        base = "HIGH" if sig == "BULLISH" else "MEDIUM"
+    elif score >= CFG.hold_score:
+        base = "MEDIUM"
+    elif score >= CFG.reduce_score:
+        base = "MEDIUM"
+    else:
+        base = "HIGH"  # SELL: high certainty the position should be exited
+
+    result = base
+    for cap in (
+        "MEDIUM" if downgraded else None,
+        (getattr(DATA_QUALITY, "partial_max_confidence", "MEDIUM") or "MEDIUM")
+        if data_quality_level == "partial"
+        else None,
+        "MEDIUM" if negative_equity else None,
+    ):
+        if cap and _CONFIDENCE_RANK.get(result, 1) > _CONFIDENCE_RANK.get(cap, 1):
+            result = cap
+    return result
+
+
 def effective_decision_score(fundamental: FundamentalResult) -> float:
     """Score used by the decision matrix (P0 D2: align with portfolio layer).
 
@@ -53,6 +102,10 @@ def apply_safety_overlay(
 
     P0 audit D1: the LLM path must never upgrade past leverage / book-value /
     parabolic guards. Idempotent when decide() already blocked.
+
+    Single point where confidence is finalised via confidence_for(), so both
+    the rule-based and AI paths always emit the same deterministic label for the
+    same (action, score, technical, dq) inputs.
     """
     _is_crypto = getattr(fundamental, "is_crypto", False)
 
@@ -70,29 +123,35 @@ def apply_safety_overlay(
                 decision.action = "AVOID"
                 decision.blocked = True
                 decision.block_reason = reason
-                decision.confidence = "HIGH"
                 decision.decisive_reason = f"Bloqueado: {reason}"
                 decision.rationale = [f"BLOCKED (safety overlay): {reason}"] + list(
                     decision.rationale or []
                 )
-        return decision
+    else:
+        blocked, reason = RetirementStrategy()._check_safety_blocks(fundamental, technical)
+        if blocked and decision.action in ("STRONG BUY", "BUY", "HOLD", "REDUCE", "SELL"):
+            decision.action = "AVOID"
+            decision.blocked = True
+            decision.block_reason = reason
+            decision.decisive_reason = f"Bloqueado: {reason}"
+            decision.rationale = [f"BLOCKED (safety overlay): {reason}"] + list(
+                decision.rationale or []
+            )
 
-    blocked, reason = RetirementStrategy()._check_safety_blocks(fundamental, technical)
-    if blocked and decision.action in ("STRONG BUY", "BUY", "HOLD", "REDUCE", "SELL"):
-        decision.action = "AVOID"
-        decision.blocked = True
-        decision.block_reason = reason
-        decision.confidence = "HIGH"
-        decision.decisive_reason = f"Bloqueado: {reason}"
-        decision.rationale = [f"BLOCKED (safety overlay): {reason}"] + list(
-            decision.rationale or []
-        )
+        # Soft policies also on AI path (same as decide())
+        if not decision.blocked:
+            apply_negative_equity_policy(decision, fundamental)
+            apply_data_quality_policy(decision, fundamental)
 
-    # Soft policies also on AI path (same as decide())
-    if not decision.blocked:
-        apply_negative_equity_policy(decision, fundamental)
-        apply_data_quality_policy(decision, fundamental)
-
+    decision.confidence = confidence_for(
+        decision.action,
+        decision.fundamental_score,
+        technical.signal,
+        blocked=decision.blocked,
+        downgraded=bool(decision.decisive_reason),
+        data_quality_level=(getattr(fundamental, "data_quality", {}) or {}).get("level", ""),
+        negative_equity=getattr(fundamental, "negative_equity", False),
+    )
     return decision
 
 
@@ -119,7 +178,6 @@ def apply_data_quality_policy(
 
     if level == "poor" and decision.action in ("STRONG BUY", "BUY"):
         decision.action = "HOLD"
-        decision.confidence = "LOW"
         note = "BUY degradado a HOLD por data quality pobre (datos incompletos)"
         decision.decisive_reason = note
         if note not in (decision.rationale or []):
@@ -133,13 +191,6 @@ def apply_data_quality_policy(
             decision.decisive_reason = note
             if note not in (decision.rationale or []):
                 decision.rationale = [note] + list(decision.rationale or [])
-        cap = getattr(config, "partial_max_confidence", "MEDIUM") or "MEDIUM"
-        cur = decision.confidence or "MEDIUM"
-        if _CONFIDENCE_RANK.get(cur, 1) > _CONFIDENCE_RANK.get(cap, 1):
-            decision.confidence = cap
-            note = f"Confianza capada a {cap} por data quality partial"
-            if note not in (decision.rationale or []):
-                decision.rationale = list(decision.rationale or []) + [note]
 
     return decision
 
@@ -184,9 +235,6 @@ def apply_negative_equity_policy(
         decision.decisive_reason = note
         if note not in (decision.rationale or []):
             decision.rationale = [note] + list(decision.rationale or [])
-        cur = decision.confidence or "MEDIUM"
-        if _CONFIDENCE_RANK.get(cur, 1) > _CONFIDENCE_RANK.get("MEDIUM", 1):
-            decision.confidence = "MEDIUM"
 
     return decision
 
@@ -224,6 +272,14 @@ class Decision:
     # Populated from LLM when AI is used; [] when rule-based, on error, or when LLM judged no material macro.
     # Each item: {"factor": str, "why_relevant": str, "impact": str, "effect_on_allocation_or_conviction": str}
     macro_factors: List[Dict[str, Any]] = field(default_factory=list)
+
+    # AI provenance — what the LLM said and whether it was the decision-maker.
+    # ai_confidence: the LLM's own confidence label (explanation only, NEVER the operative label).
+    # ai_used: True only when the LLM produced this verdict (not fallback, not enrich_only).
+    ai_confidence: str = ""
+    ai_used: bool = False
+    ai_provider: str = ""
+    ai_model: str = ""
 
     @property
     def action_emoji(self) -> str:
@@ -293,7 +349,6 @@ class RetirementStrategy:
                 decision.action = "AVOID"
                 decision.blocked = True
                 decision.block_reason = reason
-                decision.confidence = "HIGH"
                 decision.decisive_reason = f"Bloqueado: {reason}"
                 decision.rationale.append(f"BLOCKED: {reason}")
                 return decision
@@ -304,22 +359,19 @@ class RetirementStrategy:
                 decision.action = "AVOID"
                 decision.blocked = True
                 decision.block_reason = f"Movimiento parabólico crypto (RSI={technical.rsi_weekly:.0f}, +{technical.price_vs_52w_low_pct:.0f}% desde 52w low)"
-                decision.confidence = "HIGH"
                 decision.decisive_reason = f"Bloqueado: {decision.block_reason}"
                 decision.rationale.append(f"BLOCKED: {decision.block_reason}")
                 return decision
 
-        # --- Step 2: Decision matrix ---
+        # --- Step 2: Decision matrix (action + decisive_reason only; confidence set later) ---
         score = effective_score
         tech = technical.signal
 
         if score >= CFG.strong_buy_score and tech in ("BULLISH", "NEUTRAL"):
             if fundamental.is_value_stock() or not CFG.require_margin_of_safety:
                 decision.action = "STRONG BUY"
-                decision.confidence = "HIGH"
             else:
                 decision.action = "BUY"
-                decision.confidence = "MEDIUM"
                 decision.decisive_reason = (
                     "Fundamentales de STRONG BUY, pero todavía sin margen de seguridad — "
                     "esperar una baja"
@@ -328,25 +380,21 @@ class RetirementStrategy:
 
         elif score >= CFG.buy_score and tech != "BEARISH":
             decision.action = "BUY"
-            decision.confidence = "MEDIUM" if tech == "NEUTRAL" else "HIGH"
 
         elif score >= CFG.hold_score:
             decision.action = "HOLD"
-            decision.confidence = "MEDIUM"
             if tech == "BEARISH":
                 decision.decisive_reason = "Fundamentales sólidos pero técnico débil — mantener, no agregar"
                 decision.rationale.append("Solid fundamentals but technical weakness — hold, do not add")
 
         elif score >= CFG.reduce_score:
             decision.action = "REDUCE"
-            decision.confidence = "MEDIUM"
             decision.decisive_reason = "Calidad fundamental en deterioro — reducir exposición"
             decision.rationale.append("Fundamental quality declining — reduce exposure gradually")
 
         else:
             decision.action = "SELL"
-            decision.confidence = "HIGH"
-            decision.decisive_reason = "Deterioro fundamental — salir de la posición"
+            # decisive_reason intentionally empty: action follows straight from the score.
             decision.rationale.append("Fundamental deterioration — exit position")
 
         # Technical confirmation for BUY / STRONG BUY (config-first)
@@ -354,7 +402,6 @@ class RetirementStrategy:
             uptrend = tech == "BULLISH" or getattr(technical, "above_sma200", None) is True
             if not uptrend:
                 decision.action = "HOLD"
-                decision.confidence = "MEDIUM"
                 decision.decisive_reason = (
                     "Los fundamentales dan para comprar, pero no hay tendencia alcista "
                     "confirmada — mantener, no agregar"
@@ -371,7 +418,6 @@ class RetirementStrategy:
         if _is_crypto and decision.action in ("STRONG BUY", "BUY"):
             if any("Volatilidad extrema" in (w or "") for w in (fundamental.warnings or [])):
                 decision.action = "HOLD"
-                decision.confidence = "MEDIUM"
                 decision.decisive_reason = "BUY capado a HOLD por volatilidad extrema (perfil retiro)"
                 decision.rationale.append(
                     "BUY capado a HOLD por volatilidad extrema crypto (perfil retiro)"

@@ -65,6 +65,11 @@ class ScreenerRun:
     rows: List[dict] = field(default_factory=list)
     failures: List[dict] = field(default_factory=list)
     schema_version: int = SCHEMA_VERSION
+    # AI provenance for this run (optional; old files fall back to defaults).
+    # A run uses one ai_cfg — no mixed-provider runs are modelled.
+    ai_used: bool = False
+    ai_provider: str = ""
+    ai_model: str = ""
 
     # -------------------------------------------------------------- #
 

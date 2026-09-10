@@ -1770,6 +1770,8 @@ def _track_payload(fund, decision) -> dict:
         "price_at_rec": getattr(fund, "current_price", None) or None,
         "asset_class": getattr(fund, "asset_class", "equity") or "equity",
         "inputs": snapshot_calibration_inputs(fund),
+        "ai_provider": getattr(decision, "ai_provider", "") or "",
+        "ai_model": getattr(decision, "ai_model", "") or "",
     }
 
 
@@ -1812,6 +1814,8 @@ def log_screener_run(rows: list) -> int:
                 fundamental_score=payload.get("fundamental_score", 0.0),
                 technical_signal=payload.get("technical_signal", ""),
                 rationale=payload.get("rationale", []),
+                ai_provider=payload.get("ai_provider", "") or None,
+                ai_model=payload.get("ai_model", "") or None,
             )
             rec_id = track_record_store.log_recommendation(
                 decision,
@@ -1847,9 +1851,13 @@ def _extract_row_data(sym: str, fund, tech, decision) -> dict:
         "action_emoji": decision.action_emoji,
         "why_headline": why["headline"],
         "why_confidence": why["confidence"],
+        "why_ai_confidence": why["ai_confidence"],
         "why": why["why"],
         "why_risks": why["risks"],
         "why_full_headline": why["full_headline"],
+        "ai_used": getattr(decision, "ai_used", False),
+        "ai_provider": getattr(decision, "ai_provider", "") or "",
+        "ai_model": getattr(decision, "ai_model", "") or "",
         "adjusted_score": fund.adjusted_score,
         # Uncapped twin (audit item 11) — falls back to the capped score when 0.
         "raw_adjusted_score": getattr(fund, "raw_adjusted_score", None) or fund.adjusted_score,
@@ -1918,6 +1926,11 @@ def _format_row_for_display(d: dict) -> dict:
         # Raw quality dict — the page rolls these up instead of parsing the badge.
         "_dq": d["data_quality"],
         "_track": d["track"],
+        # AI provenance — hidden from the table, used in the detail panel and caption.
+        "_ai_used": d["ai_used"],
+        "_ai_provider": d["ai_provider"],
+        "_ai_model": d["ai_model"],
+        "_ai_confidence": d["why_ai_confidence"],
     }
 
 

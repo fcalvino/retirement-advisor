@@ -97,6 +97,10 @@ class RecommendationLog(_Base):
     # utility. A ``backfilled`` key marks rows reconstructed after the fact.
     metrics_json      = Column(Text, default="")
 
+    # AI provenance — which model produced this verdict (NULL for rule-based).
+    ai_provider       = Column(String, nullable=True)
+    ai_model          = Column(String, nullable=True)
+
 
 class RecommendationOutcome(_Base):
     """Deferred scoring of a recommendation at a fixed horizon."""
@@ -382,6 +386,8 @@ class TrackRecordStore:
             ("recommendation_log", "dividend_score",      "FLOAT"),
             ("recommendation_log", "metrics_json",        "TEXT DEFAULT ''"),
             ("recommendation_outcome", "benchmark_missing", "BOOLEAN DEFAULT 0"),
+            ("recommendation_log", "ai_provider",         "VARCHAR"),
+            ("recommendation_log", "ai_model",            "VARCHAR"),
         ]
         with engine.connect() as conn:
             from sqlalchemy import text
@@ -439,6 +445,8 @@ class TrackRecordStore:
                 return None
 
             fields = calibration_fields(fundamental)
+            ai_provider = getattr(decision, "ai_provider", None) or None
+            ai_model = getattr(decision, "ai_model", None) or None
 
             with self._Session() as s:
                 row = RecommendationLog(
@@ -452,6 +460,8 @@ class TrackRecordStore:
                     rationale=json.dumps(list(rationale), ensure_ascii=False),
                     plan_id=plan_id,
                     created_at=utc_now(),
+                    ai_provider=ai_provider,
+                    ai_model=ai_model,
                     **fields,
                 )
                 s.add(row)
