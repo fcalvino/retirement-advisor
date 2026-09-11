@@ -161,7 +161,27 @@ def measure_symbol(symbol: str, ai_config=None) -> Optional[Dict[str, Any]]:
         # asked and having quietly failed. Without this a column of unchanged
         # scores is ambiguous between "no effect" and "never ran".
         "ai_ran": bool(getattr(fund.moat_detail, "ai_available", False)),
+        # The fcf_yield/p_ffo currency series reads these: the two metrics that
+        # divide a market leg by a statements leg, plus both currencies so a
+        # None can be told apart from "no FCF data". ``financial_currency`` comes
+        # from info, not from ``fund``: the engine only records it inside the FCF
+        # branch, and trees before #114 do not record it at all.
+        "fcf_yield": getattr(fund, "fcf_yield", None),
+        "p_ffo": getattr(fund, "p_ffo", None),
+        "financial_currency": _info_field(symbol, "financialCurrency"),
+        "currency": _info_field(symbol, "currency"),
     }
+
+
+def _info_field(symbol: str, key: str) -> Optional[str]:
+    """Read one field of the cached ``info`` — offline under ``_make_offline``."""
+    from data.fetcher import get_info
+
+    try:
+        value = (get_info(symbol) or {}).get(key)
+    except Exception:  # pragma: no cover - defensive, same as measure_symbol
+        return None
+    return str(value) if value else None
 
 
 def measure_all(symbols: List[str], ai_config=None) -> Dict[str, Dict[str, Any]]:
@@ -181,6 +201,7 @@ def measure_all(symbols: List[str], ai_config=None) -> Dict[str, Dict[str, Any]]
 
 _SCORE_FIELDS = ("total_score", "adjusted_score", "profitability", "health",
                  "valuation", "growth", "dividend")
+_MEASURED_METRICS = ("fcf_yield", "p_ffo")
 
 
 def _delta(new: Any, old: Any) -> Optional[float]:
@@ -226,7 +247,18 @@ def render_comparison(before: Dict[str, Any], after: Dict[str, Any]) -> str:
             for s in common
             if _gate(before[s]) is not None and _gate(after[s]) is not None
             and _gate(before[s]) != _gate(after[s])]
-    lines.append(f"- Que cruzan el gate de ADX 25: **{len(gate)}**\n")
+    lines.append(f"- Que cruzan el gate de ADX 25: **{len(gate)}**")
+
+    # A metric can change without moving the score (a negative fcf_yield going to
+    # None pays 0 both ways), so the score delta alone would hide it. Rows from a
+    # baseline that predates these columns compare as absent, not as changed.
+    metric_moves = [
+        (s, f, before[s].get(f), after[s].get(f))
+        for s in common
+        for f in _MEASURED_METRICS
+        if f in before[s] and f in after[s] and before[s][f] != after[s][f]
+    ]
+    lines.append(f"- Con `fcf_yield`/`p_ffo` modificado: **{len(metric_moves)}**\n")
 
     if moved:
         lines.append("## Deltas por ticker\n")
@@ -255,6 +287,14 @@ def render_comparison(before: Dict[str, Any], after: Dict[str, Any]) -> str:
         for sym, b, a in gate:
             side = "entra" if (a or 0) >= 25 else "sale"
             lines.append(f"- **{sym}**: {b} → {a} — {side}")
+
+    if metric_moves:
+        lines.append("\n## Métricas bajo medición (`fcf_yield`, `p_ffo`)\n")
+        lines.append("| Ticker | Métrica | Antes | Después | Monedas (estados/cotización) |")
+        lines.append("|---|---|---:|---:|---|")
+        for sym, f, b, a in metric_moves:
+            ccy = f"{after[sym].get('financial_currency') or '?'}/{after[sym].get('currency') or '?'}"
+            lines.append(f"| {sym} | {f} | {b} | {a} | {ccy} |")
 
     if sig:
         lines.append("\n## Cambios de señal\n")
