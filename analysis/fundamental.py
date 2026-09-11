@@ -798,7 +798,7 @@ class FundamentalAnalyzer:
         cashflow = financials.get("cashflow", pd.DataFrame())
 
         self._populate_identity(result, symbol, info)
-        self._populate_prescoring_metrics(result, income_stmt, balance_sheet, cashflow)
+        self._populate_prescoring_metrics(result, info, income_stmt, balance_sheet, cashflow)
         self._run_scoring_pipeline(result, info, income_stmt, balance_sheet, cashflow)
         self._run_moat_pipeline(result, symbol, info, income_stmt, balance_sheet, cashflow, ai_config)
         self._run_tailwind_pipeline(result, symbol, info, ai_config)
@@ -856,6 +856,9 @@ class FundamentalAnalyzer:
         else:
             result.industry = info.get("industry", "") or "Unknown"
         result.market_cap = _safe_float(info.get("marketCap"))
+        # Moneda de los estados, registrada siempre (no sólo en la rama FCF): la
+        # leen los guards de fcf_yield y p_ffo y las superficies que explican el None.
+        result.financial_currency = str(info.get("financialCurrency") or "")
         result.current_price = _safe_float(
             info.get("currentPrice") or info.get("regularMarketPrice")
         )
@@ -875,6 +878,7 @@ class FundamentalAnalyzer:
     def _populate_prescoring_metrics(
         self,
         result: FundamentalResult,
+        info: dict,
         income_stmt: pd.DataFrame,
         balance_sheet: pd.DataFrame,
         cashflow: pd.DataFrame,
@@ -898,7 +902,24 @@ class FundamentalAnalyzer:
         if is_reit(result):
             result.ffo = compute_ffo(income_stmt, cashflow)
             if result.ffo and result.market_cap > 0:
-                result.p_ffo = round(result.market_cap / result.ffo, 2)
+                # Misma trampa que fcf_yield: el FFO viene en la moneda de los
+                # estados y el market cap en la de cotización. Acá la corrupción
+                # *achica* el múltiplo (las bandas son cotas superiores), así que no
+                # hay backstop numérico: un piso borraría REITs legítimamente baratos.
+                mismatch = financial_currency_mismatch(info)
+                if mismatch is not None:
+                    fin_ccy, quote_ccy = mismatch
+                    msg = (
+                        f"P/FFO no medible: el FFO viene en {fin_ccy} y el market cap "
+                        f"en {quote_ccy}; un múltiplo sólo está definido si ambas "
+                        f"patas comparten moneda."
+                    )
+                    logger.warning(msg)
+                    result.warnings.append(msg)
+                    result.notes["p_ffo_currency"] = msg
+                    result.p_ffo = None
+                else:
+                    result.p_ffo = round(result.market_cap / result.ffo, 2)
             result.ffo_payout_pct = compute_ffo_payout_pct(
                 cashflow, result.ffo, income_stmt=income_stmt
             )
