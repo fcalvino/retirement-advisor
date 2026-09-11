@@ -98,7 +98,7 @@ DB_PATH = DB_DIR / "retirement_advisor.db"
 #                   puede caer más allá del horizonte. Las métricas de riqueza no
 #                   se mueven: el horizonte se sortea primero y la cola se
 #                   empalma, así que el terminal queda byte-idéntico.
-ENGINE_VERSION = "2026.08-tier8"
+ENGINE_VERSION = "2026.09-tier9"
 
 
 @dataclass(frozen=True)
@@ -238,6 +238,17 @@ class FundamentalThresholds:
     # literals for its yield half, three lines apart in the same function.
     fcf_yield_excellent: float = 4.0   # % of market cap — ≥ → 3 pts
     fcf_yield_good: float = 2.0        # ≥ → 2 pts
+    # Backstop de error grueso para el FCF yield, en porcentaje. El FCF viene en
+    # `financialCurrency` (moneda de los estados) y el market cap en `currency`
+    # (moneda de cotización); cuando difieren, `fcf/market_cap` es incoherente
+    # (CIB 41 122 %, CEPU 5 331 %). El gate correcto es `financial_currency_mismatch`,
+    # pero si el feed no reporta `financialCurrency` (info cacheada vieja) no se
+    # puede afirmar el mismatch. Este techo caza el caso grueso —CIB, CEPU, AMX—
+    # para que un 41 000 % no llegue nunca a una pantalla. NO es una calibración y
+    # NO discrimina: deja pasar ITUB (29,9 %) y BAP (24,4 %), que también están
+    # fabricados. Existe solo como red de seguridad. Ver normalize_dividend_yield_pct
+    # y max_plausible_dividend_yield_pct para el análogo del dividendo.
+    max_plausible_fcf_yield_pct: float = 50.0
 
     # --- Dividend Quality (10 pts total) ---
     div_yield_sweet_spot_low: float = 1.5   # % — below = growth stock
