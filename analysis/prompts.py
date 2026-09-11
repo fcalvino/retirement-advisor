@@ -26,6 +26,8 @@ Prompts:
 
 from typing import Optional
 
+from analysis.company_type import is_reit
+from analysis.currency_metric_text import currency_metric_text
 from data.product_ux import (
     GUARDRAILS_OMISSIONS,
     MAX_DD_ESTIMATE_SHORT,
@@ -407,11 +409,17 @@ def equity_decision_prompt(fund, tech) -> str:
             return "N/A"
         return f"{val:.{decimals}f}{suffix}"
 
+    fcf_yield_text = currency_metric_text(fund, "fcf_yield") or fmt(fund.fcf_yield, "%")
+    p_ffo_text = currency_metric_text(fund, "p_ffo")
+    p_ffo_context = ""
+    if is_reit(fund) or p_ffo_text:
+        p_ffo_context = f" | P/FFO={p_ffo_text or fmt(getattr(fund, 'p_ffo', None), 'x')}"
+
     country_context = ""
     if fund.symbol in ARGENTINA_ADRS:
         country_context = (
             "\n⚠️ CONTEXTO PAÍS — Argentina (mercado emergente):\n"
-            "Considerar controles de capital, inflación estructural alta y volátil, riesgo regulatorio estatal y de tarifas, subsidios energéticos, brecha cambiaria y prima de riesgo país elevada. Los reportes financieros están en USD pero el negocio real opera en ARS (o mixto). Márgenes bajos o volátiles pueden reflejar regulación tarifaria o distorsiones macro, no solo ineficiencia. Aplicar prima de riesgo país explícita en la recomendación de asignación y en la convicción. Mencioná el impacto en el reasoning cuando sea material.\n"
+            "Considerar controles de capital, inflación estructural alta y volátil, riesgo regulatorio estatal y de tarifas, subsidios energéticos, brecha cambiaria y prima de riesgo país elevada. La moneda de los estados puede diferir de la de cotización; respetá las notas de moneda provistas y no interpretes «no medible» como cero. El negocio real opera en ARS (o mixto). Márgenes bajos o volátiles pueden reflejar regulación tarifaria o distorsiones macro, no solo ineficiencia. Aplicar prima de riesgo país explícita en la recomendación de asignación y en la convicción. Mencioná el impacto en el reasoning cuando sea material.\n"
         )
 
     moat_ctx = ""
@@ -447,10 +455,10 @@ Salud Financiera ({fund.health_score:.0f}/20):
   D/E={fmt(fund.debt_equity, "x")} | Current Ratio={fmt(fund.current_ratio)} | Cobertura de Intereses={fmt(fund.interest_coverage, "x")}
 
 Valuación ({fund.valuation_score:.0f}/25):
-  P/E={fmt(fund.pe_ratio, "x")} | PEG={fmt(fund.peg_ratio)} | EV/EBITDA={fmt(fund.ev_ebitda, "x")} | P/B={fmt(fund.pb_ratio, "x")}
+  P/E={fmt(fund.pe_ratio, "x")} | PEG={fmt(fund.peg_ratio)} | EV/EBITDA={fmt(fund.ev_ebitda, "x")} | P/B={fmt(fund.pb_ratio, "x")}{p_ffo_context}
 
 Crecimiento ({fund.growth_score:.0f}/20):
-  Revenue CAGR {getattr(fund, "revenue_cagr_years", 0) or "?"}Y={fmt(fund.revenue_cagr_5y, "%")} | {_eps_growth_label(fund)}={fmt(fund.eps_cagr_5y, "%")} | FCF Yield={fmt(fund.fcf_yield, "%")}
+  Revenue CAGR {getattr(fund, "revenue_cagr_years", 0) or "?"}Y={fmt(fund.revenue_cagr_5y, "%")} | {_eps_growth_label(fund)}={fmt(fund.eps_cagr_5y, "%")} | FCF Yield={fcf_yield_text}
 
 Dividendos ({format_dividend_score(fund.dividend_score, getattr(fund, "asset_class", None))}):
   Yield={fmt(fund.dividend_yield, "%")} | {_payout_block(fund)}

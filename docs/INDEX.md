@@ -52,7 +52,7 @@ Roles:
 | ai-context | `AI_CODING_GUIDELINES.md` | Puntero corto al path canónico |
 | ai-context | `CLAUDE.md` | Puntero Claude Code (`@docs/PROMPT_INSTRUCTIONS.md`) |
 | living-guide | `docs/BACKLOG.md` | **Lo que falta hacer** — repriorización unificada (auditoría + ideación + specs) |
-| living-guide | `docs/FIX_FCF_YIELD_MONEDA.md` | Fix en curso: `fcf_yield`/`p_ffo` mezclan moneda de estados y de cotización (PRs 0–4) |
+| historical-audit | `docs/FIX_FCF_YIELD_MONEDA.md` | Evidencia y cierre documental 2026-09-11 de `fcf_yield`/`p_ffo` entre monedas; PR 4 pendiente de merge |
 | historical-plan | `docs/ROADMAP.md` | Fases ya completadas (no es backlog abierto) |
 | historical-plan | `docs/IMPLEMENTATION_PLAN.md` | Plan 2026-06 del Gran Salto — las 5 fases ya están shipped |
 | ideation | `docs/VISION_GRAN_SALTO.md` | Visión de producto 2026-06; las 3 apuestas ya están en el código |
@@ -79,7 +79,6 @@ Roles:
 | [`README.md`](../README.md) | Introducción, Quick Start, configuración, metodología resumida |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Bugs, ideas, setup de desarrollo, PRs |
 | [`BACKLOG.md`](BACKLOG.md) | Trabajo abierto, priorizado y verificado contra el código |
-| [`FIX_FCF_YIELD_MONEDA.md`](FIX_FCF_YIELD_MONEDA.md) | Fix en curso: yields que cruzan moneda de estados y de cotización |
 | [`MAINTENANCE.md`](MAINTENANCE.md) | Cómo mantener CONTEXT y el catálogo |
 | [`DEMO_HOSTED.md`](DEMO_HOSTED.md) | Demo Docker single-user |
 
@@ -138,6 +137,7 @@ descripción viva del sistema.
 
 | Documento | Contenido |
 |-----------|-----------|
+| [`FIX_FCF_YIELD_MONEDA.md`](FIX_FCF_YIELD_MONEDA.md) | Evidencia del cruce de monedas en `fcf_yield`/`p_ffo`; cierre documental 2026-09-11, PR 4 pendiente de merge |
 | [`AUDITORIA_2026-08.md`](AUDITORIA_2026-08.md) | Motor: D1–D6 (retiros, ruina, μ, oráculos, lockfile, PII) |
 | [`auditoria_project_owner.md`](auditoria_project_owner.md) | Diagnóstico y priorización de producto |
 | [`AUDIT_DATA_QUALITY.md`](AUDIT_DATA_QUALITY.md) | Fuentes, badges, política partial/poor |

@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
+from analysis.currency_metric_text import currency_metric_text
 from analysis.fundamental import FundamentalResult, effective_payout_pct, max_payout_for
 from analysis.technical import TechnicalResult
 from config import DATA_QUALITY
@@ -480,8 +481,14 @@ class RetirementStrategy:
             decision.rationale.append(f"High-quality compounder: ROE {f.roe:.1f}%")
         if f.revenue_cagr_5y is not None and f.revenue_cagr_5y >= 8:
             decision.rationale.append(f"Strong revenue growth: {f.revenue_cagr_5y:.1f}% CAGR")
-        if f.fcf_yield is not None and f.fcf_yield >= 3:
+        fcf_currency_text = currency_metric_text(f, "fcf_yield", rationale=True)
+        if fcf_currency_text:
+            decision.rationale.append(fcf_currency_text)
+        elif f.fcf_yield is not None and f.fcf_yield >= 3:
             decision.rationale.append(f"Attractive FCF yield: {f.fcf_yield:.1f}%")
+        p_ffo_currency_text = currency_metric_text(f, "p_ffo", rationale=True)
+        if p_ffo_currency_text:
+            decision.rationale.append(p_ffo_currency_text)
         if f.is_value_stock() and f.margin_of_safety_pct is not None:
             decision.rationale.append(f"Margin of Safety: {f.margin_of_safety_pct:.0f}% vs Graham value ${f.graham_value:.2f}")
 

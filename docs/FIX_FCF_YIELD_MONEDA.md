@@ -1,9 +1,9 @@
-# Fix en curso — `fcf_yield` mezcla dos monedas
+# Auditoría cerrada documentalmente — `fcf_yield` mezcla dos monedas
 
-> **Rol:** `living-guide`. Este archivo describe **trabajo abierto**. Cuando el
-> último PR de la tabla esté mergeado, el hallazgo se resume en una viñeta de
-> `docs/CONTEXT.md` §8, la fila del catálogo pasa a `historical-audit` y este
-> encabezado se reemplaza por la fecha de cierre.
+> **Rol:** `historical-audit`. Cierre documental: **2026-09-11**.
+> PRs 0–3 mergeados (#115, #113, #114, #116); PR 4 implementado en esta
+> rama y verificado localmente; merge pendiente (ver §5). La regla vigente y sus
+> límites quedan en `docs/CONTEXT.md` §8; este archivo conserva la evidencia.
 >
 > **Módulos:** `analysis/fundamental.py`, `config.py`, `data/snapshot.py`,
 > `analysis/prompts.py`, `analysis/strategy.py`,
@@ -29,8 +29,9 @@ ningún archivo** (verificado 2026-09-10: cero ocurrencias en `.py`, `.md` y `.j
 Es el mismo mecanismo que N5 arregló **sólo** para el yield de dividendos
 (`normalize_dividend_yield_pct` + `THRESHOLDS.dividend_yield_crosscheck_ratio`),
 documentado en `CONTEXT.md` §8 — *«Un yield derivado no es inmune a la moneda, y
-un None no es un cero»*. A diferencia de aquel, acá **no hay techo de
-plausibilidad ni campo independiente contra el cual contrastar** (ver §3).
+un None no es un cero»*. Antes de #114, acá **no había techo de
+plausibilidad ni campo independiente contra el cual contrastar** (ver §3);
+el campo independiente sigue sin existir.
 
 ### Consumidores del número
 
@@ -157,8 +158,10 @@ de mercado, una de estados).
 - **Exposición medida hoy: cero.** Todos los REITs de los universos versionados
   son estadounidenses (`O`: `financialCurrency=USD`). El único nombre LatAm de
   Real Estate alcanzable, `IRS`, tiene `industry="Real Estate Services"`, así que
-  `classify_company` devuelve `OPERATING` y nunca recibe `p_ffo`. `IRCP` está
-  deslistado (yfinance no devuelve `info`).
+  `classify_company` devuelve `OPERATING` y nunca recibe `p_ffo`. La medición inicial no obtuvo `info` de `IRCP` y lo describió como
+  deslistado; la corrida de PR 3 del 2026-09-11 sí respondió para ese símbolo.
+  Esa respuesta no prueba que sea un REIT extranjero puntuable: se conserva
+  como corrección del antecedente, no como validación de su clasificación.
 - **Entra igual**, por tres razones: la dirección es la peligrosa —las bandas de
   `p_ffo` son **cotas superiores**, así que un REIT extranjero se ve *barato* y
   cobra los **8 de 25** puntos de Valuación, que es la banda más grande del
@@ -191,9 +194,10 @@ no están afectados.
 
 No se arregla acá: el mecanismo es otro (el campo derivado del feed, no nuestra
 división), el gate de `financialCurrency` no sirve porque la conversión es
-inconsistente ticker a ticker, y necesita su propio contraste (`precio /
-bookValue` contra el `priceToBook` publicado, forma N5). **Queda como item
-separado de `docs/BACKLOG.md`.**
+inconsistente ticker a ticker, y necesita investigación y un oráculo independientes. Comparar `precio /
+bookValue` contra el `priceToBook` publicado no valida por sí solo la moneda
+si ambos comparten el dato contaminado. **Queda como item separado
+`PB-CURRENCY` de `docs/BACKLOG.md`, sin solución validada.**
 
 ---
 
@@ -209,18 +213,42 @@ fechas, horas ni «por día».
 | **0** | **Instrumentación.** `measure_symbol()` en `scripts/measure_score_impact.py` agrega `fcf_yield`, `p_ffo`, `financial_currency` y `currency` a la fila; `render_comparison` lista las métricas que cambian aunque el score no se mueva. Retroactivo: #114 se mergeó sin él. | No | `--baseline` y `--compare` sobre el mismo árbol reportan 0 movidos; `make check` verde | ✅ #115 |
 | **1** | **Helper puro + su oráculo, sin cablear.** `financial_currency_mismatch(info)` junto a `normalize_dividend_yield_pct`. `tests/test_fcf_yield_currency_oracle.py`. | No | El oráculo pasa; 0 scores se mueven; `make check` verde | ✅ #113 |
 | **2** | **El fix de `fcf_yield`.** Gate en `_score_growth`, `FundamentalResult.financial_currency`, `notes["fcf_yield_currency"]`, `THRESHOLDS.max_plausible_fcf_yield_pct`, `financialCurrency` en `data/snapshot._INFO_KEYS`, `ENGINE_VERSION` → `2026.09-tier9`. Test de la mitad CAGR en `tests/test_fcf_yield_currency_scoring.py`. | **Sí** | `--compare` muestra **exactamente** los 9 tickers de §2 y ninguno más | ✅ #114 (`--compare` 2026-09-11 contra `051c0b5`, 55 tickers: movidos exactamente los 9, growth −3, BSBR −2; 0 señales cambiadas) |
-| **3** | **`p_ffo`.** Mismo helper en `_populate_prescoring_metrics` (ahora recibe `info`), `notes["p_ffo_currency"]`, sin backstop numérico. `financial_currency` pasa a asignarse en `_populate_identity`, no sólo en la rama FCF. Fixture sintética de REIT extranjero en `tests/test_p_ffo_currency.py`. | No (0 en los universos versionados) | `--compare` muestra 0 movidos; la fixture falla sin el guard; `make check` verde | ✅ este PR (`--compare` 2026-09-11: 0 movidos y 0 métricas cambiadas sobre 55 tickers → sin bump) |
-| **4** | **Superficies + documentación.** Prompt, rationale y ficha dicen *por qué* falta el número en vez de `N/A`. Viñeta en `CONTEXT.md` §8 + fila en §6. Cierre de este documento y cambio de rol en `docs/INDEX.md`. | No | `make check` verde; `scripts/check_doc_catalog.py` verde | ⏳ |
+| **3** | **`p_ffo`.** Mismo helper en `_populate_prescoring_metrics` (ahora recibe `info`), `notes["p_ffo_currency"]`, sin backstop numérico. `financial_currency` pasa a asignarse en `_populate_identity`, no sólo en la rama FCF. Fixture sintética de REIT extranjero en `tests/test_p_ffo_currency.py`. | No (0 en los universos versionados) | `--compare` muestra 0 movidos; la fixture falla sin el guard; `make check` verde | ✅ #116, mergeado 2026-09-11 con CI verde (`--compare` 2026-09-11: 0 movidos y 0 métricas cambiadas sobre 55 tickers → sin bump) |
+| **4** | **Superficies + documentación.** Prompt, rationale y ficha dicen *por qué* falta el número en vez de `N/A`. Viñeta en `CONTEXT.md` §8 + fila en §6. Cierre de este documento y cambio de rol en `docs/INDEX.md`. | No | `make check` verde (o alternativa offline autorizada: ruff antes de pytest); catálogo y contrato de etiquetas verdes; UI offline verificada | ✅ Implementado y verificado 2026-09-11; merge pendiente (ruff verde; 3332 tests pasan, 2 skipped; catálogo y contrato verdes; ficha AMX con tooltip comprobada offline) |
 
-### Precondición de la medición
+### Verificación local de PR 4 (2026-09-11)
 
-**No hay caché caliente en ningún worktree**, y el caché vive por worktree
-(`config.DB_PATH` cuelga de `BASE_DIR`). `scripts/measure_score_impact.py` sólo
-puntúa tickers cuyo `info` **y** cuyo historial 10y/1wk ya están cacheados, así
-que antes de medir hay que **correr el análisis sobre `latam_adrs` + `default`**
-para poblarla, y copiar esa DB al worktree del baseline (`051c0b5`, con el
-harness del PR 0 superpuesto). Sin ese paso el harness reporta 0 símbolos y el
-«antes/después» no existe.
+Se usó la alternativa offline autorizada a `make check`: Vienna no tenía
+`venv` y `setup` instalaría dependencias con red. Con el entorno de yangon
+(Python 3.14), `ruff check .` pasó antes de `pytest tests/ -q`: **3332 passed,
+2 skipped**, con 12 warnings. El catálogo dio `ok` y el contrato de etiquetas,
+**12 passed**. Esto no sustituye la matriz CI 3.11/3.12 pendiente del PR.
+
+Tests nuevos antes del cambio: prompt/rationale **12 failed, 2 passed**;
+ficha **2 failed, 2 passed** tras completar las fixtures. Con los cambios,
+**18 tests nuevos pasan**; junto con los oráculos FCF/P/FFO, **43 passed**.
+La primera suite completa detectó interferencia de un mock del test de UI
+con el espía del track record; se corrigió el mock a nivel de clase y la
+segunda corrida completa pasó. No se modificó el track record ni el motor.
+
+Se levantó la ficha real de **AMX** con copia aislada de la caché de kyoto,
+IA y fuentes secundarias desactivadas y solicitudes externas bloqueadas:
+«no medible» y tooltip completo **MXN/USD**, verificados en navegador.
+No se consultó yfinance ni se ejecutó `--compare`.
+
+### Precondición histórica de la medición
+
+Al planificar la serie no había caché caliente disponible. El caché vive por
+worktree (`config.DB_PATH` cuelga de `BASE_DIR`), y el harness sólo puntúa
+símbolos cuyo `info` y cuyo historial 10y/1wk ya están cacheados: sin ambos,
+una salida de 0 símbolos no constituye una comparación.
+
+La precondición se resolvió en PR 3 el **2026-09-11**: `full_analysis` sobre
+`latam_adrs` ∪ `default` respondió para 58 símbolos y pobló la DB de kyoto;
+el harness midió los 55 con ambas entradas necesarias. Esa DB permitió la
+comparación contra `051c0b5` (harness PR 0 superpuesto) para PR 2 y la de PR 3,
+con los resultados de la tabla. No es una instrucción para consultar la red
+otra vez: PR 4 sólo cambia presentación y usa caché aislada para verificar UI.
 
 ---
 
@@ -247,11 +275,13 @@ harness del PR 0 superpuesto). Sin ese paso el harness reporta 0 símbolos y el
    está en `_QUALITY_KEY_FIELDS` (`analysis/fundamental.py`), así que no
    dispara `partial`/`poor` ni la política que capea STRONG BUY. Si alguien lo
    agrega a esa tupla después, este fix pasa a tener un segundo efecto.
-6. **Este archivo entra en el barrido de `tests/test_return_label_contract.py`**
-   por su rol `living-guide` (`LIVING_DOC_ROLES` incluye ese rol y el test deriva
+6. **Durante la serie este archivo entraba en el barrido de
+   `tests/test_return_label_contract.py`** por su rol `living-guide` (`LIVING_DOC_ROLES` incluye ese rol y el test deriva
    su lista del catálogo, así que un doc se suma al barrido por estar
    catalogado). El vocabulario de retorno de U1-1/U1-2 aplica acá: los dos
    nombres que el contrato vigila no pueden aparecer sin su calificador. La
    primera redacción de esta misma viñeta los citaba para advertir sobre ellos
    y **rompió el test que estaba describiendo** — si hay que nombrarlos al
-   editar este archivo, la referencia va por `CONTEXT.md` §8, no en línea.
+   editar un documento vivo, la referencia va por `CONTEXT.md` §8, no en línea.
+   El cierre cambia este registro a `historical-audit`; las guías vivas siguen
+   sujetas al contrato.
