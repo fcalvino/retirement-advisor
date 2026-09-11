@@ -136,6 +136,7 @@ dashboard/shared.py (cached_*)            alerts/store.py (SQLite)
 | Feature | Estado | Módulos clave |
 |---------|--------|---------------|
 | Análisis Fundamental (5 dimensiones) | ✅ Completo | `analysis/fundamental.py`, `analysis/scoring.py` |
+| FCF yield y P/FFO entre monedas (serie PRs 0–4) | ✅ Implementado (PR 4 pendiente de merge) | Guardas en `analysis/fundamental.py`; prompt, rationale y ficha explican «no medible» mediante las notas. Sin conversión FX; límites del backstop FCF y ausencia de backstop P/FFO en §8. |
 | Consistency Score + Piotroski | ✅ Completo | `analysis/scoring.py` |
 | Economic Moat (cuantitativo + AI) | ✅ Completo | `analysis/moat.py` |
 | Análisis Técnico | ✅ Completo | `analysis/technical.py` |
@@ -260,6 +261,8 @@ OPTIMIZER_PROFILES  # Dict[str, ProfileConfig]
 ---
 
 ## 8. Limitaciones Conocidas
+
+- **FCF yield y P/FFO requieren monedas compatibles (2026-09-11, PRs #113–#116 y superficies PR 4)**: cuando `financialCurrency` y `currency` están presentes y difieren, la métrica queda en `None` con `notes["fcf_yield_currency"]` o `notes["p_ffo_currency"]`; no se convierte FX. Prompt y rationale explican la causa, y la ficha muestra «no medible» con la nota completa en el tooltip. El descarte FCF por techo conserva su explicación y no se presenta como cruce confirmado. Si falta moneda, el techo `THRESHOLDS.max_plausible_fcf_yield_pct` sólo frena errores gruesos: no valida valores menores. P/FFO no tiene backstop numérico porque un múltiplo pequeño puede ser legítimo. El CAGR FCF permanece independiente; PR 4 sólo cambia texto, sin puntos adicionales ni bump de `ENGINE_VERSION`. Evidencia histórica en `FIX_FCF_YIELD_MONEDA.md`; `priceToBook` queda abierto como `PB-CURRENCY` en `BACKLOG.md`.
 
 - **EMFILE (mitigado)**: El screener puede agotar file descriptors — `max_workers` controlado, `NullPool` en SQLAlchemy. El logger de Streamlit también acumulaba sinks en cada rerun; ya corregido con `_ensure_logger()` (guard en `session_state`) en `dashboard/app.py`
 - **Supuestos por defecto (drags)**: Las proyecciones asumen 0% fees/impuestos/rebalanceo salvo que el usuario active la capa de drags (Fase G, `DRAGS` + `render_drags_controls`). Los drags son **opt-in a nivel motor** (`MonteCarloSimulator.run(drags=...)`): sin drags, los números son byte-idénticos al estado previo. El caso base se conserva siempre como referencia (`base_*` en `MonteCarloResult`/`mc_summary`)

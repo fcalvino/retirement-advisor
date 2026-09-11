@@ -5,6 +5,7 @@ from __future__ import annotations
 import plotly.graph_objects as go
 import streamlit as st
 
+from analysis.currency_metric_text import currency_metric_note
 from analysis.fundamental import eps_growth_label
 from config import MOAT
 from dashboard.shared import (
@@ -639,7 +640,8 @@ if symbol:
                 ("P/E Ratio",        fund.pe_ratio,         "x"),
                 # For a REIT the earnings multiple that drives the score is P/FFO;
                 # P/E stays above for reference but measures the wrong thing.
-                *([("P/FFO",         fund.p_ffo,            "x")] if fund.p_ffo else []),
+                *([("P/FFO",         fund.p_ffo,            "x")]
+                  if fund.p_ffo or currency_metric_note(fund, "p_ffo") else []),
                 ("PEG Ratio",        fund.peg_ratio,        "x"),
                 ("EV/EBITDA",        fund.ev_ebitda,        "x"),
                 ("P/B Ratio",        fund.pb_ratio,         "x"),
@@ -653,7 +655,11 @@ if symbol:
             ]
             for i, (label, value, unit) in enumerate(metrics):
                 with cols[i % 3]:
-                    if value is not None:
+                    currency_key = {"FCF Yield": "fcf_yield", "P/FFO": "p_ffo"}.get(label)
+                    note = currency_metric_note(fund, currency_key) if currency_key else ""
+                    if note:
+                        st.metric(label, "no medible", help=note)
+                    elif value is not None:
                         st.metric(label, f"{value:.2f}{unit}")
                     else:
                         st.metric(label, "N/A")

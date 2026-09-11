@@ -73,6 +73,7 @@ archivo tiene que nombrar estas y ninguna cerrada:
 
 | id | banda | qué |
 |---|---|---|
+| **PB-CURRENCY** | 1 | Investigar `priceToBook` del feed entre monedas (CIB/BSBR); solución y oráculo pendientes. Ver bloque 2 y `FIX_FCF_YIELD_MONEDA.md` §4 |
 | **U5-1b** | 3 | Recalibrar Piotroski vs moat. Bloqueado: n=11 orgánico a 30 días, o hasta PIT-1/PIT-2 (evidencia sintética a 1 año) |
 | **PIT-1** | 2 | Medir los outcomes del backtesting point-in-time vía yfinance y escribir las 8 columnas de `synthetic_recommendation`. Bloquea a U5-1b. Alcance abierto (`AskUserQuestion`) |
 | **PIT-2** | 3 | Correr el volumen amplio y exponer la evidencia (F-Score vs retorno forward) en una lectura — hoy no la lee nadie |
@@ -157,7 +158,18 @@ equivocada. Ver `ROADMAP.md`.
 
 ## Bloque 2 — Números que cambian una decisión de compra
 
-**Vacío.** **U6-1** cerró el 2026-08-29. La fila llamaba «inventado» al proxy del
+**PB-CURRENCY — `priceToBook` entre monedas (abierto 2026-09-11).** La
+medición del 2026-09-10 registró CIB: precio 103,12 USD, `bookValue` 44.394,48
+COP y `priceToBook` 0,0023; BSBR: 5,88 USD, `bookValue` 13,34 BRL y múltiplo
+0,4407. Ambos reciben la banda máxima de P/B del scorer. Es un campo derivado
+del feed con unidades inconsistentes entre símbolos, distinto de las divisiones
+locales corregidas por la serie FCF/P/FFO. **Pendientes:** revalidar el alcance,
+identificar evidencia independiente de moneda y definir un oráculo antes de
+elegir una corrección; ni conversión ni contraste entre campos del mismo feed
+están validados como solución. Evidencia: [`FIX_FCF_YIELD_MONEDA.md`](FIX_FCF_YIELD_MONEDA.md)
+§4; límites de la serie cerrada en `CONTEXT.md` §8.
+
+**U6-1** cerró el 2026-08-29. La fila llamaba «inventado» al proxy del
 optimizer; medido sobre 149 equities, resultó ser lo contrario de inventado y
 peor de lo que decía a la vez: el score **sí** predice el CAGR (p < 0,0001, con
 intercepto −1,43 %, o sea el cero que el motor asume), pero μ no tiene relación
