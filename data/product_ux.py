@@ -2096,6 +2096,16 @@ ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
         "estimada de agotamiento puede caer después del horizonte. El capital "
         "proyectado no cambia.",
     ),
+    (
+        "2026.09-tier9",
+        "El screener calculaba el FCF yield de algunos ADR latinoamericanos "
+        "dividiendo un flujo en moneda local (pesos, reales) por un valor de "
+        "mercado en dólares, y salían números imposibles —por ejemplo 41 000 %— "
+        "que inflaban su puntaje de crecimiento. Ahora, cuando la moneda de los "
+        "estados y la de cotización no coinciden, ese dato no se usa en lugar de "
+        "usarse mal, así que el puntaje de esos papeles puede bajar. No afecta la "
+        "proyección de tu retiro; si tu plan no incluía esos ADR, no cambia nada.",
+    ),
 )
 
 

@@ -33,6 +33,9 @@ SCHEMA_VERSION = "1.0"
 # Key fundamental fields worth capturing (kept small + auditable).
 _INFO_KEYS = (
     "shortName", "sector", "industry", "country", "currency",
+    # Moneda de los estados contables: distinta de `currency` para un ADR LatAm.
+    # Sin ella el gate de fcf_yield no puede afirmar el mismatch de moneda.
+    "financialCurrency",
     "currentPrice", "regularMarketPrice", "marketCap",
     "trailingPE", "dividendYield", "returnOnEquity",
 )

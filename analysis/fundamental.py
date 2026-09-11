@@ -51,6 +51,10 @@ class FundamentalResult:
     #: As the feed reports it. Drives the corporate tax rate (U3-8) and the
     #: ARS macro discount (U5-16) — one field, one answer.
     country: str = ""
+    #: La moneda de los estados contables (`financialCurrency`), distinta de la de
+    #: cotización (`currency`) para un ADR LatAm. Se registra para que un consumidor
+    #: sepa por qué `fcf_yield` puede quedar en None. Ver financial_currency_mismatch.
+    financial_currency: str = ""
     market_cap: float = 0.0
     current_price: float = 0.0
 
@@ -1556,13 +1560,45 @@ class FundamentalAnalyzer:
         if not fcf_series.empty and market_cap > 0:
             fcf_latest = fcf_series.iloc[0]
             fcf_yield = fcf_latest / market_cap * 100
-            result.fcf_yield = round(fcf_yield, 2)
-            if fcf_yield >= T.fcf_yield_excellent:
-                score += 3
-            elif fcf_yield >= T.fcf_yield_good:
-                score += 2
-            elif fcf_yield > 0:
-                score += 1
+            result.financial_currency = str(info.get("financialCurrency") or "")
+            # El FCF viene en la moneda de los estados y el market cap en la de
+            # cotización. Cuando difieren (ADR LatAm) el cociente es incoherente,
+            # y no hay campo independiente contra el cual contrastar —freeCashflow
+            # arrastra la misma corrupción—, así que el motor se niega a medir en
+            # vez de convertir. Mismo mecanismo que N5 (fundamental.py:271-291).
+            # El techo de plausibilidad cubre el caso donde el feed no reporta la
+            # moneda. La mitad CAGR de abajo es inmune (cociente de dos flujos de
+            # la MISMA moneda) y sigue puntuando fuera de este guard.
+            mismatch = financial_currency_mismatch(info)
+            if mismatch is not None:
+                fin_ccy, quote_ccy = mismatch
+                msg = (
+                    f"FCF yield no medible: el free cash flow viene en {fin_ccy} y el "
+                    f"market cap en {quote_ccy}; un yield sólo está definido si ambas "
+                    f"patas comparten moneda."
+                )
+                logger.warning(msg)
+                result.warnings.append(msg)
+                result.notes["fcf_yield_currency"] = msg
+                result.fcf_yield = None
+            elif fcf_yield > T.max_plausible_fcf_yield_pct:
+                msg = (
+                    f"FCF yield descartado por implausible: {fcf_yield:.0f}% "
+                    f"(techo {T.max_plausible_fcf_yield_pct:.0f}%) — probable moneda de "
+                    f"los estados distinta de la de cotización sin campo financialCurrency."
+                )
+                logger.warning(msg)
+                result.warnings.append(msg)
+                result.notes["fcf_yield_currency"] = msg
+                result.fcf_yield = None
+            else:
+                result.fcf_yield = round(fcf_yield, 2)
+                if fcf_yield >= T.fcf_yield_excellent:
+                    score += 3
+                elif fcf_yield >= T.fcf_yield_good:
+                    score += 2
+                elif fcf_yield > 0:
+                    score += 1
 
             fcf_cagr = compute_cagr(fcf_series, years=3)
             if fcf_cagr is not None:
