@@ -311,6 +311,37 @@ def normalize_dividend_yield_pct(
     return div_yield
 
 
+def financial_currency_mismatch(info: Dict[str, Any]) -> Optional[tuple[str, str]]:
+    """Devuelve ``(financialCurrency, currency)`` cuando AMBOS están presentes y difieren.
+
+    Pura, sin red — el manejo de moneda es testeable offline, igual que
+    ``normalize_dividend_yield_pct``.
+
+    Un yield es un flujo sobre un valor y sólo está definido cuando las dos patas
+    comparten unidad. yfinance publica el free cash flow en ``financialCurrency``
+    (la moneda de los estados contables) y el market cap en ``currency`` (la moneda
+    de cotización). Para un ADR latinoamericano difieren —el FCF viene en
+    COP/ARS/BRL y el market cap en USD— así que ``fcf / market_cap`` queda
+    dimensionalmente incoherente y numéricamente absurdo (CIB llegó a 41 122 % de
+    FCF yield medido). Es la misma trampa de moneda que N5 documentó para el
+    dividendo, pero acá no hay un campo independiente contra el cual contrastar
+    (``freeCashflow`` arrastra idéntica corrupción), así que el motor se niega a
+    medir en vez de convertir.
+
+    Devuelve ``None`` cuando las dos monedas coinciden o cuando falta alguna de las
+    dos: sin ambas no se puede *afirmar* el mismatch, y una ausencia no es un
+    mismatch. Ese hueco lo cubre aparte el techo de plausibilidad
+    ``max_plausible_fcf_yield_pct``.
+    """
+    fin_ccy = info.get("financialCurrency")
+    quote_ccy = info.get("currency")
+    if not fin_ccy or not quote_ccy:
+        return None
+    if str(fin_ccy).upper() == str(quote_ccy).upper():
+        return None
+    return (str(fin_ccy), str(quote_ccy))
+
+
 def reported_metric(info: Dict[str, Any], *keys: str) -> Optional[float]:
     """First of *keys* the feed actually reports as a finite number, else ``None``.
 
