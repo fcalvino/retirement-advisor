@@ -1,7 +1,10 @@
 # Hallazgos — cadena Signal → Motivo → Confidence (2026-09-12)
 
-**Estado (2026-09-12): SIGNAL-1, SIGNAL-4 y SIGNAL-5 cerrados.** Sus tests ya no llevan
-`xfail`; SIGNAL-2 y SIGNAL-3 siguen abiertos y sus marcas intactas.
+**Estado (2026-09-12): los cinco cerrados.** Ningún test de la serie lleva ya
+`xfail`, y la suite no tiene ningún `xfail(strict=True)` vivo de estos hallazgos.
+Commits: `f6c36ff` (SIGNAL-1/4/5), `e1b69ce` (SIGNAL-3), `f157c6d` (SIGNAL-2),
+`b39015f` (el motivo del caso no medible). El plan de la serie está en
+`docs/plans/SIGNAL_REASON_CONFIDENCE_PLAN.md`.
 
 Cinco defectos reales en la cadena que produce una recomendación de compra, todos
 reproducidos por test. Los tests quedan en la suite como `xfail(strict=True)` con
@@ -76,13 +79,22 @@ menos.
 
 **Código responsable**
 - `analysis/strategy.py:97-156` — `apply_safety_overlay` (no re-aplica la matriz)
-- `analysis/ai_analyzer.py:470-502` — `_parse_response` acepta cualquier acción válida
+- `analysis/ai_analyzer.py:464-502` — `_parse_response` acepta cualquier acción válida
 - Consecuencia aguas abajo: `analysis/ranking.py:143` (`_is_buy`) y
   `data/product_ux.py:1623-1630` (la celda «Motivo») propagan fielmente el error
 
 ---
 
 ## SIGNAL-2 — La rama crypto del overlay no aplica las políticas de data quality ni de patrimonio negativo
+
+> ✅ **Cerrado (2026-09-12, `f157c6d`).** `apply_negative_equity_policy` y
+> `apply_data_quality_policy` salieron del `else` de equity: corren para las dos clases
+> de activo cuando la decisión no está bloqueada, igual que en `decide()`. El `if
+> _is_crypto` queda conteniendo sólo el block parabólico. Un activo ya bloqueado no las
+> atraviesa — AVOID es más severo que cualquier degradación y su motivo es el que hay que
+> mostrar. Se agregó idempotencia sobre crypto (el overlay corre dos veces en el pipeline
+> real y `partial` no puede capar dos rungs) y el par (acción, confianza) esperado, para
+> que «no se contradicen» no se pueda satisfacer dejando subir la confianza.
 
 **Severidad: Crítica** — un STRONG BUY de IA sobre un crypto sin datos sobrevive
 intacto, y lo hace con confianza `LOW`: la fila se contradice a sí misma.
@@ -125,6 +137,16 @@ la data quality (de ahí el `LOW`), la acción no.
 ---
 
 ## SIGNAL-3 — `confidence_for` ignora el parámetro `action`: el HIGH de la banda SELL se hereda en una compra
+
+> ✅ **Cerrado (2026-09-12, `e1b69ce`).** Una entrada más en el cap-loop: una acción de
+> compra cuyo score no alcanza su banda queda en `MEDIUM`. El techo sale de
+> `max_action_for_score`, la misma escalera que `decide()`, así que no hay un solo umbral
+> escrito a mano en la función. `SELL` en banda SELL conserva su `HIGH` —la certeza es
+> sobre salir, y es real— y los caps que ya estaban (`blocked`, `poor`, `partial`,
+> `downgraded`, `negative_equity`) no cambiaron de precedencia. Con SIGNAL-1 mergeado el
+> overlay ya no puede entregarle a `confidence_for` una compra sin banda, pero
+> `STRATEGY.ai_action_capped_by_score_ladder` es apagable y la función es pública: tiene
+> que ser correcta por sí misma.
 
 **Severidad: Alta** — es el mecanismo que convierte SIGNAL-1 en un `HIGH`. La etiqueta
 de confianza deja de ser legible: el mismo label significa "alta certeza de comprar" o
@@ -222,6 +244,25 @@ camino real no tiene.
 > `require_technical_uptrend` — el defecto se manifiesta justamente con ese flag apagado.
 > El estado no se muestra crudo en ninguna superficie: `data.product_ux.technical_signal_label`
 > lo traduce para Screener, Watchlist, ficha y prompt del LLM.
+>
+> **Cierre del motivo (`b39015f`).** La acción quedó bien y el motivo no: un score de banda
+> STRONG BUY sin confirmación técnica cae al `elif` de BUY, que no escribía
+> `decisive_reason`, así que la celda «Motivo» usaba el texto genérico de la banda — «el
+> técnico no lo contradice», lo contrario de lo que pasó. Ahora nombra la causa, y sólo en
+> ese caso: un BUY que se sigue de su score sigue saliendo sin motivo, porque no es una
+> degradación y marcarlo como tal cambiaría el estilo de la celda.
+>
+> **Las dos puntas sueltas del literal nuevo, revisadas: no requieren cambio.**
+> `analysis/track_record.py:68` declara `technical_signal` como `Column(String, default="")`
+> — texto libre, sin enum ni constraint: persistir `"NOT_MEASURABLE"` no necesita migración
+> y no rompe nada. La lectura ya lo traduce (`dashboard/shared.py:1917` pasa el valor
+> persistido por `technical_signal_label`), y nadie agrupa ni filtra por el literal. Lo que
+> sí queda es una ambigüedad histórica: las filas escritas antes de hoy con `NEUTRAL` pueden
+> significar «neutral medido» o «no se midió», y sólo el primero es lo que dicen. Es una
+> advertencia para `scripts/score_track_record.py` —que según el comentario de `config.py`
+> nunca corrió, y `recommendation_outcome` tiene cero filas— no un defecto a migrar:
+> reescribir el pasado sería adivinarlo. `analysis/crypto_analyzer.py:206` lo loguea crudo,
+> que es correcto: es un log de diagnóstico, y ahí `NOT_MEASURABLE` dice más que `NEUTRAL`.
 
 **Severidad: Media** — con el default `require_technical_uptrend=True` el gate de
 `above_sma200` tapa el agujero; el defecto se manifiesta con el flag apagado, que es

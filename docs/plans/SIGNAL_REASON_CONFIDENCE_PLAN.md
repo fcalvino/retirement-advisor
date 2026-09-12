@@ -319,21 +319,40 @@ universo cacheado para cuantificar cuántos nombres cambian de acción — la se
 
 ## Estado de la serie
 
-| PR | Defecto | Estado |
+**Serie cerrada (2026-09-12).** Ningún `xfail(strict=True)` de estos cinco hallazgos
+queda vivo en la suite.
+
+| PR | Defecto | Commit |
 |----|---------|--------|
-| 0 | — (plan) | ✅ este documento |
-| 1 | SIGNAL-3 | ✅ implementado |
-| 2 | SIGNAL-2 | ⏳ pendiente — 4 `xfail(strict=True)` vivos |
-| 3 | SIGNAL-1 | ✅ implementado |
-| 4 | SIGNAL-4 | ✅ implementado |
-| 5 | SIGNAL-5 | ✅ implementado (alternativa (a), ver arriba) |
-| 6 | copy del caso «no medible» | ⏳ pendiente, ver decisión (A) |
+| 0 | — (plan) | `a679ac0` |
+| 3 + 4 + 5 | SIGNAL-1, SIGNAL-4, SIGNAL-5 | `f6c36ff` |
+| 1 | SIGNAL-3 | `e1b69ce` |
+| 2 | SIGNAL-2 | `f157c6d` |
+| 6 | el motivo del caso «no medible» | `b39015f` |
 
 El orden de merge real difirió del planeado: SIGNAL-1/4/5 se implementaron juntos y
 SIGNAL-3 entró después. El riesgo de XPASS que el plan anticipaba para PR 1 se
 resolvió por el otro lado —el cap de SIGNAL-1 hizo pasar
 `test_el_overlay_no_emite_high_sobre_una_compra_sin_banda`, que quedó sin marca en
 ese commit— así que PR 1 sólo tuvo que sacar dos marcas.
+
+**Las dos puntas sueltas del literal `NOT_MEASURABLE`, revisadas: no requieren cambio.**
+`analysis/track_record.py:68` declara `technical_signal` como `Column(String, default="")`
+—texto libre, sin enum ni constraint— así que persistirlo no necesita migración; la
+lectura ya lo traduce (`dashboard/shared.py:1917`), y nadie agrupa por el literal. Queda
+una ambigüedad histórica: las filas anteriores con `NEUTRAL` pueden significar «neutral
+medido» o «no se midió». Es una advertencia para `scripts/score_track_record.py` —que
+nunca corrió, `recommendation_outcome` tiene cero filas— y no algo a migrar: reescribir
+el pasado sería adivinarlo. El log de `analysis/crypto_analyzer.py:206` está bien crudo:
+ahí `NOT_MEASURABLE` dice más que `NEUTRAL`.
+
+**El impacto sobre el shortlist no se pudo medir en este worktree.**
+`scripts/measure_score_impact.py` sólo puntúa tickers con `info` **y** `history` 10y
+semanal ya cacheados, y la caché local tiene 8 filas de las que un solo símbolo (KO)
+cumple las dos — sin un solo crypto, que es justamente donde SIGNAL-2 cambia acciones.
+Medirlo requiere una caché poblada (`./venv/bin/python3 scripts/measure_score_impact.py
+--baseline before.json` antes de la serie y `--compare before.json` después). Pendiente
+antes de mergear a `main`.
 
 ## Decisiones cerradas
 
