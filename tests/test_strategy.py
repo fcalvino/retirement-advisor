@@ -5,6 +5,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from analysis.strategy import (
     Decision,
     RetirementStrategy,
@@ -362,3 +364,130 @@ class TestPayoutRiskUsesEffectiveBasis:
             payout_basis="ffo",
         )
         assert any("may cut dividend" in r and "FFO" in r for r in risks)
+
+
+# ------------------------------------------------------------------ #
+#  Cada guard duro, por separado y en sus bordes                      #
+# ------------------------------------------------------------------ #
+#
+# `TestMaxDebtEquity` cubre el de leverage. Los otros dos de
+# `_check_safety_blocks` — book value negativo y movimiento parabólico — no
+# tenían test, y el parabólico tiene dos umbrales distintos (100 % en equity,
+# 120 % en crypto) más una condición de RSI que puede no estar medida.
+
+
+class TestGuardBookValueNegativo:
+    def test_pb_negativo_bloquea_en_el_camino_rule_based(self):
+        d = RetirementStrategy().decide(_fund(score=90.0, pb_ratio=-1.5), _tech())
+        assert d.action == "AVOID" and d.blocked is True
+        assert "book value" in d.block_reason.lower()
+        assert d.decisive_reason.startswith("Bloqueado")
+
+    def test_pb_negativo_bloquea_tambien_al_llm(self):
+        out = apply_safety_overlay(
+            Decision(symbol="X", action="STRONG BUY", fundamental_score=90.0),
+            _fund(score=90.0, pb_ratio=-1.5), _tech(),
+        )
+        assert out.action == "AVOID" and out.blocked is True
+
+    def test_pb_cero_no_bloquea(self):
+        """El guard es `< 0`: un P/B de 0 no es patrimonio negativo."""
+        d = RetirementStrategy().decide(_fund(score=70.0, pb_ratio=0.0), _tech())
+        assert d.blocked is False
+
+
+class TestGuardParabolico:
+    """+100 % desde el mínimo de 52 semanas **y** RSI semanal > 80."""
+
+    def test_las_dos_condiciones_juntas_bloquean(self):
+        tech = _tech(price_vs_52w_low_pct=150.0, rsi_weekly=85.0)
+        d = RetirementStrategy().decide(_fund(score=90.0), tech)
+        assert d.action == "AVOID" and "Parabolic" in d.block_reason
+
+    @pytest.mark.parametrize("vs_low,rsi", [(150.0, 80.0), (100.0, 85.0), (99.0, 95.0)])
+    def test_los_bordes_no_bloquean_porque_la_comparacion_es_estricta(self, vs_low, rsi):
+        tech = _tech(price_vs_52w_low_pct=vs_low, rsi_weekly=rsi)
+        assert RetirementStrategy().decide(_fund(score=70.0), tech).blocked is False
+
+    def test_una_sola_condicion_no_alcanza(self):
+        solo_precio = _tech(price_vs_52w_low_pct=300.0, rsi_weekly=50.0)
+        solo_rsi = _tech(price_vs_52w_low_pct=10.0, rsi_weekly=90.0)
+        for tech in (solo_precio, solo_rsi):
+            assert RetirementStrategy().decide(_fund(score=70.0), tech).blocked is False
+
+    def test_un_rsi_que_no_se_midio_no_es_una_parabola(self):
+        """Comportamiento esperado, no defecto — y vale fijarlo.
+
+        `rsi_weekly is None` sólo ocurre cuando la serie es más corta que la
+        ventana, y en ese caso `TechnicalAnalyzer.analyze` corta antes y deja
+        `price_vs_52w_low_pct` en 0.0: la combinación "subió 300 % y no sé el RSI"
+        no la produce el motor. Tratar el desconocido como sobrecompra sería la
+        inversa del defecto de U3-1: convertir el largo de la serie de precios en
+        una afirmación sobre el activo.
+        """
+        tech = _tech(price_vs_52w_low_pct=300.0, rsi_weekly=None)
+        assert RetirementStrategy().decide(_fund(score=90.0), tech).blocked is False
+
+    def test_crypto_usa_un_umbral_mas_alto_que_equity(self):
+        tech = _tech(price_vs_52w_low_pct=110.0, rsi_weekly=85.0)
+        crypto = RetirementStrategy().decide(_fund(score=90.0, is_crypto=True, mos=None), tech)
+        equity = RetirementStrategy().decide(_fund(score=90.0), tech)
+        assert crypto.blocked is False
+        assert equity.blocked is True
+
+    def test_crypto_por_encima_de_su_umbral_si_bloquea(self):
+        tech = _tech(price_vs_52w_low_pct=130.0, rsi_weekly=85.0)
+        d = RetirementStrategy().decide(_fund(score=90.0, is_crypto=True, mos=None), tech)
+        assert d.action == "AVOID" and "parabólico" in d.block_reason.lower()
+
+
+# ------------------------------------------------------------------ #
+#  Data quality: los bordes del contrato                              #
+# ------------------------------------------------------------------ #
+
+
+class TestDataQualityBordes:
+    def test_sin_data_quality_no_degrada_ni_explota(self):
+        """`FundamentalResult.data_quality` arranca en `None` (fundamental.py:172).
+
+        La confianza se lee después del overlay porque `decide()` no la calcula:
+        la deja en el default del dataclass y `apply_safety_overlay` es el único
+        punto que llama a `confidence_for`. Los dos llamadores de producción
+        (`strategy.py:575`, `ai_analyzer.py:88`) encadenan el overlay siempre.
+        """
+        fund, tech = _fund(score=90.0, mos=25.0, data_quality=None), _tech()
+        d = apply_safety_overlay(RetirementStrategy().decide(fund, tech), fund, tech)
+        assert d.action == "STRONG BUY"
+        assert d.confidence == "HIGH"
+
+    def test_solo_existen_tres_niveles(self):
+        """`compute_data_quality` sólo emite good/partial/poor — por eso las
+        políticas comparan contra esos tres literales y no hay un `else`."""
+        from analysis.fundamental import FundamentalResult, compute_data_quality
+
+        r = FundamentalResult(symbol="X")
+        r.current_price = 100.0
+        for has_fin in (True, False):
+            assert compute_data_quality(r, has_financials=has_fin)["level"] in (
+                "good", "partial", "poor",
+            )
+
+    def test_el_flag_partial_caps_strong_buy_apagado_no_capa(self):
+        fund = _fund(score=90.0, mos=25.0,
+                     data_quality={"level": "partial", "missing_fields": ["roe"]})
+        d = Decision(symbol="X", action="STRONG BUY", confidence="HIGH")
+
+        class _Off:
+            partial_caps_strong_buy = False
+
+        apply_data_quality_policy(d, fund, config=_Off())
+        assert d.action == "STRONG BUY"
+        assert d.decisive_reason == ""
+
+    def test_good_no_agrega_riesgos_ni_motivo(self):
+        d = RetirementStrategy().decide(
+            _fund(score=90.0, mos=25.0, data_quality={"level": "good", "missing_fields": []}),
+            _tech(),
+        )
+        assert not any("Calidad de datos" in r for r in d.risks)
+        assert d.decisive_reason == ""
