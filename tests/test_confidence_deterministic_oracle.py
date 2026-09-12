@@ -182,7 +182,9 @@ def test_rule_and_ai_paths_same_confidence(score, signal, dq, neg_eq):
         fundamental_score=score,
         technical_signal=signal,
         has_margin_of_safety=True,
-        decisive_reason=rule_decision.decisive_reason,
+        # Sin `decisive_reason`: es exactamente lo que `_parse_response` entrega.
+        # Copiarlo fabricaba la precondición que el camino real no tenía — el
+        # overlay lo deriva ahora del motor (SIGNAL-4).
         blocked=rule_decision.blocked,
         block_reason=rule_decision.block_reason,
     )

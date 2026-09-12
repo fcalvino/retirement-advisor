@@ -32,6 +32,47 @@ from data.product_ux import TREND_MA_LABEL_EN
 
 _CONFIDENCE_RANK = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
 
+#: Orden de las acciones, de la más prudente a la más agresiva. ``AVOID`` es un
+#: veredicto de block, no un peldaño de la escalera, y queda fuera del cap.
+_ACTION_RANK = {"AVOID": -1, "SELL": 0, "REDUCE": 1, "HOLD": 2, "BUY": 3, "STRONG BUY": 4}
+
+_BUY_ACTIONS = ("STRONG BUY", "BUY")
+
+
+def max_action_for_score(effective_score: float) -> str:
+    """El peldaño más alto de la escalera que ese score alcanza.
+
+    Es la escalera de ``decide()`` leída como techo en vez de como asignación:
+    misma fuente (``STRATEGY``), un solo lugar donde vive el orden.
+    """
+    if effective_score >= CFG.strong_buy_score:
+        return "STRONG BUY"
+    if effective_score >= CFG.buy_score:
+        return "BUY"
+    if effective_score >= CFG.hold_score:
+        return "HOLD"
+    if effective_score >= CFG.reduce_score:
+        return "REDUCE"
+    return "SELL"
+
+
+def technical_confirms_strong_buy(technical_signal: str) -> bool:
+    """¿La señal técnica *confirma* la banda de máxima convicción?
+
+    SIGNAL-5: una señal no medible no confirma nada. La lista vive en
+    ``STRATEGY.strong_buy_technical_signals`` y deliberadamente no incluye
+    ``TECHNICAL.signal_not_measurable``.
+    """
+    return technical_signal in tuple(CFG.strong_buy_technical_signals)
+
+
+def technical_uptrend_confirmed(technical: TechnicalResult) -> bool:
+    """Gate ``require_technical_uptrend``, compartido por decide() y el overlay."""
+    return (
+        getattr(technical, "signal", "") == "BULLISH"
+        or getattr(technical, "above_sma200", None) is True
+    )
+
 
 def confidence_for(
     action: str,
@@ -144,6 +185,21 @@ def apply_safety_overlay(
             apply_negative_equity_policy(decision, fundamental)
             apply_data_quality_policy(decision, fundamental)
 
+    # SIGNAL-1: el camino AI vuelve a pasar por la escalera y por los dos vetos
+    # técnicos de la matriz. Un block ya dejó la acción en AVOID y no se toca.
+    if not decision.blocked and CFG.ai_action_capped_by_score_ladder:
+        _cap_action_to_matrix(decision, effective_decision_score(fundamental), technical)
+
+    # SIGNAL-4: el motivo es uno solo y lo escribe el motor. El camino AI llega
+    # sin `decisive_reason` (`_parse_response` no lo escribe, y no debe: duplicaría
+    # las reglas), así que se lo pedimos al rule-based sobre el MISMO
+    # (fundamental, technical). De eso dependen dos cosas visibles: el cap
+    # `downgraded` de la confianza —abajo— y la celda «Motivo» del Screener.
+    # Sólo se adopta cuando no hay motivo propio: un block o una política blanda
+    # ya escribieron el suyo, que es más específico.
+    if not decision.decisive_reason:
+        decision.decisive_reason = RetirementStrategy().decide(fundamental, technical).decisive_reason
+
     decision.confidence = confidence_for(
         decision.action,
         decision.fundamental_score,
@@ -154,6 +210,46 @@ def apply_safety_overlay(
         negative_equity=getattr(fundamental, "negative_equity", False),
     )
     return decision
+
+
+def _cap_action_to_matrix(
+    decision: "Decision",
+    effective_score: float,
+    technical: TechnicalResult,
+) -> None:
+    """Bajar la acción hasta donde la matriz de ``decide()`` la sostiene (SIGNAL-1).
+
+    ``apply_safety_overlay`` re-aplicaba los blocks duros y las dos políticas
+    blandas, pero nada comparaba la acción del LLM contra la escalera de score ni
+    contra los vetos técnicos: el camino AI podía emitir BUY sobre un score de
+    banda SELL, con confianza HIGH y un motivo que afirmaba «zona de compra».
+
+    Sólo baja, nunca sube: el LLM puede ser *más* prudente que la escalera (y
+    cuando lo es, `decisive_reason` explica por qué), nunca menos. Al ser
+    monótona decreciente la función es idempotente — el overlay corre dos veces
+    sobre el mismo objeto en el pipeline real.
+    """
+    ceiling = max_action_for_score(effective_score)
+    if _ACTION_RANK.get(decision.action, _ACTION_RANK["HOLD"]) > _ACTION_RANK[ceiling]:
+        decision.action = ceiling
+
+    sig = getattr(technical, "signal", "")
+
+    # STRONG BUY pide confirmación técnica (`decide()` cae a BUY si no la tiene).
+    if decision.action == "STRONG BUY" and not technical_confirms_strong_buy(sig):
+        decision.action = "BUY"
+
+    # Veto de técnico BEARISH sobre cualquier compra: `decide()` lo resuelve
+    # dejando caer la banda a HOLD, que acá ya está por debajo del techo.
+    if decision.action in _BUY_ACTIONS and sig == "BEARISH":
+        decision.action = "HOLD"
+
+    if (
+        CFG.require_technical_uptrend
+        and decision.action in _BUY_ACTIONS
+        and not technical_uptrend_confirmed(technical)
+    ):
+        decision.action = "HOLD"
 
 
 def apply_data_quality_policy(
@@ -368,7 +464,7 @@ class RetirementStrategy:
         score = effective_score
         tech = technical.signal
 
-        if score >= CFG.strong_buy_score and tech in ("BULLISH", "NEUTRAL"):
+        if score >= CFG.strong_buy_score and technical_confirms_strong_buy(tech):
             if fundamental.is_value_stock() or not CFG.require_margin_of_safety:
                 decision.action = "STRONG BUY"
             else:
@@ -400,8 +496,7 @@ class RetirementStrategy:
 
         # Technical confirmation for BUY / STRONG BUY (config-first)
         if CFG.require_technical_uptrend and decision.action in ("BUY", "STRONG BUY"):
-            uptrend = tech == "BULLISH" or getattr(technical, "above_sma200", None) is True
-            if not uptrend:
+            if not technical_uptrend_confirmed(technical):
                 decision.action = "HOLD"
                 decision.decisive_reason = (
                     "Los fundamentales dan para comprar, pero no hay tendencia alcista "

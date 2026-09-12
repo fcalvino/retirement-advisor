@@ -203,7 +203,6 @@ class TestElMotivoEnElCaminoAI:
         fund.is_value_stock = lambda: False
         return fund
 
-    @pytest.mark.xfail(strict=True, reason="SIGNAL-4: el camino AI no capa la confianza porque no tiene decisive_reason")
     def test_la_misma_accion_no_puede_salir_con_mas_confianza_por_el_camino_ai(self):
         fund, tech = self._fund_sin_margen(), _tech("BULLISH")
         rule = apply_safety_overlay(RetirementStrategy().decide(fund, tech), fund, tech)
@@ -214,7 +213,6 @@ class TestElMotivoEnElCaminoAI:
             f"ai={ai.confidence} — el cap `downgraded` no llega al camino AI"
         )
 
-    @pytest.mark.xfail(strict=True, reason="SIGNAL-4: la celda Motivo del camino AI no nombra la causa")
     def test_el_motivo_del_motor_no_viaja_por_el_camino_ai(self):
         from data.product_ux import decision_explanation
 

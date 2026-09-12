@@ -37,6 +37,7 @@ from data.product_ux import (
     format_dividend_score,
     max_dd_estimate_help,
     proxy_attractiveness_index,
+    technical_signal_label,
 )
 
 # Argentine ADR tickers — used by equity_decision_prompt (and helpers) for country context
@@ -469,7 +470,7 @@ Score rule-based: {fund.total_score:.1f}/100 | Score ajustado: {fund.adjusted_sc
 Alertas: {", ".join(fund.warnings) if fund.warnings else "ninguna"}
 
 --- ANÁLISIS TÉCNICO (barras semanales) ---
-Señal: {tech.signal} (fuerza: {tech.signal_strength:+d}/100)
+Señal: {technical_signal_label(tech.signal)} (fuerza: {tech.signal_strength:+d}/100)
 Tendencia: precio {_tristate(tech.above_sma200, "ENCIMA", "DEBAJO", "SIN HISTORIAL PARA MEDIR SU POSICIÓN RESPECTO")} de la {TREND_MA_LABEL} | Pendiente 26 semanas: {_slope_pct(tech.sma200_slope_pct)}
 Momentum: RSI={fmt(tech.rsi_weekly)} | MACD={_tristate(tech.macd_bullish, "alcista", "bajista", "sin dato")} | ADX={fmt(tech.adx)}
 Contexto: {tech.price_vs_52w_high_pct:+.1f}% desde 52w high | {tech.price_vs_52w_low_pct:+.1f}% desde 52w low
@@ -707,7 +708,7 @@ Score ajustado: {fund.adjusted_score:.1f}/100  (fórmula: base + técnico − vo
 Alertas: {warnings_str}
 {moat_section}
 --- ANÁLISIS TÉCNICO (barras semanales) ---
-Señal: {tech.signal} (fuerza: {tech.signal_strength:+d}/100)
+Señal: {technical_signal_label(tech.signal)} (fuerza: {tech.signal_strength:+d}/100)
 Tendencia: precio {_tristate(tech.above_sma200, "ENCIMA", "DEBAJO", "SIN HISTORIAL PARA MEDIR SU POSICIÓN RESPECTO")} de la {TREND_MA_LABEL} | Pendiente 26 semanas: {_slope_pct(tech.sma200_slope_pct)}
 Momentum: RSI={fmt(tech.rsi_weekly)} | MACD={_tristate(tech.macd_bullish, "alcista", "bajista", "sin dato")} | ADX={fmt(tech.adx)}
 Contexto: {tech.price_vs_52w_high_pct:+.1f}% desde 52w high | {tech.price_vs_52w_low_pct:+.1f}% desde 52w low

@@ -17,7 +17,29 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 # Module-level: the copy constants below are built at import time, so they cannot
 # use the lazy `from config import X as config` the functions in this file do.
 # Safe in both directions — config.py imports nothing from data/.
-from config import CASH_BUFFER_PCT, MOAT
+from config import CASH_BUFFER_PCT, MOAT, TECHNICAL
+
+# --------------------------------------------------------------------------- #
+#  Señal técnica: el estado "no medible" nunca se muestra crudo (SIGNAL-5)     #
+# --------------------------------------------------------------------------- #
+#  ``TechnicalResult.signal`` tiene un cuarto estado —``NOT_MEASURABLE``— para
+#  las series demasiado cortas (una empresa listada hace seis meses). Es un
+#  literal del motor, no copy: toda superficie que muestre la señal (Screener,
+#  Watchlist, ficha, prompt del LLM) pasa por acá, así que el estado se lee
+#  "No medible" y no como un neutral medido.
+
+_TECHNICAL_SIGNAL_LABELS = {
+    "BULLISH": "BULLISH",
+    "NEUTRAL": "NEUTRAL",
+    "BEARISH": "BEARISH",
+    TECHNICAL.signal_not_measurable: "No medible (historia insuficiente)",
+}
+
+
+def technical_signal_label(signal: Any) -> str:
+    """Etiqueta legible de una señal técnica, incluido el estado no medible."""
+    raw = str(signal or "").strip()
+    return _TECHNICAL_SIGNAL_LABELS.get(raw, raw)
 
 # --------------------------------------------------------------------------- #
 #  Canonical labels for the two models that produce a "return" (U1-1, U1-2)   #

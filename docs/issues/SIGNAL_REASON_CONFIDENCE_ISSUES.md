@@ -1,5 +1,8 @@
 # Hallazgos — cadena Signal → Motivo → Confidence (2026-09-12)
 
+**Estado (2026-09-12): SIGNAL-1, SIGNAL-4 y SIGNAL-5 cerrados.** Sus tests ya no llevan
+`xfail`; SIGNAL-2 y SIGNAL-3 siguen abiertos y sus marcas intactas.
+
 Cinco defectos reales en la cadena que produce una recomendación de compra, todos
 reproducidos por test. Los tests quedan en la suite como `xfail(strict=True)` con
 el ID del hallazgo en el `reason`, así que **la suite queda verde y se vuelve roja
@@ -21,6 +24,13 @@ Escala de severidad = impacto sobre la decisión de compra:
 ---
 
 ## SIGNAL-1 — El camino AI puede emitir BUY/STRONG BUY por debajo de la banda de score que esa acción afirma
+
+> ✅ **Cerrado (2026-09-12).** `apply_safety_overlay` capa la acción al peldaño que el
+> score efectivo alcanza (`_cap_action_to_matrix` + `max_action_for_score`) y re-aplica
+> los dos vetos técnicos de la matriz: BEARISH y `require_technical_uptrend`. Sólo baja,
+> nunca sube — el LLM puede ser más prudente que la escalera, nunca menos — así que la
+> función es monótona y el overlay sigue siendo idempotente. Se descartó forzar `decide()`
+> sobre el camino AI: volvía decorativo al LLM. Los seis tests salieron de `xfail`.
 
 **Severidad: Crítica** — es un falso BUY completo: acción, confianza y motivo, los tres
 apuntando a comprar un nombre que el motor rule-based manda vender.
@@ -150,6 +160,14 @@ score no alcanza `buy_score` no puede salir `HIGH`.
 
 ## SIGNAL-4 — Las decisiones del camino AI nunca llevan `decisive_reason`: no se capa la confianza y el Motivo no nombra la causa
 
+> ✅ **Cerrado (2026-09-12).** El motivo se **deriva**, no se reescribe: cuando el
+> `Decision` llega sin `decisive_reason` propio, el overlay se lo pide al rule-based sobre
+> el mismo `(fundamental, technical)`. `_parse_response` sigue sin escribirlo a propósito —
+> duplicar las reglas de motivo en `analysis/ai_analyzer.py` habría creado una segunda
+> fuente de verdad. Un block o una política blanda ya escribieron el suyo, más específico,
+> y no se pisa. `tests/test_confidence_deterministic_oracle.py::test_rule_and_ai_paths_same_confidence`
+> dejó de copiar el campo a mano: ahora verifica el camino real.
+
 **Severidad: Alta** — misma acción, mismo input, y por el camino AI sale con una
 confianza más alta y sin explicación. Es también el motivo por el que el test de
 equivalencia existente no lo detecta: le **copia** el campo a mano.
@@ -194,6 +212,16 @@ camino real no tiene.
 ---
 
 ## SIGNAL-5 — Una señal técnica *no medible* viaja como el literal `NEUTRAL` y satisface la confirmación técnica de STRONG BUY
+
+> ✅ **Cerrado (2026-09-12).** `TechnicalResult.signal` tiene un cuarto estado explícito
+> —`TECHNICAL.signal_not_measurable`, que además es su default— y
+> `STRATEGY.strong_buy_technical_signals` (BULLISH/NEUTRAL) define qué *confirma* la banda
+> de máxima convicción, sin incluirlo. `BUY` sigue permitido: su regla es `tech != "BEARISH"`,
+> una ausencia de veto y no una confirmación, y degradarlo habría cambiado el shortlist de
+> listadas recientes sin un defecto que lo respalde. No se modeló como caso del gate
+> `require_technical_uptrend` — el defecto se manifiesta justamente con ese flag apagado.
+> El estado no se muestra crudo en ninguna superficie: `data.product_ux.technical_signal_label`
+> lo traduce para Screener, Watchlist, ficha y prompt del LLM.
 
 **Severidad: Media** — con el default `require_technical_uptrend=True` el gate de
 `above_sma200` tapa el agujero; el defecto se manifiesta con el flag apagado, que es

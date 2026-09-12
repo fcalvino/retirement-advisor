@@ -84,7 +84,6 @@ class TestOversoldConditional:
 # neutral medido — la misma clase de defecto que U3-1 cerró para `above_sma200`.
 
 import pandas as pd
-import pytest
 
 from analysis.technical import TechnicalAnalyzer as _TA
 from config import TECHNICAL
@@ -136,18 +135,24 @@ def _historia_corta(n: int = 30) -> pd.DataFrame:
 class TestSenalNoMedible:
     """Una empresa listada hace seis meses no tiene señal técnica; tiene *ninguna*."""
 
-    def test_historia_insuficiente_devuelve_el_default_neutral(self):
+    def test_historia_insuficiente_devuelve_el_estado_no_medible(self):
         r = _TA().analyze("NUEVA", df=_historia_corta())
         assert any("Insufficient price history" in w for w in r.warnings)
-        # El estado observable: lo mismo que un NEUTRAL medido.
-        assert r.signal == "NEUTRAL"
+        # SIGNAL-5: ya no se confunde con un NEUTRAL medido.
+        assert r.signal == TECHNICAL.signal_not_measurable
+        assert r.signal != "NEUTRAL"
         assert r.signal_strength == 0
         assert r.above_sma200 is None      # acá sí se distingue (U3-1)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="SIGNAL-5: la matriz acepta el NEUTRAL por default como confirmación técnica",
-    )
+    def test_el_estado_no_medible_se_muestra_como_texto_y_no_como_literal(self):
+        """Ninguna superficie muestra el literal del motor (ranking/UX)."""
+        from data.product_ux import technical_signal_label
+
+        assert technical_signal_label(TECHNICAL.signal_not_measurable) == (
+            "No medible (historia insuficiente)"
+        )
+        assert technical_signal_label("BULLISH") == "BULLISH"
+
     def test_una_senal_no_medible_no_deberia_habilitar_la_banda_strong_buy(self):
         """`decide()` exige `tech in ("BULLISH", "NEUTRAL")` para STRONG BUY
         (`strategy.py:371`). Con `require_technical_uptrend` en True el gate de
