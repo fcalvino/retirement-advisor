@@ -7,10 +7,13 @@ que fija este archivo es una igualdad, no una lista de casos: **para el mismo
 camino rule-based cuando la diferencia la produce una regla del motor** — un block
 duro, el cap por patrimonio negativo o la política de data quality.
 
-La rama equity del overlay cumple eso (`strategy.py:132-145`). La rama crypto
-(`strategy.py:113-130`) sólo re-aplica el block parabólico: no llama a
-`apply_negative_equity_policy` ni a `apply_data_quality_policy`, que `decide()` sí
-aplica para crypto (`strategy.py:434-435`). Ver SIGNAL-2.
+Desde SIGNAL-2 las dos políticas blandas corren para las dos clases de activo, y
+desde SIGNAL-6 el contrato ya no se sostiene enumerando reglas: la acción se **pisa
+contra el veredicto de `decide()`** sobre el mismo input (`min` de las dos), así que
+toda regla de la matriz —incluidos el margen de seguridad y el cap crypto de
+volatilidad extrema, que el cap anterior no re-aplicaba— vale por construcción. Lo
+que el piso deja pasar es la prudencia: el LLM puede elegir una acción más baja, y
+entonces el motivo lo dice (`AI_MORE_PRUDENT_REASON`).
 """
 
 from __future__ import annotations
@@ -208,6 +211,25 @@ def test_el_camino_ai_nunca_mejora_la_accion_del_rule_based_en_equity(score, sig
     assert _RANK[ai.action] <= _RANK[rule.action]
 
 
+@pytest.mark.parametrize("score,signal,dq,neg", GRID)
+@pytest.mark.parametrize("accion_del_llm", ["STRONG BUY", "BUY", "HOLD", "REDUCE", "SELL"])
+def test_ninguna_accion_del_llm_supera_al_motor(accion_del_llm, score, signal, dq, neg):
+    """La propiedad completa (SIGNAL-6): el test de arriba parte de `rule.action`, así
+    que sólo prueba que el overlay no *mejora* una acción ya correcta. Acá la entrada
+    es cualquier acción del LLM, que es lo que el pipeline real recibe.
+
+    El piso de `apply_safety_overlay` la hace verdadera por construcción — no por
+    enumerar las reglas de la matriz, que es lo que dejaba afuera el margen de
+    seguridad y el cap crypto de volatilidad."""
+    fund = _fund(score, dq={"level": dq, "missing_fields": ["roe"]}, negative_equity=neg)
+    tech = _tech(signal)
+    rule = RetirementStrategy().decide(fund, tech)
+    ai = apply_safety_overlay(_llm(accion_del_llm, score, signal), fund, tech)
+    assert _RANK[ai.action] <= _RANK[rule.action], (
+        f"el LLM pidió {accion_del_llm} y salió {ai.action}; el motor emite {rule.action}"
+    )
+
+
 # --------------------------------------------------------------------------- #
 #  Defecto #4 — el motivo del motor no existe en el camino AI                  #
 # --------------------------------------------------------------------------- #
@@ -248,6 +270,101 @@ class TestElMotivoEnElCaminoAI:
             "el motor bajó STRONG BUY a BUY por falta de margen de seguridad y la "
             f"celda dice {decision_explanation(ai)['full_headline']!r}"
         )
+
+    def test_el_margen_de_seguridad_tambien_capa_el_camino_ai(self):
+        """SIGNAL-6 (C). El cap viejo re-aplicaba tres reglas de la matriz y dejaba
+        afuera el margen de seguridad: un STRONG BUY del LLM sobre fundamentales sin
+        margen sobrevivía donde `decide()` emite BUY, con la config default."""
+        fund, tech = self._fund_sin_margen(), _tech("BULLISH")
+        rule = RetirementStrategy().decide(fund, tech)
+        ai = apply_safety_overlay(_llm("STRONG BUY", STRONG), fund, tech)
+        assert rule.action == "BUY"                   # precondición del caso
+        assert ai.action == "BUY"
+
+    def test_la_volatilidad_extrema_crypto_tambien_capa_el_camino_ai(self):
+        """SIGNAL-6 (D). El otro hueco: el cap crypto de volatilidad extrema
+        (`decide()`, perfil retiro) tampoco se re-aplicaba."""
+        fund = _fund(STRONG, is_crypto=True, dq={"level": "good"},
+                     warnings=["Volatilidad extrema 120% anualizada"])
+        tech = _tech("BULLISH")
+        rule = RetirementStrategy().decide(fund, tech)
+        ai = apply_safety_overlay(_llm("STRONG BUY", STRONG), fund, tech)
+        assert rule.action == "HOLD"                   # precondición del caso
+        assert ai.action == "HOLD"
+
+
+# --------------------------------------------------------------------------- #
+#  SIGNAL-6 — el motivo visible describe la acción emitida                      #
+# --------------------------------------------------------------------------- #
+
+class TestElMotivoDescribeLaAccionEmitida:
+    """El invariante que faltaba. `decisive_reason` tiene un solo trabajo: explicar
+    *esta* acción (audit item 04). El overlay adoptaba el del motor sin comparar las
+    acciones, así que un SELL del LLM sobre una banda de compra salía con «esperar
+    una baja», y el motivo que escribía una política blanda sobrevivía al piso que
+    después bajaba la acción. Ver SIGNAL-6 (A y B).
+
+    Los tests de idempotencia no lo cubren: comparan la segunda pasada contra la
+    primera, no el motivo contra la acción.
+    """
+
+    _SCORES = (S.reduce_score - 10, S.hold_score + 1, S.buy_score + 1, S.strong_buy_score + 5)
+
+    @pytest.mark.parametrize("score", _SCORES)
+    @pytest.mark.parametrize("signal", ["BULLISH", "NEUTRAL", "BEARISH"])
+    @pytest.mark.parametrize("action", ["STRONG BUY", "BUY", "HOLD", "REDUCE", "SELL"])
+    @pytest.mark.parametrize("dq", ["good", "partial", "poor"])
+    def test_el_motivo_del_motor_solo_acompana_a_su_propia_accion(self, score, signal, action, dq):
+        fund = _fund(score, dq={"level": dq, "missing_fields": ["roe"]})
+        tech = _tech(signal)
+        rule = RetirementStrategy().decide(fund, tech)
+        ai = apply_safety_overlay(_llm(action, score, signal), fund, tech)
+        if ai.decisive_reason and ai.decisive_reason == rule.decisive_reason:
+            assert ai.action == rule.action, (
+                f"la fila salió {ai.action} con el motivo de un {rule.action}: "
+                f"{ai.decisive_reason!r}"
+            )
+
+    def test_el_motivo_de_la_politica_blanda_no_sobrevive_al_piso(self):
+        """SIGNAL-6 (B). `partial` capa STRONG BUY a BUY y escribe su motivo; el piso
+        baja la acción a SELL porque el score está en esa banda. El motivo de la
+        política ya no describe la fila."""
+        score = S.reduce_score - 10
+        fund = _fund(score, dq={"level": "partial", "missing_fields": ["roe"]})
+        ai = apply_safety_overlay(_llm("STRONG BUY", score), fund, _tech())
+        assert ai.action == "SELL"
+        assert "capado a BUY" not in ai.decisive_reason
+
+    def test_el_llm_mas_prudente_tiene_motivo_propio(self):
+        """SIGNAL-6 (A). El LLM puede ser más cauto que el motor —el piso lo respeta—
+        pero entonces ningún motivo del motor explica la fila. El texto de banda
+        tampoco: `decision_explanation` elige la frase por acción, así que un SELL
+        sobre un score de 87 rendería «Score 87/100 en zona de venta», que es falso."""
+        from analysis.strategy import AI_MORE_PRUDENT_REASON
+
+        fund = _fund(STRONG, dq={"level": "good"})
+        fund.margin_of_safety_pct = None
+        fund.is_value_stock = lambda: False
+        tech = _tech("BULLISH")
+        rule = RetirementStrategy().decide(fund, tech)
+        ai = apply_safety_overlay(_llm("SELL", STRONG), fund, tech)
+        assert (rule.action, ai.action) == ("BUY", "SELL")   # precondición del caso
+        assert ai.decisive_reason == AI_MORE_PRUDENT_REASON
+        assert ai.confidence != "HIGH", (
+            "una acción que no se sigue del score no puede salir con confianza alta"
+        )
+
+    def test_con_el_piso_apagado_no_se_adopta_un_motivo_ajeno(self):
+        """`STRATEGY.ai_action_capped_by_score_ladder` apagado restaura la acción del
+        LLM (comportamiento previo, documentado como defecto). Lo que no puede pasar
+        es que además le preste el motivo del motor a una acción que el motor rechaza."""
+        score = S.reduce_score - 10
+        fund, tech = _fund(score, dq={"level": "good"}), _tech("BEARISH")
+        with patch.object(S, "ai_action_capped_by_score_ladder", False):
+            ai = apply_safety_overlay(_llm("BUY", score, "BEARISH"), fund, tech)
+        rule = RetirementStrategy().decide(fund, tech)
+        assert ai.action == "BUY"                            # el flag hace su trabajo
+        assert not (ai.decisive_reason and ai.decisive_reason == rule.decisive_reason)
 
 
 # --------------------------------------------------------------------------- #
@@ -309,6 +426,21 @@ class TestIdempotencia:
     def test_decision_limpia(self):
         fund = _fund(STRONG, dq={"level": "good"})
         uno, dos = self._dos_pasadas(_llm("STRONG BUY", STRONG), fund, _tech())
+        assert uno == dos
+
+    def test_politica_blanda_y_piso_sobre_la_misma_decision(self):
+        """SIGNAL-6: la política blanda baja un rung y el piso baja el resto. Las dos
+        actuando sobre la misma decisión, dos veces, incluido el motivo."""
+        score = S.reduce_score - 10
+        fund = _fund(score, dq={"level": "partial", "missing_fields": ["roe"]})
+        uno, dos = self._dos_pasadas(_llm("STRONG BUY", score), fund, _tech())
+        assert uno == dos
+        assert uno[0] == "SELL"
+
+    def test_el_llm_mas_prudente(self):
+        """El motivo propio del caso «más prudente» tampoco se re-escribe en cadena."""
+        fund = _fund(STRONG, dq={"level": "good"})
+        uno, dos = self._dos_pasadas(_llm("SELL", STRONG), fund, _tech())
         assert uno == dos
 
 

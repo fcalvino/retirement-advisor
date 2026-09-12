@@ -87,7 +87,9 @@ class AIAnalyzer:
             logger.warning(f"{fund.symbol}: AI analysis failed ({type(exc).__name__}: {exc}), falling back to rule-based engine")
             decision = RetirementStrategy().decide(fund, tech)
             # ai_used stays False: this verdict came from the rule-based engine, not the LLM.
-            return apply_safety_overlay(decision, fund, tech)
+            # It *is* the engine's verdict, so it doubles as the overlay's floor reference
+            # instead of making it recompute decide() (SIGNAL-6).
+            return apply_safety_overlay(decision, fund, tech, rule_decision=decision)
 
     def _build_prompt(self, fund: FundamentalResult, tech: TechnicalResult) -> str:
         """Delegate to the centralized prompt library."""

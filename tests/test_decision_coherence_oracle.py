@@ -201,6 +201,19 @@ class TestNingunaCompraPorDebajoDeSuBanda:
             f"score {SELL_ZONE} con motivo {headline!r} — el motivo contradice el score"
         )
 
+    def test_el_motivo_no_puede_nombrar_la_accion_que_el_piso_descarto(self):
+        """SIGNAL-6 (B). La política de data quality capa STRONG BUY a BUY y escribe su
+        motivo; después el piso baja la acción a SELL, porque el score está en esa
+        banda. La celda «Motivo» quedaba con «STRONG BUY capado a BUY», que nombra dos
+        acciones y ninguna es la de la fila."""
+        fund = _fund(SELL_ZONE, dq={"level": "partial", "missing_fields": ["roe"]})
+        out = apply_safety_overlay(_ai_decision("STRONG BUY", SELL_ZONE), fund, _tech())
+        headline = decision_explanation(out)["full_headline"]
+        assert out.action == "SELL"
+        assert "capado a BUY" not in headline, (
+            f"la fila salió {out.action} con el motivo {headline!r}"
+        )
+
     def test_avoid_no_es_una_senal_de_compra(self):
         """El veredicto de un block no puede entrar al embudo por su emoji."""
         from analysis.ranking import _is_buy

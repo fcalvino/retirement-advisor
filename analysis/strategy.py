@@ -15,7 +15,9 @@ Conservative rules for retirement:
   - Never buy when RSI weekly > 80 on parabolic extension (safety block)
   - Maximum 8% portfolio weight per position
   - Trigger review when fundamental score drops > 10 pts
-  - AI path cannot bypass hard safety blocks (apply_safety_overlay)
+  - AI path cannot bypass hard safety blocks, nor emit an action above the one
+    decide() reaches on the same input: apply_safety_overlay floors it against the
+    engine's verdict (SIGNAL-1, SIGNAL-6). It can be *more* prudent, never less.
 """
 
 from dataclasses import dataclass, field
@@ -38,6 +40,19 @@ _CONFIDENCE_RANK = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
 _ACTION_RANK = {"AVOID": -1, "SELL": 0, "REDUCE": 1, "HOLD": 2, "BUY": 3, "STRONG BUY": 4}
 
 _BUY_ACTIONS = ("STRONG BUY", "BUY")
+
+#: El motivo de la única fila que el motor no sabe explicar: la IA eligió una acción
+#: más prudente que la que la matriz sostiene. Vive acá, con los demás literales de
+#: motivo, y no en ``ai_analyzer`` — el copy de la celda «Motivo» tiene un solo dueño.
+AI_MORE_PRUDENT_REASON = (
+    "El análisis de IA fue más cauto que las reglas del motor — se respeta la acción "
+    "más prudente"
+)
+
+
+def _rank(action: str) -> int:
+    """Posición de una acción en la escalera; lo desconocido se lee como HOLD."""
+    return _ACTION_RANK.get(str(action or "").upper(), _ACTION_RANK["HOLD"])
 
 
 def max_action_for_score(effective_score: float) -> str:
@@ -156,11 +171,25 @@ def apply_safety_overlay(
     decision: "Decision",
     fundamental: FundamentalResult,
     technical: TechnicalResult,
+    *,
+    rule_decision: Optional["Decision"] = None,
 ) -> "Decision":
     """Re-apply hard safety blocks after any decision path (rule-based or AI).
 
     P0 audit D1: the LLM path must never upgrade past leverage / book-value /
     parabolic guards. Idempotent when decide() already blocked.
+
+    SIGNAL-6: the action is also **floored against the engine's own verdict** —
+    ``min(LLM action, decide() action)`` on the same (fundamental, technical).
+    This is not "force the rule-based action" (that would make the LLM
+    decorative, and the series rejected it): ``min`` lets the LLM be *more*
+    prudent than the engine, never less. Flooring re-applies every matrix rule by
+    construction — ladder, BEARISH veto, uptrend gate, margin of safety and the
+    crypto extreme-volatility cap — instead of re-implementing a subset of them,
+    which is what let a STRONG BUY survive without margin of safety.
+
+    ``rule_decision`` lets a caller hand in the rule-based decision it already
+    computed, so the hot path doesn't run ``decide()`` twice per symbol.
 
     Single point where confidence is finalised via confidence_for(), so both
     the rule-based and AI paths always emit the same deterministic label for the
@@ -206,20 +235,41 @@ def apply_safety_overlay(
         apply_negative_equity_policy(decision, fundamental)
         apply_data_quality_policy(decision, fundamental)
 
-    # SIGNAL-1: el camino AI vuelve a pasar por la escalera y por los dos vetos
-    # técnicos de la matriz. Un block ya dejó la acción en AVOID y no se toca.
-    if not decision.blocked and CFG.ai_action_capped_by_score_ladder:
-        _cap_action_to_matrix(decision, effective_decision_score(fundamental), technical)
+    # El veredicto del motor sobre el MISMO (fundamental, technical). Una sola
+    # llamada alimenta el piso de la acción y la derivación del motivo; los
+    # llamadores que ya lo tienen calculado lo pasan por `rule_decision`.
+    rule = rule_decision if rule_decision is not None else RetirementStrategy().decide(
+        fundamental, technical
+    )
 
-    # SIGNAL-4: el motivo es uno solo y lo escribe el motor. El camino AI llega
-    # sin `decisive_reason` (`_parse_response` no lo escribe, y no debe: duplicaría
-    # las reglas), así que se lo pedimos al rule-based sobre el MISMO
-    # (fundamental, technical). De eso dependen dos cosas visibles: el cap
-    # `downgraded` de la confianza —abajo— y la celda «Motivo» del Screener.
-    # Sólo se adopta cuando no hay motivo propio: un block o una política blanda
-    # ya escribieron el suyo, que es más específico.
-    if not decision.decisive_reason:
-        decision.decisive_reason = RetirementStrategy().decide(fundamental, technical).decisive_reason
+    # SIGNAL-1 + SIGNAL-6: piso contra la decisión del motor. Un block ya dejó la
+    # acción en AVOID y no se toca. Sólo baja, nunca sube, así que la operación es
+    # monótona y por lo tanto idempotente — el overlay corre dos veces sobre el
+    # mismo objeto en el pipeline real (`ai_analyzer.py` y `full_analysis`).
+    if not decision.blocked and CFG.ai_action_capped_by_score_ladder:
+        if _rank(decision.action) > _rank(rule.action):
+            decision.action = rule.action
+
+    # SIGNAL-4 + SIGNAL-6: el motivo es uno solo, lo escribe el motor, y siempre
+    # describe la acción **emitida**. El camino AI llega sin `decisive_reason`
+    # (`_parse_response` no lo escribe, y no debe: duplicaría las reglas), y una
+    # política blanda pudo haber escrito uno que el piso dejó obsoleto — nombraba
+    # una acción que ya no es la de la fila. De este campo dependen dos cosas
+    # visibles: el cap `downgraded` de la confianza —abajo— y la celda «Motivo».
+    if not decision.blocked:
+        if decision.action == rule.action:
+            # Mismo veredicto ⇒ el motivo del motor lo explica. Se sobrescribe:
+            # el del motor ya incluye lo que escribieron las políticas blandas
+            # (`decide()` las corre también), y puede ser vacío, que es correcto
+            # cuando la acción se sigue del score.
+            decision.decisive_reason = rule.decisive_reason
+        elif _rank(decision.action) < _rank(rule.action):
+            # La IA eligió una acción más prudente que el motor. Ningún motivo del
+            # motor la explica, y el texto de banda de `decision_explanation` sale
+            # de la acción, no del score, así que tampoco: hace falta nombrar la causa.
+            decision.decisive_reason = AI_MORE_PRUDENT_REASON
+        # `>` sólo es alcanzable con `ai_action_capped_by_score_ladder` apagado: el
+        # motivo del motor no describe esa acción, así que no se adopta ninguno.
 
     decision.confidence = confidence_for(
         decision.action,
@@ -231,46 +281,6 @@ def apply_safety_overlay(
         negative_equity=getattr(fundamental, "negative_equity", False),
     )
     return decision
-
-
-def _cap_action_to_matrix(
-    decision: "Decision",
-    effective_score: float,
-    technical: TechnicalResult,
-) -> None:
-    """Bajar la acción hasta donde la matriz de ``decide()`` la sostiene (SIGNAL-1).
-
-    ``apply_safety_overlay`` re-aplicaba los blocks duros y las dos políticas
-    blandas, pero nada comparaba la acción del LLM contra la escalera de score ni
-    contra los vetos técnicos: el camino AI podía emitir BUY sobre un score de
-    banda SELL, con confianza HIGH y un motivo que afirmaba «zona de compra».
-
-    Sólo baja, nunca sube: el LLM puede ser *más* prudente que la escalera (y
-    cuando lo es, `decisive_reason` explica por qué), nunca menos. Al ser
-    monótona decreciente la función es idempotente — el overlay corre dos veces
-    sobre el mismo objeto en el pipeline real.
-    """
-    ceiling = max_action_for_score(effective_score)
-    if _ACTION_RANK.get(decision.action, _ACTION_RANK["HOLD"]) > _ACTION_RANK[ceiling]:
-        decision.action = ceiling
-
-    sig = getattr(technical, "signal", "")
-
-    # STRONG BUY pide confirmación técnica (`decide()` cae a BUY si no la tiene).
-    if decision.action == "STRONG BUY" and not technical_confirms_strong_buy(sig):
-        decision.action = "BUY"
-
-    # Veto de técnico BEARISH sobre cualquier compra: `decide()` lo resuelve
-    # dejando caer la banda a HOLD, que acá ya está por debajo del techo.
-    if decision.action in _BUY_ACTIONS and sig == "BEARISH":
-        decision.action = "HOLD"
-
-    if (
-        CFG.require_technical_uptrend
-        and decision.action in _BUY_ACTIONS
-        and not technical_uptrend_confirmed(technical)
-    ):
-        decision.action = "HOLD"
 
 
 def apply_data_quality_policy(
@@ -563,7 +573,11 @@ class RetirementStrategy:
         apply_negative_equity_policy(decision, fundamental)
         apply_data_quality_policy(decision, fundamental)
 
-        logger.info(f"{symbol}: {decision.action} (F={score:.1f}, T={tech}{'  🪙crypto' if _is_crypto else ''})")
+        # DEBUG, no INFO: desde SIGNAL-6 el overlay llama a `decide()` también para
+        # el camino AI (piso de la acción + motivo), así que esta línea ya no
+        # describe necesariamente la decisión emitida. La INFO de la decisión final
+        # la emiten `full_analysis` y `AIAnalyzer.analyze`.
+        logger.debug(f"{symbol}: {decision.action} (F={score:.1f}, T={tech}{'  🪙crypto' if _is_crypto else ''})")
         return decision
 
     # ------------------------------------------------------------------ #
@@ -695,6 +709,7 @@ def full_analysis(
         tech_symbol = normalize_crypto_ticker(symbol) if is_crypto(symbol) else symbol
         tech = TechnicalAnalyzer().analyze(tech_symbol)
 
+    rule_decision = None
     if ai_config and ai_config.enabled and not getattr(ai_config, "enrich_only", False):
         from analysis.ai_analyzer import AIAnalyzer
         decision = AIAnalyzer(ai_config).analyze(fund, tech)
@@ -702,8 +717,16 @@ def full_analysis(
         # enrich_only: the AI still fed the score through the cached moat and
         # tailwind layers; only the decision falls back here (U0-2).
         decision = RetirementStrategy().decide(fund, tech)
+        # Esta decisión *es* el veredicto del motor: pasarla evita que el overlay
+        # vuelva a correr `decide()` sobre el mismo input (SIGNAL-6), y deja el
+        # piso en un no-op, que es lo correcto para el camino rule-based.
+        rule_decision = decision
 
     # P0 D1: hard safety blocks always win (AI path included)
-    decision = apply_safety_overlay(decision, fund, tech)
+    decision = apply_safety_overlay(decision, fund, tech, rule_decision=rule_decision)
 
+    logger.info(
+        f"{symbol}: {decision.action} / {decision.confidence} "
+        f"(F={decision.fundamental_score:.1f}, T={tech.signal})"
+    )
     return fund, tech, decision
