@@ -97,7 +97,6 @@ STRONG = S.strong_buy_score + 5
 
 class TestElOverlayCryptoAplicaLasMismasPoliticas:
 
-    @pytest.mark.xfail(strict=True, reason="SIGNAL-2: la rama crypto del overlay no llama apply_data_quality_policy")
     @pytest.mark.parametrize("level,accion_maxima", [("poor", "HOLD"), ("partial", "BUY")])
     def test_data_quality_degrada_igual_que_en_el_camino_rule_based(self, level, accion_maxima):
         fund = _fund(STRONG, is_crypto=True, dq={"level": level, "missing_fields": ["roe"]})
@@ -110,7 +109,6 @@ class TestElOverlayCryptoAplicaLasMismasPoliticas:
         )
         assert _RANK[ai.action] <= _RANK[accion_maxima]
 
-    @pytest.mark.xfail(strict=True, reason="SIGNAL-2: la rama crypto del overlay no llama apply_negative_equity_policy")
     def test_patrimonio_negativo_capa_igual_que_en_el_camino_rule_based(self):
         fund = _fund(STRONG, is_crypto=True, negative_equity=True, dq={"level": "good"})
         tech = _tech()
@@ -118,7 +116,6 @@ class TestElOverlayCryptoAplicaLasMismasPoliticas:
         ai = apply_safety_overlay(_llm("STRONG BUY", STRONG), fund, tech)
         assert _RANK[ai.action] <= _RANK[rule.action]
 
-    @pytest.mark.xfail(strict=True, reason="SIGNAL-2: acción y confianza apuntan en direcciones opuestas")
     def test_no_puede_quedar_una_compra_con_confianza_low(self):
         """El síntoma visible en la tabla: STRONG BUY con «Conf. LOW».
 
@@ -128,6 +125,35 @@ class TestElOverlayCryptoAplicaLasMismasPoliticas:
         fund = _fund(STRONG, is_crypto=True, dq={"level": "poor", "missing_fields": ["roe"]})
         ai = apply_safety_overlay(_llm("STRONG BUY", STRONG), fund, _tech())
         assert not (ai.action in ("STRONG BUY", "BUY") and ai.confidence == "LOW")
+
+    def test_crypto_poor_baja_la_accion_a_hold_y_la_confianza_a_low(self):
+        """Las dos mitades de la fila, juntas: `poor` degrada la acción a HOLD
+        (`apply_data_quality_policy`) y la confianza a LOW (`confidence_for`).
+
+        El test de arriba prueba que no se contradicen; éste fija cuál es el par
+        correcto, para que «no se contradicen» no se pueda satisfacer dejando
+        subir la confianza.
+        """
+        fund = _fund(STRONG, is_crypto=True, dq={"level": "poor", "missing_fields": ["roe"]})
+        ai = apply_safety_overlay(_llm("STRONG BUY", STRONG), fund, _tech())
+        assert (ai.action, ai.confidence) == ("HOLD", "LOW")
+        assert "data quality" in ai.decisive_reason
+
+    def test_crypto_partial_capa_strong_buy_a_buy(self):
+        """`partial` capa un rung, no dos: la política es la misma que en equity."""
+        fund = _fund(STRONG, is_crypto=True, dq={"level": "partial", "missing_fields": ["roe"]})
+        ai = apply_safety_overlay(_llm("STRONG BUY", STRONG), fund, _tech())
+        assert ai.action == "BUY"
+
+    def test_el_block_parabolico_crypto_gana_sobre_la_politica_blanda(self):
+        """Un crypto bloqueado no pasa por las políticas blandas: ya está en AVOID,
+        que es más severo que cualquier degradación, y el motivo del block es el
+        que hay que mostrar."""
+        fund = _fund(STRONG, is_crypto=True, dq={"level": "poor", "missing_fields": ["roe"]})
+        tech = _tech(rsi_weekly=85.0, price_vs_52w_low_pct=200.0)
+        ai = apply_safety_overlay(_llm("STRONG BUY", STRONG), fund, tech)
+        assert ai.action == "AVOID"
+        assert ai.decisive_reason.startswith("Bloqueado")
 
     def test_el_block_parabolico_crypto_si_se_re_aplica(self):
         """Lo que la rama crypto sí hace — sin esto el defecto sería otro."""
@@ -260,6 +286,23 @@ class TestIdempotencia:
 
     def test_equity_capado_por_patrimonio_negativo(self):
         fund = _fund(STRONG, negative_equity=True, dq={"level": "good"})
+        uno, dos = self._dos_pasadas(_llm("STRONG BUY", STRONG), fund, _tech())
+        assert uno == dos
+
+    def test_crypto_capado_por_data_quality(self):
+        """SIGNAL-2: `partial` capa un rung. Dos pasadas no pueden capar dos."""
+        fund = _fund(STRONG, is_crypto=True, dq={"level": "partial", "missing_fields": ["roe"]})
+        uno, dos = self._dos_pasadas(_llm("STRONG BUY", STRONG), fund, _tech())
+        assert uno == dos
+        assert uno[0] == "BUY"
+
+    def test_crypto_capado_por_patrimonio_negativo(self):
+        fund = _fund(STRONG, is_crypto=True, negative_equity=True, dq={"level": "good"})
+        uno, dos = self._dos_pasadas(_llm("STRONG BUY", STRONG), fund, _tech())
+        assert uno == dos
+
+    def test_crypto_limpio(self):
+        fund = _fund(STRONG, is_crypto=True, dq={"level": "good"})
         uno, dos = self._dos_pasadas(_llm("STRONG BUY", STRONG), fund, _tech())
         assert uno == dos
 

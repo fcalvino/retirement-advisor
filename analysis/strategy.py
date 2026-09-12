@@ -196,10 +196,14 @@ def apply_safety_overlay(
                 decision.rationale or []
             )
 
-        # Soft policies also on AI path (same as decide())
-        if not decision.blocked:
-            apply_negative_equity_policy(decision, fundamental)
-            apply_data_quality_policy(decision, fundamental)
+    # SIGNAL-2: las dos políticas blandas valen para las dos clases de activo, igual
+    # que en `decide()` (que no las condiciona por clase). Vivían dentro del `else`
+    # de equity, así que un STRONG BUY de IA sobre un crypto con data quality `poor`
+    # sobrevivía intacto — y salía con confianza LOW, porque `confidence_for` sí lee
+    # la data quality: la fila se contradecía a sí misma.
+    if not decision.blocked:
+        apply_negative_equity_policy(decision, fundamental)
+        apply_data_quality_policy(decision, fundamental)
 
     # SIGNAL-1: el camino AI vuelve a pasar por la escalera y por los dos vetos
     # técnicos de la matriz. Un block ya dejó la acción en AVOID y no se toca.
