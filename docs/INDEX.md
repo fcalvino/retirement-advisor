@@ -68,6 +68,7 @@ Roles:
 | historical-audit | `docs/universe_coverage_analysis.md` | Cobertura del universo (snapshot 2026-07) |
 | historical-audit | `docs/issues/SIGNAL_REASON_CONFIDENCE_ISSUES.md` | Hallazgos 2026-09-12 de la cadena Signal → Motivo → Confidence, listos para abrir como GitHub Issues (tests en `xfail(strict=True)`) |
 | historical-plan | `docs/plans/SIGNAL_REASON_CONFIDENCE_PLAN.md` | Serie `signal_reason_confidence` (cerrada 2026-09-12): cómo se cerraron SIGNAL-1..SIGNAL-5 y las decisiones de diseño |
+| living-guide | `docs/plans/SIGNAL_REASON_ALIGNMENT_PLAN.md` | SIGNAL-6 (2026-09-12): el camino AI se pisa contra `decide()` y el motivo describe siempre la acción emitida |
 | archive | `docs/archive/code.review.md` | Review dump may-2026; **no** es guía de integración actual |
 | how-to | `scripts/migrations/` | Colección: migraciones one-shot ya ejecutadas (idempotentes); índice `README.md` |
 <!-- /catalog-table -->

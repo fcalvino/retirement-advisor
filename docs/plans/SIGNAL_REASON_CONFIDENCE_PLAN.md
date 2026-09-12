@@ -356,6 +356,13 @@ antes de mergear a `main`.
 
 ## Decisiones cerradas
 
+> **Revisada por SIGNAL-6 (`e7ec4f0`).** La decisión (A) suponía que el motivo derivado del
+> motor siempre describía la acción emitida. No era así: el overlay lo adoptaba sin comparar
+> las acciones, y el cap podía bajar la acción *después* de que una política blanda hubiera
+> escrito el suyo. Hoy el motivo se adopta sólo cuando las acciones coinciden, y el caso «la
+> IA fue más prudente» sí tiene copy propio (`AI_MORE_PRUDENT_REASON`) — el único que hizo
+> falta agregar. Ver `docs/plans/SIGNAL_REASON_ALIGNMENT_PLAN.md`.
+
 **(A) Copy de los `decisive_reason` nuevos → no hizo falta copy nuevo, salvo un caso.**
 El cap de SIGNAL-1 (`_cap_action_to_matrix`) deliberadamente **no escribe motivo**: lo
 escribe SIGNAL-4, corriendo `decide()` sobre el mismo `(fundamental, technical)` y
