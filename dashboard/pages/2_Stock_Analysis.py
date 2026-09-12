@@ -33,6 +33,7 @@ from data.product_ux import (
     format_dividend_score,
     graham_value_help,
     roic_sustained_help,
+    technical_signal_label,
 )
 from portfolio.tracker import Portfolio
 
@@ -683,7 +684,7 @@ if symbol:
 
     with tab_tech:
         col1, col2, col3 = st.columns(3)
-        col1.metric("Signal",          f"{tech.signal}")
+        col1.metric("Signal",          technical_signal_label(tech.signal))
         col2.metric("Signal Strength", f"{tech.signal_strength:+d}/100")
         col3.metric("ADX (Trend Power)",f"{tech.adx:.1f}" if tech.adx else "N/A")
 
