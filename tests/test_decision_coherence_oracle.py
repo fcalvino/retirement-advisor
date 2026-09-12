@@ -237,7 +237,6 @@ class TestConfianzaCoherenteConLaAccion:
     Ver SIGNAL-3.
     """
 
-    @pytest.mark.xfail(strict=True, reason="SIGNAL-3: confidence_for ignora `action`")
     @pytest.mark.parametrize("action", BUY_ACTIONS)
     def test_high_de_la_banda_sell_no_se_hereda_en_una_compra(self, action):
         conf = confidence_for(
@@ -249,7 +248,6 @@ class TestConfianzaCoherenteConLaAccion:
             "la certeza de la banda SELL («hay que salir»), leída como convicción de compra"
         )
 
-    @pytest.mark.xfail(strict=True, reason="SIGNAL-3: confidence_for ignora `action`")
     def test_la_accion_emitida_cambia_la_confianza(self):
         """Mismo score y misma señal, dos acciones opuestas: no pueden compartir label."""
         kw = dict(blocked=False, downgraded=False, data_quality_level="", negative_equity=False)

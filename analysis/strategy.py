@@ -90,6 +90,12 @@ def confidence_for(
     AI paths produce the same label for identical (action, score, technical, dq)
     inputs. The LLM's own confidence lives in Decision.ai_confidence and is shown
     as an explanation, never as the operative label.
+
+    ``action`` is part of the answer, not just of the signature (SIGNAL-3). The
+    label is a statement about *that* action: a HIGH next to a buy claims the
+    evidence supports buying. The score band alone cannot say that, because the
+    bottom rung emits HIGH to mean the opposite — "high certainty the position
+    should be exited".
     """
     if blocked:
         return "HIGH"
@@ -112,6 +118,16 @@ def confidence_for(
 
     result = base
     for cap in (
+        # SIGNAL-3: una compra cuyo score no llega a su banda no puede salir HIGH.
+        # El HIGH de la banda SELL es certeza *de salir*; heredado por un BUY dice
+        # lo contrario de lo que la evidencia sostiene, y era el mecanismo que
+        # convertía la acción incoherente del camino AI en una fila convincente.
+        # El techo sale de `max_action_for_score`: la misma escalera que `decide()`,
+        # un solo lugar donde viven los umbrales.
+        "MEDIUM"
+        if action in _BUY_ACTIONS
+        and _ACTION_RANK[action] > _ACTION_RANK[max_action_for_score(score)]
+        else None,
         "MEDIUM" if downgraded else None,
         (getattr(DATA_QUALITY, "partial_max_confidence", "MEDIUM") or "MEDIUM")
         if data_quality_level == "partial"
