@@ -28,6 +28,7 @@ from analysis.fundamental import FundamentalResult, effective_payout_pct, max_pa
 from analysis.technical import TechnicalResult
 from config import DATA_QUALITY
 from config import STRATEGY as CFG
+from config import TECHNICAL as TECH_CFG
 from data.product_ux import TREND_MA_LABEL_EN
 
 _CONFIDENCE_RANK = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
@@ -497,6 +498,19 @@ class RetirementStrategy:
 
         elif score >= CFG.buy_score and tech != "BEARISH":
             decision.action = "BUY"
+            # Un score de banda STRONG BUY que cae acá es una degradación, no un BUY
+            # de libro: la confirmación técnica que esa banda exige no existe. Sin
+            # este motivo la celda «Motivo» decía "el técnico no lo contradice" —
+            # que es justo lo que el estado no medible desmiente (SIGNAL-5).
+            if score >= CFG.strong_buy_score and tech == TECH_CFG.signal_not_measurable:
+                decision.decisive_reason = (
+                    "Sin historia suficiente para confirmar el técnico — alcanza para "
+                    "comprar, no para compra fuerte"
+                )
+                decision.rationale.append(
+                    "Strong fundamentals but the technical signal is not measurable "
+                    "(insufficient price history) — BUY, not STRONG BUY"
+                )
 
         elif score >= CFG.hold_score:
             decision.action = "HOLD"

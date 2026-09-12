@@ -178,3 +178,65 @@ class TestSenalNoMedible:
         with patch.object(STRATEGY, "require_technical_uptrend", False):
             d = RetirementStrategy().decide(fund, tech)
         assert d.action != "STRONG BUY"
+
+    def test_el_motivo_nombra_la_falta_de_historia_y_no_la_ausencia_de_veto(self):
+        """La degradación tiene que explicarse, o la celda «Motivo» miente.
+
+        El score cae al `elif` de BUY, cuyo texto genérico es "el técnico no lo
+        contradice" — exactamente lo contrario de lo que pasó: no hay técnico que
+        pueda contradecir nada. `decision_explanation` es lo que ve el Screener.
+        """
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from analysis.strategy import RetirementStrategy
+        from config import STRATEGY
+        from data.product_ux import decision_explanation
+
+        tech = _TA().analyze("NUEVA", df=_historia_corta())
+        fund = SimpleNamespace(
+            symbol="NUEVA", total_score=STRATEGY.strong_buy_score + 5,
+            adjusted_score=STRATEGY.strong_buy_score + 5, is_crypto=False,
+            debt_equity=0.5, pb_ratio=2.0, negative_equity=False,
+            margin_of_safety_pct=25.0, graham_value=100.0, is_value_stock=lambda: True,
+            roe=20.0, revenue_cagr_5y=10.0, fcf_yield=4.0, payout_ratio=40.0,
+            warnings=[], data_quality={"level": "good"},
+            tailwind_classification="Neutral", tailwind_detail=None,
+        )
+        with patch.object(STRATEGY, "require_technical_uptrend", False):
+            d = RetirementStrategy().decide(fund, tech)
+
+        assert d.action == "BUY"
+        assert d.decisive_reason == (
+            "Sin historia suficiente para confirmar el técnico — alcanza para "
+            "comprar, no para compra fuerte"
+        )
+        explicacion = decision_explanation(d)
+        assert explicacion["is_downgrade"] is True
+        assert "no lo contradice" not in explicacion["full_headline"]
+
+    def test_un_buy_de_libro_no_se_explica_como_degradacion(self):
+        """El motivo nuevo es de la banda STRONG BUY que no confirmó, no de todo
+        BUY: un score de banda BUY con técnico medido sale sin `decisive_reason`,
+        porque la acción se sigue de su score."""
+        from types import SimpleNamespace
+
+        from analysis.strategy import RetirementStrategy
+        from config import STRATEGY
+
+        tech = SimpleNamespace(
+            signal="NEUTRAL", above_sma200=True, price_vs_52w_low_pct=20.0,
+            rsi_weekly=55.0, golden_cross=False, sma200_slope_pct=2.0, warnings=[],
+        )
+        fund = SimpleNamespace(
+            symbol="NORMAL", total_score=STRATEGY.buy_score + 1,
+            adjusted_score=STRATEGY.buy_score + 1, is_crypto=False,
+            debt_equity=0.5, pb_ratio=2.0, negative_equity=False,
+            margin_of_safety_pct=25.0, graham_value=100.0, is_value_stock=lambda: True,
+            roe=20.0, revenue_cagr_5y=10.0, fcf_yield=4.0, payout_ratio=40.0,
+            warnings=[], data_quality={"level": "good"},
+            tailwind_classification="Neutral", tailwind_detail=None,
+        )
+        d = RetirementStrategy().decide(fund, tech)
+        assert d.action == "BUY"
+        assert d.decisive_reason == ""
