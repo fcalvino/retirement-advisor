@@ -1721,7 +1721,8 @@ SCREENER_COLUMN_SPECS: Dict[str, Dict[str, Any]] = {
                     "help": "Ventaja competitiva: cuantitativa (0–12) + IA (0–8)."},
     "Moat":        {"kind": "text",     "help": "Clasificación del foso: Wide / Narrow / Minimal / None."},
     "Viento":      {"kind": "text",     "help": "Cola de viento estructural sector-país (dato curado, no garantía)."},
-    "Technical":   {"kind": "text",     "help": "Señal técnica de precio: BULLISH / NEUTRAL / BEARISH."},
+    "Technical":   {"kind": "text",     "help": "Señal técnica de precio: BULLISH / NEUTRAL / BEARISH, o «No medible» "
+                                                        "cuando la serie es más corta que la ventana (SIGNAL-5)."},
     "P/E":         {"kind": "number",   "format": "%.1f",  "help": "Precio sobre ganancias (trailing). En REITs no es el múltiplo relevante — la depreciación no es salida de caja y el score usa P/FFO; mirá el detalle en Stock Analysis."},
     "ROE %":       {"kind": "number",   "format": "%.1f %%", "help": "Retorno sobre patrimonio."},
     "Rev CAGR %":  {"kind": "number",   "format": "%.1f %%", "help": "Crecimiento anual compuesto de ingresos sobre la ventana disponible."},
