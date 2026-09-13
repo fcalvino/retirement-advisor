@@ -172,7 +172,6 @@ class TestNingunaCompraPorDebajoDeSuBanda:
     Ver `docs/issues/SIGNAL_REASON_CONFIDENCE_ISSUES.md` — SIGNAL-1.
     """
 
-    @pytest.mark.xfail(strict=True, reason="SIGNAL-1: apply_safety_overlay no re-aplica la escalera al camino AI")
     @pytest.mark.parametrize("action", BUY_ACTIONS)
     def test_el_overlay_no_deja_una_compra_sin_banda(self, action):
         fund, tech = _fund(SELL_ZONE), _tech("BEARISH")
@@ -182,27 +181,37 @@ class TestNingunaCompraPorDebajoDeSuBanda:
             f"{oracle_min_score_for(action)} el motor recomienda comprar sin sustento"
         )
 
-    @pytest.mark.xfail(strict=True, reason="SIGNAL-1: STRONG BUY del LLM no se capa a la banda BUY")
     def test_strong_buy_del_llm_se_capa_a_la_banda_que_el_score_alcanza(self):
         score = S.buy_score + 1          # alcanza BUY, no STRONG BUY
         fund, tech = _fund(score), _tech("BULLISH")
         out = apply_safety_overlay(_ai_decision("STRONG BUY", score), fund, tech)
         assert out.action != "STRONG BUY"
 
-    @pytest.mark.xfail(strict=True, reason="SIGNAL-1: el veto BEARISH de la matriz no se aplica al camino AI")
     def test_bearish_no_puede_quedar_como_compra_en_el_camino_ai(self):
         """`decide()` veta BUY con técnico BEARISH (`strategy.py:382`)."""
         score = S.buy_score + 5
         out = apply_safety_overlay(_ai_decision("BUY", score, "BEARISH"), _fund(score), _tech("BEARISH"))
         assert out.action not in BUY_ACTIONS
 
-    @pytest.mark.xfail(strict=True, reason="SIGNAL-1: el motivo describe una banda que el score no alcanza")
     def test_el_motivo_no_puede_afirmar_zona_de_compra_sin_banda(self):
         """La celda «Motivo» del Screener sale de `decision_explanation`."""
         out = apply_safety_overlay(_ai_decision("BUY", SELL_ZONE, "BEARISH"), _fund(SELL_ZONE), _tech("BEARISH"))
         headline = decision_explanation(out)["full_headline"]
         assert "zona de compra" not in headline, (
             f"score {SELL_ZONE} con motivo {headline!r} — el motivo contradice el score"
+        )
+
+    def test_el_motivo_no_puede_nombrar_la_accion_que_el_piso_descarto(self):
+        """SIGNAL-6 (B). La política de data quality capa STRONG BUY a BUY y escribe su
+        motivo; después el piso baja la acción a SELL, porque el score está en esa
+        banda. La celda «Motivo» quedaba con «STRONG BUY capado a BUY», que nombra dos
+        acciones y ninguna es la de la fila."""
+        fund = _fund(SELL_ZONE, dq={"level": "partial", "missing_fields": ["roe"]})
+        out = apply_safety_overlay(_ai_decision("STRONG BUY", SELL_ZONE), fund, _tech())
+        headline = decision_explanation(out)["full_headline"]
+        assert out.action == "SELL"
+        assert "capado a BUY" not in headline, (
+            f"la fila salió {out.action} con el motivo {headline!r}"
         )
 
     def test_avoid_no_es_una_senal_de_compra(self):
@@ -212,7 +221,6 @@ class TestNingunaCompraPorDebajoDeSuBanda:
         assert _is_buy("⛔ AVOID") is False
         assert _is_buy(Decision(symbol="X", action="AVOID").action) is False
 
-    @pytest.mark.xfail(strict=True, reason="SIGNAL-1: la acción incoherente llega al embudo del Screener")
     def test_una_compra_sin_banda_llega_al_shortlist(self):
         """Consecuencia aguas abajo. `ranking._is_buy` propaga fielmente lo que el
         motor emitió: el arreglo va en `analysis/strategy.py`, no acá."""
@@ -242,7 +250,6 @@ class TestConfianzaCoherenteConLaAccion:
     Ver SIGNAL-3.
     """
 
-    @pytest.mark.xfail(strict=True, reason="SIGNAL-3: confidence_for ignora `action`")
     @pytest.mark.parametrize("action", BUY_ACTIONS)
     def test_high_de_la_banda_sell_no_se_hereda_en_una_compra(self, action):
         conf = confidence_for(
@@ -254,7 +261,6 @@ class TestConfianzaCoherenteConLaAccion:
             "la certeza de la banda SELL («hay que salir»), leída como convicción de compra"
         )
 
-    @pytest.mark.xfail(strict=True, reason="SIGNAL-3: confidence_for ignora `action`")
     def test_la_accion_emitida_cambia_la_confianza(self):
         """Mismo score y misma señal, dos acciones opuestas: no pueden compartir label."""
         kw = dict(blocked=False, downgraded=False, data_quality_level="", negative_equity=False)
@@ -262,7 +268,6 @@ class TestConfianzaCoherenteConLaAccion:
             "BUY", SELL_ZONE, "BEARISH", **kw
         )
 
-    @pytest.mark.xfail(strict=True, reason="SIGNAL-1 + SIGNAL-3: BUY sin banda sale con HIGH")
     def test_el_overlay_no_emite_high_sobre_una_compra_sin_banda(self):
         out = apply_safety_overlay(_ai_decision("BUY", SELL_ZONE, "BEARISH"), _fund(SELL_ZONE), _tech("BEARISH"))
         assert oracle_high_confidence_is_defensible(out.action, SELL_ZONE) or out.confidence != "HIGH"

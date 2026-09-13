@@ -34,6 +34,7 @@ from data.product_ux import (
     GUARDRAILS_OMISSIONS,
     decision_explanation,
     guardrails_help,
+    technical_signal_label,
 )
 from data.screener_store import format_eta
 
@@ -1913,7 +1914,7 @@ def _format_row_for_display(d: dict) -> dict:
         "Moat Score": d["moat_score"],
         "Moat": f"{_MOAT_EMOJI.get(mc, '⚪')} {mc}",
         "Viento": tailwind_badge(d["tailwind_classification"], d["tailwind_score"]),
-        "Technical": d["technical_signal"],
+        "Technical": technical_signal_label(d["technical_signal"]),
         "P/E": d["pe_ratio"],
         "ROE %": d["roe"],
         "Rev CAGR %": d["revenue_cagr_5y"],

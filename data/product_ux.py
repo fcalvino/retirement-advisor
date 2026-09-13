@@ -17,7 +17,29 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 # Module-level: the copy constants below are built at import time, so they cannot
 # use the lazy `from config import X as config` the functions in this file do.
 # Safe in both directions — config.py imports nothing from data/.
-from config import CASH_BUFFER_PCT, MOAT
+from config import CASH_BUFFER_PCT, MOAT, TECHNICAL
+
+# --------------------------------------------------------------------------- #
+#  Señal técnica: el estado "no medible" nunca se muestra crudo (SIGNAL-5)     #
+# --------------------------------------------------------------------------- #
+#  ``TechnicalResult.signal`` tiene un cuarto estado —``NOT_MEASURABLE``— para
+#  las series demasiado cortas (una empresa listada hace seis meses). Es un
+#  literal del motor, no copy: toda superficie que muestre la señal (Screener,
+#  Watchlist, ficha, prompt del LLM) pasa por acá, así que el estado se lee
+#  "No medible" y no como un neutral medido.
+
+_TECHNICAL_SIGNAL_LABELS = {
+    "BULLISH": "BULLISH",
+    "NEUTRAL": "NEUTRAL",
+    "BEARISH": "BEARISH",
+    TECHNICAL.signal_not_measurable: "No medible (historia insuficiente)",
+}
+
+
+def technical_signal_label(signal: Any) -> str:
+    """Etiqueta legible de una señal técnica, incluido el estado no medible."""
+    raw = str(signal or "").strip()
+    return _TECHNICAL_SIGNAL_LABELS.get(raw, raw)
 
 # --------------------------------------------------------------------------- #
 #  Canonical labels for the two models that produce a "return" (U1-1, U1-2)   #
@@ -1699,7 +1721,8 @@ SCREENER_COLUMN_SPECS: Dict[str, Dict[str, Any]] = {
                     "help": "Ventaja competitiva: cuantitativa (0–12) + IA (0–8)."},
     "Moat":        {"kind": "text",     "help": "Clasificación del foso: Wide / Narrow / Minimal / None."},
     "Viento":      {"kind": "text",     "help": "Cola de viento estructural sector-país (dato curado, no garantía)."},
-    "Technical":   {"kind": "text",     "help": "Señal técnica de precio: BULLISH / NEUTRAL / BEARISH."},
+    "Technical":   {"kind": "text",     "help": "Señal técnica de precio: BULLISH / NEUTRAL / BEARISH, o «No medible» "
+                                                        "cuando la serie es más corta que la ventana (SIGNAL-5)."},
     "P/E":         {"kind": "number",   "format": "%.1f",  "help": "Precio sobre ganancias (trailing). En REITs no es el múltiplo relevante — la depreciación no es salida de caja y el score usa P/FFO; mirá el detalle en Stock Analysis."},
     "ROE %":       {"kind": "number",   "format": "%.1f %%", "help": "Retorno sobre patrimonio."},
     "Rev CAGR %":  {"kind": "number",   "format": "%.1f %%", "help": "Crecimiento anual compuesto de ingresos sobre la ventana disponible."},

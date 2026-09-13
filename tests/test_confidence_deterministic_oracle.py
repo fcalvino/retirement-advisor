@@ -14,6 +14,7 @@ from __future__ import annotations
 import pytest
 
 from analysis.strategy import _CONFIDENCE_RANK, confidence_for
+from config import STRATEGY as S
 
 # --------------------------------------------------------------------------- #
 #  1. Pure function — each rung and each cap                                   #
@@ -62,7 +63,9 @@ ORACLE_CASES = [
 )
 def test_confidence_for_pure(score, signal, blocked, downgraded, dq, neg_equity, expected):
     result = confidence_for(
-        "HOLD",  # action not used in current impl; kept for signature compliance
+        # HOLD: ninguna de estas filas juzga el cap por acción (ver la tabla de
+        # abajo), así que la acción se mantiene fuera de la variable observada.
+        "HOLD",
         score,
         signal,
         blocked=blocked,
@@ -74,6 +77,59 @@ def test_confidence_for_pure(score, signal, blocked, downgraded, dq, neg_equity,
         f"confidence_for({score}, {signal!r}, blocked={blocked}, downgraded={downgraded}, "
         f"dq={dq!r}, neg_equity={neg_equity}) → {result!r}, expected {expected!r}"
     )
+
+
+# --------------------------------------------------------------------------- #
+#  1b. La acción emitida entra en la cuenta (SIGNAL-3)                          #
+# --------------------------------------------------------------------------- #
+#
+# `confidence_for` recibía `action` y no lo usaba: derivaba todo de la banda del
+# score. La rama de abajo emite HIGH a propósito —"alta certeza de que hay que
+# salir"—, y acompañando a un BUY afirmaba lo contrario de lo que la evidencia
+# sostiene. Las bandas se leen de `STRATEGY`, no se escriben a mano: la tabla se
+# mueve con la escalera.
+
+_EN_BANDA_STRONG = S.strong_buy_score + 1
+_EN_BANDA_BUY = S.buy_score + 1
+_ZONA_SELL = S.reduce_score - 10
+
+# (action, score, signal, expected, por qué)
+ACTION_AWARE_CASES = [
+    # Una compra sin la banda que afirma: el HIGH de la banda SELL no se hereda.
+    ("BUY",        _ZONA_SELL,        "BEARISH", "MEDIUM", "BUY sin banda"),
+    ("STRONG BUY", _ZONA_SELL,        "BEARISH", "MEDIUM", "STRONG BUY sin banda"),
+    ("STRONG BUY", _EN_BANDA_BUY,     "BULLISH", "MEDIUM", "STRONG BUY con banda de BUY"),
+    # SELL en su banda conserva el HIGH: la certeza es sobre salir, y es real.
+    ("SELL",       _ZONA_SELL,        "BEARISH", "HIGH",   "SELL en banda SELL"),
+    ("REDUCE",     _ZONA_SELL,        "BEARISH", "HIGH",   "no es una compra"),
+    # El cap no es un MEDIUM universal: una compra en su banda sigue en HIGH.
+    ("BUY",        _EN_BANDA_BUY,     "BULLISH", "HIGH",   "BUY con banda de BUY"),
+    ("STRONG BUY", _EN_BANDA_STRONG,  "BULLISH", "HIGH",   "STRONG BUY con su banda"),
+    ("BUY",        _EN_BANDA_STRONG,  "BULLISH", "HIGH",   "BUY por debajo de su techo"),
+]
+
+
+@pytest.mark.parametrize("action,score,signal,expected,motivo", ACTION_AWARE_CASES)
+def test_la_accion_entra_en_la_confianza(action, score, signal, expected, motivo):
+    result = confidence_for(
+        action, score, signal,
+        blocked=False, downgraded=False, data_quality_level="", negative_equity=False,
+    )
+    assert result == expected, (
+        f"{motivo}: confidence_for({action!r}, {score}, {signal!r}) → {result!r}, "
+        f"esperado {expected!r}"
+    )
+
+
+def test_el_cap_por_accion_no_desplaza_a_los_que_ya_estaban():
+    """`blocked` y `poor` siguen resolviendo antes que el cap nuevo."""
+    kw = dict(downgraded=False, negative_equity=False)
+    assert confidence_for(
+        "BUY", _ZONA_SELL, "BEARISH", blocked=True, data_quality_level="", **kw
+    ) == "HIGH"
+    assert confidence_for(
+        "BUY", _EN_BANDA_BUY, "BULLISH", blocked=False, data_quality_level="poor", **kw
+    ) == "LOW"
 
 
 def test_confidence_for_idempotent():
@@ -182,7 +238,9 @@ def test_rule_and_ai_paths_same_confidence(score, signal, dq, neg_eq):
         fundamental_score=score,
         technical_signal=signal,
         has_margin_of_safety=True,
-        decisive_reason=rule_decision.decisive_reason,
+        # Sin `decisive_reason`: es exactamente lo que `_parse_response` entrega.
+        # Copiarlo fabricaba la precondición que el camino real no tenía — el
+        # overlay lo deriva ahora del motor (SIGNAL-4).
         blocked=rule_decision.blocked,
         block_reason=rule_decision.block_reason,
     )

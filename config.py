@@ -350,6 +350,18 @@ class StrategyConfig:
     # Technical confirmation required for BUY
     require_technical_uptrend: bool = True
 
+    # SIGNAL-5: qué señales técnicas *confirman* la banda STRONG BUY. Una señal
+    # no medible (``TECHNICAL.signal_not_measurable``) queda deliberadamente
+    # afuera: la ausencia de datos no es una confirmación. BUY no usa esta lista
+    # — su regla es `tech != "BEARISH"`, una ausencia de veto.
+    strong_buy_technical_signals: tuple = ("BULLISH", "NEUTRAL")
+
+    # SIGNAL-1: el camino AI vuelve a pasar por la escalera de score y por los
+    # dos vetos técnicos de la matriz. El LLM puede ser más prudente que la
+    # escalera, nunca menos. Apagar esto restaura el comportamiento previo
+    # (el LLM elige la banda), documentado como defecto crítico.
+    ai_action_capped_by_score_ladder: bool = True
+
     # Margin of Safety: only buy when price < intrinsic value estimate
     require_margin_of_safety: bool = True
     min_margin_of_safety_pct: float = 10.0  # %
@@ -2323,6 +2335,15 @@ class TechnicalConfig:
     bb_pct_lower: float = 0.1
     volume_surge_ratio: float = 1.2
     volume_decline_ratio: float = 0.8
+
+    # --- estado explícito de "no medible" (SIGNAL-5) -------------------- #
+    # ``TechnicalResult.signal`` tenía tres valores y ninguno decía «no hay
+    # datos»: una empresa listada hace seis meses devolvía el default
+    # ``NEUTRAL``, indistinguible de un neutral medido, y la matriz de
+    # ``decide()`` lo aceptaba como *confirmación* técnica de STRONG BUY. Es el
+    # mismo tercer estado que U3-1 le dio a ``above_sma200`` (None = la ventana
+    # es más larga que la serie), ahora en el campo ``signal``.
+    signal_not_measurable: str = "NOT_MEASURABLE"
 
 
 @dataclass

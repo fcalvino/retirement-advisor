@@ -26,7 +26,13 @@ from data.product_ux import FAST_MA_LABEL_EN, TREND_MA_LABEL_EN
 @dataclass
 class TechnicalResult:
     symbol: str
-    signal: str = "NEUTRAL"          # BULLISH | NEUTRAL | BEARISH
+    # BULLISH | NEUTRAL | BEARISH | ``TECHNICAL.signal_not_measurable``.
+    # El default es el estado *no medible*, no ``NEUTRAL``: hasta que
+    # ``_derive_signal`` corra no hay señal, y un neutral por default se leía
+    # como un neutral medido — que la matriz de ``decide()`` acepta como
+    # confirmación técnica de STRONG BUY (SIGNAL-5). Misma distinción que
+    # ``above_sma200`` con ``None`` (U3-1).
+    signal: str = TECHNICAL.signal_not_measurable
     signal_strength: int = 0         # -100 to +100
     current_price: float = 0.0
 
@@ -78,6 +84,7 @@ class TechnicalAnalyzer:
 
         if df.empty or len(df) < 50:
             result.warnings.append("Insufficient price history for technical analysis")
+            # `signal` queda en el default no-medible: no se midió nada.
             return result
 
         df = df.copy()

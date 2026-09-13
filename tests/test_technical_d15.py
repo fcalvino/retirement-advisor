@@ -84,7 +84,6 @@ class TestOversoldConditional:
 # neutral medido — la misma clase de defecto que U3-1 cerró para `above_sma200`.
 
 import pandas as pd
-import pytest
 
 from analysis.technical import TechnicalAnalyzer as _TA
 from config import TECHNICAL
@@ -136,18 +135,24 @@ def _historia_corta(n: int = 30) -> pd.DataFrame:
 class TestSenalNoMedible:
     """Una empresa listada hace seis meses no tiene señal técnica; tiene *ninguna*."""
 
-    def test_historia_insuficiente_devuelve_el_default_neutral(self):
+    def test_historia_insuficiente_devuelve_el_estado_no_medible(self):
         r = _TA().analyze("NUEVA", df=_historia_corta())
         assert any("Insufficient price history" in w for w in r.warnings)
-        # El estado observable: lo mismo que un NEUTRAL medido.
-        assert r.signal == "NEUTRAL"
+        # SIGNAL-5: ya no se confunde con un NEUTRAL medido.
+        assert r.signal == TECHNICAL.signal_not_measurable
+        assert r.signal != "NEUTRAL"
         assert r.signal_strength == 0
         assert r.above_sma200 is None      # acá sí se distingue (U3-1)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="SIGNAL-5: la matriz acepta el NEUTRAL por default como confirmación técnica",
-    )
+    def test_el_estado_no_medible_se_muestra_como_texto_y_no_como_literal(self):
+        """Ninguna superficie muestra el literal del motor (ranking/UX)."""
+        from data.product_ux import technical_signal_label
+
+        assert technical_signal_label(TECHNICAL.signal_not_measurable) == (
+            "No medible (historia insuficiente)"
+        )
+        assert technical_signal_label("BULLISH") == "BULLISH"
+
     def test_una_senal_no_medible_no_deberia_habilitar_la_banda_strong_buy(self):
         """`decide()` exige `tech in ("BULLISH", "NEUTRAL")` para STRONG BUY
         (`strategy.py:371`). Con `require_technical_uptrend` en True el gate de
@@ -173,3 +178,65 @@ class TestSenalNoMedible:
         with patch.object(STRATEGY, "require_technical_uptrend", False):
             d = RetirementStrategy().decide(fund, tech)
         assert d.action != "STRONG BUY"
+
+    def test_el_motivo_nombra_la_falta_de_historia_y_no_la_ausencia_de_veto(self):
+        """La degradación tiene que explicarse, o la celda «Motivo» miente.
+
+        El score cae al `elif` de BUY, cuyo texto genérico es "el técnico no lo
+        contradice" — exactamente lo contrario de lo que pasó: no hay técnico que
+        pueda contradecir nada. `decision_explanation` es lo que ve el Screener.
+        """
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from analysis.strategy import RetirementStrategy
+        from config import STRATEGY
+        from data.product_ux import decision_explanation
+
+        tech = _TA().analyze("NUEVA", df=_historia_corta())
+        fund = SimpleNamespace(
+            symbol="NUEVA", total_score=STRATEGY.strong_buy_score + 5,
+            adjusted_score=STRATEGY.strong_buy_score + 5, is_crypto=False,
+            debt_equity=0.5, pb_ratio=2.0, negative_equity=False,
+            margin_of_safety_pct=25.0, graham_value=100.0, is_value_stock=lambda: True,
+            roe=20.0, revenue_cagr_5y=10.0, fcf_yield=4.0, payout_ratio=40.0,
+            warnings=[], data_quality={"level": "good"},
+            tailwind_classification="Neutral", tailwind_detail=None,
+        )
+        with patch.object(STRATEGY, "require_technical_uptrend", False):
+            d = RetirementStrategy().decide(fund, tech)
+
+        assert d.action == "BUY"
+        assert d.decisive_reason == (
+            "Sin historia suficiente para confirmar el técnico — alcanza para "
+            "comprar, no para compra fuerte"
+        )
+        explicacion = decision_explanation(d)
+        assert explicacion["is_downgrade"] is True
+        assert "no lo contradice" not in explicacion["full_headline"]
+
+    def test_un_buy_de_libro_no_se_explica_como_degradacion(self):
+        """El motivo nuevo es de la banda STRONG BUY que no confirmó, no de todo
+        BUY: un score de banda BUY con técnico medido sale sin `decisive_reason`,
+        porque la acción se sigue de su score."""
+        from types import SimpleNamespace
+
+        from analysis.strategy import RetirementStrategy
+        from config import STRATEGY
+
+        tech = SimpleNamespace(
+            signal="NEUTRAL", above_sma200=True, price_vs_52w_low_pct=20.0,
+            rsi_weekly=55.0, golden_cross=False, sma200_slope_pct=2.0, warnings=[],
+        )
+        fund = SimpleNamespace(
+            symbol="NORMAL", total_score=STRATEGY.buy_score + 1,
+            adjusted_score=STRATEGY.buy_score + 1, is_crypto=False,
+            debt_equity=0.5, pb_ratio=2.0, negative_equity=False,
+            margin_of_safety_pct=25.0, graham_value=100.0, is_value_stock=lambda: True,
+            roe=20.0, revenue_cagr_5y=10.0, fcf_yield=4.0, payout_ratio=40.0,
+            warnings=[], data_quality={"level": "good"},
+            tailwind_classification="Neutral", tailwind_detail=None,
+        )
+        d = RetirementStrategy().decide(fund, tech)
+        assert d.action == "BUY"
+        assert d.decisive_reason == ""

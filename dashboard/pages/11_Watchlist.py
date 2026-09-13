@@ -12,6 +12,7 @@ from dashboard.shared import (
     _get_ai_config,
 )
 from data.preferences import UserPreferences
+from data.product_ux import technical_signal_label
 
 # ------------------------------------------------------------------ #
 #  Page                                                                #
@@ -169,7 +170,7 @@ else:
             "Score":   round(fund.adjusted_score, 1),
             "Señal":   f"{dec.action_emoji} {dec.action}",
             "_color":  action_color,
-            "Técnico": tech.signal,
+            "Técnico": technical_signal_label(tech.signal),
             "Moat":    f"{_MOAT_EMOJI.get(moat_cls, '⚪')} {moat_cls}",
             "Div %":   fund.dividend_yield,
             "Alertas": " · ".join(alert_strs) if alert_strs else "—",

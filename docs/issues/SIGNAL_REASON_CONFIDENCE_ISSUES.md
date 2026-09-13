@@ -1,5 +1,16 @@
 # Hallazgos — cadena Signal → Motivo → Confidence (2026-09-12)
 
+**Estado (2026-09-12): los seis cerrados.** Ningún test de la serie lleva ya
+`xfail`, y la suite no tiene ningún `xfail(strict=True)` vivo de estos hallazgos.
+Commits: `f6c36ff` (SIGNAL-1/4/5), `e1b69ce` (SIGNAL-3), `f157c6d` (SIGNAL-2),
+`b39015f` (el motivo del caso no medible), `e7ec4f0` (SIGNAL-6). El plan de la serie
+está en `docs/plans/SIGNAL_REASON_CONFIDENCE_PLAN.md`; el del sexto, en
+`docs/plans/SIGNAL_REASON_ALIGNMENT_PLAN.md`.
+
+SIGNAL-6 salió de la revisión previa a abrir el PR, y dos de sus cuatro síntomas los
+introdujo la propia serie: vale la pena leerlo como el costo de haber reimplementado
+tres reglas de la matriz en vez de apoyarse en el motor.
+
 Cinco defectos reales en la cadena que produce una recomendación de compra, todos
 reproducidos por test. Los tests quedan en la suite como `xfail(strict=True)` con
 el ID del hallazgo en el `reason`, así que **la suite queda verde y se vuelve roja
@@ -21,6 +32,13 @@ Escala de severidad = impacto sobre la decisión de compra:
 ---
 
 ## SIGNAL-1 — El camino AI puede emitir BUY/STRONG BUY por debajo de la banda de score que esa acción afirma
+
+> ✅ **Cerrado (2026-09-12).** `apply_safety_overlay` capa la acción al peldaño que el
+> score efectivo alcanza (`_cap_action_to_matrix` + `max_action_for_score`) y re-aplica
+> los dos vetos técnicos de la matriz: BEARISH y `require_technical_uptrend`. Sólo baja,
+> nunca sube — el LLM puede ser más prudente que la escalera, nunca menos — así que la
+> función es monótona y el overlay sigue siendo idempotente. Se descartó forzar `decide()`
+> sobre el camino AI: volvía decorativo al LLM. Los seis tests salieron de `xfail`.
 
 **Severidad: Crítica** — es un falso BUY completo: acción, confianza y motivo, los tres
 apuntando a comprar un nombre que el motor rule-based manda vender.
@@ -66,13 +84,22 @@ menos.
 
 **Código responsable**
 - `analysis/strategy.py:97-156` — `apply_safety_overlay` (no re-aplica la matriz)
-- `analysis/ai_analyzer.py:470-502` — `_parse_response` acepta cualquier acción válida
+- `analysis/ai_analyzer.py:464-502` — `_parse_response` acepta cualquier acción válida
 - Consecuencia aguas abajo: `analysis/ranking.py:143` (`_is_buy`) y
   `data/product_ux.py:1623-1630` (la celda «Motivo») propagan fielmente el error
 
 ---
 
 ## SIGNAL-2 — La rama crypto del overlay no aplica las políticas de data quality ni de patrimonio negativo
+
+> ✅ **Cerrado (2026-09-12, `f157c6d`).** `apply_negative_equity_policy` y
+> `apply_data_quality_policy` salieron del `else` de equity: corren para las dos clases
+> de activo cuando la decisión no está bloqueada, igual que en `decide()`. El `if
+> _is_crypto` queda conteniendo sólo el block parabólico. Un activo ya bloqueado no las
+> atraviesa — AVOID es más severo que cualquier degradación y su motivo es el que hay que
+> mostrar. Se agregó idempotencia sobre crypto (el overlay corre dos veces en el pipeline
+> real y `partial` no puede capar dos rungs) y el par (acción, confianza) esperado, para
+> que «no se contradicen» no se pueda satisfacer dejando subir la confianza.
 
 **Severidad: Crítica** — un STRONG BUY de IA sobre un crypto sin datos sobrevive
 intacto, y lo hace con confianza `LOW`: la fila se contradice a sí misma.
@@ -116,6 +143,16 @@ la data quality (de ahí el `LOW`), la acción no.
 
 ## SIGNAL-3 — `confidence_for` ignora el parámetro `action`: el HIGH de la banda SELL se hereda en una compra
 
+> ✅ **Cerrado (2026-09-12, `e1b69ce`).** Una entrada más en el cap-loop: una acción de
+> compra cuyo score no alcanza su banda queda en `MEDIUM`. El techo sale de
+> `max_action_for_score`, la misma escalera que `decide()`, así que no hay un solo umbral
+> escrito a mano en la función. `SELL` en banda SELL conserva su `HIGH` —la certeza es
+> sobre salir, y es real— y los caps que ya estaban (`blocked`, `poor`, `partial`,
+> `downgraded`, `negative_equity`) no cambiaron de precedencia. Con SIGNAL-1 mergeado el
+> overlay ya no puede entregarle a `confidence_for` una compra sin banda, pero
+> `STRATEGY.ai_action_capped_by_score_ladder` es apagable y la función es pública: tiene
+> que ser correcta por sí misma.
+
 **Severidad: Alta** — es el mecanismo que convierte SIGNAL-1 en un `HIGH`. La etiqueta
 de confianza deja de ser legible: el mismo label significa "alta certeza de comprar" o
 "alta certeza de salir" según de qué banda venga.
@@ -146,9 +183,28 @@ score no alcanza `buy_score` no puede salir `HIGH`.
 **Código responsable**: `analysis/strategy.py:36-82` (`confidence_for`; la firma en
 `:37` y la rama en `:69-70`).
 
+> **Punta suelta del arreglo (2026-09-12): el cap es unidireccional.** Sólo se aplica
+> cuando la acción es de compra por encima de su banda. La simétrica sigue viva:
+> `confidence_for("SELL", 87, "BULLISH", …)` devuelve `HIGH`, el HIGH de una banda de
+> compra —«la evidencia sostiene comprar»— acompañando a una venta. Es alcanzable por
+> el camino AI, que desde SIGNAL-6 admite explícitamente que la IA sea más prudente
+> que el motor. No se cerró acá porque el caso no aparece en el camino rule-based (la
+> acción sale de la banda) y porque el motivo de esas filas ya nombra la causa
+> (`AI_MORE_PRUDENT_REASON`), que es la información accionable. Queda anotado como lo
+> que es: el mismo defecto de este hallazgo —la función deriva de la banda— en la
+> mitad del dominio que el arreglo no tocó.
+
 ---
 
 ## SIGNAL-4 — Las decisiones del camino AI nunca llevan `decisive_reason`: no se capa la confianza y el Motivo no nombra la causa
+
+> ✅ **Cerrado (2026-09-12).** El motivo se **deriva**, no se reescribe: cuando el
+> `Decision` llega sin `decisive_reason` propio, el overlay se lo pide al rule-based sobre
+> el mismo `(fundamental, technical)`. `_parse_response` sigue sin escribirlo a propósito —
+> duplicar las reglas de motivo en `analysis/ai_analyzer.py` habría creado una segunda
+> fuente de verdad. Un block o una política blanda ya escribieron el suyo, más específico,
+> y no se pisa. `tests/test_confidence_deterministic_oracle.py::test_rule_and_ai_paths_same_confidence`
+> dejó de copiar el campo a mano: ahora verifica el camino real.
 
 **Severidad: Alta** — misma acción, mismo input, y por el camino AI sale con una
 confianza más alta y sin explicación. Es también el motivo por el que el test de
@@ -195,6 +251,35 @@ camino real no tiene.
 
 ## SIGNAL-5 — Una señal técnica *no medible* viaja como el literal `NEUTRAL` y satisface la confirmación técnica de STRONG BUY
 
+> ✅ **Cerrado (2026-09-12).** `TechnicalResult.signal` tiene un cuarto estado explícito
+> —`TECHNICAL.signal_not_measurable`, que además es su default— y
+> `STRATEGY.strong_buy_technical_signals` (BULLISH/NEUTRAL) define qué *confirma* la banda
+> de máxima convicción, sin incluirlo. `BUY` sigue permitido: su regla es `tech != "BEARISH"`,
+> una ausencia de veto y no una confirmación, y degradarlo habría cambiado el shortlist de
+> listadas recientes sin un defecto que lo respalde. No se modeló como caso del gate
+> `require_technical_uptrend` — el defecto se manifiesta justamente con ese flag apagado.
+> El estado no se muestra crudo en ninguna superficie: `data.product_ux.technical_signal_label`
+> lo traduce para Screener, Watchlist, ficha y prompt del LLM.
+>
+> **Cierre del motivo (`b39015f`).** La acción quedó bien y el motivo no: un score de banda
+> STRONG BUY sin confirmación técnica cae al `elif` de BUY, que no escribía
+> `decisive_reason`, así que la celda «Motivo» usaba el texto genérico de la banda — «el
+> técnico no lo contradice», lo contrario de lo que pasó. Ahora nombra la causa, y sólo en
+> ese caso: un BUY que se sigue de su score sigue saliendo sin motivo, porque no es una
+> degradación y marcarlo como tal cambiaría el estilo de la celda.
+>
+> **Las dos puntas sueltas del literal nuevo, revisadas: no requieren cambio.**
+> `analysis/track_record.py:68` declara `technical_signal` como `Column(String, default="")`
+> — texto libre, sin enum ni constraint: persistir `"NOT_MEASURABLE"` no necesita migración
+> y no rompe nada. La lectura ya lo traduce (`dashboard/shared.py:1917` pasa el valor
+> persistido por `technical_signal_label`), y nadie agrupa ni filtra por el literal. Lo que
+> sí queda es una ambigüedad histórica: las filas escritas antes de hoy con `NEUTRAL` pueden
+> significar «neutral medido» o «no se midió», y sólo el primero es lo que dicen. Es una
+> advertencia para `scripts/score_track_record.py` —que según el comentario de `config.py`
+> nunca corrió, y `recommendation_outcome` tiene cero filas— no un defecto a migrar:
+> reescribir el pasado sería adivinarlo. `analysis/crypto_analyzer.py:206` lo loguea crudo,
+> que es correcto: es un log de diagnóstico, y ahí `NOT_MEASURABLE` dice más que `NEUTRAL`.
+
 **Severidad: Media** — con el default `require_technical_uptrend=True` el gate de
 `above_sma200` tapa el agujero; el defecto se manifiesta con el flag apagado, que es
 configuración soportada.
@@ -222,6 +307,83 @@ tercer estado. Lo esperado: un estado explícito de "no medible" (o consultar
 **Código responsable**
 - `analysis/technical.py:29` (default `signal = "NEUTRAL"`) y `:79-81` (retorno temprano)
 - `analysis/strategy.py:371` (la matriz lo acepta como confirmación)
+
+---
+
+## SIGNAL-6 — El cap del camino AI re-aplica un subconjunto de la matriz, y el motivo visible puede describir otra acción
+
+> ✅ **Cerrado (2026-09-12, `e7ec4f0`).** `apply_safety_overlay` dejó de enumerar reglas:
+> pisa la acción contra el veredicto del motor, `min(acción del LLM, acción de decide())`
+> sobre el mismo `(fundamental, technical)`. No es forzar el rule-based —eso volvería
+> decorativo al LLM y la serie lo descartó—: `min` deja pasar la prudencia de la IA. Con el
+> piso, **toda** regla de la matriz vale por construcción, incluidas las dos que el cap
+> anterior no re-aplicaba. `_cap_action_to_matrix` se borró. El motivo pasa a decidirse
+> comparando acciones: misma acción ⇒ el del motor (sobrescribiendo el que una política
+> blanda dejó obsoleto); IA más prudente ⇒ `AI_MORE_PRUDENT_REASON`, un literal propio.
+
+**Severidad: Alta** — dos de los síntomas son motivos que contradicen la acción que
+acompañan, en la celda que existe justamente para reconciliarlas (audit item 04); los otros
+dos son compras que el motor rechaza y el camino AI emitía igual.
+
+Los cuatro son el mismo defecto: el cap reimplementaba tres reglas de la matriz (escalera,
+veto BEARISH, gate `require_technical_uptrend`) y el motivo se adoptaba sin mirar la acción.
+Encontrados en la revisión previa a abrir el PR de la serie — **A y B los introdujo la
+propia serie**, C y D son huecos del contrato que SIGNAL-1 dice cerrar.
+
+**Input exacto y output obtenido**
+
+```python
+# A — el motivo del motor se adopta aunque la acción no coincida
+fund.adjusted_score = 87.0; fund.margin_of_safety_pct = None; tech.signal = "BULLISH"
+apply_safety_overlay(Decision(action="SELL", fundamental_score=87.0), fund, tech)
+# → SELL con Motivo «Fundamentales de STRONG BUY, pero todavía sin margen de
+#   seguridad — esperar una baja» (1528 de 7200 combinaciones de la grilla)
+
+# B — el motivo de la política blanda sobrevive al cap que bajó la acción
+fund.adjusted_score = 35.0; fund.data_quality = {"level": "partial"}
+apply_safety_overlay(Decision(action="STRONG BUY", fundamental_score=35.0), fund, tech)
+# → SELL con Motivo «STRONG BUY capado a BUY por data quality partial»
+
+# C — el margen de seguridad no se re-aplicaba (config default)
+fund.adjusted_score = 87.0; fund.margin_of_safety_pct = None
+apply_safety_overlay(Decision(action="STRONG BUY", …), fund, tech)   # → STRONG BUY
+RetirementStrategy().decide(fund, tech)                              # → BUY
+
+# D — el cap crypto de volatilidad extrema tampoco
+fund.is_crypto = True; fund.warnings = ["Volatilidad extrema …"]
+apply_safety_overlay(Decision(action="STRONG BUY", …), fund, tech)   # → STRONG BUY
+RetirementStrategy().decide(fund, tech)                              # → HOLD
+```
+
+En D el motivo adoptado era, además, «BUY capado a HOLD por volatilidad extrema»: la fila
+mostraba STRONG BUY y su propio motivo decía HOLD.
+
+**Output esperado y por qué.** El invariante que la serie afirma —«el LLM nunca mejora el
+veredicto del motor»— no se puede sostener enumerando reglas: cada regla que se agrega a
+`decide()` hay que acordarse de agregarla al cap. El piso lo hace verdadero por
+construcción. Y `decisive_reason` tiene un solo trabajo, explicar *esta* acción: cuando la
+IA elige una más prudente, ningún motivo del motor la explica y el texto de banda tampoco
+—`decision_explanation` elige la frase por acción, así que un SELL sobre 87 rendiría «Score
+87/100 en zona de venta», que es falso—, de ahí el literal propio.
+
+**Medición (grilla de 14.400 combinaciones: score × señal × dq × patrimonio × clase ×
+acción del LLM × `above_sma200` × margen × volatilidad)**
+
+| | Antes | Después |
+|---|---|---|
+| Acciones del camino AI por encima del motor | 92 | 0 |
+| Motivos que describen otra acción | 1528 | 0 |
+| Divergencias entre la 1ª y la 2ª pasada del overlay | 0 | 0 |
+
+Las 92 acciones que cambian bajan todas (12 por margen de seguridad, 80 por volatilidad
+extrema crypto); 80 salen del shortlist. El camino rule-based no cambia: el piso es un
+no-op ahí (0 de 7200).
+
+**Código responsable**
+- `analysis/strategy.py` — `_cap_action_to_matrix` (borrado) y la adopción incondicional
+  del motivo en `apply_safety_overlay`
+- Consecuencia aguas abajo: `data/product_ux.py::decision_explanation` (celda «Motivo») y
+  `analysis/ranking.py::_is_buy` (shortlist) propagan fielmente el error
 
 ---
 
