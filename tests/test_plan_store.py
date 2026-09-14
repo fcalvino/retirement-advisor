@@ -29,8 +29,8 @@ def _fake_opt_result():
         max_drawdown_estimate_pct=18.0,
         sector_weights={"Tech": 40.0, "Staples": 60.0},
         profile_core_holdings=[{"symbol": "KO", "suggested_weight_pct": 60.0, "why": "income"}],
-        grok_core_holdings=[],
-        ai_grok_narrative="Cartera conservadora con foco en dividendos.",
+        core_holdings_ai=[],
+        ai_narrative="Cartera conservadora con foco en dividendos.",
     )
 
 
@@ -67,9 +67,9 @@ def test_from_session_builds_snapshot():
     assert {a["symbol"] for a in snap.allocation} == {"AAPL", "KO"}
 
 
-def test_from_session_prefers_grok_core():
+def test_from_session_prefers_ai_core():
     opt = _fake_opt_result()
-    opt.grok_core_holdings = [{"symbol": "AAPL", "suggested_weight_pct": 40.0, "why": "moat"}]
+    opt.core_holdings_ai = [{"symbol": "AAPL", "suggested_weight_pct": 40.0, "why": "moat"}]
     snap = PlanSnapshot.from_session(name="x", opt_result=opt)
     assert snap.core_from_ai is True
     assert snap.core_holdings[0]["symbol"] == "AAPL"

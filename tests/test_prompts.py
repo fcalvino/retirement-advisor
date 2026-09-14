@@ -492,7 +492,9 @@ class TestPortfolioOptimizerAdvicePrompt:
         )
         low = p27.lower()
         # Must not contain the old blocking message
-        assert "grok no genera explicación detallada ni recomendación de núcleo para carteras tan grandes" not in low
+        # PR 0 renamed the UI string; the old blocking message must stay gone
+        # under either spelling (the prompt persona itself is PR 2).
+        assert "no genera explicación detallada ni recomendación de núcleo para carteras tan grandes" not in low
         assert "usá un universo más chico" not in low
         # Must still mention human/review/core and the total 27
         assert "humano" in low or "revisar" in low or "núcleo" in low
@@ -644,8 +646,12 @@ class TestGeneratePlanNarrative:
         assert out["macro_risks"] == []
 
     def test_fallback_on_api_error(self):
+        """PR 0: el texto ya no es genérico — dice la causa y el proveedor real."""
+        from config import AI_FALLBACK
+
         out = self._analyzer(RuntimeError("rate limit")).generate_plan_narrative(self._snap())
-        assert "No se pudo generar" in out["narrative"]
+        assert out["ai_fallback_reason"] == AI_FALLBACK.RATE_LIMIT
+        assert out["narrative"] == AI_FALLBACK.message(AI_FALLBACK.RATE_LIMIT, "claude")
         assert out["macro_risks"] == []
 
     def test_non_json_response_becomes_narrative(self):

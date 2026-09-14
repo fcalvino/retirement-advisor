@@ -1131,7 +1131,15 @@ class InvestmentPlanReport:
                 "prob_target":     mc_result.prob_achieve_target_pct,
                 "target_value":    mc_params.get("target_value", 0),
             }
-            return analyzer.generate_long_term_narrative(context)
+            _narr = analyzer.generate_long_term_narrative(context)
+            if _narr.get("ai_fallback_reason"):
+                # The PDF carries analysis, not an apology: an unavailable AI
+                # leaves the section out, exactly as a raised exception did.
+                logger.warning(
+                    f"AI narrative for PDF skipped — causa={_narr['ai_fallback_reason']}"
+                )
+                return None
+            return _narr.get("narrative", "") or None
         except Exception as e:
             logger.warning(f"AI narrative for PDF failed: {e}")
             return None

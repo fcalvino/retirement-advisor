@@ -144,7 +144,7 @@ def _derive_constraints_from_goals(
 ) -> GoalConstraints:
     """
     Derives portfolio constraints from the goal with the shortest horizon.
-    Grok rule: shortest horizon is always the binding constraint regardless of priority.
+    Rule: shortest horizon is always the binding constraint regardless of priority.
     Returns GoalConstraints describing each override with a plain-language explanation.
     """
     if not goals:
@@ -263,20 +263,20 @@ class OptimizationResult:
     # ------------------------------------------------------------------
     # Deterministic core portfolio (always populated by the optimizer;
     # does NOT require LLM — based on weight × score × moat heuristic).
-    # The AI layer may replace/enrich grok_core_holdings with LLM output.
+    # The AI layer may replace/enrich core_holdings_ai with LLM output.
     # ------------------------------------------------------------------
     profile_core_holdings: List[dict] = field(default_factory=list)  # [{"symbol":, "suggested_weight_pct":, "why":""}]
 
     # ------------------------------------------------------------------
-    # Grok AI voice + human-scale concentration advice (populated by the
+    # AI narrative + human-scale concentration advice (populated by the
     # AI layer in ai_analyzer when AI is enabled; the pure math optimizer
     # leaves these at their defaults).
     # ------------------------------------------------------------------
-    ai_grok_narrative: str = ""                     # full Grok-voice explanation of the portfolio + macro
-    grok_recommended_max_human_positions: int = 0   # what Grok thinks a normal human can actually track
-    grok_core_holdings: List[dict] = field(default_factory=list)   # [{"symbol": , "suggested_weight_pct": , "why": ""}, ...]
-    grok_dropped_tickers: List[dict] = field(default_factory=list)
-    grok_human_review_tips: List[str] = field(default_factory=list)
+    ai_narrative: str = ""                     # full AI explanation of the portfolio + macro
+    ai_recommended_max_human_positions: int = 0   # how many positions the AI thinks a human can track
+    core_holdings_ai: List[dict] = field(default_factory=list)   # [{"symbol": , "suggested_weight_pct": , "why": ""}, ...]
+    dropped_tickers_ai: List[dict] = field(default_factory=list)
+    human_review_tips_ai: List[str] = field(default_factory=list)
 
 
 class PortfolioOptimizer:
@@ -298,8 +298,8 @@ class PortfolioOptimizer:
       - Price history is unavailable for ≥ 50% of tickers
       - SLSQP finds no feasible solution
 
-    The resulting OptimizationResult may contain additional Grok AI fields
-    (ai_grok_narrative, grok_core_holdings, etc.) when the caller (UI layer)
+    The resulting OptimizationResult may contain additional AI fields
+    (ai_narrative, core_holdings_ai, etc.) when the caller (UI layer)
     enriches it with generate_optimizer_advice(). The pure optimizer itself
     never calls AI and always produces the full mathematical result.
     """

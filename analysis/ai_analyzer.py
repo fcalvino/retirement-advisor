@@ -25,6 +25,82 @@ from analysis.strategy import (
 )
 from analysis.technical import TechnicalResult
 from analysis.utils import extract_json_object
+from config import AI_FALLBACK, AI_OAUTH_PROVIDERS
+
+
+class AIUnavailable(RuntimeError):
+    """The AI layer could not run, with the cause already classified.
+
+    Carries an ``AIFallbackConfig`` slug so the caller does not have to
+    re-derive from a message string what the pre-flight check already knew.
+    """
+
+    def __init__(self, cause: str):
+        super().__init__(cause)
+        self.cause = cause
+
+
+# HTTP status → cause. The SDKs (anthropic, openai) all expose `status_code`,
+# so this covers both without importing either one.
+_STATUS_TO_CAUSE = {
+    400: AI_FALLBACK.PARAMETRO_RECHAZADO,
+    401: AI_FALLBACK.KEY_INVALIDA,
+    403: AI_FALLBACK.KEY_INVALIDA,
+    429: AI_FALLBACK.RATE_LIMIT,
+}
+
+# Fallback when the error travels without a status code (wrapped, re-raised,
+# or raised by a transport shim). Typed first, strings last — see §3 of the plan.
+_EXC_NAME_TO_CAUSE = {
+    "AuthenticationError":  AI_FALLBACK.KEY_INVALIDA,
+    "PermissionDeniedError": AI_FALLBACK.KEY_INVALIDA,
+    "BadRequestError":      AI_FALLBACK.PARAMETRO_RECHAZADO,
+    "UnprocessableEntityError": AI_FALLBACK.PARAMETRO_RECHAZADO,
+    "RateLimitError":       AI_FALLBACK.RATE_LIMIT,
+}
+
+
+def classify_ai_failure(exc: BaseException) -> str:
+    """Map an exception raised by the AI layer to an ``AI_FALLBACK`` cause slug.
+
+    Pure and testable. Order matters: the SDK's own typing is preferred over
+    string matching, which is only the last resort.
+    """
+    if isinstance(exc, AIUnavailable):
+        return exc.cause
+
+    # 1. status_code by duck-typing (covers anthropic and openai alike)
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+    try:
+        status = int(status) if status is not None else None
+    except (TypeError, ValueError):
+        status = None
+    if status is not None and status in _STATUS_TO_CAUSE:
+        return _STATUS_TO_CAUSE[status]
+
+    # 2. class name, for errors that arrive without a status code
+    for klass in type(exc).__mro__:
+        cause = _EXC_NAME_TO_CAUSE.get(klass.__name__)
+        if cause:
+            return cause
+
+    # 3. unparseable model output
+    text = str(exc).lower()
+    if isinstance(exc, (json.JSONDecodeError, ValueError)):
+        return AI_FALLBACK.JSON_INVALIDO
+    if "incomplete json" in text or "unmatched" in text or "json" in text:
+        return AI_FALLBACK.JSON_INVALIDO
+
+    # 4. last-resort string heuristics, kept only for transports that raise
+    #    plain RuntimeErrors (the Hermes credential resolver, for one).
+    if any(kw in text for kw in ("rate limit", "429", "quota", "too many")):
+        return AI_FALLBACK.RATE_LIMIT
+    if "api key" in text or "auth" in text or "credential" in text:
+        return AI_FALLBACK.KEY_INVALIDA
+
+    return AI_FALLBACK.OTRO
 
 
 def resolve_optimizer_profile(profile_name: str | None = None):
@@ -71,8 +147,41 @@ class AIAnalyzer:
     def __init__(self, config):
         self.config = config
 
+    # ------------------------------------------------------------------ #
+    #  Failure plumbing — one classification, one log line, one message   #
+    # ------------------------------------------------------------------ #
+
+    def _preflight(self) -> None:
+        """Raise ``AIUnavailable(SIN_API_KEY)`` before spending a round-trip.
+
+        A missing key is a configuration state, not an exception — classifying it
+        after the fact would make it indistinguishable from a 401. `xai`/`nous`
+        are skipped: they authenticate through Hermes OAuth, so an empty
+        ``api_key`` is their normal, working state (same criterion as
+        ``config_validator._hermes_oauth_available``).
+        """
+        provider = (getattr(self.config, "provider", "") or "").lower()
+        if provider in AI_OAUTH_PROVIDERS:
+            return
+        if not getattr(self.config, "api_key", ""):
+            raise AIUnavailable(AI_FALLBACK.SIN_API_KEY)
+
+    def _classify_and_log(self, exc: BaseException, context: str) -> str:
+        """Classify `exc`, emit the single warning for it, return the cause slug."""
+        cause = classify_ai_failure(exc)
+        logger.warning(
+            f"{context}: AI fallback — causa={cause} proveedor={self.config.provider} "
+            f"({type(exc).__name__}: {exc})"
+        )
+        return cause
+
+    def _fallback_message(self, cause: str) -> str:
+        """User-facing sentence for `cause`, naming the configured provider only."""
+        return AI_FALLBACK.message(cause, getattr(self.config, "provider", ""))
+
     def analyze(self, fund: FundamentalResult, tech: TechnicalResult) -> Decision:
         try:
+            self._preflight()
             prompt = self._build_prompt(fund, tech)
             raw = self._call_api(prompt)
             decision = self._parse_response(raw, fund, tech)
@@ -84,8 +193,11 @@ class AIAnalyzer:
             logger.info(f"{fund.symbol}: AI decision = {decision.action} ({self.config.provider}/{self.config.model})")
             return decision
         except Exception as exc:
-            logger.warning(f"{fund.symbol}: AI analysis failed ({type(exc).__name__}: {exc}), falling back to rule-based engine")
+            cause = self._classify_and_log(exc, fund.symbol)
             decision = RetirementStrategy().decide(fund, tech)
+            # The action is byte-identical to the rule-based engine's; the only
+            # thing that changes is that the UI now knows *why* it is showing it.
+            decision.ai_fallback_reason = cause
             # ai_used stays False: this verdict came from the rule-based engine, not the LLM.
             # It *is* the engine's verdict, so it doubles as the overlay's floor reference
             # instead of making it recompute decide() (SIGNAL-6).
@@ -103,11 +215,16 @@ class AIAnalyzer:
     #  Phase 0: Long-term plan narrative (portfolio-level explanation)    #
     # ------------------------------------------------------------------ #
 
-    def generate_long_term_narrative(self, context: dict) -> str:
+    def generate_long_term_narrative(self, context: dict) -> dict:
         """
         Generate a human-readable, conservative narrative for a long-term
         investment plan using the current optimizer + Monte Carlo results.
         `context` must contain the keys expected by long_term_plan_narrative_prompt.
+
+        Returns ``{"narrative": str, "ai_fallback_reason": str}``. The reason is
+        ``""`` when the LLM produced the narrative and an ``AI_FALLBACK`` cause
+        slug when the text is the rule-based explanation instead — aligned with
+        ``generate_plan_narrative`` so every surface reads the same key.
         """
         from analysis.prompts import long_term_plan_narrative_prompt
 
@@ -132,14 +249,15 @@ class AIAnalyzer:
         )
 
         try:
+            self._preflight()
             raw = self._call_api(prompt)
-            return _strip_code_fence(raw)
+            return {"narrative": _strip_code_fence(raw), "ai_fallback_reason": ""}
         except Exception as exc:
-            logger.warning(f"Long-term narrative generation failed: {exc}")
-            return (
-                "No se pudo generar la explicación con IA en este momento. "
-                "Revisá que AI esté habilitado en Settings con una API key válida."
-            )
+            cause = self._classify_and_log(exc, "long-term narrative")
+            return {
+                "narrative": self._fallback_message(cause),
+                "ai_fallback_reason": cause,
+            }
 
     # ------------------------------------------------------------------ #
     #  Fase D: Plan-level narrative + macro risks (saved snapshot)        #
@@ -150,7 +268,8 @@ class AIAnalyzer:
         Explain a saved retirement plan (a ``PlanSnapshot``) in human Spanish
         and surface the 0-2 macro factors most likely to break it.
 
-        Returns ``{"narrative": str, "macro_risks": list[dict]}``. Always returns
+        Returns ``{"narrative": str, "macro_risks": list[dict], "ai_fallback_reason": str}``.
+        ``ai_fallback_reason`` is ``""`` when the LLM answered. Always returns
         a valid dict — on any failure the narrative carries a helpful message and
         ``macro_risks`` is empty, so the no-AI path of the app keeps working.
 
@@ -174,6 +293,7 @@ class AIAnalyzer:
         )
 
         try:
+            self._preflight()
             raw = self._call_api(prompt, max_tokens=1800)
             text = _strip_code_fence(raw)
 
@@ -197,16 +317,18 @@ class AIAnalyzer:
             if not narrative:
                 # Model returned JSON without a narrative — treat raw text as the narrative.
                 narrative = text
-            return {"narrative": narrative, "macro_risks": clean_macro}
+            return {
+                "narrative": narrative,
+                "macro_risks": clean_macro,
+                "ai_fallback_reason": "",
+            }
 
         except Exception as exc:
-            logger.warning(f"Plan narrative generation failed: {exc}")
+            cause = self._classify_and_log(exc, "plan narrative")
             return {
-                "narrative": (
-                    "No se pudo generar la explicación con IA en este momento. "
-                    "Revisá que AI esté habilitado en Settings con una API key válida."
-                ),
+                "narrative": self._fallback_message(cause),
                 "macro_risks": [],
+                "ai_fallback_reason": cause,
             }
 
     def generate_optimizer_advice(
@@ -216,10 +338,11 @@ class AIAnalyzer:
         current_weights: dict | None = None,
     ) -> dict:
         """
-        Generate Grok voice + human-manageable concentration advice for a
+        Generate the AI narrative + human-manageable concentration advice for a
         full portfolio optimization result.
 
-        Always returns a valid dict — the core_holdings key is populated
+        Always returns a valid dict, including ``ai_fallback_reason`` (``""``
+        when the LLM answered) — the core_holdings key is populated
         from the deterministic profile_core_holdings on the result when the
         LLM call fails or is skipped (N too large / no AI key).
 
@@ -259,7 +382,7 @@ class AIAnalyzer:
                 "Para carteras tan grandes la narrativa IA detallada no es práctica "
                 "(el universo seleccionado excede el rango óptimo). "
                 "Se muestra abajo la cartera núcleo calculada automáticamente por el perfil "
-                f"({len(det_core)} posiciones) — sin necesidad de Grok."
+                f"({len(det_core)} posiciones) — sin necesidad de IA."
             )
             return {
                 "narrative":                      narrative,
@@ -271,6 +394,8 @@ class AIAnalyzer:
                     "La cartera núcleo de arriba ya filtra automáticamente los mejores holdings por perfil.",
                 ],
                 "overall_assessment": "Núcleo generado por reglas del perfil (sin LLM).",
+                # Deliberate skip, not a failure: there is no cause to report.
+                "ai_fallback_reason": "",
             }
 
         # Truncate to top-15 for the prompt (bounds token size for 16-45 pos results)
@@ -317,6 +442,7 @@ class AIAnalyzer:
         )
 
         try:
+            self._preflight()
             raw = self._call_api(prompt, max_tokens=2500)
             text = _strip_code_fence(raw)
             data = extract_json_object(text)
@@ -337,41 +463,21 @@ class AIAnalyzer:
             except Exception:
                 data["recommended_max_human_positions"] = max(5, min(15, num_pos))
 
+            data["ai_fallback_reason"] = ""
             return data
 
         except Exception as exc:
-            logger.warning(f"Optimizer Grok advice generation failed: {exc}")
-            err_str = str(exc)
-            # Classify the error for a more helpful message
-            if any(kw in err_str.lower() for kw in ("rate limit", "429", "quota", "too many")):
-                narrative = (
-                    "Grok/xAI está con rate limit en este momento. "
-                    "Se muestra abajo la cartera núcleo calculada automáticamente por el perfil."
-                )
-            elif "incomplete json" in err_str.lower() or "unmatched" in err_str.lower():
-                narrative = (
-                    "La respuesta del modelo no fue JSON válido (posiblemente truncada). "
-                    "Se muestra el núcleo determinístico mientras tanto."
-                )
-            elif "api key" in err_str.lower() or "auth" in err_str.lower():
-                narrative = (
-                    "API key inválida o sin permisos. "
-                    "Verificá la configuración en Settings. "
-                    "Se muestra el núcleo determinístico."
-                )
-            else:
-                narrative = (
-                    "No se pudo generar la narrativa IA en este momento. "
-                    f"({err_str[:150]}) "
-                    "Se muestra el núcleo calculado por el optimizador."
-                )
+            cause = self._classify_and_log(exc, "optimizer advice")
             return {
-                "narrative":                      narrative,
+                "narrative":                      self._fallback_message(cause),
                 "recommended_max_human_positions": len(det_core) or max(5, min(12, num_pos)),
                 "core_holdings":                   det_core,
                 "dropped_tickers":                 [],
                 "human_review_tips":               [],
-                "overall_assessment":              "Núcleo generado por reglas del perfil (Grok no disponible).",
+                "overall_assessment": (
+                    f"Núcleo generado por reglas del perfil ({AI_FALLBACK.label(cause)})."
+                ),
+                "ai_fallback_reason":              cause,
             }
 
     def _call_api(self, prompt: str, max_tokens: int | None = None) -> str:

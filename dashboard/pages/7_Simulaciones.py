@@ -710,13 +710,20 @@ En resumen: el modelo no está diciendo "siempre vas a ganar mucho". Está dicie
                 }
 
                 analyzer = AIAnalyzer(ai_cfg)
-                narrative = analyzer.generate_long_term_narrative(narrative_context)
-                st.session_state["last_plan_narrative"] = narrative
+                _narr = analyzer.generate_long_term_narrative(narrative_context)
+                st.session_state["last_plan_narrative"] = _narr.get("narrative", "")
+                st.session_state["last_plan_narrative_fallback"] = _narr.get("ai_fallback_reason", "") or ""
 
         if "last_plan_narrative" in st.session_state:
-            with st.expander("📝 Explicación del plan (generada por IA)", expanded=True):
-                st.markdown(st.session_state["last_plan_narrative"])
-                st.caption("⚠️ Esta explicación es generada por IA y tiene fines educativos. Siempre contrastá con un asesor financiero certificado.")
+            _fb = st.session_state.get("last_plan_narrative_fallback", "")
+            if _fb:
+                # Rule-based, and it says so — the text already came from
+                # AI_FALLBACK.message, so there is no second string here.
+                st.info(st.session_state["last_plan_narrative"])
+            else:
+                with st.expander("📝 Explicación del plan (generada por IA)", expanded=True):
+                    st.markdown(st.session_state["last_plan_narrative"])
+                    st.caption("⚠️ Esta explicación es generada por IA y tiene fines educativos. Siempre contrastá con un asesor financiero certificado.")
     else:
         st.caption("💡 Habilita IA en ⚙️ Settings (con API key) para obtener una explicación en lenguaje humano de tu plan de largo plazo.")
 

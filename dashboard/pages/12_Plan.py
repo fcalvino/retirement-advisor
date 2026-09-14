@@ -2,7 +2,7 @@
 Mi Plan de Retiro — orquestación + persistencia de escenarios (Fase B).
 
 Consolida en un solo lugar el trabajo que hoy vive fragmentado en
-Optimizer (cartera + núcleo + narrativa Grok), Simulaciones (Monte Carlo +
+Optimizer (cartera + núcleo + narrativa IA), Simulaciones (Monte Carlo +
 Mis Metas) y el perfil personal. Permite:
   - Ver el "plan actual" de la sesión (cartera + núcleo + métricas + metas + MC + narrativa).
   - Guardar el escenario como un plan nombrado (persistente).
@@ -21,7 +21,7 @@ import pandas as pd
 import streamlit as st
 from loguru import logger
 
-from config import AR_FX
+from config import AI_FALLBACK, AR_FX
 from dashboard.onboarding import render_profile_summary
 from dashboard.shared import (
     _get_ai_config,
@@ -145,7 +145,7 @@ def _metrics_row(metrics: dict) -> None:
 def _core_table(core_holdings: list, from_ai: bool) -> None:
     if not core_holdings:
         return
-    label = "🤖 Cartera núcleo (Grok)" if from_ai else "🧠 Cartera núcleo (determinístico)"
+    label = "🤖 Cartera núcleo (IA)" if from_ai else "🧠 Cartera núcleo (determinístico)"
     st.markdown(f"**{label}** — {len(core_holdings)} posiciones para gestión activa")
     df = pd.DataFrame([
         {
@@ -247,12 +247,12 @@ else:
     )
     _metrics_row(_live_metrics)
 
-    _grok_core = getattr(opt_result, "grok_core_holdings", []) or []
+    _ai_core = getattr(opt_result, "core_holdings_ai", []) or []
     _det_core  = getattr(opt_result, "profile_core_holdings", []) or []
-    _core_table(_grok_core or _det_core, bool(_grok_core))
+    _core_table(_ai_core or _det_core, bool(_ai_core))
 
     # Narrative
-    _live_narrative = getattr(opt_result, "ai_grok_narrative", "") or st.session_state.get("last_plan_narrative", "")
+    _live_narrative = getattr(opt_result, "ai_narrative", "") or st.session_state.get("last_plan_narrative", "")
     if _live_narrative:
         with st.expander("📝 Narrativa del plan", expanded=False):
             render_ai_badge("interpretación del modelo; las métricas del plan son cálculos")
@@ -334,7 +334,7 @@ else:
 
     with _ac1:
         with st.expander("🧺 Lista de compra del núcleo", expanded=False):
-            _core = _grok_core or _det_core
+            _core = _ai_core or _det_core
             if not _core:
                 st.caption("No hay núcleo disponible para este plan.")
             else:
@@ -858,6 +858,12 @@ def _render_plan_ai(snap: PlanSnapshot) -> None:
                     from analysis.ai_analyzer import AIAnalyzer
                     _refreshed = st.session_state.get(f"plan_health_{snap.id}")
                     _result = AIAnalyzer(_ai_cfg).generate_plan_narrative(snap, refreshed=_refreshed)
+                    _reason = _result.get("ai_fallback_reason", "") or ""
+                    if _reason:
+                        # Don't persist a fallback sentence as if it were the
+                        # plan's narrative — say why, and leave the plan alone.
+                        st.warning(AI_FALLBACK.message(_reason, getattr(_ai_cfg, "provider", "")))
+                        st.stop()
                     snap.narrative = _result.get("narrative", "") or snap.narrative
                     snap.macro_risks = _result.get("macro_risks", []) or []
                     # NOTE: deliberately does *not* stamp ``last_refreshed_at``.

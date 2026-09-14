@@ -19,6 +19,8 @@ from typing import List, Tuple
 
 from loguru import logger
 
+from config import AI_OAUTH_PROVIDERS, AI_PROVIDER_KEY_ENV, resolve_api_key
+
 Issue = Tuple[str, str]   # (level, message)
 
 
@@ -54,18 +56,13 @@ def validate_config() -> List[Issue]:
     ai_enabled = os.getenv("AI_ENABLED", "").lower() in ("true", "1", "yes")
     provider = os.getenv("AI_PROVIDER", "claude").lower()
 
-    # Providers that can authenticate via Hermes OAuth (no static API key required)
-    _OAUTH_PROVIDERS = {"xai", "nous"}
+    # Provider→env-var and the OAuth exemption both come from config.py, so the
+    # validator can never disagree with what the runtime actually resolves.
+    _OAUTH_PROVIDERS = AI_OAUTH_PROVIDERS
 
     if ai_enabled:
-        key_map = {
-            "claude": "ANTHROPIC_API_KEY",
-            "openai": "OPENAI_API_KEY",
-            "xai":    "XAI_API_KEY",
-            "nous":   "NOUS_API_KEY",
-        }
-        key_var = key_map.get(provider, "ANTHROPIC_API_KEY")
-        api_key = os.getenv(key_var, "") or os.getenv("AI_API_KEY", "")
+        key_var = AI_PROVIDER_KEY_ENV.get(provider, "ANTHROPIC_API_KEY")
+        api_key = resolve_api_key(provider)
 
         if provider in _OAUTH_PROVIDERS and not api_key:
             hermes_oauth = _hermes_oauth_available(provider)

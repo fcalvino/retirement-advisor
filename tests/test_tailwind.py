@@ -449,7 +449,7 @@ class TestPlanSnapshotTailwind:
             expected_return_pct=8.0, volatility_pct=12.0, sharpe_ratio=0.5,
             dividend_yield_pct=2.0, adjusted_score_avg=75.0, moat_score_avg=10.0,
             max_drawdown_estimate_pct=18.0, sector_weights={"Energy": 18.0},
-            profile_core_holdings=[], grok_core_holdings=[], ai_grok_narrative="",
+            profile_core_holdings=[], core_holdings_ai=[], ai_narrative="",
         )
 
     def test_from_session_captures_material_tailwinds_only(self):
@@ -468,8 +468,8 @@ class TestPlanSnapshotTailwind:
             profile_name="Moderado",
             tickers=[SimpleNamespace(symbol="AAPL", weight_pct=40.0, sector="Tech",
                                      dividend_yield_pct=0.5, adjusted_score=80.0)],
-            sector_weights={}, profile_core_holdings=[], grok_core_holdings=[],
-            ai_grok_narrative="",
+            sector_weights={}, profile_core_holdings=[], core_holdings_ai=[],
+            ai_narrative="",
         )
         snap = PlanSnapshot.from_session(name="legacy", opt_result=legacy)
         assert "tailwind_classification" not in snap.allocation[0]

@@ -494,7 +494,7 @@ if symbol:
                     for mf in _mmfs[:2]:
                         st.caption(f"- {mf.get('factor','')}: {mf.get('effect_on_allocation_or_conviction','') or mf.get('impact','')}")
 
-                # Show durability + allocation recommendation if provided by Grok
+                # Show durability + allocation recommendation if provided by the AI layer
                 _dur_eq  = getattr(_moat_detail, "moat_durability_years", 0)
                 _alloc_eq = getattr(_moat_detail, "recommended_max_allocation_conservative", None)
                 if _dur_eq or _alloc_eq:
@@ -751,7 +751,7 @@ if symbol:
             # New: structured macro_factors display (structural improvement)
             _mfs = getattr(decision, "macro_factors", None) or []
             if _mfs:
-                with st.expander("🌍 Factores macro considerados por Grok (estructurado)", expanded=False):
+                with st.expander("🌍 Factores macro considerados por la IA (estructurado)", expanded=False):
                     for mf in _mfs:
                         factor = mf.get("factor", "factor")
                         why = mf.get("why_relevant", "")
@@ -767,16 +767,16 @@ if symbol:
                         st.divider()
             st.divider()
 
-        # Grok allocation recommendation banner
-        _grok_alloc = getattr(decision, "recommended_max_allocation_pct", None)
-        if _grok_alloc is not None:
+        # AI allocation recommendation banner
+        _ai_alloc = getattr(decision, "recommended_max_allocation_pct", None)
+        if _ai_alloc is not None:
             st.success(
-                f"🎯 **Grok sugiere máximo {_grok_alloc:.0f}% de asignación** para **{symbol}** "
+                f"🎯 **La IA sugiere máximo {_ai_alloc:.0f}% de asignación** para **{symbol}** "
                 f"en tu portfolio según su análisis de convicción y riesgo.",
                 icon="🤖",
             )
         elif decision.ai_reasoning:
-            st.caption("ℹ️ Grok no sugirió un porcentaje específico de asignación en este análisis.")
+            st.caption("ℹ️ La IA no sugirió un porcentaje específico de asignación en este análisis.")
 
         st.subheader("💡 Fundamentos de inversión")
         if decision.rationale:
@@ -802,15 +802,15 @@ if symbol:
         _portfolio_cost = sum(
             p.shares * p.avg_cost for p in _portfolio.positions.values()
         ) if _portfolio.positions else 0.0
-        _grok_alloc_pct = getattr(decision, "recommended_max_allocation_pct", None)
+        _ai_alloc_pct = getattr(decision, "recommended_max_allocation_pct", None)
         _price = fund.current_price or 100.0
 
         _suggested_shares = 10.0
         _shares_caption = None
-        if _grok_alloc_pct and _portfolio_cost > 0 and _price > 0:
-            _suggested_shares = max(0.01, (_portfolio_cost * _grok_alloc_pct / 100) / _price)
+        if _ai_alloc_pct and _portfolio_cost > 0 and _price > 0:
+            _suggested_shares = max(0.01, (_portfolio_cost * _ai_alloc_pct / 100) / _price)
             _shares_caption = (
-                f"💡 Sugerido por Grok: máximo {_grok_alloc_pct:.0f}% del portafolio "
+                f"💡 Sugerido por la IA: máximo {_ai_alloc_pct:.0f}% del portafolio "
                 f"(costo base ${_portfolio_cost:,.0f}) → {_suggested_shares:.2f} acciones @ ${_price:,.2f}"
             )
 

@@ -15,7 +15,7 @@ SCORING MODEL (0–100 adjusted_score):
 
   adjusted_score = clamp(base + tech - vol - dd + moat, 0, 100)
 
-Calibration targets (Grok-approved):
+Calibration targets (reviewed against the AI moat layer):
   Bull market, Wide Moat  → ~55–65  (HOLD — correct for conservative retirement)
   Bear market, Narrow     → ~10–20  (SELL / REDUCE)
   Neutral, Narrow         → ~30–40  (HOLD)
@@ -85,10 +85,10 @@ class CryptoMoatDetail:
     classification: str = "None"
     bonus: float = 0.0                      # min(total × factor, max_bonus)
 
-    # Grok-recommended allocation limit (% of portfolio, conservative profile)
+    # AI-recommended allocation limit (% of portfolio, conservative profile)
     recommended_max_allocation_pct: float = 5.0
 
-    # Additional fields from Grok final prompt (v2, May 2026)
+    # Additional fields from the crypto moat prompt (v2, May 2026)
     moat_durability_years: int = 10
     retirement_risk_summary: str = ""
 
