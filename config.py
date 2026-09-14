@@ -3,7 +3,7 @@
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Set
+from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Set, Tuple
 
 from dotenv import load_dotenv
 
@@ -550,6 +550,74 @@ AI_PROVIDER_DISPLAY: Dict[str, str] = {
 }
 
 
+# ---------------------------------------------------------------------- #
+#  Transporte del branch Anthropic (PR 1 multimodelo)                     #
+# ---------------------------------------------------------------------- #
+# Modelos Claude que el selector ofrece. Fuente de verdad única: `9_Settings.py`
+# importa esta lista en vez de tener la suya, porque la que tenía ofrecía IDs
+# (`claude-opus-4-7`) que la llamada de entonces —con `temperature=0`— rechazaba
+# con un 400, y el fallback silencioso lo tapaba. El primero es el default.
+#
+# Los parámetros de sampling (`temperature`, `top_p`, `top_k`) fueron removidos
+# de la API y devuelven 400 en todo lo posterior a 4.6; por eso `_call_claude`
+# no manda ninguno y por eso esta lista puede contener modelos de las dos eras
+# sin bifurcar nada. `CLAUDE_MODELS_SIN_SAMPLING` documenta cuáles son cuáles:
+# no la lee el runtime, la leen los tests y quien mire esto dentro de un año.
+CLAUDE_MODEL_CATALOG: Tuple[str, ...] = (
+    "claude-sonnet-5",
+    "claude-opus-5",
+    "claude-opus-4-8",
+    "claude-haiku-4-5",
+)
+
+CLAUDE_MODELS_SIN_SAMPLING: FrozenSet[str] = frozenset({
+    "claude-sonnet-5",
+    "claude-opus-5",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+    "claude-fable-5",
+    "claude-fable-5-1",
+})
+
+
+@dataclass(frozen=True)
+class ClaudeTransportConfig:
+    """Techo de tokens del branch Anthropic. No es un prompt: es transporte.
+
+    En los modelos con *thinking* adaptativo encendido por defecto (Sonnet 5,
+    Opus 5) ``max_tokens`` es el techo de **thinking + texto**, no del texto.
+    El número que pasa cada caller (1024 por defecto, 1800 la narrativa, 2500
+    el optimizer) fue calibrado contra 4.6, donde era sólo texto — usarlo tal
+    cual corta la respuesta en ``stop_reason="max_tokens"`` y produce el JSON
+    incompleto que `generate_optimizer_advice` ya sabía reportar sin saber por
+    qué pasaba.
+
+    Dos correcciones, por eso son dos números:
+
+    * ``tokenizer_inflation`` — el tokenizer de Sonnet 5 produce ~30 % más
+      tokens que el de 4.6 para el mismo texto, así que el presupuesto de texto
+      se escala antes de usarse.
+    * ``thinking_headroom_tokens`` — el thinking se paga sobre ese techo y no
+      hay forma de acotarlo desde el prompt, así que se le suma una holgura.
+
+    El total queda en ~13-15 K, dentro de la banda recomendada para llamadas
+    **no** streaming (el proyecto no streamea). Es un techo, no un gasto: los
+    tokens que no se usan no se cobran.
+    """
+
+    max_tokens_default: int = 1024
+    tokenizer_inflation: float = 1.3
+    thinking_headroom_tokens: int = 12000
+
+    def resolve_max_tokens(self, requested: int | None = None) -> int:
+        """Techo real a mandar, dado el presupuesto de *texto* del caller."""
+        text_budget = int(requested or self.max_tokens_default)
+        return int(text_budget * self.tokenizer_inflation) + self.thinking_headroom_tokens
+
+
+CLAUDE_TRANSPORT = ClaudeTransportConfig()
+
+
 def ai_provider_display(provider: str) -> str:
     """Display name of `provider`; unknown providers show their own raw name."""
     key = (provider or "").strip().lower()
@@ -586,6 +654,13 @@ class AIFallbackConfig:
     PARAMETRO_RECHAZADO = "parametro_rechazado"
     RATE_LIMIT = "rate_limit"
     JSON_INVALIDO = "json_invalido"
+    # PR 1: tres finales que antes llegaban disfrazados de `json_invalido` —
+    # la respuesta se leía igual y el parser fallaba después, así que la UI
+    # culpaba al modelo de escribir mal cuando el problema era el techo de
+    # tokens, un rechazo de seguridad, o una respuesta sin bloque de texto.
+    RESPUESTA_TRUNCADA = "respuesta_truncada"
+    RECHAZO_MODELO = "rechazo_modelo"
+    RESPUESTA_VACIA = "respuesta_vacia"
     OTRO = "otro"
 
     labels: Mapping[str, str] = field(default_factory=lambda: {
@@ -594,6 +669,9 @@ class AIFallbackConfig:
         AIFallbackConfig.PARAMETRO_RECHAZADO: "parámetro rechazado",
         AIFallbackConfig.RATE_LIMIT:          "rate limit",
         AIFallbackConfig.JSON_INVALIDO:       "respuesta no parseable",
+        AIFallbackConfig.RESPUESTA_TRUNCADA:  "respuesta truncada",
+        AIFallbackConfig.RECHAZO_MODELO:      "rechazada por el modelo",
+        AIFallbackConfig.RESPUESTA_VACIA:     "respuesta vacía",
         AIFallbackConfig.OTRO:                "IA no disponible",
     })
 
@@ -618,6 +696,19 @@ class AIFallbackConfig:
             "La respuesta de {provider} no fue JSON válido (posiblemente truncada): "
             "el veredicto lo calculó el motor de reglas."
         ),
+        AIFallbackConfig.RESPUESTA_TRUNCADA: (
+            "La respuesta de {provider} se cortó por el techo de tokens: el "
+            "veredicto lo calculó el motor de reglas. Volvé a intentar; si "
+            "persiste, probá un modelo distinto en ⚙️ Settings."
+        ),
+        AIFallbackConfig.RECHAZO_MODELO: (
+            "{provider} declinó responder a esta consulta: el veredicto lo "
+            "calculó el motor de reglas."
+        ),
+        AIFallbackConfig.RESPUESTA_VACIA: (
+            "{provider} respondió sin texto: el veredicto lo calculó el motor "
+            "de reglas."
+        ),
         AIFallbackConfig.OTRO: (
             "No se pudo consultar a {provider}: el veredicto lo calculó el motor "
             "de reglas."
@@ -640,7 +731,12 @@ AI_FALLBACK = AIFallbackConfig()
 @dataclass
 class AIConfig:
     provider: str = field(default_factory=lambda: os.getenv("AI_PROVIDER", "claude"))
-    model: str = field(default_factory=lambda: os.getenv("AI_MODEL", "claude-sonnet-4-6"))
+    # PR 1: el default se mueve de `claude-sonnet-4-6` al primero del catálogo
+    # vigente. 4-6 sigue funcionando, pero era el *único* ID del selector que no
+    # devolvía 400 con la llamada anterior, o sea que estaba tapando el defecto
+    # en vez de ser una elección. `claude-sonnet-5` es el mismo tier, generación
+    # actual y más barato por token.
+    model: str = field(default_factory=lambda: os.getenv("AI_MODEL", CLAUDE_MODEL_CATALOG[0]))
     # Key of the *active* provider, resolved in __post_init__ (not in a
     # default_factory, which cannot look at the sibling `provider` field and so
     # used to fall through to any key that happened to be set).

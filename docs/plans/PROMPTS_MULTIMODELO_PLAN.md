@@ -1,7 +1,8 @@
 # Adaptación multimodelo de los prompts (`analysis/prompts.py` + `analysis/committee_prompts.py`)
 
 > **Estado:** diagnóstico cerrado 2026-09-14. **PR 0 implementado** (rama
-> `fercalvino-cu/prompts-multimodelo-pr0`); **PR 3 absorbido por PR 0**. El resto sigue
+> `fercalvino-cu/prompts-multimodelo-pr0`) y **PR 1 implementado** (rama
+> `fercalvino-cu/san-juan`); **PR 3 absorbido por PR 0**. El resto sigue
 > abierto — tabla de estado y hallazgos de ejecución en §5.0.
 > **Alcance:** los 7 prompts de `analysis/prompts.py`, los 8 de `analysis/committee_prompts.py`,
 > y los parámetros de API de `analysis/ai_analyzer.py` que los entregan.
@@ -515,7 +516,7 @@ campo persistido.
 | PR | Qué | Estado | Commit / rama | Fecha |
 |---|---|---|---|---|
 | **PR 0** | El fallback deja de mentir sobre la causa (+ H10 completo) | ✅ **Implementado** | rama `fercalvino-cu/prompts-multimodelo-pr0` | 2026-09-14 |
-| PR 1 | `_call_claude` deja de rechazar los modelos actuales | ⏳ Abierto | — | — |
+| **PR 1** | `_call_claude` deja de rechazar los modelos actuales | ✅ **Implementado** | rama `fercalvino-cu/san-juan` | 2026-09-14 |
 | PR 2 | Persona neutra + renombre en los prompts (H1/H2) | ⏳ Abierto | — | — |
 | ~~PR 3~~ | ~~Renombre total y migración de planes guardados (H10)~~ | 🔀 **Absorbido por PR 0** (decisión del owner, 2026-09-14) | — | 2026-09-14 |
 | PR 4 | Contrato de salida único: delimitador y orden datos→instrucción (H7, H8, H9) | ⏳ Abierto | — | — |
@@ -575,6 +576,77 @@ asierta sobre la causa y el mensaje canónico. La persona de los prompts no se t
 
 ---
 
+#### Hallazgos de la ejecución de PR 1
+
+**(f) El defecto era más grande que `temperature`: eran tres, y los tres se veían igual.**
+La doctrina vigente confirma los tres ([prompting best practices §
+thinking](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices),
+[Prompting Claude Sonnet 5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5),
+[stop reasons](https://platform.claude.com/docs/en/api/handling-stop-reasons)): los parámetros de sampling devuelven 400 en todo
+lo posterior a 4.6; el thinking adaptativo está **encendido por defecto** en Sonnet 5 y
+Opus 5, así que `content[0]` es un `ThinkingBlock` y `.text` era un `AttributeError`; y
+`max_tokens` en esos modelos es el techo de **thinking + texto**, no del texto. Los tres
+caían en el mismo `except Exception` de PR 0 y llegaban a la UI como «la IA no anda»,
+uno con causa equivocada y dos sin causa. Arreglar sólo `temperature` habría movido el
+fallo del 400 al `AttributeError` sin que nadie lo notara.
+
+**(g) `stop_reason` necesitó tres causas nuevas, no una.** El plan pedía reportar
+`max_tokens` y `refusal`. Al escribirlo apareció un tercer final propio: un 200 **sin
+ningún bloque de texto**. Los tres se agregaron a `AIFallbackConfig` (`config.py`), nunca
+inline: `respuesta_truncada`, `rechazo_modelo`, `respuesta_vacia`. El criterio es el
+mismo de PR 0 — la causa es el contrato motor↔UI, y llamar «JSON inválido» a un corte por
+techo de tokens manda al usuario a mirar el prompt por un problema que no está ahí.
+`AI_FALLBACK.label/message` ya degradaban a `otro` ante un slug desconocido, así que
+ninguna superficie de UI tuvo que cambiar para renderizarlas.
+
+**(h) El techo de tokens es dos números, no uno, y por eso está en `config.py`.**
+`CLAUDE_TRANSPORT` (`ClaudeTransportConfig`) resuelve
+`max_tokens = int(presupuesto_de_texto × 1.3) + 12000`. Son dos correcciones distintas y
+mezclarlas en una constante habría borrado el porqué: `1.3` es la inflación del tokenizer
+de Sonnet 5 sobre el de 4.6 —el número que cada caller pasa (1024 por defecto, 1800 la
+narrativa de plan, 2500 el optimizer) fue calibrado contra 4.6, donde era sólo texto—, y
+`12000` es la holgura del thinking, que se paga sobre ese mismo techo y no se puede acotar
+desde el prompt. El total queda en ~13-15 K, dentro de la banda recomendada para llamadas
+**no** streaming, que es lo que el proyecto hace. Es un techo, no un gasto.
+
+**(i) El hallazgo (b) de PR 0 sigue sin poder verificarse contra la API real — y ahora por
+el motivo opuesto.** PR 0 anotó que `parametro_rechazado` era inverificable porque *toda*
+llamada volvía 400. Con PR 1 la llamada ya no manda ningún parámetro que la API rechace,
+así que ahora **ninguna** llamada normal vuelve 400: la causa pasó de ser universal a ser
+inalcanzable sin provocar deliberadamente un request inválido. Sigue verificándose con
+cliente mockeado (`tests/test_ai_fallback_cause_oracle.py`,
+`tests/test_claude_transport_oracle.py`), que es exactamente el mecanismo que la UI ve.
+La limitación anotada en el docstring de `test_ai_fallback_cause_oracle.py` quedó
+desactualizada en su causa pero no en su conclusión.
+
+**(j) El default `AI_MODEL` se movió: `claude-sonnet-4-6` → `claude-sonnet-5`.** El plan
+lo dejaba a decisión. Se mueve porque 4-6 era el **único** ID del selector que no devolvía
+400 con la llamada anterior — o sea que no era una elección de modelo sino el defecto
+tapándose a sí mismo. Sonnet 5 es el mismo tier, generación actual y más barato por token.
+El catálogo del selector pasó a `config.CLAUDE_MODEL_CATALOG`
+(`claude-sonnet-5`, `claude-opus-5`, `claude-opus-4-8`, `claude-haiku-4-5`) y
+`9_Settings.py` lo importa: la lista hardcodeada era la que hacía alcanzable el defecto
+desde la UI sin tocar código.
+
+> **Discrepancia con el criterio de aceptación, deliberadamente no resuelta acá:** el plan
+> pide «ningún ID del selector está en la lista de los que rechazan la llamada». Como la
+> llamada ya no manda sampling, esa lista quedó **vacía por construcción** y el criterio se
+> vuelve trivialmente cierto para cualquier ID, incluidos los retirados. El test lo
+> reemplaza por el invariante que sí muerde —el selector no tiene lista propia, usa
+> `CLAUDE_MODEL_CATALOG`, y ningún ID viejo (`claude-opus-4-7`, `claude-sonnet-4-6`,
+> `claude-haiku-4-5-20251001`) sobrevive fuera de los comentarios que explican por qué se
+> fue—, y `CLAUDE_MODELS_SIN_SAMPLING` queda en `config.py` como documentación de cuáles
+> eran, leída por los tests y no por el runtime. Queda para que el owner decida si el
+> criterio se reescribe así.
+
+**(k) `make check` no corre limpio en este worktree, por un defecto preexistente ajeno.**
+`tests/test_tracker_curve_oracle.py::test_the_curve_has_no_step_from_a_purchase` falla con
+`assert nan < 0.5` sobre una serie vacía (`_build_equity_curve` sin datos de precio).
+Verificado que falla **igual en `HEAD` sin los cambios de PR 1**, en un worktree limpio.
+`ruff` pasa. El resto: `4141 passed, 2 skipped`, idéntico con `TZ=UTC`.
+
+---
+
 Orden deliberado: **primero lo que hace verificable todo lo demás** (§0.1), después el
 transporte, y recién entonces los prompts. Invertir el orden produce PRs de prompts cuyo
 efecto nadie puede medir porque el fallback silencioso los tapa.
@@ -602,7 +674,7 @@ verificable — un prompt nuevo que falla se ve igual que uno que anda (§0.1).
 
 ---
 
-### PR 1 — `_call_claude` deja de rechazar los modelos actuales
+### PR 1 — `_call_claude` deja de rechazar los modelos actuales ✅ implementado
 
 **Qué:** en `_call_claude` (`ai_analyzer.py:389-400`): quitar `temperature`; subir el
 default de `max_tokens` con holgura para thinking; leer el **primer bloque de tipo `text`**

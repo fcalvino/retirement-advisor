@@ -6,7 +6,7 @@ from datetime import datetime
 
 import streamlit as st
 
-from config import ar_fx_from_market
+from config import CLAUDE_MODEL_CATALOG, ar_fx_from_market
 from dashboard.shared import (
     _save_ai_config_to_env,
     cache_stats,
@@ -189,7 +189,10 @@ st.subheader("🤖 Análisis con AI")
 st.caption("Activá un modelo de AI para reemplazar el scoring rule-based con análisis cualitativo.")
 
 _MODEL_OPTIONS = {
-    "Claude (Anthropic)":              ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5-20251001"],
+    # PR 1: importado de config, no hardcodeado. La lista anterior ofrecía
+    # `claude-opus-4-7`, que la llamada de entonces rechazaba con un 400 — el
+    # selector alcanzaba el defecto sin tocar código.
+    "Claude (Anthropic)":              list(CLAUDE_MODEL_CATALOG),
     "GPT-4o (OpenAI)":                 ["gpt-4o", "gpt-4o-mini"],
     "xAI / Grok (via Hermes OAuth)":   ["grok-4.3", "grok-4.20-0309-non-reasoning", "grok-4.20-0309-reasoning", "grok-build-0.1"],
     "Hermes / Nous Research":          ["nousresearch/hermes-4-70b", "nousresearch/hermes-4-405b", "openrouter/owl-alpha"],
