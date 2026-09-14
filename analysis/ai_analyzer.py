@@ -143,6 +143,34 @@ def _strip_code_fence(text: str) -> str:
     return inner
 
 
+_CLAUDE_STOP_REASON_TO_CAUSE = {
+    "max_tokens": AI_FALLBACK.RESPUESTA_TRUNCADA,
+    "refusal":    AI_FALLBACK.RECHAZO_MODELO,
+}
+
+
+def _claude_message_text(message) -> str:
+    """Texto de una respuesta de Anthropic, o `AIUnavailable` con la causa.
+
+    Pura y testeable: recibe el objeto de respuesta, no el cliente. Chequea
+    `stop_reason` **antes** de leer el contenido y toma el primer bloque de tipo
+    `text` — con thinking adaptativo el primer bloque no es el texto.
+    """
+    stop_reason = getattr(message, "stop_reason", None)
+    cause = _CLAUDE_STOP_REASON_TO_CAUSE.get(stop_reason or "")
+    if cause:
+        raise AIUnavailable(cause)
+
+    for block in getattr(message, "content", None) or []:
+        if getattr(block, "type", None) == "text":
+            return block.text
+
+    # 200 sin bloque de texto: raro, pero es un final propio. Llamarlo «JSON
+    # inválido» mandaría al usuario a mirar el prompt por un problema que no
+    # está ahí.
+    raise AIUnavailable(AI_FALLBACK.RESPUESTA_VACIA)
+
+
 class AIAnalyzer:
     def __init__(self, config):
         self.config = config
@@ -493,16 +521,38 @@ class AIAnalyzer:
             raise ValueError(f"Unknown AI provider: {self.config.provider}")
 
     def _call_claude(self, prompt: str, max_tokens: int | None = None) -> str:
+        """Anthropic branch. Divergente de los OpenAI-compatible **a propósito**.
+
+        Tres cosas que este branch no puede compartir con los otros, ninguna de
+        las cuales toca el prompt (PR 1, H2 del plan multimodelo):
+
+        1. **Sin parámetros de sampling.** `temperature`/`top_p`/`top_k` fueron
+           removidos de la API y devuelven 400 en todo lo posterior a 4.6. El
+           branch mandaba `temperature=0` incondicionalmente, así que cualquier
+           modelo actual del selector fallaba con 400 → fallback silencioso →
+           «la IA no anda» sin causa visible. Los branches OpenAI-compatible
+           siguen mandándolo porque ahí sigue siendo válido: es una divergencia
+           de **transporte**, no de prompt, y por eso ningún prompt cambia.
+        2. **`stop_reason` antes que el contenido.** Un corte por techo de
+           tokens o un rechazo de seguridad devuelven HTTP 200 con contenido
+           parcial o vacío; leerlo sin mirar `stop_reason` los convertía en un
+           «JSON inválido» que culpaba al modelo del error equivocado.
+        3. **El primer bloque de tipo `text`, no `content[0]`.** Con thinking
+           adaptativo —encendido por defecto en los modelos actuales— el primer
+           bloque es un `thinking` block y `content[0].text` era un
+           `AttributeError` que el `except Exception` de arriba se tragaba.
+        """
         import anthropic
+
+        from config import CLAUDE_TRANSPORT
+
         client = anthropic.Anthropic(api_key=self.config.api_key)
-        mt = max_tokens or 1024
         message = client.messages.create(
             model=self.config.model,
-            max_tokens=mt,
-            temperature=0,
+            max_tokens=CLAUDE_TRANSPORT.resolve_max_tokens(max_tokens),
             messages=[{"role": "user", "content": prompt}],
         )
-        return message.content[0].text
+        return _claude_message_text(message)
 
     def _call_openai(self, prompt: str, max_tokens: int | None = None) -> str:
         from openai import OpenAI

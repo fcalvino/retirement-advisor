@@ -19,10 +19,15 @@ Lo que este archivo fija no es una lista de casos sino tres invariantes:
 Más la invariante de UI que hace cumplir *«ningún string nombra un proveedor
 distinto del configurado»*.
 
-**Limitación anotada:** `parametro_rechazado` no se puede verificar contra la
-API real mientras `_call_claude` mande `temperature=0` (§0.2 del plan, es PR 1),
-porque *toda* llamada a un modelo actual vuelve 400. Acá se verifica con cliente
-mockeado, que es exactamente el mecanismo que la UI va a ver.
+**Limitación anotada (actualizada en PR 1):** `parametro_rechazado` sigue sin
+poder verificarse contra la API real, y ahora por el motivo opuesto. Cuando se
+escribió esto, `_call_claude` mandaba `temperature=0` y *toda* llamada a un
+modelo actual volvía 400, lo que volvía la causa universal e inútil como
+evidencia. PR 1 sacó el parámetro, así que ahora **ninguna** llamada normal
+vuelve 400: la causa pasó de universal a inalcanzable sin provocar a propósito
+un request inválido. Se verifica con cliente mockeado, que es exactamente el
+mecanismo que la UI ve. El transporte del branch Anthropic tiene su propio
+oráculo en `tests/test_claude_transport_oracle.py`.
 """
 
 from __future__ import annotations
