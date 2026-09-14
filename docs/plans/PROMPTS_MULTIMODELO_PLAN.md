@@ -1,6 +1,8 @@
 # Adaptación multimodelo de los prompts (`analysis/prompts.py` + `analysis/committee_prompts.py`)
 
-> **Estado:** diagnóstico cerrado 2026-09-14, plan abierto. Ningún PR de esta serie está mergeado.
+> **Estado:** diagnóstico cerrado 2026-09-14. **PR 0 implementado** (rama
+> `fercalvino-cu/prompts-multimodelo-pr0`); **PR 3 absorbido por PR 0**. El resto sigue
+> abierto — tabla de estado y hallazgos de ejecución en §5.0.
 > **Alcance:** los 7 prompts de `analysis/prompts.py`, los 8 de `analysis/committee_prompts.py`,
 > y los parámetros de API de `analysis/ai_analyzer.py` que los entregan.
 > **Decisiones del owner tomadas antes de fijar el plan (2026-09-14):**
@@ -508,13 +510,78 @@ campo persistido.
 
 ## 5. Plan por fases (un PR por fase)
 
+### 5.0 Estado de la serie
+
+| PR | Qué | Estado | Commit / rama | Fecha |
+|---|---|---|---|---|
+| **PR 0** | El fallback deja de mentir sobre la causa (+ H10 completo) | ✅ **Implementado** | rama `fercalvino-cu/prompts-multimodelo-pr0` | 2026-09-14 |
+| PR 1 | `_call_claude` deja de rechazar los modelos actuales | ⏳ Abierto | — | — |
+| PR 2 | Persona neutra + renombre en los prompts (H1/H2) | ⏳ Abierto | — | — |
+| ~~PR 3~~ | ~~Renombre total y migración de planes guardados (H10)~~ | 🔀 **Absorbido por PR 0** (decisión del owner, 2026-09-14) | — | 2026-09-14 |
+| PR 4 | Contrato de salida único: delimitador y orden datos→instrucción (H7, H8, H9) | ⏳ Abierto | — | — |
+| PR 5 | Idioma, negaciones y few-shot (H5, H6) | ⏳ Abierto | — | — |
+| PR 6 | Markdown → campos estructurados (H4) | ⏳ Abierto | — | — |
+| PR 7 | El macro deja de salir de la memoria del modelo (H11) | ⏳ Abierto | — | — |
+
+#### Hallazgos de la ejecución de PR 0
+
+**(a) No hizo falta migración de disco — no hay shim.** Verificado antes de escribir
+una sola línea de migración: `data/retirement_plans.json` **no existe** en el repo (es un
+artefacto de runtime, gitignoreado) y `grep -o 'grok[a-z_]*'` sobre él no devuelve nada.
+Leyendo la serialización: `PlanSnapshot.to_dict` es un `asdict(self)` plano
+(`data/plan_store.py:366`) sobre campos que ya se llamaban `core_holdings` / `narrative` /
+`core_from_ai`, y **no hay `from_dict`** — la lectura reconstruye por nombre de campo del
+dataclass. Los cinco `grok_*` vivían **sólo en memoria** sobre `OptimizationResult`, que
+nunca se persiste. El renombre es por lo tanto puramente in-process: ni shim, ni lectura de
+nombres viejos, ni bump de `ENGINE_VERSION`.
+
+**(b) `parametro_rechazado` no se puede verificar contra la API real; queda para PR 1.**
+`_call_claude` sigue mandando `temperature=0` (§0.2), que los modelos actuales rechazan con
+400 — o sea que *toda* llamada real devolvería esa causa, lo que la vuelve inútil como
+evidencia de que la clasificación funciona. Se verifica con cliente mockeado en
+`tests/test_ai_fallback_cause_oracle.py` (`TestClasificacionDeLaExcepcion`,
+`TestLasCausasSonDistinguibles`), que es exactamente el mecanismo que la UI ve. Arreglar el
+parámetro es PR 1 y la restricción del encargo de PR 0 lo prohíbe explícitamente.
+
+**(c) El cero de `grep -ri grok` depende todavía de PR 2 — y de dos excepciones legítimas.**
+Fuera de `analysis/prompts.py` y `tests/test_prompts.py` quedan cuatro ocurrencias que no
+son restos sino el **nombre propio del proveedor xAI** — el mismo criterio con el que §7 del
+encargo deja intacto el «Multi-proveedor AI (Claude / Grok / OpenAI / Nous)» de
+`docs/CONTEXT.md` §1:
+
+| Ubicación | Qué es |
+|---|---|
+| `config.py` — `AI_PROVIDER_DISPLAY["xai"]` | display name del proveedor; es *la* pieza que hace cumplir «ningún string nombra otro proveedor» |
+| `dashboard/pages/9_Settings.py:194` | **IDs de modelo reales** de xAI (`grok-4.3`, `grok-build-0.1`) en el selector |
+| `dashboard/pages/9_Settings.py:200,214` | etiqueta del proveedor en el selector + el branch que la lee |
+| `dashboard/pages/10_About.py:284` | lista de proveedores soportados |
+
+> **Discrepancia con el plan, deliberadamente no resuelta acá:** el criterio literal
+> «`grep -ri grok` = 0 fuera de `prompts.py` / `test_prompts.py`» es **inalcanzable sin
+> renombrar identificadores de la API de xAI**, que no son marca sino contrato. Queda para
+> que el owner decida si el criterio se reescribe como «cero ocurrencias *fuera* de
+> `AI_PROVIDER_DISPLAY` y del catálogo de modelos de Settings».
+
+**(d) H10 llegó más lejos que su propia tabla.** La tabla de H10 no listaba
+`dashboard/pages/2_Stock_Analysis.py` (7 strings de UI: «Grok sugiere máximo N %»,
+«Factores macro considerados por Grok», …) ni `dashboard/pages/8_Alertas.py:321`
+(«Grok/Claude genera…»). Son mensajes visibles que nombran al proveedor equivocado —
+exactamente el defecto que H10 describe —, así que entraron en PR 0.
+
+**(e) Un test más de `test_prompts.py` tuvo que actualizarse.** Además de `:495`,
+`TestGeneratePlanNarrative::test_fallback_on_api_error` asertaba sobre el texto genérico
+«No se pudo generar», que PR 0 reemplaza por `AI_FALLBACK.message(cause, provider)`. Ahora
+asierta sobre la causa y el mensaje canónico. La persona de los prompts no se tocó.
+
+---
+
 Orden deliberado: **primero lo que hace verificable todo lo demás** (§0.1), después el
 transporte, y recién entonces los prompts. Invertir el orden produce PRs de prompts cuyo
 efecto nadie puede medir porque el fallback silencioso los tapa.
 
 ---
 
-### PR 0 — El fallback deja de mentir sobre la causa
+### PR 0 — El fallback deja de mentir sobre la causa ✅ implementado
 
 **Qué:** `AIAnalyzer.analyze` y las tres `generate_*` distinguen y propagan la causa:
 `sin API key` / `key inválida (401)` / `parámetro rechazado (400)` / `rate limit (429)` /
@@ -575,7 +642,11 @@ redacción de `committee_prompts.py:37`; se borra el permiso de comentario poste
 
 ---
 
-### PR 3 — Renombre total y migración de planes guardados (H10)
+### ~~PR 3 — Renombre total y migración de planes guardados (H10)~~ 🔀 absorbido por PR 0
+
+> **Este PR ya no existe.** Su alcance entró completo en PR 0 por decisión del owner
+> (2026-09-14), y la migración de disco resultó innecesaria — ver §5.0, hallazgo (a).
+> Lo que sigue se conserva como registro del alcance original.
 
 **Qué:** `grok_core_holdings` → `core_holdings_ai`, `ai_grok_narrative` → `ai_narrative`
 en `portfolio/optimizer.py`, `data/plan_store.py` y consumidores.

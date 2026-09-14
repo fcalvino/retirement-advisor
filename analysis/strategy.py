@@ -393,7 +393,7 @@ class Decision:
     # AI analysis (empty when using rule-based engine)
     ai_reasoning: str = ""
 
-    # Grok allocation recommendation (None when rule-based or when Grok didn't provide it)
+    # AI allocation recommendation (None when rule-based or when the model didn't provide it)
     recommended_max_allocation_pct: Optional[float] = None
 
     # Structured macro factors (new in structural macro improvement).
@@ -408,6 +408,12 @@ class Decision:
     ai_used: bool = False
     ai_provider: str = ""
     ai_model: str = ""
+
+    # Why this verdict is rule-based when the user asked for AI. Empty when the
+    # LLM answered (or was never meant to). Carries an ``AIFallbackConfig`` slug,
+    # never a sentence: the text is rendered by ``AI_FALLBACK.message(cause,
+    # provider)`` so no surface can name a provider other than the configured one.
+    ai_fallback_reason: str = ""
 
     @property
     def action_emoji(self) -> str:

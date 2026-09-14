@@ -5,7 +5,7 @@ Persists named "plan snapshots" so the user's work in Optimizer + Mis Metas +
 Monte Carlo stops living only in ephemeral session_state. A snapshot is a
 lightweight, JSON-serializable summary of a plan — it does NOT store the full
 OptimizationResult object (heavy + non-portable); instead it captures the
-human-relevant artifacts: target allocation, deterministic/Grok core holdings,
+human-relevant artifacts: target allocation, deterministic/AI core holdings,
 portfolio metrics, goals, Monte Carlo summary and the AI narrative.
 
 Mirrors the load/save pattern of data.preferences.UserPreferences.
@@ -83,7 +83,7 @@ class PlanSnapshot:
     allocation: List[dict] = field(default_factory=list)      # [{symbol, weight_pct, sector, dividend_yield_pct, adjusted_score}]
     sector_weights: Dict[str, float] = field(default_factory=dict)
 
-    # Human-scale core (deterministic, or Grok if available)
+    # Human-scale core (deterministic, or AI if available)
     core_holdings: List[dict] = field(default_factory=list)   # [{symbol, suggested_weight_pct, why}]
     core_from_ai: bool = False
 
@@ -228,11 +228,11 @@ class PlanSnapshot:
                 entry["tailwind_score"] = round(float(getattr(a, "tailwind_score", 0.0) or 0.0), 1)
             allocation.append(entry)
 
-        # Prefer Grok core when present, else the deterministic profile core.
-        grok_core = getattr(opt_result, "grok_core_holdings", []) or []
+        # Prefer the AI core when present, else the deterministic profile core.
+        ai_core = getattr(opt_result, "core_holdings_ai", []) or []
         det_core = getattr(opt_result, "profile_core_holdings", []) or []
-        core_from_ai = bool(grok_core)
-        core_src = grok_core or det_core
+        core_from_ai = bool(ai_core)
+        core_src = ai_core or det_core
         core_holdings = [
             {
                 "symbol":              c.get("symbol", ""),
@@ -322,7 +322,7 @@ class PlanSnapshot:
             metrics=metrics,
             goals=list(goals),
             mc_summary=mc_summary,
-            narrative=narrative or getattr(opt_result, "ai_grok_narrative", "") or "",
+            narrative=narrative or getattr(opt_result, "ai_narrative", "") or "",
             personal=personal,
             drags_at_save=(dict(drags) if drags and drags.get("enabled", True)
                            and (drags.get("total_annual_drag_pct") or 0) > 0 else None),

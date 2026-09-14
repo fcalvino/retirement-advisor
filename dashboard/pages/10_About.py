@@ -281,7 +281,7 @@ with h1:
 with h2:
     st.markdown("""
 **🤖 Decisión asistida por AI**
-- Claude, GPT-4o, Grok o Nous Research
+- Claude, GPT-4o, Grok (xAI) o Nous Research
 - Moat cualitativo: network effects, switching costs, brand, regulatory
 - Razonamiento en lenguaje natural por ticker
 - Fallback rule-based si no hay API key

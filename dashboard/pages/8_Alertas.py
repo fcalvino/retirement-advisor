@@ -318,7 +318,7 @@ with tab_config:
         _ai_exp = st.checkbox(
             "Explicaciones AI",
             value=ALERTS.ai_explanations_enabled,
-            help="Grok/Claude genera una explicación natural para cada alerta.",
+            help="El proveedor de IA configurado genera una explicación natural para cada alerta.",
         )
 
     st.markdown("**Umbrales de detección**")

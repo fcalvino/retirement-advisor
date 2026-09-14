@@ -136,7 +136,7 @@ class MoatDetail:
     classification: str = "None"
     bonus: float = 0.0
 
-    # AI-recommended allocation context (from Grok prompt)
+    # AI-recommended allocation context (from the moat prompt)
     moat_durability_years: int = 0              # AI estimate: 5 | 10 | 15 | 20
     recommended_max_allocation_conservative: int = 8  # % of portfolio (default: profile max)
 

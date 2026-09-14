@@ -947,6 +947,11 @@ def render_decision_detail(df, event) -> None:
             _d2.caption("Riesgos anotados")
             for line in risks[:6]:
                 _d2.markdown(f"- {line}")
+        _reason = str(row.get("_ai_fallback_reason") or "")
+        if _reason:
+            from config import AI_FALLBACK
+            _prov = str(row.get("_ai_provider") or "") or st.session_state.get("ai_provider", "")
+            st.warning(AI_FALLBACK.message(_reason, _prov))
         render_calc_badge("sale del motor de decisión — reglas, no IA (salvo que la actives)")
 
 
@@ -1857,6 +1862,7 @@ def _extract_row_data(sym: str, fund, tech, decision) -> dict:
         "why_risks": why["risks"],
         "why_full_headline": why["full_headline"],
         "ai_used": getattr(decision, "ai_used", False),
+        "ai_fallback_reason": getattr(decision, "ai_fallback_reason", "") or "",
         "ai_provider": getattr(decision, "ai_provider", "") or "",
         "ai_model": getattr(decision, "ai_model", "") or "",
         "adjusted_score": fund.adjusted_score,
@@ -1929,6 +1935,8 @@ def _format_row_for_display(d: dict) -> dict:
         "_track": d["track"],
         # AI provenance — hidden from the table, used in the detail panel and caption.
         "_ai_used": d["ai_used"],
+        # Why this row is rule-based when AI was on (PR 0). Slug, not a sentence.
+        "_ai_fallback_reason": d["ai_fallback_reason"],
         "_ai_provider": d["ai_provider"],
         "_ai_model": d["ai_model"],
         "_ai_confidence": d["why_ai_confidence"],

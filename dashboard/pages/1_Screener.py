@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from datetime import datetime
 
 import pandas as pd
@@ -19,7 +20,7 @@ from analysis.ranking import (
     preset_gap,
     strip_badge,
 )
-from config import DATA_QUALITY, SCREENER, STRATEGY
+from config import AI_FALLBACK, DATA_QUALITY, SCREENER, STRATEGY
 
 # NOTE: dashboard.shared must be imported first — it seeds the repo root onto
 # sys.path (via bootstrap) so the first-party imports below resolve when this
@@ -342,6 +343,21 @@ else:
     )
     rows = filter_to_selected(rows, selected)
     failures = filter_to_selected(failures, selected)
+
+# ------------------------------------------------------------------ #
+#  PR 0 — un veredicto rule-based con la IA prendida se anuncia        #
+# ------------------------------------------------------------------ #
+# Antes, un 400, una key ausente y una key inválida se veían iguales: una tabla
+# normal. La causa la trae cada fila; acá se resume la más frecuente.
+_fallbacks = [str(r.get("_ai_fallback_reason") or "") for r in (rows or [])]
+_fallbacks = [f for f in _fallbacks if f]
+if _fallbacks:
+    _top_cause = Counter(_fallbacks).most_common(1)[0][0]
+    _prov = st.session_state.get("ai_provider", "")
+    st.warning(
+        f"🧠→🧮 {len(_fallbacks)} de {len(rows)} filas las resolvió el motor de reglas. "
+        + AI_FALLBACK.message(_top_cause, _prov)
+    )
 
 # ------------------------------------------------------------------ #
 #  Audit item 16 — refresh what needs it, not all 85                  #

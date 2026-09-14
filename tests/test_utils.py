@@ -1,7 +1,7 @@
 """
 Tests for analysis/utils.py — shared AI response parsing utilities.
 
-Covers the failure modes that previously caused Grok analysis to be silently
+Covers the failure modes that previously caused AI analysis to be silently
 dropped for out-of-universe tickers (ADRs, foreign companies).
 """
 

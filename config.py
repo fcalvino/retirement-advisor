@@ -3,7 +3,7 @@
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Set
 
 from dotenv import load_dotenv
 
@@ -521,17 +521,130 @@ SECTOR_MAP: Dict[str, List[str]] = {
 # ``recommended_bond_pct`` below ``OPTIMIZER_PROFILES`` (U5-7).
 
 
+# ---------------------------------------------------------------------- #
+#  AI provider credentials + fallback taxonomy (PR 0 multimodelo)         #
+# ---------------------------------------------------------------------- #
+# Single source of truth for "which env var holds the key of which provider".
+# `config_validator` imports these instead of keeping its own copy — a runtime
+# that resolves the key differently from the validator is exactly the bug this
+# table exists to prevent.
+AI_PROVIDER_KEY_ENV: Dict[str, str] = {
+    "claude": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "xai":    "XAI_API_KEY",
+    "nous":   "NOUS_API_KEY",
+}
+
+# Providers that authenticate through Hermes OAuth: a missing static key is NOT
+# a misconfiguration for them, so the pre-flight check skips them.
+AI_OAUTH_PROVIDERS: FrozenSet[str] = frozenset({"xai", "nous"})
+
+# What the user is allowed to read on screen. Every fallback message is rendered
+# with the *configured* provider's display name, so no surface can name a
+# provider that is not the one that failed.
+AI_PROVIDER_DISPLAY: Dict[str, str] = {
+    "claude": "Claude (Anthropic)",
+    "openai": "GPT (OpenAI)",
+    "xai":    "Grok (xAI)",
+    "nous":   "Hermes (Nous Research)",
+}
+
+
+def ai_provider_display(provider: str) -> str:
+    """Display name of `provider`; unknown providers show their own raw name."""
+    key = (provider or "").strip().lower()
+    return AI_PROVIDER_DISPLAY.get(key, key or "el proveedor configurado")
+
+
+def resolve_api_key(provider: str) -> str:
+    """API key of the *active* provider.
+
+    Reads only the env var that belongs to `provider`; `AI_API_KEY` stays as the
+    generic override. Resolving `ANTHROPIC_API_KEY or XAI_API_KEY or ...` blindly
+    used to hand an xAI key to Anthropic and turn a misconfiguration into a 401
+    that the silent fallback then hid.
+    """
+    key = (provider or "").strip().lower()
+    env_var = AI_PROVIDER_KEY_ENV.get(key)
+    if env_var:
+        found = os.getenv(env_var, "")
+        if found:
+            return found
+    return os.getenv("AI_API_KEY", "")
+
+
+@dataclass(frozen=True)
+class AIFallbackConfig:
+    """Causes of the rule-based fallback. The slug is the engine↔UI contract.
+
+    The engine classifies, the UI renders — neither side writes the text twice,
+    and `message()` is the only place a provider is ever named.
+    """
+
+    SIN_API_KEY = "sin_api_key"
+    KEY_INVALIDA = "key_invalida"
+    PARAMETRO_RECHAZADO = "parametro_rechazado"
+    RATE_LIMIT = "rate_limit"
+    JSON_INVALIDO = "json_invalido"
+    OTRO = "otro"
+
+    labels: Mapping[str, str] = field(default_factory=lambda: {
+        AIFallbackConfig.SIN_API_KEY:         "sin API key",
+        AIFallbackConfig.KEY_INVALIDA:        "API key inválida",
+        AIFallbackConfig.PARAMETRO_RECHAZADO: "parámetro rechazado",
+        AIFallbackConfig.RATE_LIMIT:          "rate limit",
+        AIFallbackConfig.JSON_INVALIDO:       "respuesta no parseable",
+        AIFallbackConfig.OTRO:                "IA no disponible",
+    })
+
+    messages: Mapping[str, str] = field(default_factory=lambda: {
+        AIFallbackConfig.SIN_API_KEY: (
+            "No hay API key configurada para {provider}: el veredicto lo calculó "
+            "el motor de reglas. Cargá la key en ⚙️ Settings para usar la IA."
+        ),
+        AIFallbackConfig.KEY_INVALIDA: (
+            "{provider} rechazó la credencial (key inválida o sin permisos): el "
+            "veredicto lo calculó el motor de reglas. Revisá la key en ⚙️ Settings."
+        ),
+        AIFallbackConfig.PARAMETRO_RECHAZADO: (
+            "{provider} rechazó los parámetros de la llamada (400): el veredicto "
+            "lo calculó el motor de reglas. Suele ser el modelo elegido en ⚙️ Settings."
+        ),
+        AIFallbackConfig.RATE_LIMIT: (
+            "{provider} está con rate limit en este momento: el veredicto lo "
+            "calculó el motor de reglas. Probá de nuevo en unos minutos."
+        ),
+        AIFallbackConfig.JSON_INVALIDO: (
+            "La respuesta de {provider} no fue JSON válido (posiblemente truncada): "
+            "el veredicto lo calculó el motor de reglas."
+        ),
+        AIFallbackConfig.OTRO: (
+            "No se pudo consultar a {provider}: el veredicto lo calculó el motor "
+            "de reglas."
+        ),
+    })
+
+    def label(self, cause: str) -> str:
+        """Short badge/caption label. Unknown causes degrade to the generic one."""
+        return self.labels.get(cause, self.labels[self.OTRO])
+
+    def message(self, cause: str, provider: str) -> str:
+        """Full sentence for the UI, always naming the *configured* provider."""
+        template = self.messages.get(cause, self.messages[self.OTRO])
+        return template.format(provider=ai_provider_display(provider))
+
+
+AI_FALLBACK = AIFallbackConfig()
+
+
 @dataclass
 class AIConfig:
     provider: str = field(default_factory=lambda: os.getenv("AI_PROVIDER", "claude"))
     model: str = field(default_factory=lambda: os.getenv("AI_MODEL", "claude-sonnet-4-6"))
-    # Unified key: reads from whichever env-var matches the active provider.
-    # Order: Anthropic → xAI → OpenAI (set only the one you need in .env)
-    api_key: str = field(default_factory=lambda: (
-        os.getenv("ANTHROPIC_API_KEY", "")
-        or os.getenv("XAI_API_KEY", "")
-        or os.getenv("OPENAI_API_KEY", "")
-    ))
+    # Key of the *active* provider, resolved in __post_init__ (not in a
+    # default_factory, which cannot look at the sibling `provider` field and so
+    # used to fall through to any key that happened to be set).
+    api_key: str = ""
     enabled: bool = field(default_factory=lambda: os.getenv("AI_ENABLED", "").lower() in ("true", "1", "yes"))
     use_in_screener: bool = field(default_factory=lambda: os.getenv("AI_USE_IN_SCREENER", "false").lower() in ("true", "1", "yes"))
     # Offline measurement (U0-2). When True the AI enriches the SCORE (moat and
@@ -541,6 +654,12 @@ class AIConfig:
     # falls back silently, so letting it try would produce a rule-based answer
     # while looking like an AI one. Never set from the environment.
     enrich_only: bool = False
+
+    def __post_init__(self) -> None:
+        # An explicitly passed key wins (Settings and several tests build
+        # `AIConfig(api_key="k")` directly); only an empty one is resolved.
+        if not self.api_key:
+            self.api_key = resolve_api_key(self.provider)
 
 
 @dataclass

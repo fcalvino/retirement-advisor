@@ -12,7 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from config import OPTIMIZER, OPTIMIZER_PROFILES
+from config import AI_FALLBACK, OPTIMIZER, OPTIMIZER_PROFILES
 from dashboard.shared import (
     _fetch_universe_parallel,
     _get_ai_config,
@@ -616,12 +616,13 @@ if _cta2.button("🗺️ Ir a Mi Plan", key="optimizer_goto_plan", width="stretc
     st.switch_page(str(Path(__file__).parent / "12_Plan.py"))
 
 # ------------------------------------------------------------------ #
-#  Core portfolio — always visible (deterministic) + Grok AI (optional)#
+#  Core portfolio — always visible (deterministic) + AI narrative (opt.) #
 # ------------------------------------------------------------------ #
 _ai_cfg = _get_ai_config()
 _full_n = len(getattr(result, "tickers", []))
+_ai_fallback_reason = ""
 
-# Attempt Grok narrative only when AI is enabled.
+# Attempt the AI narrative only when AI is enabled.
 # generate_optimizer_advice() now handles N>45 gracefully with a fallback
 # narrative and always returns the deterministic core_holdings.
 if getattr(_ai_cfg, "enabled", False):
@@ -632,53 +633,62 @@ if getattr(_ai_cfg, "enabled", False):
             goals=st.session_state.get("optimizer_goals", []),
             current_weights=st.session_state.get("optimizer_current_weights"),
         )
-        result.ai_grok_narrative                   = _advice.get("narrative", "")
-        result.grok_recommended_max_human_positions = _advice.get("recommended_max_human_positions", 0)
-        result.grok_core_holdings                  = _advice.get("core_holdings", []) or []
-        result.grok_dropped_tickers                = _advice.get("dropped_tickers", []) or []
-        result.grok_human_review_tips              = _advice.get("human_review_tips", []) or []
+        result.ai_narrative                   = _advice.get("narrative", "")
+        result.ai_recommended_max_human_positions = _advice.get("recommended_max_human_positions", 0)
+        result.core_holdings_ai                  = _advice.get("core_holdings", []) or []
+        result.dropped_tickers_ai                = _advice.get("dropped_tickers", []) or []
+        result.human_review_tips_ai              = _advice.get("human_review_tips", []) or []
+        # Why the narrative is rule-based, when it is (PR 0): the slug travels,
+        # the sentence is rendered once by AI_FALLBACK.message.
+        _ai_fallback_reason = _advice.get("ai_fallback_reason", "") or ""
     except Exception:
         pass  # deterministic core is still shown below
+
+if _ai_fallback_reason:
+    # The narrative *is* the fallback sentence; showing it inside an "the AI
+    # explains…" expander would restate the lie this PR removes.
+    result.ai_narrative = ""
+    st.info(AI_FALLBACK.message(_ai_fallback_reason, getattr(_ai_cfg, "provider", "")))
 
 # Deterministic core — always shown regardless of AI status
 _det_core = getattr(result, "profile_core_holdings", []) or []
 # If AI produced a core, prefer it; otherwise use deterministic
-_display_core  = getattr(result, "grok_core_holdings", []) or _det_core
-_core_from_ai  = bool(getattr(result, "grok_core_holdings", []))
+_display_core  = getattr(result, "core_holdings_ai", []) or _det_core
+_core_from_ai  = bool(getattr(result, "core_holdings_ai", []))
 
-# ---- Grok narrative expander (only if AI narrative exists) ----
-if getattr(result, "ai_grok_narrative", ""):
+# ---- AI narrative expander (only if an AI narrative exists) ----
+if getattr(result, "ai_narrative", ""):
     with st.expander(
-        "🤖 Grok explica esta optimización + cartera núcleo manejable",
+        "🤖 La IA explica esta optimización + cartera núcleo manejable",
         expanded=True,
     ):
-        st.markdown(result.ai_grok_narrative)
+        st.markdown(result.ai_narrative)
 
-        _grok_n = getattr(result, "grok_recommended_max_human_positions", 0)
-        if _grok_n and _grok_n < _full_n:
+        _ai_n = getattr(result, "ai_recommended_max_human_positions", 0)
+        if _ai_n and _ai_n < _full_n:
             st.caption(
-                f"Grok recomienda **{_grok_n} posiciones** para que un humano "
+                f"La IA recomienda **{_ai_n} posiciones** para que un humano "
                 f"pueda seguir la cartera (la optimización completa tiene {_full_n})."
             )
 
-        _tips = getattr(result, "grok_human_review_tips", []) or []
+        _tips = getattr(result, "human_review_tips_ai", []) or []
         if _tips:
-            st.subheader("Tips de Grok para revisar y ajustar")
+            st.subheader("Tips de la IA para revisar y ajustar")
             for tip in _tips:
                 st.info(f"💡 {tip}")
 
-        _dropped = getattr(result, "grok_dropped_tickers", []) or []
+        _dropped = getattr(result, "dropped_tickers_ai", []) or []
         if _dropped:
             dropped_names = ", ".join(d.get("symbol", "") for d in _dropped[:6])
             st.caption(
-                f"Posiciones que Grok sugiere dejar fuera de la versión humana: {dropped_names}"
+                f"Posiciones que la IA sugiere dejar fuera de la versión humana: {dropped_names}"
             )
 
 # ---- Deterministic core — always rendered ----
 if _display_core:
-    _core_label = "🤖 Cartera núcleo (Grok)" if _core_from_ai else f"🧠 Cartera núcleo — {prof.name}"
+    _core_label = "🤖 Cartera núcleo (IA)" if _core_from_ai else f"🧠 Cartera núcleo — {prof.name}"
     _core_help   = (
-        "Selección de Grok de las posiciones más relevantes para gestión activa."
+        "Selección de la IA de las posiciones más relevantes para gestión activa."
         if _core_from_ai
         else (
             f"Top-{len(_display_core)} posiciones calculadas automáticamente por el optimizador "
@@ -686,7 +696,7 @@ if _display_core:
             "Siempre disponible — no requiere API key."
         )
     )
-    with st.expander(_core_label, expanded=not getattr(result, "ai_grok_narrative", "")):
+    with st.expander(_core_label, expanded=not getattr(result, "ai_narrative", "")):
         if not _core_from_ai:
             st.caption(_core_help)
         _core_data = [
