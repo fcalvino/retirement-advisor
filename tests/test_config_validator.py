@@ -13,6 +13,7 @@ def _ai_issues(monkeypatch, hermes_available=False, **env):
     """
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
     monkeypatch.delenv("XAI_API_KEY", raising=False)
     monkeypatch.delenv("NOUS_API_KEY", raising=False)
     monkeypatch.delenv("AI_API_KEY", raising=False)
