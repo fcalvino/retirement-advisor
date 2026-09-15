@@ -246,3 +246,115 @@ class TestCatalogoDeModelos:
     def test_el_default_de_aiconfig_esta_en_el_catalogo(self, monkeypatch):
         monkeypatch.delenv("AI_MODEL", raising=False)
         assert AIConfig(provider="claude", api_key="k").model in CLAUDE_MODEL_CATALOG
+
+
+# --------------------------------------------------------------------------- #
+#  Groq: quinto proveedor, OpenAI-compatible, key estática (no Hermes)         #
+# --------------------------------------------------------------------------- #
+
+_GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+_GROQ_DEFAULT_MODEL = "openai/gpt-oss-120b"
+
+
+def _settings_src() -> str:
+    return (
+        Path(__file__).resolve().parents[1] / "dashboard/pages/9_Settings.py"
+    ).read_text(encoding="utf-8")
+
+
+def _about_src() -> str:
+    return (
+        Path(__file__).resolve().parents[1] / "dashboard/pages/10_About.py"
+    ).read_text(encoding="utf-8")
+
+
+class TestGroqUsaElCaminoOpenAICompatible:
+
+    def test_call_api_pega_base_url_y_modelo(self):
+        captured: dict = {}
+        client = MagicMock()
+        client.chat.completions.create.return_value = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))]
+        )
+
+        def _openai(**kw):
+            captured.update(kw)
+            return client
+
+        fake_sdk = SimpleNamespace(OpenAI=_openai)
+        analyzer = AIAnalyzer(AIConfig(
+            provider="groq", model=_GROQ_DEFAULT_MODEL, api_key="gsk_test",
+        ))
+        with patch.dict("sys.modules", {"openai": fake_sdk}):
+            out = analyzer._call_api("prompt", max_tokens=200)
+
+        assert out == "ok"
+        assert captured.get("base_url") == _GROQ_BASE_URL
+        kwargs = client.chat.completions.create.call_args.kwargs
+        assert kwargs["model"] == _GROQ_DEFAULT_MODEL
+        assert kwargs["temperature"] == 0
+        assert kwargs["max_tokens"] == 200
+
+    def test_groq_no_es_oauth(self):
+        from config import AI_OAUTH_PROVIDERS, AI_PROVIDER_KEY_ENV, GROQ_MODEL_CATALOG
+
+        assert "groq" not in AI_OAUTH_PROVIDERS
+        assert AI_PROVIDER_KEY_ENV["groq"] == "GROQ_API_KEY"
+        assert GROQ_MODEL_CATALOG[0] == _GROQ_DEFAULT_MODEL
+        assert "openai/gpt-oss-20b" in GROQ_MODEL_CATALOG
+
+
+class TestSettingsListaGroqSinHermes:
+
+    def test_catalogo_sale_de_config(self):
+        codigo = [
+            ln for ln in _settings_src().splitlines()
+            if not ln.lstrip().startswith("#")
+        ]
+        assert any("GROQ_MODEL_CATALOG" in ln for ln in codigo)
+        joined = "\n".join(codigo)
+        assert "GPT-OSS (Groq)" in joined
+        assert 'provider_key in ("nous", "xai")' in joined
+        assert "groq" not in 'provider_key in ("nous", "xai")'
+
+    def test_guardar_sin_key_no_habilita_groq_como_hermes(self):
+        # Groq is a static-key provider: the enable-without-key disjunction
+        # must stay exactly the Hermes pair.
+        src = _settings_src()
+        assert 'or provider_key in ("nous", "xai")' in src
+        assert 'or provider_key in ("nous", "xai", "groq")' not in src
+        assert 'or provider_key in ("nous", "xai", "groq")' not in src.replace(" ", "")
+
+    def test_about_no_trata_groq_como_oauth(self):
+        src = _about_src()
+        assert 'ai_provider in ("xai", "nous")' in src
+        assert "groq" not in 'ai_provider in ("xai", "nous")'
+
+    def test_selectbox_incluye_groq_y_el_default_del_catalogo(self):
+        from streamlit.testing.v1 import AppTest
+
+        from data.preferences import UserPreferences
+
+        page = Path(__file__).resolve().parents[1] / "dashboard/pages/9_Settings.py"
+        at = AppTest.from_file(str(page), default_timeout=30)
+        at.session_state["user_prefs"] = UserPreferences()
+        at.session_state["universe"] = ["MSFT"]
+        at.session_state["ai_provider"] = "groq"
+        at.session_state["ai_model"] = _GROQ_DEFAULT_MODEL
+        at.session_state["ai_api_key"] = ""
+        at.session_state["ai_enabled"] = False
+        at.session_state["ai_use_in_screener"] = False
+        at.run()
+        assert not at.exception
+        provider_boxes = [
+            box for box in at.selectbox
+            if "GPT-OSS (Groq)" in (box.options or [])
+        ]
+        assert provider_boxes, "Settings no ofrece Groq en el selector de proveedor"
+        assert provider_boxes[0].value == "GPT-OSS (Groq)"
+        model_boxes = [
+            box for box in at.selectbox
+            if _GROQ_DEFAULT_MODEL in (box.options or [])
+        ]
+        assert model_boxes, "Settings no ofrece openai/gpt-oss-120b"
+        assert model_boxes[0].value == _GROQ_DEFAULT_MODEL

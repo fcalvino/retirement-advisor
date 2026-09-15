@@ -517,6 +517,8 @@ class AIAnalyzer:
             return self._call_nous(prompt, max_tokens)
         elif self.config.provider == "xai":
             return self._call_xai(prompt, max_tokens)
+        elif self.config.provider == "groq":
+            return self._call_groq(prompt, max_tokens)
         else:
             raise ValueError(f"Unknown AI provider: {self.config.provider}")
 
@@ -617,6 +619,16 @@ class AIAnalyzer:
             return resolve_xai_oauth_runtime_credentials()
         return self._call_openai_compatible(
             "https://api.x.ai/v1", _resolver, prompt, max_tokens,
+        )
+
+    def _call_groq(self, prompt: str, max_tokens: int | None = None) -> str:
+        # Static API key (GROQ_API_KEY / AI_API_KEY). Hermes is not a Groq
+        # auth path: the resolver is expected to fail so `_call_openai_compatible`
+        # falls through to `self.config.api_key`, same as a missing Hermes login.
+        def _resolver():
+            raise RuntimeError("groq uses a static API key, not Hermes OAuth")
+        return self._call_openai_compatible(
+            "https://api.groq.com/openai/v1", _resolver, prompt, max_tokens,
         )
 
     def _parse_response(self, raw: str, fund: FundamentalResult, tech: TechnicalResult) -> Decision:

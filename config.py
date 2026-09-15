@@ -531,6 +531,7 @@ SECTOR_MAP: Dict[str, List[str]] = {
 AI_PROVIDER_KEY_ENV: Dict[str, str] = {
     "claude": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
+    "groq":   "GROQ_API_KEY",
     "xai":    "XAI_API_KEY",
     "nous":   "NOUS_API_KEY",
 }
@@ -545,6 +546,7 @@ AI_OAUTH_PROVIDERS: FrozenSet[str] = frozenset({"xai", "nous"})
 AI_PROVIDER_DISPLAY: Dict[str, str] = {
     "claude": "Claude (Anthropic)",
     "openai": "GPT (OpenAI)",
+    "groq":   "Groq",
     "xai":    "Grok (xAI)",
     "nous":   "Hermes (Nous Research)",
 }
@@ -568,6 +570,14 @@ CLAUDE_MODEL_CATALOG: Tuple[str, ...] = (
     "claude-opus-5",
     "claude-opus-4-8",
     "claude-haiku-4-5",
+)
+
+# Groq OpenAI-compatible catalog. IDs are Groq's (`openai/` prefix is the
+# model family on Groq, not the `openai` provider of this app). The first
+# entry is the default in Settings.
+GROQ_MODEL_CATALOG: Tuple[str, ...] = (
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
 )
 
 CLAUDE_MODELS_SIN_SAMPLING: FrozenSet[str] = frozenset({
