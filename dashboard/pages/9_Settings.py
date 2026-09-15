@@ -6,7 +6,7 @@ from datetime import datetime
 
 import streamlit as st
 
-from config import CLAUDE_MODEL_CATALOG, ar_fx_from_market
+from config import CLAUDE_MODEL_CATALOG, GROQ_MODEL_CATALOG, ar_fx_from_market
 from dashboard.shared import (
     _save_ai_config_to_env,
     cache_stats,
@@ -194,15 +194,18 @@ _MODEL_OPTIONS = {
     # selector alcanzaba el defecto sin tocar código.
     "Claude (Anthropic)":              list(CLAUDE_MODEL_CATALOG),
     "GPT-4o (OpenAI)":                 ["gpt-4o", "gpt-4o-mini"],
+    "GPT-OSS (Groq)":                  list(GROQ_MODEL_CATALOG),
     "xAI / Grok (via Hermes OAuth)":   ["grok-4.3", "grok-4.20-0309-non-reasoning", "grok-4.20-0309-reasoning", "grok-build-0.1"],
     "Hermes / Nous Research":          ["nousresearch/hermes-4-70b", "nousresearch/hermes-4-405b", "openrouter/owl-alpha"],
 }
 _PROVIDER_KEY_TO_LABEL = {
     "claude": "Claude (Anthropic)",
     "openai": "GPT-4o (OpenAI)",
+    "groq":   "GPT-OSS (Groq)",
     "xai":    "xAI / Grok (via Hermes OAuth)",
     "nous":   "Hermes / Nous Research",
 }
+_LABEL_TO_PROVIDER_KEY = {label: key for key, label in _PROVIDER_KEY_TO_LABEL.items()}
 
 current_provider      = st.session_state.get("ai_provider", "claude")
 default_provider_label = _PROVIDER_KEY_TO_LABEL.get(current_provider, "Claude (Anthropic)")
@@ -212,14 +215,8 @@ provider_label = st.selectbox(
     index=list(_MODEL_OPTIONS.keys()).index(default_provider_label),
 )
 
-if "Claude" in provider_label:
-    provider_key = "claude"
-elif "xAI" in provider_label or "Grok" in provider_label:
-    provider_key = "xai"
-elif "Nous" in provider_label or "Hermes" in provider_label:
-    provider_key = "nous"
-else:
-    provider_key = "openai"
+# Invert the label map — substring matching would confuse "Groq" with "Grok".
+provider_key = _LABEL_TO_PROVIDER_KEY[provider_label]
 
 model_list    = _MODEL_OPTIONS[provider_label]
 current_model = st.session_state.get("ai_model", model_list[0])
