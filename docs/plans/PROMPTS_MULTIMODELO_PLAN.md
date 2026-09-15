@@ -515,14 +515,53 @@ campo persistido.
 
 | PR | Qué | Estado | Commit / rama | Fecha |
 |---|---|---|---|---|
-| **PR 0** | El fallback deja de mentir sobre la causa (+ H10 completo) | ✅ **Implementado** | rama `fercalvino-cu/prompts-multimodelo-pr0` | 2026-09-14 |
-| **PR 1** | `_call_claude` deja de rechazar los modelos actuales | ✅ **Implementado** | rama `fercalvino-cu/san-juan` | 2026-09-14 |
-| PR 2 | Persona neutra + renombre en los prompts (H1/H2) | ⏳ Abierto | — | — |
+| **PR 0** | El fallback deja de mentir sobre la causa (+ H10 completo) | ✅ **Mergeado** | `4462093` (#121), rama `fercalvino-cu/prompts-multimodelo-pr0` | 2026-09-14 |
+| **PR 1** | `_call_claude` deja de rechazar los modelos actuales | ✅ **Mergeado** | `129fcf1` (#122), rama `fercalvino-cu/san-juan` | 2026-09-14 |
+| **PR 1.5** | Desactivar la bomba de calendario de `test_tracker_curve_oracle` (hallazgo (k)) | ✅ **Implementado** | `c6181f4`, rama `fercalvino-cu/continuar-prs-o-arreglar-findings` | 2026-09-14 |
+| **PR 2** | Persona neutra (H1) + contrato de salida único (H3) | ✅ **Implementado** | `0b541c0`, misma rama | 2026-09-14 |
 | ~~PR 3~~ | ~~Renombre total y migración de planes guardados (H10)~~ | 🔀 **Absorbido por PR 0** (decisión del owner, 2026-09-14) | — | 2026-09-14 |
-| PR 4 | Contrato de salida único: delimitador y orden datos→instrucción (H7, H8, H9) | ⏳ Abierto | — | — |
-| PR 5 | Idioma, negaciones y few-shot (H5, H6) | ⏳ Abierto | — | — |
+| PR 4 | Higiene de instrucciones: idioma, negaciones y few-shot (H5, H6) | ⏳ Abierto | — | — |
+| PR 5 | Estructura: delimitador único y orden datos→instrucción (H7, H8, H9) | ⏳ Abierto | — | — |
 | PR 6 | Markdown → campos estructurados (H4) | ⏳ Abierto | — | — |
 | PR 7 | El macro deja de salir de la memoria del modelo (H11) | ⏳ Abierto | — | — |
+
+> **Numeración canónica (resuelta 2026-09-14).** Esta tabla y los cuerpos de §5 se
+> contradecían: la tabla llamaba «PR 4» a la estructura y «PR 5» a la higiene, y los cuerpos
+> al revés. **Gana la numeración de los cuerpos** —son los que llevan el «Qué / Por qué /
+> Aceptación» que un implementador ejecuta, así que un lector que entre por el cuerpo no
+> puede equivocarse—. Queda, para todo el archivo:
+> **PR 4 = higiene de instrucciones (H5, H6)** y **PR 5 = estructura (H7, H8, H9)**.
+> La tabla de arriba ya está corregida; los cuerpos no se tocaron.
+
+**Orden recomendado (revisado 2026-09-14, con PR 1.5 y PR 2 ya implementados):**
+~~PR 1.5~~ → ~~PR 2~~ → **PR 4 → PR 5 → PR 7 → PR 6**. Ninguno de los cuatro PRs que quedan
+depende de un hallazgo sin cerrar en sus criterios *sustantivos*: los de PR 4/5/7 son
+estáticos sobre el string renderizado y los de PR 6 se ejercitan con `_call_api` mockeado,
+igual que los oráculos de PR 0.
+
+`analysis/prompts.py` **ya no está intacto**: PR 2 lo reescribió. Las citas de línea de §2 y
+§5 que apuntan a lo que PR 2 tocó están **consumidas** —las 7 aperturas «Eres Grok» de
+`:283, :443, :554, :692, :794, :986, :1347` y los 4 permisos «después del JSON» de
+`:371, :493, :626, :746` ya no existen—. Las que quedan **se corrieron ~23 líneas hacia
+abajo** por el bloque de constantes nuevo (`ANALYST_ROLE`, `JSON_ONLY_CONTRACT`), así que
+PR 4 y PR 5 deben re-localizar antes de editar, no confiar en el número: «IDIOMA
+OBLIGATORIO» ×9, los `key_strengths`/`key_risks` muertos que §5 citaba en
+`:285, :445, :556, :694`, y los 5 «usá tu conocimiento actual» de
+`:302, :479, :574, :719, :1016`. El criterio «`make check` verde» pasó de no verificable a
+**verificado**: lo destrabó PR 1.5.
+
+> **Nota de entorno (confirmada al ejecutar PR 1.5 / PR 2):** `make check` no corre tal cual
+> en un worktree limpio — `ruff` no está en `requirements.txt` (sólo en
+> `.github/workflows/ci.yml:32`), así que `make lint` muere con
+> `venv/bin/ruff: No such file or directory`. Hay que instalarlo en el venv a mano
+> (`venv/bin/pip install ruff`) antes de poder afirmar nada sobre el criterio. Sigue sin
+> arreglarse: es un PR de infraestructura, ajeno a esta serie.
+
+Los hallazgos (b) e (i) quedan como **deuda acotada, explícitamente arrastrable**:
+`parametro_rechazado` es una causa de **transporte** y los cinco PRs abiertos son de
+**prompt**, así que no contaminan nada. Lo único pendiente ahí es una línea de docstring
+desactualizada en `tests/test_ai_fallback_cause_oracle.py` (la causa que describe cambió con
+PR 1; la conclusión no).
 
 #### Hallazgos de la ejecución de PR 0
 
@@ -544,8 +583,9 @@ evidencia de que la clasificación funciona. Se verifica con cliente mockeado en
 `TestLasCausasSonDistinguibles`), que es exactamente el mecanismo que la UI ve. Arreglar el
 parámetro es PR 1 y la restricción del encargo de PR 0 lo prohíbe explícitamente.
 
-**(c) El cero de `grep -ri grok` depende todavía de PR 2 — y de dos excepciones legítimas.**
-Fuera de `analysis/prompts.py` y `tests/test_prompts.py` quedan cuatro ocurrencias que no
+**(c) El cero de `grep -ri grok` depende todavía de PR 2 — y de dos excepciones legítimas.** ✅ *criterio resuelto (owner, 2026-09-14) — ver el recuadro al final.*
+Fuera de `analysis/prompts.py` y `tests/test_prompts.py` quedan **seis** ocurrencias (cuatro
+al cerrar PR 0, más dos que agregaron los propios tests de PR 0 y PR 1) que no
 son restos sino el **nombre propio del proveedor xAI** — el mismo criterio con el que §7 del
 encargo deja intacto el «Multi-proveedor AI (Claude / Grok / OpenAI / Nous)» de
 `docs/CONTEXT.md` §1:
@@ -556,12 +596,42 @@ encargo deja intacto el «Multi-proveedor AI (Claude / Grok / OpenAI / Nous)» d
 | `dashboard/pages/9_Settings.py:194` | **IDs de modelo reales** de xAI (`grok-4.3`, `grok-build-0.1`) en el selector |
 | `dashboard/pages/9_Settings.py:200,214` | etiqueta del proveedor en el selector + el branch que la lee |
 | `dashboard/pages/10_About.py:284` | lista de proveedores soportados |
+| `tests/test_ai_fallback_cause_oracle.py:371` | comentario que compara las marcas «Grok (xAI)» / «Claude (Anthropic)» — *la agregó PR 0* |
+| `tests/test_claude_transport_oracle.py:118` | `AIConfig(provider="xai", model="grok-4.3")` — *la agregó PR 1* |
 
-> **Discrepancia con el plan, deliberadamente no resuelta acá:** el criterio literal
-> «`grep -ri grok` = 0 fuera de `prompts.py` / `test_prompts.py`» es **inalcanzable sin
-> renombrar identificadores de la API de xAI**, que no son marca sino contrato. Queda para
-> que el owner decida si el criterio se reescribe como «cero ocurrencias *fuera* de
-> `AI_PROVIDER_DISPLAY` y del catálogo de modelos de Settings».
+> **Resuelto (owner, 2026-09-14) — allowlist por ubicación.** El criterio literal
+> «`grep -ri grok` = 0 fuera de `prompts.py` / `test_prompts.py`» era **inalcanzable sin
+> renombrar identificadores de la API de xAI**, que no son marca sino contrato. Queda
+> reescrito así:
+>
+> > **Criterio (c):** `grep -rin grok --include='*.py' .` (excluyendo `venv/` y
+> > `__pycache__/`) no devuelve ninguna ocurrencia fuera de estas cuatro ubicaciones:
+> > `AI_PROVIDER_DISPLAY` en `config.py`, el catálogo de modelos de xAI y su etiqueta de
+> > proveedor en `dashboard/pages/9_Settings.py`, la lista de proveedores de
+> > `dashboard/pages/10_About.py`, y cualquier archivo bajo `tests/` que ejercite el
+> > proveedor `xai`.
+>
+> **Por qué esta y no las otras tres.** Es la única que sigue atrapando el defecto que
+> H10 nombraba —un string de UI que nombra al proveedor equivocado, como los 7 de
+> `2_Stock_Analysis.py` que PR 0 encontró fuera de la tabla de H10 (hallazgo (d))— y que
+> además puede fallar. El «invariante semántico» («ningún string mostrado al usuario
+> nombra un proveedor distinto del configurado») describe bien la intención pero **no
+> está cubierto por ningún test**: `TestNingunStringNombraOtroProveedor`
+> (`tests/test_ai_fallback_cause_oracle.py:361-376`) sólo barre
+> `AI_FALLBACK.message(cause, provider)`, un conjunto generado y cerrado;
+> `AI_PROVIDER_DISPLAY` no tiene más consumidores que `config.py:624` y ese test. Un
+> `st.caption("Grok sugiere…")` nuevo lo pasaría entero. Adoptarlo sería declarar cubierto
+> lo que no lo está — el mismo defecto que PR 0 acaba de arreglar en la capa de IA, esta
+> vez en la capa de criterios. «Sólo prompts renderizados» es el criterio propio de PR 2 y
+> dejaría al resto del repo sin criterio; «dejarlo literal» conserva un criterio que no
+> puede ponerse en verde nunca. El costo de mantenimiento es cero por PR: la cuarta
+> excepción está escrita por **rol** («tests que ejercitan `xai`»), no por enumeración, así
+> que los tests multiproveedor que agreguen PR 2/4/5/6/7 no obligan a editar la lista —
+> que es exactamente lo que ya pasó dos veces (`test_ai_fallback_cause_oracle.py:371`,
+> `test_claude_transport_oracle.py:118`). **Si la elección resulta mal**, el costo es que
+> la allowlist envejezca: el día que xAI deje de ser un proveedor soportado, las tres
+> excepciones de producción quedan obsoletas y hay que borrarlas a mano, porque el
+> criterio no sabe distinguir «contrato vigente» de «resto».
 
 **(d) H10 llegó más lejos que su propia tabla.** La tabla de H10 no listaba
 `dashboard/pages/2_Stock_Analysis.py` (7 strings de UI: «Grok sugiere máximo N %»,
@@ -619,7 +689,7 @@ cliente mockeado (`tests/test_ai_fallback_cause_oracle.py`,
 La limitación anotada en el docstring de `test_ai_fallback_cause_oracle.py` quedó
 desactualizada en su causa pero no en su conclusión.
 
-**(j) El default `AI_MODEL` se movió: `claude-sonnet-4-6` → `claude-sonnet-5`.** El plan
+**(j) El default `AI_MODEL` se movió: `claude-sonnet-4-6` → `claude-sonnet-5`.** ✅ *criterio resuelto (owner, 2026-09-14) — ver el recuadro al final.* El plan
 lo dejaba a decisión. Se mueve porque 4-6 era el **único** ID del selector que no devolvía
 400 con la llamada anterior — o sea que no era una elección de modelo sino el defecto
 tapándose a sí mismo. Sonnet 5 es el mismo tier, generación actual y más barato por token.
@@ -628,22 +698,162 @@ El catálogo del selector pasó a `config.CLAUDE_MODEL_CATALOG`
 `9_Settings.py` lo importa: la lista hardcodeada era la que hacía alcanzable el defecto
 desde la UI sin tocar código.
 
-> **Discrepancia con el criterio de aceptación, deliberadamente no resuelta acá:** el plan
-> pide «ningún ID del selector está en la lista de los que rechazan la llamada». Como la
-> llamada ya no manda sampling, esa lista quedó **vacía por construcción** y el criterio se
-> vuelve trivialmente cierto para cualquier ID, incluidos los retirados. El test lo
-> reemplaza por el invariante que sí muerde —el selector no tiene lista propia, usa
-> `CLAUDE_MODEL_CATALOG`, y ningún ID viejo (`claude-opus-4-7`, `claude-sonnet-4-6`,
-> `claude-haiku-4-5-20251001`) sobrevive fuera de los comentarios que explican por qué se
-> fue—, y `CLAUDE_MODELS_SIN_SAMPLING` queda en `config.py` como documentación de cuáles
-> eran, leída por los tests y no por el runtime. Queda para que el owner decida si el
-> criterio se reescribe así.
+> **Resuelto (owner, 2026-09-14) — los dos criterios, no uno.** El plan pedía «ningún ID
+> del selector está en la lista de los que rechazan la llamada». Como la llamada ya no
+> manda sampling, esa lista quedó **vacía por construcción** y el criterio se volvía
+> trivialmente cierto para cualquier ID, incluidos los retirados. Queda reemplazado por
+> los dos invariantes que los tests de PR 1 ya verifican:
+>
+> > **Criterio (j.1) — fuente única del catálogo:** el selector no tiene lista propia
+> > (importa `CLAUDE_MODEL_CATALOG` de `config.py`) y ningún ID retirado
+> > (`claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`) sobrevive fuera
+> > de los comentarios que explican por qué se fue.
+> > *Test:* `tests/test_claude_transport_oracle.py:221`.
+> >
+> > **Criterio (j.2) — consistencia transporte↔catálogo:** `_call_claude` no manda ningún
+> > parámetro que vuelva inutilizable a un ID del catálogo.
+> > *Test:* `tests/test_claude_transport_oracle.py:235`.
+>
+> **Por qué los dos y no uno.** No son redundancia: cubren dos fallas independientes y
+> ninguna implica la otra. (j.1) cae si alguien vuelve a hardcodear una lista en
+> `9_Settings.py` —el defecto que hacía alcanzable el 400 desde la UI sin tocar código— y
+> no dice nada sobre lo que la llamada manda. (j.2) cae si alguien reintroduce
+> `temperature` / `top_p` / `top_k` en `_call_claude` —el defecto de PR 1 volviendo— y no
+> dice nada sobre qué IDs ofrece la UI. Con sólo (j.1), reponer `temperature=0` deja el
+> criterio en verde y los cuatro modelos del catálogo en 400. Con sólo (j.2), reponer la
+> lista hardcodeada con `claude-sonnet-4-6` también lo deja en verde. Elegir una sola sería
+> tapar la mitad del defecto que PR 1 arregló. Borrar el criterio (opción 4) es peor
+> todavía: los dos tests existen igual, así que el plan quedaría describiendo menos
+> cobertura de la real y el próximo lector concluiría que esa capa no tiene criterio.
+> `CLAUDE_MODELS_SIN_SAMPLING` (`config.py:573`) queda como documentación de cuáles eran,
+> leída por los tests y no por el runtime. **Si la elección resulta mal**, el costo es
+> menor y conocido: (j.2) se vuelve a poner trivialmente cierto si algún día la API
+> reintroduce sampling y `_call_claude` vuelve a mandarlo legítimamente — ahí hay que
+> reescribirlo como «ningún ID del catálogo está en `CLAUDE_MODELS_SIN_SAMPLING`», que hoy
+> sería falso.
 
-**(k) `make check` no corre limpio en este worktree, por un defecto preexistente ajeno.**
-`tests/test_tracker_curve_oracle.py::test_the_curve_has_no_step_from_a_purchase` falla con
-`assert nan < 0.5` sobre una serie vacía (`_build_equity_curve` sin datos de precio).
-Verificado que falla **igual en `HEAD` sin los cambios de PR 1**, en un worktree limpio.
-`ruff` pasa. El resto: `4141 passed, 2 skipped`, idéntico con `TZ=UTC`.
+**(k) `make check` no corre limpio, por un defecto preexistente ajeno — y es una bomba de
+tiempo de calendario, no un dato faltante.** ⛔ **Bloqueante de la serie** (re-verificado
+2026-09-14 sobre `main` en `129fcf1`, worktree limpio).
+`tests/test_tracker_curve_oracle.py::TestTheCurveOnlyCoversWhatWasHeld::test_the_curve_has_no_step_from_a_purchase`
+falla con `assert nan < 0.5`. `ruff check .` pasa; el resto es
+`1 failed, 4141 passed, 2 skipped`, idéntico con `TZ=UTC`.
+
+**La causa, medida.** No es «una serie vacía por falta de datos de precio»: el fixture está
+completamente mockeado (`monkeypatch` de `portfolio.tracker.get_history`) y el problema es
+que mezcla una fecha **literal** con una fecha **relativa a `now`**. El fixture
+(`tests/test_tracker_curve_oracle.py:66-69`) genera historia semanal sintética con
+`_weekly("2024-01-07", 130, ...)` → rango fijo **2024-01-07 → 2026-06-28**, mientras que la
+compra de NVDA es `datetime.now() - timedelta(weeks=12)`. Al 2026-09-14 eso cae en
+**2026-06-22**, así que después de la última compra sobrevive **una sola barra**:
+`curve.pct_change().dropna()` queda vacío y `.max()` es `nan`. El test pasaba hasta
+~2026-09-07 y desde entonces falla en toda máquina, incluido el CI. Es exactamente el
+defecto que el checklist de `docs/PROMPT_INSTRUCTIONS.md` ya prohíbe para fechas y horas, y
+el arreglo es de una línea: anclar el inicio del fixture a `now - N semanas` en vez de al
+literal `"2024-01-07"`.
+
+**Por qué bloquea la serie y no es deuda arrastrable.** «`make check` verde» es un criterio
+de aceptación de los **cinco** PRs abiertos (PR 2, 4, 5, 6, 7). Mientras el rojo sea ajeno,
+ninguno de los cinco puede reportarlo como cumplido sin una excepción escrita a mano, y el
+primer fallo genuino que la serie introduzca se esconde detrás del ruido — el mismo defecto
+que PR 0 arregló en la capa de IA, repetido en la capa de tests. Va **antes de PR 2**, como
+un PR propio de una línea, no como una fase.
+
+---
+
+#### Hallazgos de la ejecución de PR 1.5 / PR 2
+
+**(l) La bomba de calendario ya había explotado, y explotó exactamente como (k) predijo.**
+No hizo falta esperar: al 2026-09-14, `TZ=UTC venv/bin/python -m pytest
+tests/test_tracker_curve_oracle.py` da
+
+```
+FAILED TestTheCurveOnlyCoversWhatWasHeld::test_the_curve_has_no_step_from_a_purchase
+E   assert nan < 0.5
+E    +  where nan = max()
+E    +    where max = Series([], Freq: W-SUN, dtype: float64).max
+```
+
+El diagnóstico de (k) era correcto hasta la serie vacía. Lo que (k) **no** anticipaba es
+cuántos call sites tenía el literal: no uno, sino **cuatro** (`_weekly("2024-01-07", 130,
+...)` en el fixture y en tres tests independientes). Anclar sólo el del fixture habría
+dejado tres bombas con temporizadores distintos, porque las otras tres comparan contra
+compras de 200 semanas y 3 días, no de 12.
+
+**(m) «Que el test siga siendo verdadero en cualquier fecha futura» no lo garantiza anclar
+la fecha; hay que afirmarlo.** Anclar el inicio a `now - 129 semanas` arregla *hoy*, pero
+nada impide que mañana alguien reintroduzca un literal, ni que el bracket se rompa por otro
+lado. El PR agrega `TestTheFixtureDoesNotExpire`, que no prueba `tracker.py` sino el
+acoplamiento entre los precios inyectados y las compras: el historial debe abarcar toda
+compra usada por el fixture (parametrizado a 0, 12 y 104 semanas atrás), la ventana
+compartida no puede quedar vacía —la forma exacta de la falla— y un guard por AST rechaza
+cualquier `_weekly(` con un literal como primer argumento. Un `re.search` de `\d{4}-\d{2}-\d{2}`
+sobre el archivo, que fue el primer intento, es **inservible**: matchea la prosa del
+docstring que narra el bug. El guard tiene que mirar los call sites, no el texto.
+
+**(n) El «rol neutro» de PR 2 resultó ser una resta, no una reescritura.** El plan (H1)
+proponía redactar «un rol neutro de una o dos oraciones que conserve el registro». Medido,
+las siete aperturas ya tenían esa oración: `«Eres Grok, construido por xAI.»` era una
+**oración aparte**, seguida de `«Eres un analista de inversión senior riguroso, objetivo y
+basado en datos, especializado en X. Tenés voz propia: …»`. O sea que el registro no había
+que conservarlo redactando algo nuevo —había que no borrarlo—. La adaptación es
+`ANALYST_ROLE`, una constante de módulo que normaliza esa segunda oración, y el resto del
+párrafo queda literal. Esto baja el riesgo del PR de «reescribimos 7 prompts» a «borramos
+una oración y factorizamos otra», y es además lo que la doctrina de Anthropic recomienda:
+un rol corto es correcto, y el defecto que sus prompting best practices marcan es la
+identidad que *sustituye* al contexto, no el rol en sí.
+
+**(o) H3 subcontaba el problema: no eran 4 sitios, eran 7.** §H3 pedía borrar el permiso de
+comentario posterior de `:371, :493, :626, :746` y unificar con la redacción de
+`committee_prompts.py:37`. Los 4 permisos estaban donde decía. Pero «unificar **todos** los
+prompts JSON» alcanza a tres redacciones más que §H3 lista como si ya estuvieran bien por
+prohibir texto extra —`:819` «Respondé SOLO con JSON válido:», `:1042` «Respondé SOLO con el
+objeto JSON válido…», `:1287` «Devolvé un objeto JSON válido (y NADA de texto fuera del
+JSON)»— y **una cuarta que §H3 no cita en absoluto**: la de
+`sector_country_tailwind_prompt`, «El output principal debe ser un objeto JSON válido con
+exactamente estos campos:», que no autorizaba prosa pero tampoco la prohibía. Eran siete
+redacciones para un solo parser, no cinco.
+
+`JSON_ONLY_CONTRACT` vive ahora en `analysis/prompts.py` y `committee_prompts.py` lo
+**importa** en vez de duplicarlo: la fuente de la redacción canónica no puede volver a
+divergir de sus consumidores por un typo.
+
+**(p) El contrato único no siempre ahorra: en dos prompts cuesta.** El plan asumía ahorro
+(«el modelo gasta tokens en prosa post-JSON que nadie lee»). Medido sobre el prompt
+renderizado —en **caracteres**, ver (q)—:
+
+| prompt | antes | después | Δ | Δ% |
+|---|---:|---:|---:|---:|
+| `equity_moat` | 8816 | 8656 | −160 | −1.8 % |
+| `equity_decision` | 6775 | 6625 | −150 | −2.2 % |
+| `crypto_moat` | 7937 | 7777 | −160 | −2.0 % |
+| `crypto_decision` | 5959 | 5791 | −168 | −2.8 % |
+| `alert_explanation` | 1506 | 1580 | **+74** | **+4.9 %** |
+| `long_term_plan_narrative` | 2179 | 2179 | 0 | 0.0 % |
+| `portfolio_optimizer_advice` | 8515 | 8496 | −19 | −0.2 % |
+| `plan_level_narrative` | 4218 | 4240 | **+22** | **+0.5 %** |
+| `sector_country_tailwind` | 2489 | 2486 | −3 | −0.1 % |
+| **total** | **48394** | **47830** | **−564** | **−1.2 %** |
+
+Los dos que crecen son precisamente los que tenían el contrato **más lacónico**
+(`«Respondé SOLO con JSON válido:»`, `«…con exactamente dos campos:»`) y ahora llevan la
+redacción completa. Es el precio correcto: el ahorro real de H3 no está en estos caracteres
+sino en la prosa post-JSON que el modelo ya no genera, y eso se mide en el *output*, no en
+el input. El −1.2 % del input es ruido; no usar este número para justificar el PR.
+
+**(q) No se pudieron reportar tokens, sólo caracteres.** El criterio de aceptación pedía
+«tokens del prompt renderizado antes/después». La única forma correcta de contarlos es
+`client.messages.count_tokens` (un tokenizador de terceros daría un número que no es el que
+la API factura), y en este entorno no hay credencial de Anthropic: `ANTHROPIC_API_KEY` sin
+setear y sin CLI `ant` instalada. Los caracteres son un proxy honesto para un Δ de esta
+magnitud, pero **no** son el criterio: queda pendiente correr la medición en tokens desde un
+entorno con credencial. PR 4 tiene el mismo criterio y se va a topar con lo mismo.
+
+**(r) `long_term_plan_narrative` es el único de los nueve que queda fuera del contrato, y
+eso hay que afirmarlo.** Pide Markdown y prohíbe JSON a propósito (es H4, que resuelve PR 6).
+El oráculo lo excluye con un test explícito —`test_the_markdown_prompt_is_excluded_on_purpose`—
+en vez de con un silencio, porque «unificar el contrato» tiene una forma de trampa obvia:
+convertirlo también a JSON y declarar 9/9. El test falla si alguien lo hace.
 
 ---
 
@@ -696,7 +906,26 @@ devuelven 400.
 
 ---
 
-### PR 2 — Persona neutra en los 9 prompts (H1) + contrato único de salida (H3)
+### PR 1.5 — Desactivar la bomba de calendario (hallazgo (k)) ✅ implementado
+
+**Qué:** `tests/test_tracker_curve_oracle.py` mezclaba un inicio literal de precios con
+compras relativas a `datetime.now()`. El inicio pasa a ser `now - (_HISTORY_WEEKS - 1)`
+semanas, en los **cuatro** call sites (no uno — ver (l)). Lo que el oráculo afirma no cambió;
+sólo su reloj.
+
+**Por qué:** «`make check` verde» era criterio de aceptación de los cinco PRs abiertos y el
+rojo era ajeno. Va antes de PR 2.
+
+**Aceptación:**
+- ✅ El suite queda en 0 failed: `TZ=UTC pytest tests/ -q` → 4147 passed, 2 skipped (antes
+  de PR 2).
+- ✅ El criterio es «verdadero en cualquier fecha futura», no «verdadero hoy»:
+  `TestTheFixtureDoesNotExpire` afirma el bracket relativo, la ventana compartida no vacía y
+  —por AST— que ningún call site de `_weekly` reciba un literal. Ver (m).
+
+---
+
+### PR 2 — Persona neutra en los 9 prompts (H1) + contrato único de salida (H3) ✅ implementado
 
 **Qué:** reemplazar las 7 aperturas «Eres Grok, construido por xAI» por un rol neutro de
 una o dos oraciones que conserve el registro; borrar «voz de Grok» de `:489`, `:742`,
@@ -707,10 +936,19 @@ redacción de `committee_prompts.py:37`; se borra el permiso de comentario poste
 **Por qué:** H1, H3. Sin renombre de campos persistidos todavía — eso es PR 3.
 
 **Aceptación:**
-- Test nuevo: para los 9 prompts, `"Grok" not in prompt and "xAI" not in prompt`.
-- Test nuevo: ningún prompt JSON contiene la cadena «después del JSON».
-- Los 6 asserts de voz de `test_prompts.py` reescritos contra el rol neutro.
-- `make check` verde.
+- ✅ Test nuevo: para los 9 prompts, `"Grok" not in prompt and "xAI" not in prompt`
+  (`tests/test_prompt_neutrality_oracle.py::TestNingunPromptNombraUnProveedor`, extendido a
+  todo el fuente de `prompts.py` y `committee_prompts.py`, no sólo al string renderizado).
+- ✅ Test nuevo: ningún prompt JSON contiene la cadena «después del JSON».
+- ✅ Los 6 asserts de voz de `test_prompts.py` reescritos contra `ANALYST_ROLE`.
+- ✅ `make check` verde: `ruff check .` limpio y `TZ=UTC pytest tests/ -q` →
+  **4201 passed, 2 skipped, 0 failed**.
+- ⚠️ Medición en **tokens** antes/después: no verificable en este entorno — ver hallazgo (q).
+  Se reporta en caracteres en el hallazgo (p).
+
+**Resultó distinto de lo previsto** en cuatro puntos: el rol neutro era una resta y no una
+reescritura (n); H3 subcontaba los sitios, 7 y no 4 (o); el contrato único **agranda** dos
+prompts en vez de achicarlos (p); y el criterio de tokens quedó sin verificar (q).
 
 ---
 
