@@ -30,6 +30,8 @@ from dashboard.shared import (
     _get_ai_config,
     cached_full_analysis,
     custom_source_badge,
+    groq_screener_downgrade_reason,
+    groq_screener_effective_cfg,
     log_screener_run,
     render_calc_badge,
     render_row_actions,
@@ -264,7 +266,11 @@ _covered = _cached_key or frozenset()
 if _rerun_only:
     progress = st.progress(0)
     status = st.empty()
-    ai_cfg = _get_ai_config(context="screener")
+    ai_cfg_req = _get_ai_config(context="screener")
+    _groq_note = groq_screener_downgrade_reason(len(_rerun_only), ai_cfg_req)
+    if _groq_note:
+        st.warning(_groq_note)
+    ai_cfg = groq_screener_effective_cfg(ai_cfg_req, len(_rerun_only))
     _new_rows, _new_failures, _elapsed = _analyse_universe_parallel(
         list(_rerun_only), ai_cfg, progress, status,
         eta_per_ticker=(_stored.seconds_per_ticker() if _stored else None),
@@ -313,7 +319,11 @@ else:
     progress = st.progress(0)
     status = st.empty()
 
-    ai_cfg = _get_ai_config(context="screener")
+    ai_cfg_req = _get_ai_config(context="screener")
+    _groq_note = groq_screener_downgrade_reason(len(_need), ai_cfg_req)
+    if _groq_note:
+        st.warning(_groq_note)
+    ai_cfg = groq_screener_effective_cfg(ai_cfg_req, len(_need))
     _new_rows, _new_failures, _elapsed = _analyse_universe_parallel(
         _need, ai_cfg, progress, status,
         eta_per_ticker=(_stored.seconds_per_ticker() if _stored else None),
