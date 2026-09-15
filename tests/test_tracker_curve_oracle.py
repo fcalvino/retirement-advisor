@@ -43,6 +43,24 @@ import pytest
 
 from portfolio.tracker import Portfolio
 
+#: Weeks of injected price history. The fixture's purchases are relative to
+#: ``datetime.now()``, so the history has to be too — see ``_history_start``.
+_HISTORY_WEEKS = 130
+
+
+def _history_start() -> str:
+    """Where the injected history begins, anchored to the clock.
+
+    A literal start date here was a calendar bomb. The purchases below are
+    ``now - N weeks``; the prices were a fixed 130 weeks from 2024-01-07, so the
+    series stopped in mid-2026 while the purchases kept moving. From ~2026-09-07
+    the twelve-week-old buy landed *after* the last price and the shared window
+    was empty, making ``test_the_curve_has_no_step_from_a_purchase`` fail with
+    ``assert nan < 0.5`` on every machine and in CI. Nothing about what the
+    oracle asserts changed; only its clock did.
+    """
+    return (datetime.now() - timedelta(weeks=_HISTORY_WEEKS - 1)).date().isoformat()
+
 
 def _weekly(start: str, n: int, start_price: float, weekly_drift: float) -> pd.DataFrame:
     idx = pd.date_range(start, periods=n, freq="W")
@@ -66,8 +84,8 @@ def book(tmp_path, monkeypatch):
     old = (datetime.now() - timedelta(weeks=104)).date().isoformat()
     recent = (datetime.now() - timedelta(weeks=12)).date().isoformat()
     histories = {
-        "KO": _weekly("2024-01-07", 130, 60.0, 0.001),
-        "NVDA": _weekly("2024-01-07", 130, 100.0, 0.010),
+        "KO": _weekly(_history_start(), _HISTORY_WEEKS, 60.0, 0.001),
+        "NVDA": _weekly(_history_start(), _HISTORY_WEEKS, 100.0, 0.010),
     }
     monkeypatch.setattr(
         "portfolio.tracker.get_history",
@@ -103,7 +121,7 @@ class TestTheCurveOnlyCoversWhatWasHeld:
 
     def test_a_single_position_keeps_its_whole_history(self, tmp_path, monkeypatch):
         """Anti-cheat: the window is not shortened for its own sake."""
-        hist = _weekly("2024-01-07", 130, 60.0, 0.001)
+        hist = _weekly(_history_start(), _HISTORY_WEEKS, 60.0, 0.001)
         monkeypatch.setattr(
             "portfolio.tracker.get_history",
             lambda sym, period="5y", interval="1wk": hist,
@@ -115,7 +133,7 @@ class TestTheCurveOnlyCoversWhatWasHeld:
 
     def test_too_little_shared_history_reports_nothing(self, tmp_path, monkeypatch):
         """Short is an honest answer; an estimate from fabricated history is not."""
-        hist = _weekly("2024-01-07", 130, 60.0, 0.001)
+        hist = _weekly(_history_start(), _HISTORY_WEEKS, 60.0, 0.001)
         monkeypatch.setattr(
             "portfolio.tracker.get_history",
             lambda sym, period="5y", interval="1wk": hist,
@@ -129,6 +147,45 @@ class TestTheCurveOnlyCoversWhatWasHeld:
         metrics = p.compute_metrics()
         assert metrics.sharpe_ratio == 0
         assert metrics.max_drawdown_pct == 0
+
+
+class TestTheFixtureDoesNotExpire:
+    """Anti-regression for PR 1.5: the oracle above must hold on any date.
+
+    The failure it guards is not a bug in ``tracker.py`` — it is the fixture
+    aging out from under the oracle, which reads as a real regression and costs
+    a CI round to diagnose. Asserting the bracket relatively makes the coupling
+    between the prices and the purchases explicit, so no absolute date can creep
+    back in.
+    """
+
+    @pytest.mark.parametrize("weeks_ago", [0, 12, 104])
+    def test_the_injected_history_brackets_every_purchase(self, weeks_ago):
+        hist = _weekly(_history_start(), _HISTORY_WEEKS, 60.0, 0.001)
+        purchase = pd.Timestamp(datetime.now() - timedelta(weeks=weeks_ago))
+        assert hist.index.min() <= purchase
+        assert hist.index.max() >= purchase
+
+    def test_the_shared_window_after_the_latest_buy_is_not_empty(self, book):
+        """The exact shape of the failure: an empty series, whose max is NaN."""
+        curve = book._build_equity_curve()
+        assert len(curve.pct_change().dropna()) > 0
+
+    def test_no_call_site_passes_a_literal_start_date(self):
+        """Prose may name the old date; a call site may not re-introduce it."""
+        import ast
+        from pathlib import Path
+
+        tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+        starts = [
+            node.args[0]
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "_weekly"
+        ]
+        assert starts, "the guard must actually find the call sites it guards"
+        assert not [a for a in starts if isinstance(a, ast.Constant)]
 
 
 class TestTheReturnIsNamedForWhatItIs:
