@@ -3,7 +3,7 @@ Tests for analysis/prompts.py — centralized LLM prompt library.
 
 Verifies that all four prompt functions:
   1. Return non-empty strings
-  2. Use the Grok voice convention ("Eres Grok, construido por xAI")
+  2. Open with the neutral analyst role (``prompts.ANALYST_ROLE``)
   3. Include every required JSON field name in the prompt text
   4. Produce syntactically valid JSON template (parseable field structure)
 
@@ -20,6 +20,7 @@ import pytest
 from analysis.fundamental import FundamentalResult
 from analysis.moat import MoatDetail
 from analysis.prompts import (
+    ANALYST_ROLE,
     alert_explanation_prompt,
     crypto_decision_prompt,
     crypto_moat_prompt,
@@ -172,9 +173,9 @@ class TestEquityMoatPrompt:
         assert isinstance(self._prompt(), str)
         assert len(self._prompt()) > 200
 
-    def test_uses_grok_voice(self):
-        """All prompts must open with the Grok voice convention."""
-        assert "Eres Grok, construido por xAI" in self._prompt()
+    def test_opens_with_the_neutral_analyst_role(self):
+        """All prompts must open with the neutral analyst role."""
+        assert self._prompt().lstrip().startswith(ANALYST_ROLE)
 
     def test_contains_required_json_fields(self):
         prompt = self._prompt()
@@ -217,8 +218,8 @@ class TestEquityDecisionPrompt:
     def test_returns_nonempty_string(self):
         assert len(self._prompt()) > 200
 
-    def test_uses_grok_voice(self):
-        assert "Eres Grok, construido por xAI" in self._prompt()
+    def test_opens_with_the_neutral_analyst_role(self):
+        assert self._prompt().lstrip().startswith(ANALYST_ROLE)
 
     def test_contains_required_json_fields(self):
         prompt = self._prompt()
@@ -294,8 +295,8 @@ class TestCryptoMoatPrompt:
     def test_returns_nonempty_string(self):
         assert len(self._prompt()) > 200
 
-    def test_uses_grok_voice(self):
-        assert "Eres Grok, construido por xAI" in self._prompt()
+    def test_opens_with_the_neutral_analyst_role(self):
+        assert self._prompt().lstrip().startswith(ANALYST_ROLE)
 
     def test_contains_required_json_fields(self):
         prompt = self._prompt()
@@ -342,8 +343,8 @@ class TestCryptoDecisionPrompt:
     def test_returns_nonempty_string(self):
         assert len(self._prompt()) > 200
 
-    def test_uses_grok_voice(self):
-        assert "Eres Grok, construido por xAI" in self._prompt()
+    def test_opens_with_the_neutral_analyst_role(self):
+        assert self._prompt().lstrip().startswith(ANALYST_ROLE)
 
     def test_contains_required_json_fields(self):
         prompt = self._prompt()
@@ -379,7 +380,7 @@ class TestCryptoDecisionPrompt:
 
 
 # ------------------------------------------------------------------ #
-#  5. portfolio_optimizer_advice_prompt (Grok voice + human core)      #
+#  5. portfolio_optimizer_advice_prompt (voice + human core)           #
 # ------------------------------------------------------------------ #
 
 def _sample_holdings(n: int = 18) -> list[dict]:
@@ -431,8 +432,8 @@ class TestPortfolioOptimizerAdvicePrompt:
         assert isinstance(p, str)
         assert len(p) > 300
 
-    def test_uses_grok_voice(self):
-        assert "Eres Grok, construido por xAI" in self._prompt()
+    def test_opens_with_the_neutral_analyst_role(self):
+        assert self._prompt().lstrip().startswith(ANALYST_ROLE)
 
     def test_contains_required_json_fields(self):
         p = self._prompt()
@@ -464,7 +465,7 @@ class TestPortfolioOptimizerAdvicePrompt:
         p = self._prompt()
         low = p.lower()
         assert "humano" in low or "revisar" in low or "ajustar" in low or "núcleo" in low or "concentrad" in low
-        # Grok must be asked to pick a smaller number than the input 18
+        # The model must be asked to pick a smaller number than the input 18
         assert "recommended_max_human_positions" in p
 
     def test_27_positions_does_not_block_and_supports_core(self):
@@ -685,4 +686,4 @@ class TestAlertExplanationPrompt:
         assert "Causa probable" in prompt
         assert "Impacto retiro" in prompt
         assert "action_suggested" in prompt
-        assert "Eres Grok" in prompt
+        assert prompt.lstrip().startswith(ANALYST_ROLE)
