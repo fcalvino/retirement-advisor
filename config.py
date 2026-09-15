@@ -1581,6 +1581,13 @@ class ScreenerConfig:
     run_max_age_hours: float = 12.0
     fallback_seconds_per_ticker: float = 3.5
 
+    # Groq Free / on_demand gpt-oss: 8K TPM (org 429 + docs rate-limits).
+    # AI in the Screener is viable only for a tiny N, one worker, and pacing.
+    groq_max_workers: int = 1
+    groq_tpm_budget: int = 8000
+    groq_ai_max_tickers: int = 8
+    groq_tokens_per_ticker: int = 4000
+
     # Named filter presets for the full table (audit item 09). Keys must match
     # ``analysis.ranking.FilterCriteria`` fields; values are plain data so the
     # presets can be edited here without touching the page.

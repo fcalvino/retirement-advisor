@@ -6,7 +6,7 @@ from datetime import datetime
 
 import streamlit as st
 
-from config import CLAUDE_MODEL_CATALOG, GROQ_MODEL_CATALOG, ar_fx_from_market
+from config import CLAUDE_MODEL_CATALOG, GROQ_MODEL_CATALOG, SCREENER, ar_fx_from_market
 from dashboard.shared import (
     _save_ai_config_to_env,
     cache_stats,
@@ -240,11 +240,26 @@ use_in_screener = st.toggle(
 )
 if use_in_screener:
     n = len(st.session_state.get("universe", []))
-    st.warning(
-        f"⚠️ Activar AI en el Screener hará **{n} llamadas al API** por cada refresh "
-        f"(~{n * 2}–{n * 5} segundos y costo real de tokens). "
-        "Recomendado solo para universos pequeños (<10 tickers)."
-    )
+    if provider_key == "groq":
+        cap = SCREENER.groq_ai_max_tickers
+        if n > cap:
+            st.warning(
+                f"⚠️ Groq Free (8K TPM): AI del Screener solo con **≤{cap} tickers**. "
+                f"Este universo tiene **{n}** — la corrida será rule-based. "
+                "Recortá el universo o usá la watchlist."
+            )
+        else:
+            st.warning(
+                f"⚠️ Groq Free: **{n} tickers** × 2–3 llamadas, 1 worker, "
+                f"pacing {SCREENER.groq_tpm_budget} TPM "
+                f"(tope {cap}). No convokes el Comité el mismo minuto."
+            )
+    else:
+        st.warning(
+            f"⚠️ Activar AI en el Screener hará **{n} llamadas al API** por cada refresh "
+            f"(~{n * 2}–{n * 5} segundos y costo real de tokens). "
+            "Recomendado solo para universos pequeños (<10 tickers)."
+        )
 
 ai_enabled_now = st.session_state.get("ai_enabled", False)
 st.caption(
