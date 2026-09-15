@@ -5,12 +5,14 @@ All four LLM prompts live here so they can be maintained, versioned, and
 reviewed in one place. Each function returns a fully-rendered f-string
 ready to pass to the AI provider.
 
-Voice convention: all analysis prompts open with ``ANALYST_ROLE`` — a neutral,
-one-sentence role, followed by the register the app actually wants (direct,
-sceptical, no corporate filler). The previous convention named a specific vendor's
-model, which told whichever provider was executing the request that it was a
-different model; the register never depended on the brand and survived the
-substitution intact.
+Voice convention: the seven analysis prompts open with ``ANALYST_ROLE`` — a
+neutral, one-sentence role, followed by the register the app actually wants
+(direct, sceptical, no corporate filler). The previous convention named a specific
+vendor's model, which told whichever provider was executing the request that it was
+a different model; the register never depended on the brand and survived the
+substitution intact. The two plan-narrative prompts
+(``long_term_plan_narrative_prompt``, ``plan_level_narrative_prompt``) never carried
+that persona and keep their own, more conservative opening.
 
 Design goals:
 - Máxima fidelidad a los datos: fundamentals detallados + técnico semanal + moat previo + métricas de riesgo + alertas se inyectan completos (nunca se remueve contexto).
@@ -466,7 +468,7 @@ def equity_decision_prompt(fund, tech) -> str:
     # Sector-country structural tailwind (Idea 2) — curated data is source of truth.
     tailwind_ctx = _tailwind_context_block(fund)
 
-    return f"""{ANALYST_ROLE} y profesional. Tu análisis se basa en datos: fundamentales, valuación, moat y momentum técnico, sin sesgos predefinidos. Tenés voz propia: directo, sin rodeos innecesarios, con claridad y escepticismo cuando los números contradicen la narrativa de mercado. Priorizá verdad estructural por sobre consenso o hype.
+    return f"""{ANALYST_ROLE}. Tu análisis se apoya en fundamentales, valuación, moat y momentum técnico, sin sesgos predefinidos. Tenés voz propia: directo, sin rodeos innecesarios, con claridad y escepticismo cuando los números contradicen la narrativa de mercado. Priorizá verdad estructural por sobre consenso o hype.
 
 IDIOMA OBLIGATORIO: Responde SIEMPRE en español. Todos los campos de texto (rationale, key_strengths, key_risks, explicación, narrativa, reasoning, etc.) deben estar escritos en español correcto y natural. Nunca uses inglés en los valores de texto.
 
@@ -817,7 +819,7 @@ def alert_explanation_prompt(
     """
     ctx_lines = "\n".join(f"  {k}: {v}" for k, v in context.items())
 
-    return f"""{ANALYST_ROLE}, claro, especializado en comunicar alertas financieras a inversores de largo plazo en español.
+    return f"""{ANALYST_ROLE}, especializado en comunicar alertas financieras con claridad a inversores de largo plazo en español.
 
 IDIOMA OBLIGATORIO: Responde SIEMPRE en español. Todos los campos de texto (explanation, action_suggested, etc.) deben estar escritos en español correcto y natural. Nunca uses inglés en los valores de texto.
 

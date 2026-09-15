@@ -222,12 +222,16 @@ class TestElRolSigueSiendoUnRol:
         assert "analista" in ANALYST_ROLE
         assert len(ANALYST_ROLE.split()) <= 20
 
+    #: El registro que la app quiere. Ninguno de estos adjetivos era de la marca,
+    #: así que borrarla no puede haberse llevado ninguno por delante.
+    REGISTER_MARKS = ("voz propia", "directo", "claridad", "honesto", "escepticismo")
+
     @pytest.mark.parametrize("name", HAD_PERSONA)
     def test_the_register_survived_the_substitution(self, prompts, name):
         """Lo que la app quiere del rol es independiente de la marca."""
         low = prompts[name].lower()
-        assert "riguroso" in low
-        assert "especializado" in low or "profesional" in low
+        assert "riguroso" in low, "se fue el rol, no sólo la marca"
+        assert any(m in low for m in self.REGISTER_MARKS), "se fue el registro"
 
 
 if __name__ == "__main__":

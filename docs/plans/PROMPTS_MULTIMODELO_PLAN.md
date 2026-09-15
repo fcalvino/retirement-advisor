@@ -849,9 +849,30 @@ setear y sin CLI `ant` instalada. Los caracteres son un proxy honesto para un Δ
 magnitud, pero **no** son el criterio: queda pendiente correr la medición en tokens desde un
 entorno con credencial. PR 4 tiene el mismo criterio y se va a topar con lo mismo.
 
+**(r bis) Factorizar el rol rompe la prosa donde las aperturas no eran gemelas.** Cinco de
+las siete encajaban con `ANALYST_ROLE` sin tocar nada. Dos no: `equity_decision` abría con
+«riguroso, objetivo **y profesional**» y `alert_explanation` con «riguroso **y claro**», así
+que la sustitución mecánica producía «…basado en datos **y profesional**. Tu análisis **se
+basa en datos**: …» y «…basado en datos, **claro**, especializado en…». Ninguna de las dos
+rompe un test —el prompt sigue siendo neutro y el contrato sigue siendo uno— y por eso es
+justamente el tipo de defecto que sólo aparece leyendo el string renderizado. Las dos se
+reescribieron a mano (`«Tu análisis se apoya en fundamentales…»`,
+`«…comunicar alertas financieras con claridad…»`).
+
+El oráculo también quedó mal calibrado en el intento: su anti-trampa «el registro
+sobrevivió» afirmaba `"especializado" or "profesional"`, que son palabras del **rol**, no del
+registro, y por eso se rompió al limpiar la redundancia. Ahora afirma un marcador real de
+registro (`voz propia`, `directo`, `claridad`, `honesto`, `escepticismo`).
+
 **(r) `long_term_plan_narrative` es el único de los nueve que queda fuera del contrato, y
 eso hay que afirmarlo.** Pide Markdown y prohíbe JSON a propósito (es H4, que resuelve PR 6).
-El oráculo lo excluye con un test explícito —`test_the_markdown_prompt_is_excluded_on_purpose`—
+Los otros dos que PR 2 **no** tocó son `long_term_plan_narrative` y `plan_level_narrative`:
+nunca llevaron la persona de marca, así que conservan su apertura conservadora propia («Eres
+un analista … extremadamente riguroso, objetivo y conservador»). Unificarlas con
+`ANALYST_ROLE` es cosmética sin defecto detrás; queda fuera de la serie a propósito.
+
+El oráculo excluye al de Markdown con un test explícito
+—`test_the_markdown_prompt_is_excluded_on_purpose`—
 en vez de con un silencio, porque «unificar el contrato» tiene una forma de trampa obvia:
 convertirlo también a JSON y declarar 9/9. El test falla si alguien lo hace.
 
