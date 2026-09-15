@@ -69,6 +69,8 @@ Roles:
 | historical-audit | `docs/issues/SIGNAL_REASON_CONFIDENCE_ISSUES.md` | Hallazgos 2026-09-12 de la cadena Signal → Motivo → Confidence, listos para abrir como GitHub Issues (tests en `xfail(strict=True)`) |
 | historical-plan | `docs/plans/SIGNAL_REASON_CONFIDENCE_PLAN.md` | Serie `signal_reason_confidence` (cerrada 2026-09-12): cómo se cerraron SIGNAL-1..SIGNAL-5 y las decisiones de diseño |
 | living-guide | `docs/plans/PROMPTS_MULTIMODELO_PLAN.md` | Diagnóstico 2026-09-14 del sesgo a Grok en `analysis/prompts.py` + `committee_prompts.py` y plan de adaptación multimodelo en 8 PRs (contrato de salida portable) |
+| living-guide | `docs/plans/PROMPTS_MULTIMODELO_NEXT_STEPS.md` | Re-verificación 2026-09-15 de los PRs abiertos (4, 5, 6, 7) contra el código real: hallazgos vivos, criterios de aceptación corregidos, orden recomendado (PR 7 primero) y contradicciones plan↔código |
+| living-guide | `docs/plans/PROMPTS_MULTIMODELO_OWNER_DECISIONS.md` | Decisiones técnicas Q1–Q5 (2026-09-15) que desbloquean PR 4, 5 y 7: alcance de PR 7, convención de delimitadores, few-shot, criterios de aceptación reescritos y allowlist del criterio (c) |
 | living-guide | `docs/plans/SIGNAL_REASON_ALIGNMENT_PLAN.md` | SIGNAL-6 (2026-09-12): el camino AI se pisa contra `decide()` y el motivo describe siempre la acción emitida |
 | archive | `docs/archive/code.review.md` | Review dump may-2026; **no** es guía de integración actual |
 | how-to | `scripts/migrations/` | Colección: migraciones one-shot ya ejecutadas (idempotentes); índice `README.md` |
@@ -129,6 +131,8 @@ No usar estos archivos como “el próximo sprint”. El próximo sprint está e
 | [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) | Plan operativo 2026-06 (Fases 1–5 shipped) |
 | [`VISION_GRAN_SALTO.md`](VISION_GRAN_SALTO.md) | Visión 2026-06; las 3 apuestas ya están en el producto |
 | [`DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`](DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md) | Diagnóstico + brainstorming 2026-09 basado en código; complementa `brainstorm/99_PRIORIZACION.md` |
+| [`plans/PROMPTS_MULTIMODELO_NEXT_STEPS.md`](plans/PROMPTS_MULTIMODELO_NEXT_STEPS.md) | Próximos pasos verificados de la serie multimodelo (2026-09-15); se lee junto a `plans/PROMPTS_MULTIMODELO_PLAN.md` |
+| [`plans/PROMPTS_MULTIMODELO_OWNER_DECISIONS.md`](plans/PROMPTS_MULTIMODELO_OWNER_DECISIONS.md) | Resolución Q1–Q5 de la serie multimodelo (2026-09-15); se lee junto a `plans/PROMPTS_MULTIMODELO_PLAN.md` y `plans/PROMPTS_MULTIMODELO_NEXT_STEPS.md` |
 | [`prefilter_contract.md`](prefilter_contract.md) | Contrato del prefiltro (portero): salto → C → 5 puertas → embudo — no implementado |
 | [`brainstorm/00_INDICE.md`](brainstorm/00_INDICE.md) | Ideación por pantalla y capa |
 
