@@ -24,6 +24,7 @@ hard numbers are injected as context so agents anchor to data, never invent it.
 
 from __future__ import annotations
 
+from analysis.prompts import JSON_ONLY_CONTRACT
 from data.product_ux import (
     DOWNSIDE_RATIO_LABEL,
     POT_CAGR_LABEL,
@@ -33,8 +34,12 @@ from data.product_ux import (
     proxy_attractiveness_index,
 )
 
+# El contrato de salida vive en `analysis.prompts`: esta redacción era la única de
+# las cinco del repo que no dejaba resquicio, así que PR 2 la promovió a canónica
+# y la aplicó al resto. Se importa en vez de duplicarse para que no vuelvan a
+# divergir.
 AGENT_JSON_SCHEMA = (
-    "Respondé EXCLUSIVAMENTE con un objeto JSON válido, sin texto antes ni después, "
+    f"{JSON_ONLY_CONTRACT}, "
     "con exactamente estas claves:\n"
     '  "stance": uno de "STRONG BUY" | "BUY" | "HOLD" | "REDUCE" | "SELL"\n'
     '  "confidence": uno de "HIGH" | "MEDIUM" | "LOW"\n'

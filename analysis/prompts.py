@@ -1,27 +1,29 @@
 """
-Centralized prompt library for Grok / Claude AI analysis.
+Centralized prompt library for the AI analysis prompts.
 
 All four LLM prompts live here so they can be maintained, versioned, and
 reviewed in one place. Each function returns a fully-rendered f-string
 ready to pass to the AI provider.
 
-Voice convention: all prompts open with
-    "Eres Grok, construido por xAI. Eres un analista de inversión senior..."
-This ensures Grok receives instructions in its own persona regardless of
-which provider (Claude, Grok, GPT-4o) is actually executing the request.
+Voice convention: all analysis prompts open with ``ANALYST_ROLE`` — a neutral,
+one-sentence role, followed by the register the app actually wants (direct,
+sceptical, no corporate filler). The previous convention named a specific vendor's
+model, which told whichever provider was executing the request that it was a
+different model; the register never depended on the brand and survived the
+substitution intact.
 
 Design goals:
 - Máxima fidelidad a los datos: fundamentals detallados + técnico semanal + moat previo + métricas de riesgo + alertas se inyectan completos (nunca se remueve contexto).
-- Más voz propia de Grok: tono directo, honesto, con claridad maximalista y escepticismo sano. Evitar corporativismos, hype o lenguaje genérico de "analista senior".
+- Más voz propia: tono directo, honesto, con claridad maximalista y escepticismo sano. Evitar corporativismos, hype o lenguaje genérico de "analista senior".
 - Contexto macro mundial y nacional: se proveen listas curadas explícitas. El modelo DEBE seleccionar 0-2 factores **solo si son materiales**, anclarlos estrictamente a los números concretos provistos (ROE, márgenes, valuación, slope técnico, subscores de moat, etc.), y exponerlos de forma estructurada. La voz narrativa queda en `reasoning`/`ai_reasoning`; el macro ahora tiene representación first-class (`macro_factors`) para trazabilidad y mejor razonamiento.
-- Contrato de salida JSON versionado. Se agregan campos estructurados para macro (parsers, Decision, MoatDetail, CryptoMoatDetail, UI y tests se actualizan con defaults para compatibilidad). La voz de Grok permanece en los campos de texto libre.
+- Contrato de salida JSON versionado. Se agregan campos estructurados para macro (parsers, Decision, MoatDetail, CryptoMoatDetail, UI y tests se actualizan con defaults para compatibilidad). La voz narrativa permanece en los campos de texto libre.
 
 Prompts:
     equity_moat_prompt()      — qualitative moat evaluation for equity assets
     equity_decision_prompt()  — BUY/SELL/HOLD recommendation for equity assets
     crypto_moat_prompt()      — qualitative moat evaluation for BTC / crypto
     crypto_decision_prompt()  — BUY/SELL/HOLD recommendation for crypto assets
-    portfolio_optimizer_advice_prompt() — Grok narrative + human-scale core for optimized portfolios
+    portfolio_optimizer_advice_prompt() — narrative + human-scale core for optimized portfolios
 """
 
 from typing import Optional
@@ -38,6 +40,30 @@ from data.product_ux import (
     max_dd_estimate_help,
     proxy_attractiveness_index,
     technical_signal_label,
+)
+
+# ---------------------------------------------------------------------------
+# Rol y contrato de salida — compartidos por los 9 prompts (H1, H3)
+# ---------------------------------------------------------------------------
+
+#: Apertura neutra de los prompts de análisis. Reemplaza a la persona de marca
+#: ajena que le decía al modelo que era otro modelo. Lo que la app realmente
+#: quiere del rol —directo, escéptico, sin corporativismo— es independiente de la
+#: marca y vive en las oraciones de registro que siguen a esta, intactas.
+#: La doctrina de prompting de Anthropic avala el rol corto y descriptivo, y
+#: desaconseja el patrón contrario: una identidad que suplanta al contexto, o que
+#: contradice lo que el modelo sabe de sí mismo («Give Claude a role» y «Model
+#: self-knowledge», Claude prompting best practices).
+ANALYST_ROLE = "Sos un analista de inversión senior, riguroso, objetivo y basado en datos"
+
+#: Único contrato de salida para todo prompt que devuelva JSON. La redacción
+#: canónica es la de ``committee_prompts.AGENT_JSON_SCHEMA`` —era el único de los
+#: nueve que no dejaba resquicio—. Los cuatro prompts que además permitían «un
+#: breve comentario adicional después del JSON» lo perdieron: el matiz ya tiene
+#: campo propio (``reasoning``), y con ``max_tokens`` acotado esa prosa es
+#: exactamente lo que empuja al JSON a truncarse.
+JSON_ONLY_CONTRACT = (
+    "Respondé EXCLUSIVAMENTE con un objeto JSON válido, sin texto antes ni después"
 )
 
 # Argentine ADR tickers — used by equity_decision_prompt (and helpers) for country context
@@ -280,7 +306,7 @@ def equity_moat_prompt(quant, symbol: str, info: dict) -> str:
 
     is_argentina_adr = symbol in ARGENTINA_ADRS or (country or "").upper() == "ARGENTINA"
 
-    return f"""Eres Grok, construido por xAI. Eres un analista de inversión senior riguroso, objetivo y basado en datos, especializado en identificar ventajas competitivas duraderas (economic moat). Tenés voz propia: directo, honesto hasta el hueso, con claridad maximalista y un toque de irreverencia sana cuando las narrativas de mercado se alejan de la realidad estructural. No uses lenguaje corporativo vacío ni hype optimista.
+    return f"""{ANALYST_ROLE}, especializado en identificar ventajas competitivas duraderas (economic moat). Tenés voz propia: directo, honesto hasta el hueso, con claridad maximalista y un toque de irreverencia sana cuando las narrativas de mercado se alejan de la realidad estructural. No uses lenguaje corporativo vacío ni hype optimista.
 
 IDIOMA OBLIGATORIO: Responde SIEMPRE en español. Todos los campos de texto (rationale, key_strengths, key_risks, explicación, narrativa, reasoning, etc.) deben estar escritos en español correcto y natural. Nunca uses inglés en los valores de texto.
 
@@ -368,7 +394,7 @@ INSTRUCCIÓN FINAL:
 Sé escéptico y riguroso: el optimismo de mercado no sustituye el análisis estructural. Evaluá la durabilidad real de la ventaja competitiva con criterio profesional y tu voz característica (directa, sin anestesia, conectando datos con contexto macro **solo cuando importe de verdad**).
 Incluye en el reasoning: (1) la fortaleza central del moat, (2) la limitación o riesgo principal, (3) cuántos años estimás que el moat es durable, y (4) el % máximo de asignación sugerido según la convicción y la calidad del moat (ajustado explícitamente por cualquier macro material). Escribilo como prosa fluida y analítica (no como lista seca). Si macro_factors está vacío, podés mencionarlo brevemente en el reasoning ("Sin factores macro dominantes en este momento que alteren la tesis estructural").
 
-El output principal debe ser un objeto JSON válido con exactamente estos campos (incluí siempre `macro_factors`; `macro_impact_on_moat_durability` solo si es relevante). Podés agregar un breve comentario adicional después del JSON si ayuda a expresar matices de tu análisis, pero el JSON debe ser completo y parseable primero.
+{JSON_ONLY_CONTRACT}, con exactamente estos campos (incluí siempre `macro_factors`; `macro_impact_on_moat_durability` solo si es relevante):
 {{
   "brand_strength": 0.0,
   "network_effects": 0.0,
@@ -440,7 +466,7 @@ def equity_decision_prompt(fund, tech) -> str:
     # Sector-country structural tailwind (Idea 2) — curated data is source of truth.
     tailwind_ctx = _tailwind_context_block(fund)
 
-    return f"""Eres Grok, construido por xAI. Eres un analista de inversión senior riguroso, objetivo y profesional. Tu análisis se basa en datos: fundamentales, valuación, moat y momentum técnico, sin sesgos predefinidos. Tenés voz propia: directo, sin rodeos innecesarios, con claridad y escepticismo cuando los números contradicen la narrativa de mercado. Priorizá verdad estructural por sobre consenso o hype.
+    return f"""{ANALYST_ROLE} y profesional. Tu análisis se basa en datos: fundamentales, valuación, moat y momentum técnico, sin sesgos predefinidos. Tenés voz propia: directo, sin rodeos innecesarios, con claridad y escepticismo cuando los números contradicen la narrativa de mercado. Priorizá verdad estructural por sobre consenso o hype.
 
 IDIOMA OBLIGATORIO: Responde SIEMPRE en español. Todos los campos de texto (rationale, key_strengths, key_risks, explicación, narrativa, reasoning, etc.) deben estar escritos en español correcto y natural. Nunca uses inglés en los valores de texto.
 
@@ -486,11 +512,11 @@ Usá EXACTAMENTE el formato de salida para macro que se detalla abajo.
 {_hard_decision_constraints_block(fund, tech)}
 --- INSTRUCCIÓN ---
 Emití una recomendación objetiva y equilibrada sobre el momento actual de la acción, basada en fundamentales y técnico.
-Estructurá el campo `reasoning` manteniendo las 4 secciones (Tesis: ... Riesgos: ... Catalizadores: ... Asignación: ...) pero escribilo con fluidez y tu voz característica de Grok: prosa natural, analítica, directa, conectando los datos duros provistos con el contexto macro que corresponda, sin lugares comunes ni optimismo infundado. Usá oraciones completas.
+Estructurá el campo `reasoning` manteniendo las 4 secciones (Tesis: ... Riesgos: ... Catalizadores: ... Asignación: ...) pero escribilo con fluidez y tu voz característica: prosa natural, analítica, directa, conectando los datos duros provistos con el contexto macro que corresponda, sin lugares comunes ni optimismo infundado. Usá oraciones completas.
 Incluí en el reasoning (integrado naturalmente en Tesis o Asignación) una justificación clara y breve de por qué elegiste HIGH, MEDIUM o LOW para `confidence`, anclada en la evidencia concreta: solidez del moat, calidad de los fundamentales, señal técnica, magnitud de los riesgos y contexto macro. Ejemplo: "Elegí MEDIUM porque aunque los fundamentales son sólidos (ROE alto, moat Wide), la valuación está en el percentil alto del sector y el contexto de tasas + riesgo país AR agrega incertidumbre; la convicción no llega a HIGH hasta ver un pullback o datos Q2 más claros. macro_factors: [tasas + riesgo país] → asignación bajada a 3-5%."
 Respetá los CONSTRAINTS DUROS y los PASOS DE RAZONAMIENTO de arriba.
 
-El output principal debe ser un objeto JSON válido con exactamente estos campos (incluí siempre `macro_factors`). Podés agregar un breve comentario adicional después del JSON si ayuda a expresar matices de tu análisis, pero el JSON debe ser completo y parseable primero.
+{JSON_ONLY_CONTRACT}, con exactamente estos campos (incluí siempre `macro_factors`):
 {{
   "action": "STRONG BUY|BUY|HOLD|REDUCE|SELL",
   "confidence": "HIGH|MEDIUM|LOW",
@@ -503,7 +529,7 @@ El output principal debe ser un objeto JSON válido con exactamente estos campos
 
 
 # ---------------------------------------------------------------------------
-# 3. Crypto Moat Prompt (Grok final — v2, May 2026)
+# 3. Crypto Moat Prompt (v2, May 2026)
 # ---------------------------------------------------------------------------
 
 
@@ -551,7 +577,7 @@ def crypto_moat_prompt(symbol: str, info: dict, metrics: dict) -> str:
     dd_str   = f"{dd:.1f}%"   if dd    is not None else "N/D"
     cagr_str = f"{cagr4y:.1f}%" if cagr4y is not None else "N/D"
 
-    return f"""Eres Grok, construido por xAI. Eres un analista de inversión senior riguroso, objetivo y basado en datos, especializado en activos digitales. Tenés voz propia: directo, sin anestesia, con claridad y escepticismo cuando la narrativa "number go up" o "reserva de valor inevitable" choca con la realidad de volatilidad estructural, adopción y competencia. No endulces la píldora.
+    return f"""{ANALYST_ROLE}, especializado en activos digitales. Tenés voz propia: directo, sin anestesia, con claridad y escepticismo cuando la narrativa "number go up" o "reserva de valor inevitable" choca con la realidad de volatilidad estructural, adopción y competencia. No endulces la píldora.
 
 IDIOMA OBLIGATORIO: Responde SIEMPRE en español. Todos los campos de texto (rationale, key_strengths, key_risks, explicación, narrativa, reasoning, retirement_risk_summary, etc.) deben estar escritos en español correcto y natural. Nunca uses inglés en los valores de texto.
 
@@ -623,7 +649,7 @@ Indica el % máximo de asignación sugerido según la convicción y el perfil de
 Incluye un resumen objetivo de los riesgos principales del activo (`retirement_risk_summary`).
 Escribí el `reasoning` con tu voz: análisis honesto, directo y con contexto macro cuando sea relevante (no solo repitas la rúbrica).
 
-El output principal debe ser un objeto JSON válido con exactamente estos campos. Podés agregar un breve comentario adicional después del JSON si ayuda a expresar matices de tu análisis, pero el JSON debe ser completo y parseable primero.
+{JSON_ONLY_CONTRACT}, con exactamente estos campos:
 {{
   "network_adoption": 0.0,
   "monetary_scarcity": 0.0,
@@ -689,7 +715,7 @@ def crypto_decision_prompt(fund, tech) -> str:
     halving_note = _notes.get("crypto_halving", "N/D")
     warnings_str = ", ".join(fund.warnings) if fund.warnings else "ninguna"
 
-    return f"""Eres Grok, construido por xAI. Eres un analista de inversión senior riguroso, objetivo y basado en datos, especializado en activos digitales. Tenés voz propia: directo, honesto, con claridad y escepticismo cuando la volatilidad estructural y la falta de cash flows se enfrentan a narrativas de "cobertura perfecta". No minimices ni exageres; dimensioná según convicción real.
+    return f"""{ANALYST_ROLE}, especializado en activos digitales. Tenés voz propia: directo, honesto, con claridad y escepticismo cuando la volatilidad estructural y la falta de cash flows se enfrentan a narrativas de "cobertura perfecta". No minimices ni exageres; dimensioná según convicción real.
 
 IDIOMA OBLIGATORIO: Responde SIEMPRE en español. Todos los campos de texto (rationale, key_strengths, key_risks, explicación, narrativa, reasoning, etc.) deben estar escritos en español correcto y natural. Nunca uses inglés en los valores de texto.
 
@@ -739,11 +765,11 @@ Usá EXACTAMENTE el formato de salida para macro que se detalla abajo.
 
 --- INSTRUCCIÓN ---
 Evalúa el momentum técnico, el moat crypto y el riesgo de volatilidad de forma objetiva, y emití tu recomendación.
-Estructurá el campo `reasoning` manteniendo las 4 secciones (Tesis: ... Técnico: ... Riesgo: ... Asignación: ...) pero escribilo con fluidez y tu voz característica de Grok: directo, conectando los datos y el moat previo con el contexto macro relevante, sin minimizar la volatilidad ni exagerar la tesis.
+Estructurá el campo `reasoning` manteniendo las 4 secciones (Tesis: ... Técnico: ... Riesgo: ... Asignación: ...) pero escribilo con fluidez y tu voz característica: directo, conectando los datos y el moat previo con el contexto macro relevante, sin minimizar la volatilidad ni exagerar la tesis.
 Incluí en el reasoning (integrado naturalmente en Tesis o Asignación) una justificación clara y breve de por qué elegiste HIGH, MEDIUM o LOW para `confidence`, anclada en la evidencia concreta: score del moat crypto, volatilidad histórica, ciclo halving, señal técnica, adopción institucional y contexto macro. Ejemplo: "Elegí MEDIUM porque el moat es sólido (Wide, 7.2/8) y el técnico es alcista, pero los drawdowns históricos del 70–85% y la incertidumbre regulatoria global no permiten HIGH; la convicción podría subir si la adopción soberana se consolida."
 Respetá CONSTRAINTS DUROS CRYPTO y PASOS DE RAZONAMIENTO.
 
-El output principal debe ser un objeto JSON válido con exactamente estos campos. Podés agregar un breve comentario adicional después del JSON si ayuda a expresar matices de tu análisis, pero el JSON debe ser completo y parseable primero.
+{JSON_ONLY_CONTRACT}, con exactamente estos campos:
 {{
   "action": "STRONG BUY|BUY|HOLD|REDUCE|SELL",
   "confidence": "HIGH|MEDIUM|LOW",
@@ -791,7 +817,7 @@ def alert_explanation_prompt(
     """
     ctx_lines = "\n".join(f"  {k}: {v}" for k, v in context.items())
 
-    return f"""Eres Grok, construido por xAI. Eres un analista de inversión senior riguroso y claro, especializado en comunicar alertas financieras a inversores de largo plazo en español.
+    return f"""{ANALYST_ROLE}, claro, especializado en comunicar alertas financieras a inversores de largo plazo en español.
 
 IDIOMA OBLIGATORIO: Responde SIEMPRE en español. Todos los campos de texto (explanation, action_suggested, etc.) deben estar escritos en español correcto y natural. Nunca uses inglés en los valores de texto.
 
@@ -816,7 +842,7 @@ Reglas:
 - No minimices ni exageres la situación
 - En español neutro, sin modismos regionales
 
-Respondé SOLO con JSON válido:
+{JSON_ONLY_CONTRACT}, con exactamente estos campos:
 {{
   "explanation": "Hecho: ... Causa probable: ... Impacto retiro: ...",
   "action_suggested": "Acción concreta con condición de salida en 1 oración."
@@ -911,9 +937,9 @@ Respondé SOLO con el texto en el formato pedido. Nada de JSON, nada de introduc
 
 
 # ---------------------------------------------------------------------------
-# 7. Portfolio Optimizer Grok Advice (new in this phase)
+# 7. Portfolio Optimizer Advice (new in this phase)
 # ---------------------------------------------------------------------------
-# Gives Grok full voice + macro context on the *whole optimized portfolio*,
+# Gives the model full voice + macro context on the *whole optimized portfolio*,
 # plus the key practical feature: recommend a human-manageable number of
 # positions and a "core" subset that a normal person (not a pro) can actually
 # review and manually adjust.
@@ -943,11 +969,11 @@ def portfolio_optimizer_advice_prompt(
     holdings_note: str = "",
 ) -> str:
     """
-    Build the LLM prompt for Grok to give voice + human-scale concentration advice
+    Build the LLM prompt to give voice + human-scale concentration advice
     on a complete portfolio optimization result.
 
     All data from the mathematical optimizer is passed through (fidelity).
-    Grok is explicitly asked to recommend a smaller, reviewable number of
+    The model is explicitly asked to recommend a smaller, reviewable number of
     positions for a normal human investor and to propose a concrete "core"
     subset with suggested weights + actionable review tips.
     """
@@ -983,7 +1009,7 @@ def portfolio_optimizer_advice_prompt(
     # Goal / glide path note (if present)
     goal_note = f"\nRestricciones de metas activas: {goal_explanation}\n" if goal_explanation else ""
 
-    return f"""Eres Grok, construido por xAI. Eres un analista de inversión senior riguroso, objetivo y basado en datos, especializado en carteras de largo plazo para jubilación. Tenés voz propia: directo, honesto, con claridad maximalista y un toque de irreverencia sana cuando la diversificación excesiva o la dispersión de posiciones choca con la realidad de que un humano normal se beneficia de un núcleo enfocado (aunque el total matemático sea 27 o más). No uses lenguaje corporativo vacío ni hype. Priorizás que el inversor no profesional pueda realmente revisar y ajustar una cartera núcleo sin volverse loco.
+    return f"""{ANALYST_ROLE}, especializado en carteras de largo plazo para jubilación. Tenés voz propia: directo, honesto, con claridad maximalista y un toque de irreverencia sana cuando la diversificación excesiva o la dispersión de posiciones choca con la realidad de que un humano normal se beneficia de un núcleo enfocado (aunque el total matemático sea 27 o más). No uses lenguaje corporativo vacío ni hype. Priorizás que el inversor no profesional pueda realmente revisar y ajustar una cartera núcleo sin volverse loco.
 
 IDIOMA OBLIGATORIO: Responde SIEMPRE en español. Todos los campos de texto (narrative, why, tips, etc.) deben estar escritos en español correcto y natural. Nunca uses inglés en los valores de texto.
 
@@ -1024,12 +1050,12 @@ Usá EXACTAMENTE el formato de salida para macro que se detalla abajo.
 
 ---
 
-**TAREA (con tu voz propia de Grok):**
+**TAREA (con tu voz propia):**
 Incluso si el total de la optimización matemática es 27 (o 30-40), un humano normal que no trabaja de esto se beneficia enormemente de un **núcleo enfocado** de posiciones de alta convicción que capturan la mayor parte del valor (ratio atractivo/vol, yield, moat, atractivo estimado). El costo cognitivo de seguir 27+ posiciones pequeñas sigue siendo alto.
 
 1. Explicá la cartera optimizada completa con tu voz característica: directo, basado en los números que te pasamos, conectando con el contexto macro que corresponda, señalando fortalezas reales y riesgos reales (incluyendo el costo cognitivo de la dispersión). No seas genérico.
 
-2. Recomendá un número pertinente de posiciones para el núcleo humano (típicamente 7-15 según la concentración de convicción/moat/scores que ves; Grok decide el número exacto para este caso, no hardcodees). Esto aplica aunque el total sea 27 o más.
+2. Recomendá un número pertinente de posiciones para el núcleo humano (típicamente 7-15 según la concentración de convicción/moat/scores que ves; decidí vos el número exacto para este caso, no lo hardcodees). Esto aplica aunque el total sea 27 o más.
 
 3. Propone una "cartera núcleo" (core holdings) más manejable: selecciona el subconjunto de tickers que aportan la mayor parte del beneficio (ratio atractivo/vol, yield, moat, atractivo estimado). Para cada uno da un peso sugerido (ajustado, que sume cerca de 100%) y un "why" corto y concreto de por qué lo mantuviste o ajustaste.
 
@@ -1039,9 +1065,9 @@ Incluso si el total de la optimización matemática es 27 (o 30-40), un humano n
 
 Sé brutalmente honesto sobre si la versión concentrada pierde diversificación importante o no.
 
-Respondé SOLO con el objeto JSON válido. No agregues NADA de texto antes ni después del JSON. El JSON debe estar completo y bien formado (todas las llaves balanceadas). Si el contenido es largo, sé conciso en la narrative pero mantén la estructura.
+{JSON_ONLY_CONTRACT}, con exactamente estos campos. El JSON debe estar completo y bien formado (todas las llaves balanceadas). Si el contenido es largo, sé conciso en la narrative pero mantené la estructura.
 {{
-  "narrative": "Explicación completa y fluida con tu voz Grok de toda la cartera optimizada, por qué estos pesos, trade-offs, macro relevante y el costo de seguirla completa vs concentrada. Varias oraciones densas pero legibles.",
+  "narrative": "Explicación completa y fluida con tu voz propia de toda la cartera optimizada, por qué estos pesos, trade-offs, macro relevante y el costo de seguirla completa vs concentrada. Varias oraciones densas pero legibles.",
   "recommended_max_human_positions": 12,
   "core_holdings": [
     {{"symbol": "AAPL", "suggested_weight_pct": 9.5, "why": "Moat wide estructural + alta convicción en el optimizador + diversificación tech defensiva. Mantener peso similar o ligeramente superior."}},
@@ -1284,7 +1310,7 @@ Dividend yield {float(metrics.get('dividend_yield_pct', 0)):.2f}% | Score prom. 
 ---
 
 **TAREA:**
-Devolvé un objeto JSON válido (y NADA de texto fuera del JSON) con exactamente dos campos:
+{JSON_ONLY_CONTRACT}, con exactamente estos dos campos:
 
 1. "narrative": una explicación honesta y accionable en español (180-280 palabras máximo), estructurada exactamente así con viñetas:
    - **Resumen del plan en una frase**
@@ -1344,7 +1370,7 @@ def sector_country_tailwind_prompt(tailwind, symbol: str, info: dict) -> str:
         "Headwind": "VIENTO DE FRENTE",
     }.get(tailwind.classification, tailwind.classification)
 
-    return f"""Eres Grok, construido por xAI. Eres un analista de inversión senior riguroso, objetivo y basado en datos, especializado en factores estructurales sector-país de largo plazo. Tenés voz propia: directo, honesto, sin hype.
+    return f"""{ANALYST_ROLE}, especializado en factores estructurales sector-país de largo plazo. Tenés voz propia: directo, honesto, sin hype.
 
 IDIOMA OBLIGATORIO: Responde SIEMPRE en español. Nunca uses inglés en los valores de texto.
 
@@ -1363,7 +1389,7 @@ Interpretá esta cola de viento (o viento de frente) PARA ESTA EMPRESA CONCRETA:
 
 {_macro_factors_output_spec(for_moat=False).replace("macro_factors", "factors")}
 
-El output principal debe ser un objeto JSON válido con exactamente estos campos:
+{JSON_ONLY_CONTRACT}, con exactamente estos campos:
 {{
   "ai_reasoning": "2-4 oraciones en español, específicas para esta empresa: exposición real al factor estructural, qué captura de la tesis y el riesgo principal de invalidación.",
   "factors": []
