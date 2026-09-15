@@ -9,15 +9,21 @@ confidence downgrade, and the Decision mapping.
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from unittest.mock import patch
 
+from analysis.ai_analyzer import classify_ai_failure
 from analysis.committee import (
     AgentOpinion,
     CommitteeAnalyzer,
+    _is_rate_limit,
     _lean_to_action,
     _parse_agent,
+    _retry_after_seconds,
     aggregate,
 )
 from analysis.eval_cases import golden_cases
+from config import AI_FALLBACK, COMMITTEE, AIConfig
 
 
 def _fund_tech():
@@ -200,3 +206,125 @@ def test_committee_provider_in_eval_harness():
     by_name = {c.name: c for c in checks}
     assert by_name["valid_structure"].passed
     assert by_name["scores_deterministic"].passed
+
+
+class _Fake429(Exception):
+    def __init__(self, msg="Rate limit reached", retry_after=None):
+        super().__init__(msg)
+        self.status_code = 429
+        if retry_after is not None:
+            self.response = type("R", (), {"headers": {"retry-after": str(retry_after)}})()
+
+
+def test_incomplete_panel_is_not_complete():
+    ops = [
+        AgentOpinion("Analista Fundamental", "HOLD", "LOW", error="429"),
+        AgentOpinion("Estratega Macro", "HOLD", "LOW", error="429"),
+        AgentOpinion("Abogado del Diablo", "SELL", "HIGH", ["c"], ["bear"]),
+        AgentOpinion("Portfolio Manager", "HOLD", "MEDIUM", ["d"], ["r"]),
+        AgentOpinion("Behavioral Coach", "HOLD", "MEDIUM", ["e"], ["r"]),
+    ]
+    v = aggregate("MSFT", ops)
+    assert v.lean == -0.7
+    assert v.action == "REDUCE"
+    assert v.complete is False
+
+
+def test_complete_panel_requires_every_agent_ok():
+    ops = [
+        AgentOpinion("Analista Fundamental", "BUY", "HIGH", ["a"], ["r"]),
+        AgentOpinion("Estratega Macro", "BUY", "MEDIUM", ["b"], ["r"]),
+        AgentOpinion("Abogado del Diablo", "HOLD", "LOW", ["c"], ["bear"]),
+        AgentOpinion("Portfolio Manager", "BUY", "HIGH", ["d"], ["r"]),
+        AgentOpinion("Behavioral Coach", "HOLD", "MEDIUM", ["e"], ["r"]),
+    ]
+    assert aggregate("MSFT", ops).complete is True
+
+
+def test_rate_limit_retries_then_succeeds():
+    fund, tech = _fund_tech()
+    hits = {"n": 0}
+
+    def call_fn(prompt: str) -> str:
+        hits["n"] += 1
+        if hits["n"] == 1:
+            raise _Fake429("Please try again in 0.01s. Rate limit reached")
+        if "Abogado del Diablo" in prompt:
+            return _agent_json("HOLD", concerns=["múltiplo alto"])
+        if "Estratega Macro" in prompt:
+            return _agent_json("BUY")
+        if "Portfolio Manager" in prompt:
+            return _agent_json("BUY", "HIGH")
+        if "Behavioral Coach" in prompt:
+            return _agent_json("HOLD")
+        return _fundamental_json("BUY", "HIGH")
+
+    with patch("analysis.committee.time.sleep"):
+        v = CommitteeAnalyzer(call_fn=call_fn, use_cache=False).analyze(fund, tech)
+    assert v.complete is True
+    assert hits["n"] == 6  # 1 fail + 5 successes
+
+
+def test_permanent_429_does_not_cache(monkeypatch):
+    fund, tech = _fund_tech()
+    stored = {}
+
+    class _FakeCache:
+        def get(self, key):
+            return stored.get(key)
+        def set(self, key, value):
+            stored[key] = value
+
+    monkeypatch.setattr("data.cache.cache", _FakeCache(), raising=False)
+
+    def call_fn(prompt: str) -> str:
+        if "Portfolio Manager" in prompt:
+            raise _Fake429("Rate limit reached for model")
+        if "Abogado del Diablo" in prompt:
+            return _agent_json("SELL", "HIGH", concerns=["bear"])
+        if "Estratega Macro" in prompt:
+            return _agent_json("BUY")
+        if "Behavioral Coach" in prompt:
+            return _agent_json("HOLD")
+        return _fundamental_json("BUY", "HIGH")
+
+    with patch("analysis.committee.time.sleep"):
+        analyzer = CommitteeAnalyzer(
+            call_fn=call_fn,
+            ai_config=AIConfig(provider="groq", model="openai/gpt-oss-120b", api_key="k"),
+            use_cache=True,
+        )
+        # Bypass constructor workers; we still want retries not sleep-real.
+        v = analyzer.analyze(fund, tech)
+    assert v.complete is False
+    assert stored == {}
+
+
+def test_groq_defaults_to_serial_workers():
+    analyzer = CommitteeAnalyzer(
+        call_fn=lambda _p: _agent_json("HOLD"),
+        ai_config=AIConfig(provider="groq", model="openai/gpt-oss-120b", api_key="k"),
+        use_cache=False,
+    )
+    assert analyzer._max_workers == COMMITTEE.groq_max_workers == 1
+
+
+def test_committee_max_tokens_lives_in_config():
+    src = (Path(__file__).resolve().parents[1] / "analysis/committee.py").read_text()
+    assert "max_tokens=900" not in src
+    assert "COMMITTEE.max_tokens" in src
+
+
+def test_retry_after_prefers_header_then_body():
+    assert _retry_after_seconds(_Fake429(retry_after=3)) == 3.0
+    assert _retry_after_seconds(_Fake429("Please try again in 7.98s.")) == 7.98
+    assert _is_rate_limit(_Fake429())
+    assert classify_ai_failure(_Fake429()) == AI_FALLBACK.RATE_LIMIT
+
+
+def test_comite_page_prefetches_without_ai():
+    src = (
+        Path(__file__).resolve().parents[1] / "dashboard/pages/15_Comite.py"
+    ).read_text()
+    assert "cached_full_analysis(\n            symbol, ai_cfg.provider, ai_cfg.model, False" in src
+    assert "if verdict.complete:" in src

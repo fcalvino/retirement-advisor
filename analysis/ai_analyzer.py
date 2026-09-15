@@ -25,7 +25,13 @@ from analysis.strategy import (
 )
 from analysis.technical import TechnicalResult
 from analysis.utils import extract_json_object
-from config import AI_FALLBACK, AI_OAUTH_PROVIDERS
+from config import (
+    AI_DECISION_MAX_TOKENS,
+    AI_FALLBACK,
+    AI_OAUTH_PROVIDERS,
+    GROQ_BASE_URL,
+    GROQ_TRANSPORT,
+)
 
 
 class AIUnavailable(RuntimeError):
@@ -171,6 +177,29 @@ def _claude_message_text(message) -> str:
     raise AIUnavailable(AI_FALLBACK.RESPUESTA_VACIA)
 
 
+_OPENAI_FINISH_REASON_TO_CAUSE = {
+    "length":     AI_FALLBACK.RESPUESTA_TRUNCADA,
+    "max_tokens": AI_FALLBACK.RESPUESTA_TRUNCADA,
+    "content_filter": AI_FALLBACK.RECHAZO_MODELO,
+}
+
+
+def _openai_message_text(choice) -> str:
+    """Texto de un choice OpenAI-compatible, o `AIUnavailable` con la causa.
+
+    ``finish_reason=length`` y ``content`` vacío se disfrazaban de
+    ``json_invalido`` (gpt-oss gasta el techo en ``message.reasoning``).
+    """
+    finish = getattr(choice, "finish_reason", None)
+    cause = _OPENAI_FINISH_REASON_TO_CAUSE.get(finish or "")
+    if cause:
+        raise AIUnavailable(cause)
+    content = getattr(getattr(choice, "message", None), "content", None)
+    if content is None or not str(content).strip():
+        raise AIUnavailable(AI_FALLBACK.RESPUESTA_VACIA)
+    return content
+
+
 class AIAnalyzer:
     def __init__(self, config):
         self.config = config
@@ -211,7 +240,7 @@ class AIAnalyzer:
         try:
             self._preflight()
             prompt = self._build_prompt(fund, tech)
-            raw = self._call_api(prompt)
+            raw = self._call_api(prompt, max_tokens=AI_DECISION_MAX_TOKENS)
             decision = self._parse_response(raw, fund, tech)
             # P0 D1: never let LLM bypass hard safety blocks
             decision = apply_safety_overlay(decision, fund, tech)
@@ -574,6 +603,7 @@ class AIAnalyzer:
         credential_resolver: Callable,
         prompt: str,
         max_tokens: int | None = None,
+        extra_create_kwargs: dict | None = None,
     ) -> str:
         """Call any OpenAI-compatible inference endpoint with optional Hermes credential resolution."""
         from openai import OpenAI
@@ -597,13 +627,17 @@ class AIAnalyzer:
 
         client = OpenAI(api_key=api_key, base_url=base_url)
         mt = max_tokens or 1024
-        response = client.chat.completions.create(
-            model=self.config.model,
-            temperature=0,
-            max_tokens=mt,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return response.choices[0].message.content
+        create_kwargs: dict = {
+            "model": self.config.model,
+            "temperature": 0,
+            "max_tokens": mt,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        extra = extra_create_kwargs or {}
+        if extra:
+            create_kwargs["extra_body"] = extra
+        response = client.chat.completions.create(**create_kwargs)
+        return _openai_message_text(response.choices[0])
 
     def _call_nous(self, prompt: str, max_tokens: int | None = None) -> str:
         def _resolver():
@@ -628,7 +662,11 @@ class AIAnalyzer:
         def _resolver():
             raise RuntimeError("groq uses a static API key, not Hermes OAuth")
         return self._call_openai_compatible(
-            "https://api.groq.com/openai/v1", _resolver, prompt, max_tokens,
+            GROQ_BASE_URL,
+            _resolver,
+            prompt,
+            max_tokens if max_tokens is not None else GROQ_TRANSPORT.default_max_tokens,
+            extra_create_kwargs=GROQ_TRANSPORT.extra_create_kwargs(self.config.model),
         )
 
     def _parse_response(self, raw: str, fund: FundamentalResult, tech: TechnicalResult) -> Decision:

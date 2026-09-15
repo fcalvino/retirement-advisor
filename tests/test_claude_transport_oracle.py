@@ -34,7 +34,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from analysis.ai_analyzer import AIAnalyzer, AIUnavailable, classify_ai_failure
+from analysis.ai_analyzer import (
+    AIAnalyzer,
+    AIUnavailable,
+    _openai_message_text,
+    classify_ai_failure,
+)
 from config import (
     AI_FALLBACK,
     CLAUDE_MODEL_CATALOG,
@@ -111,7 +116,10 @@ class TestSamplingEsUnaDivergenciaDeTransporte:
         # remoción se filtró de transporte a política y dejó de ser deliberada.
         client = MagicMock()
         client.chat.completions.create.return_value = SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))]
+            choices=[SimpleNamespace(
+                message=SimpleNamespace(content="ok"),
+                finish_reason="stop",
+            )]
         )
         fake_sdk = SimpleNamespace(OpenAI=lambda **_kw: client)
 
@@ -270,11 +278,14 @@ def _about_src() -> str:
 
 class TestGroqUsaElCaminoOpenAICompatible:
 
-    def test_call_api_pega_base_url_y_modelo(self):
+    def test_call_api_pega_base_url_modelo_y_reasoning_low(self):
         captured: dict = {}
         client = MagicMock()
         client.chat.completions.create.return_value = SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))]
+            choices=[SimpleNamespace(
+                message=SimpleNamespace(content="ok"),
+                finish_reason="stop",
+            )]
         )
 
         def _openai(**kw):
@@ -294,6 +305,42 @@ class TestGroqUsaElCaminoOpenAICompatible:
         assert kwargs["model"] == _GROQ_DEFAULT_MODEL
         assert kwargs["temperature"] == 0
         assert kwargs["max_tokens"] == 200
+        assert kwargs["extra_body"]["reasoning_effort"] == "low"
+        assert kwargs["extra_body"]["include_reasoning"] is False
+
+    def test_xai_no_manda_reasoning_effort(self):
+        client = MagicMock()
+        client.chat.completions.create.return_value = SimpleNamespace(
+            choices=[SimpleNamespace(
+                message=SimpleNamespace(content="ok"),
+                finish_reason="stop",
+            )]
+        )
+        fake_sdk = SimpleNamespace(OpenAI=lambda **_kw: client)
+        analyzer = AIAnalyzer(AIConfig(provider="xai", model="grok-4.3", api_key="k"))
+        with patch.dict("sys.modules", {"openai": fake_sdk}):
+            analyzer._call_openai_compatible(
+                "https://api.x.ai/v1", lambda: (_ for _ in ()).throw(RuntimeError), "p",
+            )
+        kwargs = client.chat.completions.create.call_args.kwargs
+        assert "extra_body" not in kwargs
+
+    def test_content_vacio_es_respuesta_vacia_no_json_invalido(self):
+        with pytest.raises(AIUnavailable) as exc:
+            _openai_message_text(SimpleNamespace(
+                finish_reason="stop",
+                message=SimpleNamespace(content="", reasoning="thinking..."),
+            ))
+        assert exc.value.cause == AI_FALLBACK.RESPUESTA_VACIA
+
+    def test_finish_reason_length_es_respuesta_truncada(self):
+        with pytest.raises(AIUnavailable) as exc:
+            _openai_message_text(SimpleNamespace(
+                finish_reason="length",
+                message=SimpleNamespace(content='{"brand_strength": 1.5, "reasoning": "Mi'),
+            ))
+        assert exc.value.cause == AI_FALLBACK.RESPUESTA_TRUNCADA
+        assert classify_ai_failure(exc.value) == AI_FALLBACK.RESPUESTA_TRUNCADA
 
     def test_groq_no_es_oauth(self):
         from config import AI_OAUTH_PROVIDERS, AI_PROVIDER_KEY_ENV, GROQ_MODEL_CATALOG
