@@ -327,6 +327,11 @@ class TestLasCausasSonDistinguibles:
             decision = AIAnalyzer(cfg).analyze(_fund(), _tech())
         assert decision.ai_fallback_reason == AI_FALLBACK.RATE_LIMIT
 
+    def test_groq_sin_key_cae_en_sin_api_key_no_en_oauth(self, monkeypatch):
+        _clear_ai_env(monkeypatch)
+        decision = AIAnalyzer(_cfg("groq")).analyze(_fund(), _tech())
+        assert decision.ai_fallback_reason == AI_FALLBACK.SIN_API_KEY
+
 
 # --------------------------------------------------------------------------- #
 #  5. json_invalido nace en _parse_response                                    #

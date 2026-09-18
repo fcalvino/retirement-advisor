@@ -6,7 +6,7 @@ from datetime import datetime
 
 import streamlit as st
 
-from config import CLAUDE_MODEL_CATALOG, ar_fx_from_market
+from config import CLAUDE_MODEL_CATALOG, GROQ_MODEL_CATALOG, SCREENER, ar_fx_from_market
 from dashboard.shared import (
     _save_ai_config_to_env,
     cache_stats,
@@ -194,15 +194,18 @@ _MODEL_OPTIONS = {
     # selector alcanzaba el defecto sin tocar código.
     "Claude (Anthropic)":              list(CLAUDE_MODEL_CATALOG),
     "GPT-4o (OpenAI)":                 ["gpt-4o", "gpt-4o-mini"],
+    "GPT-OSS (Groq)":                  list(GROQ_MODEL_CATALOG),
     "xAI / Grok (via Hermes OAuth)":   ["grok-4.3", "grok-4.20-0309-non-reasoning", "grok-4.20-0309-reasoning", "grok-build-0.1"],
     "Hermes / Nous Research":          ["nousresearch/hermes-4-70b", "nousresearch/hermes-4-405b", "openrouter/owl-alpha"],
 }
 _PROVIDER_KEY_TO_LABEL = {
     "claude": "Claude (Anthropic)",
     "openai": "GPT-4o (OpenAI)",
+    "groq":   "GPT-OSS (Groq)",
     "xai":    "xAI / Grok (via Hermes OAuth)",
     "nous":   "Hermes / Nous Research",
 }
+_LABEL_TO_PROVIDER_KEY = {label: key for key, label in _PROVIDER_KEY_TO_LABEL.items()}
 
 current_provider      = st.session_state.get("ai_provider", "claude")
 default_provider_label = _PROVIDER_KEY_TO_LABEL.get(current_provider, "Claude (Anthropic)")
@@ -212,14 +215,8 @@ provider_label = st.selectbox(
     index=list(_MODEL_OPTIONS.keys()).index(default_provider_label),
 )
 
-if "Claude" in provider_label:
-    provider_key = "claude"
-elif "xAI" in provider_label or "Grok" in provider_label:
-    provider_key = "xai"
-elif "Nous" in provider_label or "Hermes" in provider_label:
-    provider_key = "nous"
-else:
-    provider_key = "openai"
+# Invert the label map — substring matching would confuse "Groq" with "Grok".
+provider_key = _LABEL_TO_PROVIDER_KEY[provider_label]
 
 model_list    = _MODEL_OPTIONS[provider_label]
 current_model = st.session_state.get("ai_model", model_list[0])
@@ -243,11 +240,26 @@ use_in_screener = st.toggle(
 )
 if use_in_screener:
     n = len(st.session_state.get("universe", []))
-    st.warning(
-        f"⚠️ Activar AI en el Screener hará **{n} llamadas al API** por cada refresh "
-        f"(~{n * 2}–{n * 5} segundos y costo real de tokens). "
-        "Recomendado solo para universos pequeños (<10 tickers)."
-    )
+    if provider_key == "groq":
+        cap = SCREENER.groq_ai_max_tickers
+        if n > cap:
+            st.warning(
+                f"⚠️ Groq Free (8K TPM): AI del Screener solo con **≤{cap} tickers**. "
+                f"Este universo tiene **{n}** — la corrida será rule-based. "
+                "Recortá el universo o usá la watchlist."
+            )
+        else:
+            st.warning(
+                f"⚠️ Groq Free: **{n} tickers** × 2–3 llamadas, 1 worker, "
+                f"pacing {SCREENER.groq_tpm_budget} TPM "
+                f"(tope {cap}). No convokes el Comité el mismo minuto."
+            )
+    else:
+        st.warning(
+            f"⚠️ Activar AI en el Screener hará **{n} llamadas al API** por cada refresh "
+            f"(~{n * 2}–{n * 5} segundos y costo real de tokens). "
+            "Recomendado solo para universos pequeños (<10 tickers)."
+        )
 
 ai_enabled_now = st.session_state.get("ai_enabled", False)
 st.caption(

@@ -62,8 +62,10 @@ elif not run:
 
 if run and symbol:
     with st.spinner(f"Analizando {symbol}…"):
+        # Quant only — moat/decisión AI here would burn the same Groq TPM the
+        # panel needs. The committee is the AI surface on this page.
         fund, tech, _ = cached_full_analysis(
-            symbol, ai_cfg.provider, ai_cfg.model, ai_cfg.enabled, ai_cfg.api_key
+            symbol, ai_cfg.provider, ai_cfg.model, False, ai_cfg.api_key
         )
 
     # The PM sizes against the REAL book (tracker values fetched once; no recompute).
@@ -98,18 +100,26 @@ if run and symbol:
             st.error(f"No se pudo ejecutar el comité: {exc}")
             st.stop()
 
-    # Log to track record as a committee-sourced recommendation.
-    try:
-        from analysis.track_record import track_record_store
-
-        track_record_store.log_recommendation(
-            verdict.to_decision(fund, tech),
-            source="committee",
-            price_at_rec=getattr(fund, "current_price", None) or None,
-            fundamental=fund,
+    if not verdict.complete:
+        st.warning(
+            "El comité no completó todos los agentes (rate limit u otro error). "
+            "Este dictamen **no** se cachea ni se registra en el Track Record."
         )
-    except Exception:
-        pass
+
+    # Log to track record only a complete panel — a 429 that drops PM/Macro
+    # reweights the lean toward the Devil's Advocate.
+    if verdict.complete:
+        try:
+            from analysis.track_record import track_record_store
+
+            track_record_store.log_recommendation(
+                verdict.to_decision(fund, tech),
+                source="committee",
+                price_at_rec=getattr(fund, "current_price", None) or None,
+                fundamental=fund,
+            )
+        except Exception:
+            pass
 
     # Verdict banner
     _color = {"STRONG BUY": "#1a7f37", "BUY": "#2da44e", "HOLD": "#bf8700",
@@ -160,7 +170,8 @@ if run and symbol:
 
     render_ai_badge("dictamen multi-agente; se apoya en cálculos, no los reemplaza")
     st.caption(f"{CALC_BADGE} base del análisis · {AI_BADGE} votación del panel")
-    st.caption("Este dictamen quedó registrado en el Track Record con fuente `committee`.")
+    if verdict.complete:
+        st.caption("Este dictamen quedó registrado en el Track Record con fuente `committee`.")
     if portfolio_ctx:
         st.caption(
             f"El Portfolio Manager dimensionó sobre tu cartera real: {symbol} pesa "

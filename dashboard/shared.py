@@ -11,6 +11,7 @@ Import pattern in each page:
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -27,8 +28,9 @@ ensure_project_root()
 import streamlit as st
 from loguru import logger
 
+from analysis.groq_pacing import GroqTpmPacer
 from analysis.strategy import full_analysis
-from config import ENGINE_VERSION, AIConfig
+from config import ENGINE_VERSION, SCREENER, AIConfig
 from data.product_ux import (
     GUARDRAILS_LABEL,
     GUARDRAILS_OMISSIONS,
@@ -1943,6 +1945,36 @@ def _format_row_for_display(d: dict) -> dict:
     }
 
 
+def groq_screener_downgrade_reason(n_symbols: int, ai_cfg) -> str | None:
+    """Why Groq AI will not run for this Screener batch, or None if it will."""
+    if not getattr(ai_cfg, "enabled", False):
+        return None
+    if (getattr(ai_cfg, "provider", "") or "").lower() != "groq":
+        return None
+    cap = SCREENER.groq_ai_max_tickers
+    if n_symbols > cap:
+        return (
+            f"Groq Free (8K TPM): AI del Screener solo con ≤{cap} tickers. "
+            f"Esta corrida tiene {n_symbols} — va rule-based. "
+            "Recortá el universo o la watchlist."
+        )
+    return None
+
+
+def groq_screener_effective_cfg(ai_cfg, n_symbols: int):
+    """Disable AI when Groq Free cannot finish this batch without systematic 429s."""
+    if groq_screener_downgrade_reason(n_symbols, ai_cfg):
+        return dataclasses.replace(ai_cfg, enabled=False)
+    return ai_cfg
+
+
+def _screener_max_workers(ai_cfg) -> int:
+    cap = min(6, os.cpu_count() or 4)
+    if getattr(ai_cfg, "enabled", False) and (getattr(ai_cfg, "provider", "") or "").lower() == "groq":
+        return max(1, min(cap, SCREENER.groq_max_workers))
+    return cap
+
+
 def _analyse_universe_parallel(
     symbols: list[str],
     ai_cfg: AIConfig,
@@ -1970,7 +2002,14 @@ def _analyse_universe_parallel(
     import time
 
     started = time.monotonic()
-    max_workers = min(6, os.cpu_count() or 4)
+    reason = groq_screener_downgrade_reason(len(symbols), ai_cfg)
+    if reason:
+        logger.warning(f"Screener: {reason}")
+    run_cfg = groq_screener_effective_cfg(ai_cfg, len(symbols))
+    max_workers = _screener_max_workers(run_cfg)
+    pacer = None
+    if getattr(run_cfg, "enabled", False) and (getattr(run_cfg, "provider", "") or "").lower() == "groq":
+        pacer = GroqTpmPacer(SCREENER.groq_tpm_budget)
     total = len(symbols)
     completed = 0
     rows: list[dict] = []
@@ -1978,8 +2017,10 @@ def _analyse_universe_parallel(
 
     def _analyse_one(sym: str) -> tuple[dict | None, dict | None]:
         try:
+            if pacer is not None:
+                pacer.wait_for(SCREENER.groq_tokens_per_ticker)
             fund, tech, decision = cached_full_analysis(
-                sym, ai_cfg.provider, ai_cfg.model, ai_cfg.enabled, ai_cfg.api_key
+                sym, run_cfg.provider, run_cfg.model, run_cfg.enabled, run_cfg.api_key
             )
             # Extraction only — the display dict (badges, emoji, truncation) is
             # built on the main thread by _format_row_for_display (S22).

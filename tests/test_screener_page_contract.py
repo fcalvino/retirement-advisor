@@ -279,6 +279,66 @@ def test_analyse_universe_parallel_builds_shipped_row_and_truncates_name(monkeyp
     assert any("Analizando…" in t and "1/1" in t for t in status.texts)
 
 
+def test_groq_screener_n9_disables_ai(monkeypatch):
+    from config import SCREENER, AIConfig
+    from dashboard import shared as shared_mod
+
+    calls = []
+
+    def fake_analysis(sym, provider, model, enabled, api_key):
+        calls.append(enabled)
+        return _fund(), _tech("NEUTRAL"), Decision(symbol=sym, action="HOLD")
+
+    monkeypatch.setattr(shared_mod, "cached_full_analysis", fake_analysis)
+    cfg = AIConfig(provider="groq", model="openai/gpt-oss-120b", api_key="k", enabled=True)
+    symbols = [f"T{i}" for i in range(SCREENER.groq_ai_max_tickers + 1)]
+    shared_mod._analyse_universe_parallel(symbols, cfg, _FakeBar(), _FakeStatus())
+    assert calls and all(on is False for on in calls)
+
+
+def test_groq_screener_n8_keeps_ai_and_one_worker(monkeypatch):
+    from config import SCREENER, AIConfig
+    from dashboard import shared as shared_mod
+
+    calls = []
+
+    def fake_analysis(sym, provider, model, enabled, api_key):
+        calls.append(enabled)
+        return _fund(), _tech("NEUTRAL"), Decision(symbol=sym, action="HOLD")
+
+    monkeypatch.setattr(shared_mod, "cached_full_analysis", fake_analysis)
+    monkeypatch.setattr(shared_mod.GroqTpmPacer, "wait_for", lambda self, n: None)
+    cfg = AIConfig(provider="groq", model="openai/gpt-oss-120b", api_key="k", enabled=True)
+    n = SCREENER.groq_ai_max_tickers
+    symbols = [f"T{i}" for i in range(n)]
+    assert shared_mod._screener_max_workers(cfg) == SCREENER.groq_max_workers == 1
+    shared_mod._analyse_universe_parallel(symbols, cfg, _FakeBar(), _FakeStatus())
+    assert calls == [True] * n
+
+
+def test_groq_screener_downgrade_reason_only_when_over_cap():
+    from config import SCREENER, AIConfig
+    from dashboard.shared import groq_screener_downgrade_reason
+
+    cfg = AIConfig(provider="groq", model="openai/gpt-oss-120b", api_key="k", enabled=True)
+    assert groq_screener_downgrade_reason(SCREENER.groq_ai_max_tickers, cfg) is None
+    reason = groq_screener_downgrade_reason(SCREENER.groq_ai_max_tickers + 1, cfg)
+    assert reason is not None
+    assert str(SCREENER.groq_ai_max_tickers) in reason
+    assert groq_screener_downgrade_reason(99, AIConfig(provider="openai", enabled=True, api_key="k")) is None
+
+
+def test_settings_copy_cites_groq_cap():
+    from pathlib import Path
+
+    from config import SCREENER
+
+    src = (Path(__file__).resolve().parents[1] / "dashboard/pages/9_Settings.py").read_text()
+    assert "SCREENER.groq_ai_max_tickers" in src
+    assert "8K TPM" in src
+    assert str(SCREENER.groq_ai_max_tickers) == "8"
+
+
 def test_analyse_universe_parallel_reports_failed_tickers(monkeypatch):
     """Audit item 05 — a failed symbol must leave a named, typed trace."""
     from dashboard import shared as shared_mod

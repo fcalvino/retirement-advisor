@@ -531,6 +531,7 @@ SECTOR_MAP: Dict[str, List[str]] = {
 AI_PROVIDER_KEY_ENV: Dict[str, str] = {
     "claude": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
+    "groq":   "GROQ_API_KEY",
     "xai":    "XAI_API_KEY",
     "nous":   "NOUS_API_KEY",
 }
@@ -545,6 +546,7 @@ AI_OAUTH_PROVIDERS: FrozenSet[str] = frozenset({"xai", "nous"})
 AI_PROVIDER_DISPLAY: Dict[str, str] = {
     "claude": "Claude (Anthropic)",
     "openai": "GPT (OpenAI)",
+    "groq":   "Groq",
     "xai":    "Grok (xAI)",
     "nous":   "Hermes (Nous Research)",
 }
@@ -569,6 +571,49 @@ CLAUDE_MODEL_CATALOG: Tuple[str, ...] = (
     "claude-opus-4-8",
     "claude-haiku-4-5",
 )
+
+# Groq OpenAI-compatible catalog. IDs are Groq's (`openai/` prefix is the
+# model family on Groq, not the `openai` provider of this app). The first
+# entry is the default in Settings.
+GROQ_MODEL_CATALOG: Tuple[str, ...] = (
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+)
+
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+
+# gpt-oss on Groq is a reasoning model: max_tokens is thinking + text, and
+# reasoning lands on ``message.reasoning``. Without these kwargs the 1024-token
+# default is eaten by thinking and ``message.content`` comes back empty.
+GROQ_REASONING_MODELS: FrozenSet[str] = frozenset(GROQ_MODEL_CATALOG)
+
+
+@dataclass(frozen=True)
+class GroqTransportConfig:
+    """Transporte Groq/gpt-oss. No es un prompt: es el techo y el reasoning.
+
+    ``reasoning_effort=low`` recorta thinking (GPT-OSS no tiene ``none``).
+    ``include_reasoning=False`` no deja de razonar; solo oculta el campo.
+    """
+
+    reasoning_effort: str = "low"
+    include_reasoning: bool = False
+    default_max_tokens: int = 2500
+
+    def extra_create_kwargs(self, model: str) -> Dict[str, object]:
+        if (model or "") not in GROQ_REASONING_MODELS:
+            return {}
+        return {
+            "reasoning_effort": self.reasoning_effort,
+            "include_reasoning": self.include_reasoning,
+        }
+
+
+GROQ_TRANSPORT = GroqTransportConfig()
+
+# Presupuesto de *texto* de la decisión single-shot. El branch Anthropic lo
+# escala con CLAUDE_TRANSPORT; Groq/gpt-oss lo usa tal cual más reasoning low.
+AI_DECISION_MAX_TOKENS: int = 2500
 
 CLAUDE_MODELS_SIN_SAMPLING: FrozenSet[str] = frozenset({
     "claude-sonnet-5",
@@ -1075,8 +1120,9 @@ class MoatConfig:
     roic_absolute_excellent: float = 20.0
     roic_absolute_good: float = 12.0
     roic_absolute_min: float = 8.0
-    # P1: max output tokens for moat AI calls (800 truncated JSON; 1024 is safer)
-    ai_max_tokens: int = 1024
+    # P1: max output tokens for moat AI calls. 1024 truncaba gpt-oss (reasoning
+    # + JSON); 2500 deja el JSON completo con reasoning_effort=low.
+    ai_max_tokens: int = 2500
 
 
 @dataclass
@@ -1534,6 +1580,13 @@ class ScreenerConfig:
     persist_runs: bool = True
     run_max_age_hours: float = 12.0
     fallback_seconds_per_ticker: float = 3.5
+
+    # Groq Free / on_demand gpt-oss: 8K TPM (org 429 + docs rate-limits).
+    # AI in the Screener is viable only for a tiny N, one worker, and pacing.
+    groq_max_workers: int = 1
+    groq_tpm_budget: int = 8000
+    groq_ai_max_tickers: int = 8
+    groq_tokens_per_ticker: int = 4000
 
     # Named filter presets for the full table (audit item 09). Keys must match
     # ``analysis.ranking.FilterCriteria`` fields; values are plain data so the
@@ -2154,6 +2207,11 @@ class CommitteeConfig:
     """
     enabled: bool = True
     max_workers: int = 5
+    # Groq on_demand gpt-oss-120b is 8k TPM; 5 parallel agents blow it.
+    groq_max_workers: int = 1
+    max_tokens: int = 2500
+    rate_limit_retries: int = 2
+    rate_limit_backoff_seconds: float = 8.0
     cache_ttl_hours: int = 24
 
     vote_weights: dict = field(default_factory=lambda: {
@@ -2196,6 +2254,10 @@ class CommitteeConfig:
         return {
             "enabled": self.enabled,
             "max_workers": self.max_workers,
+            "groq_max_workers": self.groq_max_workers,
+            "max_tokens": self.max_tokens,
+            "rate_limit_retries": self.rate_limit_retries,
+            "rate_limit_backoff_seconds": self.rate_limit_backoff_seconds,
             "cache_ttl_hours": self.cache_ttl_hours,
             "vote_weights": dict(self.vote_weights),
             "dividend_voice_min_yield_pct": self.dividend_voice_min_yield_pct,

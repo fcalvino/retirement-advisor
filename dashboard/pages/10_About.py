@@ -143,7 +143,8 @@ def _run_health_check() -> list[dict]:
                                  "Configurá en ⚙️ Configuración.",
                                  int((time.monotonic() - t0) * 1000)))
     elif ai_provider in ("xai", "nous"):
-        # Try Hermes OAuth check
+        # Groq / OpenAI / Claude stay on the API-key branch below: they are
+        # not Hermes OAuth providers.
         try:
             hermes_dir = Path(os.path.expanduser("~/.hermes/hermes-agent"))
             hermes_ok  = hermes_dir.is_dir()

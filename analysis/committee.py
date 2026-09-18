@@ -25,6 +25,8 @@ in the shared SQLite cache (the committee is reserved for weighty decisions).
 
 from __future__ import annotations
 
+import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
@@ -44,7 +46,7 @@ from analysis.committee_prompts import (
 )
 from analysis.strategy import Decision
 from analysis.utils import extract_json_object
-from config import COMMITTEE, STRESS_SCENARIOS
+from config import AI_FALLBACK, COMMITTEE, STRESS_SCENARIOS
 
 # Stance vocabulary shared with Decision.action.
 _STANCE_SCORE = {"STRONG BUY": 2.0, "BUY": 1.0, "HOLD": 0.0, "REDUCE": -1.0, "SELL": -2.0}
@@ -55,6 +57,32 @@ LLMCall = Callable[[str], str]
 
 #: Vote key of the dividend voice (its prompt title is the longer DIVIDEND_ROLE).
 DIVIDEND_VOTE_ROLE = "Analista de Dividendo"
+
+_RETRY_IN_SECONDS = re.compile(r"try again in ([0-9.]+)\s*s", re.IGNORECASE)
+
+
+def _is_rate_limit(exc: BaseException) -> bool:
+    from analysis.ai_analyzer import classify_ai_failure
+
+    return classify_ai_failure(exc) == AI_FALLBACK.RATE_LIMIT
+
+
+def _retry_after_seconds(exc: BaseException) -> float:
+    """Seconds to wait after a 429. Prefers the header, then Groq's body text."""
+    resp = getattr(exc, "response", None)
+    headers = getattr(resp, "headers", None) or {}
+    raw = None
+    if hasattr(headers, "get"):
+        raw = headers.get("retry-after") or headers.get("Retry-After")
+    if raw is not None:
+        try:
+            return max(0.0, float(raw))
+        except (TypeError, ValueError):
+            pass
+    match = _RETRY_IN_SECONDS.search(str(exc))
+    if match:
+        return max(0.0, float(match.group(1)))
+    return float(COMMITTEE.rate_limit_backoff_seconds)
 
 
 @dataclass
@@ -80,6 +108,11 @@ class CommitteeVerdict:
     dissent: List[str]
     opinions: List[AgentOpinion]
     lean: float = 0.0
+
+    @property
+    def complete(self) -> bool:
+        """True only when every agent returned a parseable vote (no ``error``)."""
+        return bool(self.opinions) and all(o.ok for o in self.opinions)
 
     def to_decision(self, fund=None, tech=None) -> Decision:
         """Map the verdict into a standard Decision (numbers stay deterministic)."""
@@ -562,7 +595,12 @@ class CommitteeAnalyzer:
             raise ValueError("CommitteeAnalyzer needs either call_fn or ai_config")
         self._call_fn = call_fn or self._make_api_call_fn(ai_config)
         self._ai_config = ai_config
-        self._max_workers = max_workers or COMMITTEE.max_workers
+        if max_workers is not None:
+            self._max_workers = max_workers
+        elif getattr(ai_config, "provider", "") == "groq":
+            self._max_workers = COMMITTEE.groq_max_workers
+        else:
+            self._max_workers = COMMITTEE.max_workers
         self._use_cache = use_cache
 
     @staticmethod
@@ -570,7 +608,7 @@ class CommitteeAnalyzer:
         from analysis.ai_analyzer import AIAnalyzer
 
         analyzer = AIAnalyzer(ai_config)
-        return lambda prompt: analyzer._call_api(prompt, max_tokens=900)
+        return lambda prompt: analyzer._call_api(prompt, max_tokens=COMMITTEE.max_tokens)
 
     def analyze(self, fund, tech, portfolio_ctx: Optional[dict] = None) -> CommitteeVerdict:
         """``portfolio_ctx`` (from ``build_ticker_portfolio_context``) reaches only the PM."""
@@ -613,9 +651,9 @@ class CommitteeAnalyzer:
         verdict = aggregate(symbol, opinions)
         logger.info(
             f"committee[{symbol}]: {verdict.action} ({verdict.confidence}) lean={verdict.lean} "
-            f"dissent={len(verdict.dissent)}"
+            f"dissent={len(verdict.dissent)} complete={verdict.complete}"
         )
-        if self._use_cache:
+        if self._use_cache and verdict.complete:
             self._set_cached(symbol, verdict, variant)
         return verdict
 
@@ -646,21 +684,39 @@ class CommitteeAnalyzer:
         verdict = aggregate(plan_key, opinions, weights=COMMITTEE.portfolio_vote_weights)
         logger.info(
             f"committee[{cache_symbol}]: {verdict.action} ({verdict.confidence}) "
-            f"lean={verdict.lean} dissent={len(verdict.dissent)}"
+            f"lean={verdict.lean} dissent={len(verdict.dissent)} complete={verdict.complete}"
         )
-        if self._use_cache:
+        if self._use_cache and verdict.complete:
             self._set_cached(cache_symbol, verdict)
         return verdict
 
     def _run_agents(self, jobs: Dict[str, tuple]) -> List[AgentOpinion]:
         def _one(role_job):
             role, (prompt, parser) = role_job
-            try:
-                raw = self._call_fn(prompt)
-                return parser(raw)
-            except Exception as exc:
-                logger.warning(f"committee agent {role} failed — {exc}")
-                return AgentOpinion(role=role, stance="HOLD", confidence="LOW", error=str(exc))
+            attempts = 1 + max(0, COMMITTEE.rate_limit_retries)
+            last_exc: Optional[BaseException] = None
+            for attempt in range(attempts):
+                try:
+                    raw = self._call_fn(prompt)
+                    return parser(raw)
+                except Exception as exc:
+                    last_exc = exc
+                    if attempt + 1 < attempts and _is_rate_limit(exc):
+                        wait = _retry_after_seconds(exc)
+                        logger.warning(
+                            f"committee agent {role} rate-limited "
+                            f"(attempt {attempt + 1}/{attempts}); retry in {wait:.1f}s"
+                        )
+                        time.sleep(wait)
+                        continue
+                    logger.warning(f"committee agent {role} failed — {exc}")
+                    return AgentOpinion(
+                        role=role, stance="HOLD", confidence="LOW", error=str(exc),
+                    )
+            logger.warning(f"committee agent {role} failed — {last_exc}")
+            return AgentOpinion(
+                role=role, stance="HOLD", confidence="LOW", error=str(last_exc),
+            )
 
         workers = max(1, min(self._max_workers, len(jobs)))
         with ThreadPoolExecutor(max_workers=workers) as pool:

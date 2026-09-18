@@ -13,6 +13,7 @@ def _ai_issues(monkeypatch, hermes_available=False, **env):
     """
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
     monkeypatch.delenv("XAI_API_KEY", raising=False)
     monkeypatch.delenv("NOUS_API_KEY", raising=False)
     monkeypatch.delenv("AI_API_KEY", raising=False)
@@ -137,6 +138,12 @@ class TestOAuthDoesNotApplyToOtherProviders:
         issues = _ai_issues(monkeypatch, hermes_available=True,
                             AI_ENABLED="true", AI_PROVIDER="openai")
         assert any(lvl == "warning" and "OPENAI_API_KEY" in msg for lvl, msg in issues)
+
+    def test_groq_requires_key_regardless_of_hermes(self, monkeypatch):
+        issues = _ai_issues(monkeypatch, hermes_available=True,
+                            AI_ENABLED="true", AI_PROVIDER="groq")
+        assert any(lvl == "warning" and "GROQ_API_KEY" in msg for lvl, msg in issues)
+        assert not any("Hermes OAuth" in msg for _lvl, msg in issues)
 
 
 # ------------------------------------------------------------------ #
