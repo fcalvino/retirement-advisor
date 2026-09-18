@@ -304,6 +304,18 @@ class TestFundamentalIntegration:
         assert "Vaca Muerta" in block
         assert "NO inventes" in block
 
+    def test_prompt_context_block_shows_last_reviewed(self, analyzer):
+        from analysis.fundamental import FundamentalResult
+        from analysis.prompts import _tailwind_context_block
+        d = analyzer.analyze("YPF", sector="Energy", country="Argentina")
+        r = FundamentalResult(
+            symbol="YPF", tailwind_classification=d.classification,
+            tailwind_score=d.tailwind_score, tailwind_bonus=d.bonus, tailwind_detail=d,
+        )
+        assert "revisado por última vez: 2026-06" in _tailwind_context_block(r)
+        d.last_reviewed = ""
+        assert "revisado" not in _tailwind_context_block(r)
+
     def test_enrichment_prompt_contract(self, analyzer):
         from analysis.prompts import sector_country_tailwind_prompt
         d = analyzer.analyze("YPF", sector="Energy", country="Argentina")
