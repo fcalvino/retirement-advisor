@@ -91,6 +91,19 @@ def test_cached_full_analysis_keys_on_engine_version():
     assert "engine_version: str = ENGINE_VERSION" in SHARED
 
 
+def test_cached_full_analysis_keys_on_prompt_version():
+    """#130 paso 4: a prompt bump must miss the 1h cache of Stock Analysis."""
+    import inspect
+
+    from config import COMMITTEE
+    from dashboard.shared import cached_full_analysis
+
+    params = inspect.signature(cached_full_analysis).parameters
+    assert "prompt_version" in params
+    assert params["prompt_version"].default == COMMITTEE.prompt_version
+    assert "prompt_version: str = COMMITTEE.prompt_version" in SHARED
+
+
 def test_cached_personal_book_analysis_keys_on_engine_version():
     """A scoring rewrite must miss the 30m Streamlit cache of the personal book."""
     import inspect

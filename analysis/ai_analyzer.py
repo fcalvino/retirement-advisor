@@ -266,7 +266,14 @@ class AIAnalyzer:
             from analysis.prompts import crypto_decision_prompt
             return crypto_decision_prompt(fund, tech)
         from analysis.prompts import equity_decision_prompt
-        return equity_decision_prompt(fund, tech)
+        # #130 paso 4: the macro section is anchored to the dated RAG facts.
+        try:
+            from analysis.macro_rag import macro_context_for
+
+            macro_ctx = macro_context_for(fund)
+        except Exception:
+            macro_ctx = ""
+        return equity_decision_prompt(fund, tech, macro_ctx)
 
     # ------------------------------------------------------------------ #
     #  Phase 0: Long-term plan narrative (portfolio-level explanation)    #

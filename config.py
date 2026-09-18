@@ -2207,6 +2207,8 @@ class CommitteeConfig:
       prompt_version     — part of the verdict cache key. Bump it whenever a
                           committee prompt changes, or cached verdicts built by
                           the old prompt keep being served until they expire.
+                          Also keys Stock Analysis (`cached_full_analysis`),
+                          whose AI decision reuses the Fundamental's prompt.
     """
     enabled: bool = True
     max_workers: int = 5
@@ -2232,7 +2234,7 @@ class CommitteeConfig:
     reduce_lean: float = -0.5
     sell_lean: float = -1.5
     downgrade_confidence_on_strong_dissent: bool = True
-    prompt_version: str = "2026-09-18b"
+    prompt_version: str = "2026-09-18c"
 
     # --- Portfolio-level committee (evalúa el PLAN, no un ticker) --------- #
     # Reuses the same deterministic aggregation + lean thresholds; only the

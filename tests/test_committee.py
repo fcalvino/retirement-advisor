@@ -172,6 +172,28 @@ def test_committee_runs_end_to_end_no_network():
     assert "múltiplo alto" in verdict.dissent
 
 
+def test_fundamental_prompt_receives_rag_macro(monkeypatch):
+    """#130 paso 4: the Fundamental sees the same dated macro as the Macro Strategist."""
+    import analysis.macro_rag as mr
+
+    monkeypatch.setattr(mr, "macro_context_for", lambda fund: "[2026-09] FEDFUNDS 4.25%")
+    seen = []
+    base = make_fake(
+        fundamental=_fundamental_json("BUY"), macro=_agent_json("BUY"),
+        devil=_agent_json("HOLD"), pm=_agent_json("BUY"), coach=_agent_json("HOLD"),
+    )
+
+    def call_fn(prompt):
+        seen.append(prompt)
+        return base(prompt)
+
+    fund, tech = _fund_tech()
+    CommitteeAnalyzer(call_fn=call_fn, use_cache=False).analyze(fund, tech)
+    fundamental = [p for p in seen if '"recommended_max_allocation_conservative"' in p]
+    assert len(fundamental) == 1
+    assert "[2026-09] FEDFUNDS 4.25%" in fundamental[0]
+
+
 def test_to_decision_maps_fields_and_keeps_scores_deterministic():
     fund, tech = _fund_tech()
     fake = make_fake(

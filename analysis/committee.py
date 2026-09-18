@@ -620,16 +620,20 @@ class CommitteeAnalyzer:
         # role -> (prompt, parser)
         from analysis.prompts import crypto_decision_prompt, equity_decision_prompt
 
-        is_crypto = bool(getattr(fund, "is_crypto", False))
-        fundamental_prompt = (crypto_decision_prompt if is_crypto else equity_decision_prompt)(fund, tech)
-
-        # Fase 3B — inject dated macro context (RAG) into the Macro Strategist.
+        # Fase 3B — dated macro context (RAG) for the Macro Strategist and,
+        # since #130 paso 4, the Fundamental Analyst too.
         try:
             from analysis.macro_rag import macro_context_for
 
             macro_ctx = macro_context_for(fund)
         except Exception:
             macro_ctx = ""
+
+        is_crypto = bool(getattr(fund, "is_crypto", False))
+        if is_crypto:
+            fundamental_prompt = crypto_decision_prompt(fund, tech)
+        else:
+            fundamental_prompt = equity_decision_prompt(fund, tech, macro_ctx)
 
         jobs = {
             "Analista Fundamental": (fundamental_prompt, _parse_fundamental),
