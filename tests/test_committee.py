@@ -549,3 +549,59 @@ def test_cache_key_changes_with_prompt_version():
     assert f"v{COMMITTEE.prompt_version}" in before
     with patch.object(COMMITTEE, "prompt_version", "otra"):
         assert c._cache_key("MSFT") != before
+
+
+# --------------------------------------------------------------------------- #
+#  #130 paso 5 — data_quality modula la confianza, no el voto                  #
+# --------------------------------------------------------------------------- #
+
+from analysis.committee import _data_quality_variant  # noqa: E402
+
+
+def _quality_ops(fund_conf="HIGH"):
+    return [
+        AgentOpinion("Analista Fundamental", "BUY", fund_conf, ["a"], ["r"]),
+        AgentOpinion("Estratega Macro", "BUY", "MEDIUM", ["b"], ["r"]),
+        AgentOpinion("Abogado del Diablo", "HOLD", "LOW", ["c"], ["bear"]),
+        AgentOpinion("Portfolio Manager", "BUY", "HIGH", ["d"], ["r"]),
+        AgentOpinion("Behavioral Coach", "HOLD", "MEDIUM", ["e"], ["r"]),
+    ]
+
+
+def test_data_quality_downgrades_confidence_not_vote():
+    thr = COMMITTEE.data_quality_downgrade_missing_fields
+    base = aggregate("MSFT", _quality_ops())
+    assert base.confidence == "HIGH"
+    for dq in ({"stale": True, "n_missing": 0}, {"stale": False, "n_missing": thr}):
+        v = aggregate("MSFT", _quality_ops(), data_quality=dq)
+        assert v.confidence == "MEDIUM"
+        assert (v.lean, v.action) == (base.lean, base.action)
+    ok = aggregate("MSFT", _quality_ops(), data_quality={"stale": False, "n_missing": thr - 1})
+    assert ok.confidence == "HIGH"
+    floor = aggregate("MSFT", _quality_ops("LOW"), data_quality={"stale": True, "n_missing": 0})
+    assert floor.confidence == "LOW"
+
+
+def test_data_quality_cache_variant():
+    assert _data_quality_variant(None) == ""
+    a = {"stale": False, "n_missing": 1, "freshness_hours": 2.0}
+    assert _data_quality_variant(a) == _data_quality_variant(dict(a, freshness_hours=5.0))
+    assert _data_quality_variant(a) != _data_quality_variant(dict(a, stale=True))
+
+
+def test_analyze_keys_cache_and_confidence_by_data_quality(monkeypatch):
+    seen = []
+    monkeypatch.setattr(CommitteeAnalyzer, "_get_cached", lambda self, s, v="": seen.append(v))
+    monkeypatch.setattr(CommitteeAnalyzer, "_set_cached", lambda self, s, verdict, v="": None)
+    c = CommitteeAnalyzer(call_fn=_routing_fake(), use_cache=True)
+
+    fund, tech = _fund_with(data_quality=None)
+    fresh = c.analyze(fund, tech)
+    fund, tech = _fund_with(data_quality={"stale": True, "n_missing": 0})
+    stale = c.analyze(fund, tech)
+
+    assert seen[0] == ""  # sin calidad: la clave de siempre
+    assert seen[1] == "dq:s1m0"
+    assert (stale.lean, stale.action) == (fresh.lean, fresh.action)
+    rank = ["LOW", "MEDIUM", "HIGH"]
+    assert rank.index(stale.confidence) == max(0, rank.index(fresh.confidence) - 1)

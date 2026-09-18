@@ -211,11 +211,19 @@ def _lean_to_action(lean: float) -> str:
     return "HOLD"
 
 
-def aggregate(symbol: str, opinions: List[AgentOpinion], *, weights: Optional[dict] = None) -> CommitteeVerdict:
+def aggregate(
+    symbol: str,
+    opinions: List[AgentOpinion],
+    *,
+    weights: Optional[dict] = None,
+    data_quality: Optional[dict] = None,
+) -> CommitteeVerdict:
     """Combine agent opinions into a verdict with explicit, always-present dissent.
 
     ``weights`` overrides the per-role vote weights (e.g. the portfolio committee
     passes ``COMMITTEE.portfolio_vote_weights``); defaults to the per-ticker set.
+    ``data_quality`` (``fund.data_quality``) only moves the confidence: stale or
+    thin data drops it one notch, never the lean or the action.
     """
     weights = weights or COMMITTEE.vote_weights
     valid = [o for o in opinions if o.ok]
@@ -267,6 +275,8 @@ def aggregate(symbol: str, opinions: List[AgentOpinion], *, weights: Optional[di
     spread = _stance_spread(valid)
     if COMMITTEE.downgrade_confidence_on_strong_dissent and (strong_dissent or spread >= 2.0):
         base_conf_rank = max(0, base_conf_rank - 1)
+    if _data_quality_degraded(data_quality):
+        base_conf_rank = max(0, base_conf_rank - 1)
     confidence = _RANK_CONFIDENCE[base_conf_rank]
 
     # De-duplicate while preserving order.
@@ -278,6 +288,32 @@ def aggregate(symbol: str, opinions: List[AgentOpinion], *, weights: Optional[di
         consensus_points=consensus_points, dissent=dissent,
         opinions=opinions, lean=round(lean, 4),
     )
+
+
+def _data_quality_flags(dq: Optional[dict]) -> Optional[tuple]:
+    """(stale, too_many_missing) from ``fund.data_quality``; None when absent."""
+    if not isinstance(dq, dict):
+        return None
+    try:
+        n_missing = int(dq.get("n_missing") or 0)
+    except (TypeError, ValueError):
+        n_missing = 0
+    return bool(dq.get("stale")), n_missing >= COMMITTEE.data_quality_downgrade_missing_fields
+
+
+def _data_quality_degraded(dq: Optional[dict]) -> bool:
+    flags = _data_quality_flags(dq)
+    return bool(flags and any(flags))
+
+
+def _data_quality_variant(dq: Optional[dict]) -> str:
+    """Cache-key suffix: a verdict whose confidence saw one quality bucket must
+    not be served for another. Empty when there is no quality info."""
+    flags = _data_quality_flags(dq)
+    if flags is None:
+        return ""
+    stale, thin = flags
+    return f"dq:s{int(stale)}m{int(thin)}"
 
 
 def _stance_spread(opinions: List[AgentOpinion]) -> float:
@@ -610,7 +646,10 @@ class CommitteeAnalyzer:
     def analyze(self, fund, tech, portfolio_ctx: Optional[dict] = None) -> CommitteeVerdict:
         """``portfolio_ctx`` (from ``build_ticker_portfolio_context``) reaches only the PM."""
         symbol = fund.symbol
-        variant = _portfolio_variant(portfolio_ctx)
+        dq = getattr(fund, "data_quality", None)
+        variant = ":".join(
+            p for p in (_portfolio_variant(portfolio_ctx), _data_quality_variant(dq)) if p
+        )
         if self._use_cache:
             cached = self._get_cached(symbol, variant)
             if cached is not None:
@@ -649,7 +688,7 @@ class CommitteeAnalyzer:
             )
 
         opinions = self._run_agents(jobs)
-        verdict = aggregate(symbol, opinions)
+        verdict = aggregate(symbol, opinions, data_quality=dq)
         logger.info(
             f"committee[{symbol}]: {verdict.action} ({verdict.confidence}) lean={verdict.lean} "
             f"dissent={len(verdict.dissent)} complete={verdict.complete}"
