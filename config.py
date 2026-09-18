@@ -2383,12 +2383,24 @@ class MacroRagConfig:
                       context must actually be fresh.
       min_score      — minimum retrieval relevance (0-1) to include a doc.
       max_context_chars — cap injected context size to control token cost.
+      fred_series    — FRED ``series_id -> title`` that ``ingest_from_fred``
+                      pulls (#130 paso 6). GDP goes in as the real growth rate
+                      (A191RL1Q225SBEA), not the level in billions, so the model
+                      reads it without converting units.
+      fred_refresh_hour — local hour (HH:MM) of the scheduler's daily FRED ingest.
     """
     enabled: bool = True
     top_k: int = 4
     max_age_days: int = 120
     min_score: float = 0.02
     max_context_chars: int = 1200
+    fred_series: dict = field(default_factory=lambda: {
+        "FEDFUNDS": "Tasa de fondos federales (FRED)",
+        "CPIAUCSL": "Índice de precios al consumidor IPC (FRED)",
+        "DGS10": "Rendimiento del bono del Tesoro a 10 años (FRED)",
+        "A191RL1Q225SBEA": "Crecimiento del PBI real de EE. UU., % anualizado trimestral (FRED)",
+    })
+    fred_refresh_hour: str = "06:30"
 
     def as_dict(self) -> dict:
         return {
