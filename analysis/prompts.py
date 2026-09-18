@@ -128,6 +128,30 @@ def _portfolio_macro_factors() -> str:
     )
 
 
+def _equity_macro_block(fund, macro_context: str) -> str:
+    """Macro section of ``equity_decision_prompt``, anchored to the RAG.
+
+    With dated facts the model must use only those (same wording as the Macro
+    Strategist, ``committee_prompts.macro_strategist_prompt``); without them it
+    must not recall macro from memory and returns ``macro_factors: []``.
+    """
+    if not macro_context:
+        return (
+            "--- CONTEXTO MACRO ---\n"
+            "No tenés hechos macro fechados para este activo: devolvé `macro_factors: []` y no "
+            "cites datos macro de memoria. Basá la decisión en los fundamentales y el técnico."
+        )
+    return (
+        "--- CONTEXTO MACRO FECHADO (RAG) ---\n"
+        "Usá EXCLUSIVAMENTE estos hechos macro fechados como tu fuente de actualidad "
+        "(no inventes datos macro ni uses tu memoria de entrenamiento):\n"
+        f"{macro_context}\n"
+        "Temas a buscar en esos hechos, solo si aparecen: "
+        f"{_equity_world_macro_factors()}; "
+        f"{_equity_national_macro_factors(fund.symbol in ARGENTINA_ADRS)}"
+    )
+
+
 def _macro_factors_output_spec(for_moat: bool = False, for_portfolio: bool = False) -> str:
     """Returns clean instruction text for the structured macro_factors field.
     Description only (no embedded JSON object) so that the final example templates in each
@@ -419,7 +443,7 @@ Incluye en el reasoning: (1) la fortaleza central del moat, (2) la limitación o
 # ---------------------------------------------------------------------------
 
 
-def equity_decision_prompt(fund, tech) -> str:
+def equity_decision_prompt(fund, tech, macro_context: str = "") -> str:
     """
     Build the LLM prompt for equity investment decision (BUY/SELL/HOLD).
 
@@ -427,6 +451,10 @@ def equity_decision_prompt(fund, tech) -> str:
     ----------
     fund : FundamentalResult
     tech : TechnicalResult
+    macro_context : str
+        Dated macro facts from the RAG (``macro_context_for``). Empty → the
+        model is told to return ``macro_factors: []`` instead of recalling macro
+        from its training data (#130 paso 4).
 
     JSON output contract (7+ fields):
         action          str   STRONG BUY | BUY | HOLD | REDUCE | SELL
@@ -508,9 +536,7 @@ Momentum: RSI={fmt(tech.rsi_weekly)} | MACD={_tristate(tech.macd_bullish, "alcis
 Contexto: {tech.price_vs_52w_high_pct:+.1f}% desde 52w high | {tech.price_vs_52w_low_pct:+.1f}% desde 52w low
 Alertas técnicas: {", ".join(tech.warnings) if tech.warnings else "ninguna"}
 
---- CONTEXTO MACRO GLOBAL Y NACIONAL A CONSIDERAR (usá tu conocimiento actual, según corresponda) ---
-{_equity_world_macro_factors()}
-{_equity_national_macro_factors(fund.symbol in ARGENTINA_ADRS)}
+{_equity_macro_block(fund, macro_context)}
 
 Instrucción estructural (obligatoria):
 Usá EXACTAMENTE el formato de salida para macro que se detalla abajo. 

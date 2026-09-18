@@ -30,7 +30,7 @@ from loguru import logger
 
 from analysis.groq_pacing import GroqTpmPacer
 from analysis.strategy import full_analysis
-from config import ENGINE_VERSION, SCREENER, AIConfig
+from config import COMMITTEE, ENGINE_VERSION, SCREENER, AIConfig
 from data.product_ux import (
     GUARDRAILS_LABEL,
     GUARDRAILS_OMISSIONS,
@@ -1396,11 +1396,13 @@ def cached_full_analysis(
     ai_enabled: bool = False,
     ai_api_key: str = "",
     engine_version: str = ENGINE_VERSION,
+    prompt_version: str = COMMITTEE.prompt_version,
 ):
     # `engine_version` is part of the cache key so a scoring rewrite (U2-2,
     # missing-metric, FFO, yield units) cannot keep serving the previous
     # FundamentalResult for the remaining TTL of a long-lived process.
-    _ = engine_version
+    # `prompt_version` does the same for the AI decision prompt (#130 paso 4).
+    _ = engine_version, prompt_version
     ai_cfg = AIConfig(
         provider=ai_provider,
         model=ai_model,

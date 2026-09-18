@@ -276,6 +276,28 @@ class TestEquityDecisionPrompt:
         assert "ADJUSTED" in prompt or "Score a usar" in prompt
         assert "FEW-SHOT" in prompt or "few-shot" in prompt.lower() or "FEW-SHOT DE RIGOR" in prompt
 
+    def test_macro_is_anchored_to_dated_rag_facts(self):
+        """#130 paso 4: with RAG the model gets dated facts, not «tu conocimiento actual»."""
+        prompt = equity_decision_prompt(_equity_fund(), _tech(), "[2026-09] FEDFUNDS 4.25%")
+        assert "[2026-09] FEDFUNDS 4.25%" in prompt
+        assert "EXCLUSIVAMENTE estos hechos macro fechados" in prompt
+        assert "conocimiento actual" not in prompt
+
+    def test_without_rag_macro_factors_must_be_empty(self):
+        prompt = self._prompt()
+        assert "`macro_factors: []`" in prompt
+        assert "conocimiento actual" not in prompt
+        assert "EXCLUSIVAMENTE estos hechos macro fechados" not in prompt
+
+    def test_ai_analyzer_injects_rag_context_for_equity(self, monkeypatch):
+        import analysis.macro_rag as mr
+        from analysis.ai_analyzer import AIAnalyzer
+        from config import AIConfig
+
+        monkeypatch.setattr(mr, "macro_context_for", lambda fund: "[2026-09] CPI 3.1%")
+        prompt = AIAnalyzer(AIConfig())._build_prompt(_equity_fund(), _tech())
+        assert "[2026-09] CPI 3.1%" in prompt
+
     def test_high_leverage_mentioned_in_constraints(self):
         fund = _equity_fund()
         fund.debt_equity = 3.5
