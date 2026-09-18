@@ -259,17 +259,22 @@ def example_macro_docs(as_of: Optional[str] = None) -> List[MacroDoc]:
     ]
 
 
-def ingest_from_fred(store: MacroRagStore, series: Optional[dict] = None) -> int:
+def ingest_from_fred(store: MacroRagStore, series: Optional[dict] = None,
+                     *, now: Optional[datetime] = None) -> int:
     """Best-effort ingest of latest FRED series values as dated macro docs.
 
-    ``series`` maps ``series_id -> human title``. Requires FRED_API_KEY; returns
-    the number of docs ingested (0 when no key / no network).
+    ``series`` maps ``series_id -> human title`` (default ``MACRO_RAG.fred_series``).
+    Requires FRED_API_KEY; returns the number of docs ingested (0 when no key /
+    no network, and then the store is left untouched).
+
+    ``as_of`` is the day the value was verified as the latest, not FRED's
+    observation date: FRED dates an observation at the *start* of its period, so
+    a quarterly GDP print is already ~120 days old the day it is released and
+    would never pass the freshness gate. The period goes in the body instead.
+    One doc per series (``doc_key`` without date): a new print replaces the old
+    one rather than piling up next to it.
     """
-    series = series or {
-        "FEDFUNDS": "Tasa de fondos federales (FRED)",
-        "CPIAUCSL": "Índice de precios al consumidor IPC (FRED)",
-        "DGS10": "Rendimiento del bono del Tesoro a 10 años (FRED)",
-    }
+    series = series or MACRO_RAG.fred_series
     try:
         from data.data_sources import FredSource
 
@@ -277,19 +282,22 @@ def ingest_from_fred(store: MacroRagStore, series: Optional[dict] = None) -> int
     except Exception:
         return 0
 
+    today = (now or utc_now()).strftime("%Y-%m-%d")
     docs: List[MacroDoc] = []
     for series_id, title in series.items():
         sv = fred.latest_series_value(series_id)
         if sv is None:
             continue
+        period = f", período {sv.as_of}" if sv.as_of else ""
         docs.append(MacroDoc(
             title=title,
-            body=f"Último valor reportado: {sv.value} (serie {series_id}).",
-            source="FRED", as_of=sv.as_of or "", tags=("fred", "macro"),
-            doc_key=f"fred:{series_id}:{sv.as_of}",
+            body=f"Dato macro de FRED. Último valor reportado: {sv.value} (serie {series_id}{period}).",
+            source="FRED", as_of=today, tags=("fred", "macro"),
+            doc_key=f"fred:{series_id}",
         ))
     if docs:
         store.ingest_many(docs)
+    logger.info(f"macro_rag: ingested {len(docs)}/{len(series)} FRED series")
     return len(docs)
 
 

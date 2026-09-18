@@ -127,3 +127,63 @@ def test_macro_query_flags_argentina():
     fund = SimpleNamespace(symbol="YPF", company_name="YPF", sector="Energy", industry="Oil")
     q = macro_query_for(fund)
     assert "argentina" in q.lower()
+
+
+# ------------------------------------------------------------------ #
+#  FRED ingest (#130 paso 6)                                          #
+# ------------------------------------------------------------------ #
+
+class _FakeFred:
+    """Stands in for FredSource: returns a fixed observation per series."""
+
+    def __init__(self, values):
+        self._values = values
+
+    def latest_series_value(self, series_id):
+        from data.data_sources import SourceValue
+
+        v = self._values.get(series_id)
+        return None if v is None else SourceValue(series_id, v[0], "fred", as_of=v[1])
+
+
+def _patch_fred(monkeypatch, values):
+    import data.data_sources as ds
+
+    monkeypatch.setattr(ds, "FredSource", lambda: _FakeFred(values))
+
+
+def test_fred_gdp_doc_reaches_macro_context(store, monkeypatch):
+    from types import SimpleNamespace
+
+    from analysis.macro_rag import ingest_from_fred, macro_context_for
+    from config import MACRO_RAG
+
+    # FRED dates GDP at the start of the quarter: ~170 days old on release.
+    _patch_fred(monkeypatch, {"A191RL1Q225SBEA": (3.1, _today(170)), "FEDFUNDS": (4.33, _today(48))})
+    assert "A191RL1Q225SBEA" in MACRO_RAG.fred_series
+
+    assert ingest_from_fred(store) == 2
+    fund = SimpleNamespace(symbol="MSFT", company_name="Microsoft", sector="Technology", industry="Software")
+    ctx = macro_context_for(fund, store=store)
+    assert "PBI real" in ctx
+    assert f"[{_today()}]" in ctx          # dated by verification day → passes the freshness gate
+    assert f"período {_today(170)}" in ctx  # the observation period stays visible
+
+
+def test_fred_ingest_replaces_previous_print(store, monkeypatch):
+    from analysis.macro_rag import ingest_from_fred
+
+    _patch_fred(monkeypatch, {"FEDFUNDS": (4.33, _today(60))})
+    ingest_from_fred(store, {"FEDFUNDS": "Fed funds"})
+    _patch_fred(monkeypatch, {"FEDFUNDS": (4.08, _today(30))})
+    ingest_from_fred(store, {"FEDFUNDS": "Fed funds"})
+    assert store.count() == 1
+    assert "4.08" in store.all_docs()[0].body
+
+
+def test_fred_ingest_without_key_leaves_store_untouched(store, monkeypatch):
+    from analysis.macro_rag import ingest_from_fred
+
+    _patch_fred(monkeypatch, {})
+    assert ingest_from_fred(store) == 0
+    assert store.count() == 0

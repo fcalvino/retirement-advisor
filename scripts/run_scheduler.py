@@ -15,6 +15,8 @@ The scheduler performs two jobs:
      universe, feeds results into AlertEngine, dispatches notifications.
   2. Monthly report (on REPORT_DAY at 08:00): generates a full PDF report
      and sends it via email/Telegram.
+  3. Macro RAG (daily, and on startup / --once): ingests the latest FRED
+     series so the committee's macro is anchored to dated facts.
 """
 
 from __future__ import annotations
@@ -31,7 +33,7 @@ from loguru import logger
 from alerts.engine import AlertEngine
 from alerts.notifier import Notifier
 from alerts.reporter import ReportGenerator
-from config import AI_CONFIG, ALERTS, DEFAULT_TICKERS, REPORT
+from config import AI_CONFIG, ALERTS, DEFAULT_TICKERS, MACRO_RAG, REPORT
 
 
 def _run_screener_for_alerts() -> list[dict]:
@@ -344,6 +346,21 @@ def _check_plan_mc_alerts(engine) -> None:
         )
 
 
+def job_ingest_macro() -> None:
+    """Refresh the macro RAG with the latest FRED series (#130 paso 6).
+
+    Without this the RAG only fills when someone clicks the button in the Macro
+    RAG page, and with it empty the Macro Strategist and the Fundamental Analyst
+    have no dated macro to anchor to. No FRED_API_KEY → ingests 0, nothing changes.
+    """
+    from analysis.macro_rag import ingest_from_fred, macro_rag_store
+
+    try:
+        ingest_from_fred(macro_rag_store)
+    except Exception as exc:
+        logger.error(f"Macro RAG ingest failed: {exc}")
+
+
 def job_monthly_report() -> None:
     logger.info("=== Monthly report generation started ===")
     try:
@@ -378,6 +395,7 @@ def main() -> None:
 
     if args.once:
         logger.info("=== One-shot alert check (--once) ===")
+        job_ingest_macro()
         job_alert_check()
         return
 
@@ -385,6 +403,7 @@ def main() -> None:
     logger.info(f"  Alert interval : every {REPORT.alert_check_interval_hours}h")
     logger.info(f"  Monthly report : day {REPORT.report_day_of_month} of each month at 08:00")
     logger.info("  Track record   : daily at 07:00")
+    logger.info(f"  Macro RAG FRED : daily at {MACRO_RAG.fred_refresh_hour}")
     logger.info(f"  Email enabled  : {ALERTS.email_enabled}")
     logger.info(f"  Telegram enabled: {ALERTS.telegram_enabled}")
 
@@ -401,7 +420,11 @@ def main() -> None:
     # Score the track record daily — the horizons only fill in if this runs.
     schedule.every().day.at("07:00").do(job_score_track_record)
 
-    # Run alert check immediately on startup
+    # Refresh the macro RAG before the day's analyses read it.
+    schedule.every().day.at(MACRO_RAG.fred_refresh_hour).do(job_ingest_macro)
+
+    # Run alert check immediately on startup (macro first, so it anchors to it)
+    job_ingest_macro()
     logger.info("Running initial alert check on startup…")
     job_alert_check()
 
