@@ -475,3 +475,55 @@ def test_comite_page_prefetches_without_ai():
     ).read_text()
     assert "cached_full_analysis(\n            symbol, ai_cfg.provider, ai_cfg.model, False" in src
     assert "if verdict.complete:" in src
+
+
+# --------------------------------------------------------------------------- #
+#  #130 paso 1 — el bear case ve la crisis del sector y las alertas técnicas    #
+# --------------------------------------------------------------------------- #
+
+from analysis.committee_prompts import (  # noqa: E402
+    behavioral_coach_prompt,
+    macro_strategist_prompt,
+    sector_stress_shocks,
+)
+
+
+def test_devils_advocate_sees_sector_stress_shocks():
+    fund, tech = _fund_tech()
+    prompt = devils_advocate_prompt(fund, tech)
+    worst_name, worst_shock = sector_stress_shocks(fund.sector)[0]
+    assert "Caída de su sector en crisis históricas" in prompt
+    assert worst_name in prompt and f"{worst_shock:.0f}%" in prompt
+
+
+def test_devils_advocate_tech_warnings_only_when_present():
+    fund, tech = _fund_tech()
+    tech = copy.deepcopy(tech)
+    tech.warnings = ["RSI sobrecomprado"]
+    assert "Alertas técnicas: RSI sobrecomprado" in devils_advocate_prompt(fund, tech)
+    tech.warnings = []
+    assert "Alertas técnicas" not in devils_advocate_prompt(fund, tech)
+
+
+def test_stress_facts_stay_out_of_the_shared_block():
+    fund, tech = _fund_tech()
+    for prompt in (macro_strategist_prompt(fund, tech), behavioral_coach_prompt(fund, tech)):
+        assert "Caída de su sector en crisis históricas" not in prompt
+
+
+def test_sector_stress_shocks_match_the_pm_context():
+    ctx = build_ticker_portfolio_context("MSFT", "Technology", position_weights={"MSFT": 10.0})
+    assert ctx["sector_shocks"] == sector_stress_shocks("Technology")
+    assert len(ctx["sector_shocks"]) == len(STRESS_SCENARIOS)
+
+
+# --------------------------------------------------------------------------- #
+#  #130 paso 2 — la versión del prompt invalida los veredictos cacheados        #
+# --------------------------------------------------------------------------- #
+
+def test_cache_key_changes_with_prompt_version():
+    c = CommitteeAnalyzer(call_fn=lambda p: "{}", use_cache=False)
+    before = c._cache_key("MSFT")
+    assert f"v{COMMITTEE.prompt_version}" in before
+    with patch.object(COMMITTEE, "prompt_version", "otra"):
+        assert c._cache_key("MSFT") != before

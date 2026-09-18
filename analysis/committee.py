@@ -43,10 +43,11 @@ from analysis.committee_prompts import (
     plan_strategist_prompt,
     portfolio_manager_prompt,
     risk_manager_portfolio_prompt,
+    sector_stress_shocks,
 )
 from analysis.strategy import Decision
 from analysis.utils import extract_json_object
-from config import AI_FALLBACK, COMMITTEE, STRESS_SCENARIOS
+from config import AI_FALLBACK, COMMITTEE
 
 # Stance vocabulary shared with Decision.action.
 _STANCE_SCORE = {"STRONG BUY": 2.0, "BUY": 1.0, "HOLD": 0.0, "REDUCE": -1.0, "SELL": -2.0}
@@ -350,11 +351,7 @@ def build_ticker_portfolio_context(
         except Exception as exc:  # pragma: no cover - plan data is best-effort
             logger.debug(f"committee[{sym}]: plan drift skipped — {exc}")
 
-    shocks = [
-        (sc.name, float(sc.sector_shocks.get(sector, sc.default_shock)))
-        for sc in STRESS_SCENARIOS
-    ]
-    ctx["sector_shocks"] = sorted(shocks, key=lambda t: t[1])
+    ctx["sector_shocks"] = sector_stress_shocks(sector)
     return ctx
 
 
@@ -728,7 +725,8 @@ class CommitteeAnalyzer:
     def _cache_key(self, symbol: str, variant: str = "") -> str:
         prov = getattr(self._ai_config, "provider", "inj")
         model = getattr(self._ai_config, "model", "inj")
-        key = f"committee:{symbol}:{prov}:{model}"
+        # The prompt version invalidates verdicts built by an older prompt.
+        key = f"committee:{symbol}:{prov}:{model}:v{COMMITTEE.prompt_version}"
         return f"{key}:{variant}" if variant else key
 
     def _get_cached(self, symbol: str, variant: str = "") -> Optional[CommitteeVerdict]:
