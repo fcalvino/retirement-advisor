@@ -2209,6 +2209,10 @@ class CommitteeConfig:
                           the old prompt keep being served until they expire.
                           Also keys Stock Analysis (`cached_full_analysis`),
                           whose AI decision reuses the Fundamental's prompt.
+      data_quality_downgrade_missing_fields — when ``fund.data_quality`` is
+                          stale or reports at least this many missing key
+                          metrics, the verdict confidence drops one notch; the
+                          lean and the action are untouched (#130 paso 5).
     """
     enabled: bool = True
     max_workers: int = 5
@@ -2235,6 +2239,7 @@ class CommitteeConfig:
     sell_lean: float = -1.5
     downgrade_confidence_on_strong_dissent: bool = True
     prompt_version: str = "2026-09-18c"
+    data_quality_downgrade_missing_fields: int = 3
 
     # --- Portfolio-level committee (evalúa el PLAN, no un ticker) --------- #
     # Reuses the same deterministic aggregation + lean thresholds; only the
