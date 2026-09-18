@@ -24,7 +24,10 @@ hard numbers are injected as context so agents anchor to data, never invent it.
 
 from __future__ import annotations
 
-from analysis.prompts import JSON_ONLY_CONTRACT
+from typing import Optional
+
+from analysis.currency_metric_text import currency_metric_note, currency_metric_text
+from analysis.prompts import JSON_ONLY_CONTRACT, _payout_block, _tailwind_context_block
 from data.product_ux import (
     DOWNSIDE_RATIO_LABEL,
     POT_CAGR_LABEL,
@@ -82,6 +85,11 @@ def committee_context_block(fund, tech) -> str:
     lines = [
         f"Activo: {getattr(fund, 'company_name', '') or fund.symbol} ({fund.symbol})",
         f"Sector/Industria: {getattr(fund, 'sector', 'n/d')} / {getattr(fund, 'industry', 'n/d')}",
+    ]
+    country = getattr(fund, "country", "") or ""
+    if country:
+        lines.append(f"País: {country}")
+    lines += [
         f"Score del motor (determinista): {_num(score)}/100"
         + ("  [cripto: adjusted_score]" if is_crypto else ""),
         f"Moat: {getattr(fund, 'moat_classification', 'n/d')}",
@@ -101,6 +109,17 @@ def committee_context_block(fund, tech) -> str:
         f"Señal técnica: {getattr(tech, 'signal', 'n/d')} | RSI semanal: {_num(getattr(tech, 'rsi_weekly', None))} | "
         f"vs 52w high: {_num(getattr(tech, 'price_vs_52w_high_pct', None), '%')}",
     ]
+    # Hechos que antes solo veía el Analista Fundamental: sin ellos el Abogado del
+    # Diablo armaba el bear case con menos datos que la tesis que debía refutar.
+    ccy_notes = [n for n in (currency_metric_note(fund, m) for m in ("fcf_yield", "p_ffo")) if n]
+    if ccy_notes:
+        lines.append("Moneda de estados ≠ cotización: " + " ".join(ccy_notes))
+    warnings = list(getattr(fund, "warnings", None) or [])
+    if warnings:
+        lines.append("Alertas del motor: " + "; ".join(str(w) for w in warnings))
+    tailwind = _tailwind_context_block(fund)
+    if tailwind:
+        lines.append(tailwind.strip("\n"))
     return "\n".join(lines)
 
 
@@ -146,14 +165,79 @@ def devils_advocate_prompt(fund, tech) -> str:
     )
 
 
-def portfolio_manager_prompt(fund, tech) -> str:
-    return _role_prompt(
-        "Portfolio Manager",
+def _ticker_portfolio_block(ctx: dict) -> str:
+    """The investor's REAL book as seen from this ticker (see build_ticker_portfolio_context)."""
+    lines = [
+        "\n\n=== TU CARTERA REAL (datos del tracker; anclá el tamaño a estos números) ===",
+        f"Peso actual de este activo: {_num(ctx.get('weight_pct'), '%')}"
+        + (" (hoy no lo tenés)" if not ctx.get("weight_pct") else ""),
+        f"Peso actual de su sector ({ctx.get('sector') or 'n/d'}): {_num(ctx.get('sector_weight_pct'), '%')}",
+    ]
+    if ctx.get("plan_target_pct") is not None:
+        lines.append(
+            f"Plan activo «{ctx.get('plan_name') or 'n/d'}»: objetivo {_num(ctx.get('plan_target_pct'), '%')} · "
+            f"deriva {ctx.get('drift_pct', 0.0):+.1f} pp (positivo = por encima del plan)"
+        )
+    shocks = ctx.get("sector_shocks") or []
+    if shocks:
+        lines.append(
+            "Caída de su sector en crisis históricas (stress test): "
+            + ", ".join(f"{name} {shock:.0f}%" for name, shock in shocks[:4])
+        )
+    lines.append(
+        "Decidí el tamaño sobre la posición REAL: si ya está en o por encima del máximo prudente, "
+        "o su sector ya concentra la cartera, un BUY no se justifica aunque el negocio sea bueno."
+    )
+    return "\n".join(lines)
+
+
+def portfolio_manager_prompt(fund, tech, portfolio_ctx: Optional[dict] = None) -> str:
+    instructions = (
         "Concilá las visiones (fundamental, macro y el bear case del abogado del diablo) y "
         "decidí el dimensionamiento práctico para una cartera de retiro conservadora "
         "(máximo prudente por nombre ~8-15%). Tu stance es la decisión de cartera, no un "
         "análisis aislado: pesá el upside contra el riesgo de capital. Si el bear case es "
-        "serio, reflejalo en una postura y un tamaño más cautos.",
+        "serio, reflejalo en una postura y un tamaño más cautos."
+    )
+    if portfolio_ctx:
+        instructions += _ticker_portfolio_block(portfolio_ctx)
+    return _role_prompt("Portfolio Manager", instructions, fund, tech)
+
+
+DIVIDEND_ROLE = "Analista de Dividendo y Asignación de Capital"
+
+
+def dividend_capital_prompt(fund, tech) -> str:
+    """Voice for an investor who will LIVE off the income: is the payout sustainable?
+
+    Only convened when the asset pays a dividend (``committee._pays_dividend``);
+    every fact here already exists in ``FundamentalResult``.
+    """
+    fcf = currency_metric_text(fund, "fcf_yield") or _num(getattr(fund, "fcf_yield", None), "%")
+    pio = getattr(fund, "piotroski_detail", None)
+    pio_line = f"Piotroski: {getattr(fund, 'piotroski_score', 0)}/9"
+    if pio is not None:
+        pio_line += f" ({pio.summary()})"
+    streak = (getattr(fund, "notes", None) or {}).get("div_growth", "")
+    facts = [
+        "",
+        "=== HECHOS DE RENTA Y CAPITAL ===",
+        f"Dividend yield: {_num(getattr(fund, 'dividend_yield', None), '%')} | {_payout_block(fund)}",
+        f"FCF yield: {fcf} | Cobertura de intereses: {_num(getattr(fund, 'interest_coverage', None), 'x')} | "
+        f"D/E: {_num(getattr(fund, 'debt_equity', None))}",
+        pio_line + " — F6 indica si NO hubo dilución de accionistas.",
+    ]
+    if streak:
+        facts.append(f"Historial del dividendo: {streak}")
+    return _role_prompt(
+        DIVIDEND_ROLE,
+        "Tu mandato: decidir si la renta y el capital de este negocio son SOSTENIBLES para un "
+        "inversor que va a vivir de ese dividendo. Mirá si el payout (el sostenible, no el contable "
+        "si es un REIT) deja margen, si el flujo de caja libre y la cobertura de intereses lo "
+        "respaldan, si la deuda o la dilución lo ponen en riesgo y si las alertas del motor anticipan "
+        "un recorte. Un yield alto con payout insostenible es una trampa, no una oportunidad. Tu "
+        "stance refleja la solidez de la renta, no el potencial de suba del precio."
+        + "\n".join(facts),
         fund, tech,
     )
 

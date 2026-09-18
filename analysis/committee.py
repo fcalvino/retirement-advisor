@@ -35,6 +35,7 @@ from analysis.committee_prompts import (
     behavioral_coach_prompt,
     devils_advocate_portfolio_prompt,
     devils_advocate_prompt,
+    dividend_capital_prompt,
     macro_strategist_portfolio_prompt,
     macro_strategist_prompt,
     plan_strategist_prompt,
@@ -43,7 +44,7 @@ from analysis.committee_prompts import (
 )
 from analysis.strategy import Decision
 from analysis.utils import extract_json_object
-from config import COMMITTEE
+from config import COMMITTEE, STRESS_SCENARIOS
 
 # Stance vocabulary shared with Decision.action.
 _STANCE_SCORE = {"STRONG BUY": 2.0, "BUY": 1.0, "HOLD": 0.0, "REDUCE": -1.0, "SELL": -2.0}
@@ -51,6 +52,9 @@ _CONFIDENCE_RANK = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
 _RANK_CONFIDENCE = {0: "LOW", 1: "MEDIUM", 2: "HIGH"}
 
 LLMCall = Callable[[str], str]
+
+#: Vote key of the dividend voice (its prompt title is the longer DIVIDEND_ROLE).
+DIVIDEND_VOTE_ROLE = "Analista de Dividendo"
 
 
 @dataclass
@@ -255,6 +259,70 @@ def _dedupe(items: List[str]) -> List[str]:
             seen.add(it)
             out.append(it)
     return out
+
+
+def _pays_dividend(fund) -> bool:
+    """The dividend voice only votes when there is a dividend to judge.
+
+    Crypto and non-payers abstain: an unconvened voice leaves the lean untouched,
+    whereas a forced HOLD would dilute it toward zero.
+    """
+    if bool(getattr(fund, "is_crypto", False)):
+        return False
+    try:
+        yld = float(getattr(fund, "dividend_yield", None) or 0.0)
+    except (TypeError, ValueError):
+        return False
+    return yld > COMMITTEE.dividend_voice_min_yield_pct
+
+
+def build_ticker_portfolio_context(
+    symbol: str,
+    sector: str,
+    *,
+    position_weights=None,
+    sector_weights=None,
+    active_plan=None,
+) -> Optional[dict]:
+    """The investor's real book as seen from ONE ticker, for the Portfolio Manager.
+
+    Pure: weights come from the tracker (the caller already has them), drift goes
+    through the canonical ``drift_breakdown`` and the sector shocks are the
+    config constants of the stress test — nothing is recomputed or fetched.
+    Returns None for an empty book, so the PM prompt stays byte-identical.
+    """
+    pw = {str(k).upper(): float(v or 0.0) for k, v in (position_weights or {}).items()}
+    if not pw:
+        return None
+    sym = (symbol or "").upper()
+    sw = dict(sector_weights or {})
+    ctx: dict = {
+        "symbol": sym,
+        "sector": sector or "",
+        "weight_pct": round(pw.get(sym, 0.0), 1),
+        "sector_weight_pct": round(float(sw.get(sector, 0.0) or 0.0), 1),
+    }
+
+    if active_plan is not None:
+        try:
+            from data.plan_context import drift_breakdown
+
+            target = {str(k).upper(): v for k, v in (active_plan.target_weights() or {}).items()}
+            row = next(r for r in drift_breakdown(target, pw)["rows"] if r["symbol"] == sym)
+            ctx["plan_name"] = getattr(active_plan, "name", "")
+            ctx["plan_target_pct"] = round(row["target_pct"], 1)
+            ctx["drift_pct"] = round(row["drift_pct"], 1)
+        except StopIteration:
+            pass  # neither held nor in the plan — no drift to report
+        except Exception as exc:  # pragma: no cover - plan data is best-effort
+            logger.debug(f"committee[{sym}]: plan drift skipped — {exc}")
+
+    shocks = [
+        (sc.name, float(sc.sector_shocks.get(sector, sc.default_shock)))
+        for sc in STRESS_SCENARIOS
+    ]
+    ctx["sector_shocks"] = sorted(shocks, key=lambda t: t[1])
+    return ctx
 
 
 # --------------------------------------------------------------------------- #
@@ -504,10 +572,12 @@ class CommitteeAnalyzer:
         analyzer = AIAnalyzer(ai_config)
         return lambda prompt: analyzer._call_api(prompt, max_tokens=900)
 
-    def analyze(self, fund, tech) -> CommitteeVerdict:
+    def analyze(self, fund, tech, portfolio_ctx: Optional[dict] = None) -> CommitteeVerdict:
+        """``portfolio_ctx`` (from ``build_ticker_portfolio_context``) reaches only the PM."""
         symbol = fund.symbol
+        variant = _portfolio_variant(portfolio_ctx)
         if self._use_cache:
-            cached = self._get_cached(symbol)
+            cached = self._get_cached(symbol, variant)
             if cached is not None:
                 logger.info(f"committee[{symbol}]: cache hit")
                 return cached
@@ -530,9 +600,14 @@ class CommitteeAnalyzer:
             "Analista Fundamental": (fundamental_prompt, _parse_fundamental),
             "Estratega Macro": (macro_strategist_prompt(fund, tech, macro_ctx), lambda r: _parse_agent("Estratega Macro", r)),
             "Abogado del Diablo": (devils_advocate_prompt(fund, tech), lambda r: _parse_agent("Abogado del Diablo", r)),
-            "Portfolio Manager": (portfolio_manager_prompt(fund, tech), lambda r: _parse_agent("Portfolio Manager", r)),
+            "Portfolio Manager": (portfolio_manager_prompt(fund, tech, portfolio_ctx), lambda r: _parse_agent("Portfolio Manager", r)),
             "Behavioral Coach": (behavioral_coach_prompt(fund, tech), lambda r: _parse_agent("Behavioral Coach", r)),
         }
+        if _pays_dividend(fund):
+            jobs[DIVIDEND_VOTE_ROLE] = (
+                dividend_capital_prompt(fund, tech),
+                lambda r: _parse_agent(DIVIDEND_VOTE_ROLE, r),
+            )
 
         opinions = self._run_agents(jobs)
         verdict = aggregate(symbol, opinions)
@@ -541,7 +616,7 @@ class CommitteeAnalyzer:
             f"dissent={len(verdict.dissent)}"
         )
         if self._use_cache:
-            self._set_cached(symbol, verdict)
+            self._set_cached(symbol, verdict, variant)
         return verdict
 
     def analyze_portfolio(self, ctx: dict, plan_key: str = "plan") -> CommitteeVerdict:
@@ -594,29 +669,41 @@ class CommitteeAnalyzer:
 
     # ----- caching ----------------------------------------------------- #
 
-    def _cache_key(self, symbol: str) -> str:
+    def _cache_key(self, symbol: str, variant: str = "") -> str:
         prov = getattr(self._ai_config, "provider", "inj")
         model = getattr(self._ai_config, "model", "inj")
-        return f"committee:{symbol}:{prov}:{model}"
+        key = f"committee:{symbol}:{prov}:{model}"
+        return f"{key}:{variant}" if variant else key
 
-    def _get_cached(self, symbol: str) -> Optional[CommitteeVerdict]:
+    def _get_cached(self, symbol: str, variant: str = "") -> Optional[CommitteeVerdict]:
         try:
             from data.cache import cache
 
-            payload = cache.get(self._cache_key(symbol))
+            payload = cache.get(self._cache_key(symbol, variant))
             if not payload:
                 return None
             return _verdict_from_dict(payload)
         except Exception:
             return None
 
-    def _set_cached(self, symbol: str, verdict: CommitteeVerdict) -> None:
+    def _set_cached(self, symbol: str, verdict: CommitteeVerdict, variant: str = "") -> None:
         try:
             from data.cache import cache
 
-            cache.set(self._cache_key(symbol), _verdict_to_dict(verdict))
+            cache.set(self._cache_key(symbol, variant), _verdict_to_dict(verdict))
         except Exception as exc:
             logger.debug(f"committee cache set skipped — {exc}")
+
+
+def _portfolio_variant(portfolio_ctx: Optional[dict]) -> str:
+    """Cache-key suffix: a verdict built on one book must not be served for another."""
+    if not portfolio_ctx:
+        return ""
+    import hashlib
+    import json
+
+    digest = hashlib.md5(json.dumps(portfolio_ctx, sort_keys=True, default=str).encode()).hexdigest()
+    return f"pf:{digest[:12]}"
 
 
 def _verdict_to_dict(v: CommitteeVerdict) -> dict:

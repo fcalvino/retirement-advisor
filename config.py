@@ -2138,6 +2138,15 @@ class CommitteeConfig:
       vote_weights       — per-role weight in the (deterministic) consensus vote.
                           The Devil's Advocate has a moderate vote but its concerns
                           are ALWAYS surfaced as dissent regardless of the vote.
+                          "Analista de Dividendo" (0.6) only votes when the asset
+                          pays a dividend: narrower mandate than Macro (0.8) and
+                          the DA (0.7), above the Coach (0.3), so one income voice
+                          cannot outweigh Fundamental/PM (1.0). With six voices the
+                          total weight goes 3.8 → 4.4; its max share of the lean
+                          is 0.6/4.4 ≈ 14 %.
+      dividend_voice_min_yield_pct — the dividend voice is convened only when
+                          dividend_yield (%) is strictly above this; otherwise it
+                          abstains (no opinion, lean untouched).
       strong_buy_lean / buy_lean / reduce_lean / sell_lean — thresholds mapping the
                           weighted lean score back to an action.
       downgrade_confidence_on_strong_dissent — when the bear case is strong, drop
@@ -2153,7 +2162,9 @@ class CommitteeConfig:
         "Abogado del Diablo":   0.7,
         "Portfolio Manager":    1.0,
         "Behavioral Coach":     0.3,
+        "Analista de Dividendo": 0.6,
     })
+    dividend_voice_min_yield_pct: float = 0.0
 
     strong_buy_lean: float = 1.5
     buy_lean: float = 0.5
@@ -2187,6 +2198,7 @@ class CommitteeConfig:
             "max_workers": self.max_workers,
             "cache_ttl_hours": self.cache_ttl_hours,
             "vote_weights": dict(self.vote_weights),
+            "dividend_voice_min_yield_pct": self.dividend_voice_min_yield_pct,
             "strong_buy_lean": self.strong_buy_lean,
             "buy_lean": self.buy_lean,
             "reduce_lean": self.reduce_lean,

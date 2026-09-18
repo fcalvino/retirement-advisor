@@ -66,11 +66,33 @@ if run and symbol:
             symbol, ai_cfg.provider, ai_cfg.model, ai_cfg.enabled, ai_cfg.api_key
         )
 
+    # The PM sizes against the REAL book (tracker values fetched once; no recompute).
+    portfolio_ctx = None
+    _pf = st.session_state.get("portfolio")
+    if _pf is not None and getattr(_pf, "positions", None):
+        try:
+            from analysis.committee import build_ticker_portfolio_context
+            from data.plan_context import get_active_plan
+
+            _values = _pf.get_current_values()
+            _total_mv = sum(v["market_value"] for v in _values.values()) or 1.0
+            _pos_w = {s: v["market_value"] / _total_mv * 100 for s, v in _values.items()}
+            _sec_w: dict[str, float] = {}
+            for v in _values.values():
+                _sec_w[v["sector"]] = _sec_w.get(v["sector"], 0.0) + v["market_value"] / _total_mv * 100
+            portfolio_ctx = build_ticker_portfolio_context(
+                symbol, getattr(fund, "sector", ""),
+                position_weights=_pos_w, sector_weights=_sec_w, active_plan=get_active_plan(),
+            )
+        except Exception as exc:  # pragma: no cover - UI guard, PM falls back to no-book prompt
+            logger.warning(f"comité page: portfolio context skipped — {exc}")
+            portfolio_ctx = None
+
     with st.spinner("El comité está deliberando (varios agentes en paralelo)…"):
         try:
             from analysis.committee import CommitteeAnalyzer
 
-            verdict = CommitteeAnalyzer(ai_config=ai_cfg).analyze(fund, tech)
+            verdict = CommitteeAnalyzer(ai_config=ai_cfg).analyze(fund, tech, portfolio_ctx)
         except Exception as exc:  # pragma: no cover - UI guard
             logger.error(f"comité page: failed — {exc}")
             st.error(f"No se pudo ejecutar el comité: {exc}")
@@ -139,6 +161,11 @@ if run and symbol:
     render_ai_badge("dictamen multi-agente; se apoya en cálculos, no los reemplaza")
     st.caption(f"{CALC_BADGE} base del análisis · {AI_BADGE} votación del panel")
     st.caption("Este dictamen quedó registrado en el Track Record con fuente `committee`.")
+    if portfolio_ctx:
+        st.caption(
+            f"El Portfolio Manager dimensionó sobre tu cartera real: {symbol} pesa "
+            f"{portfolio_ctx['weight_pct']:.1f}% y su sector {portfolio_ctx['sector_weight_pct']:.1f}%."
+        )
     st.session_state["comite_last_symbol"] = symbol
     st.session_state["comite_last_verdict"] = {
         "symbol": symbol,

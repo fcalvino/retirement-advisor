@@ -158,7 +158,10 @@ def test_committee_runs_end_to_end_no_network():
     )
     committee = CommitteeAnalyzer(call_fn=fake, use_cache=False)
     verdict = committee.analyze(fund, tech)
-    assert len(verdict.opinions) == 5
+    from analysis.committee import _pays_dividend
+
+    # Cinco voces fijas + la de dividendo cuando el activo paga (el caso MSFT-like paga).
+    assert len(verdict.opinions) == 5 + int(_pays_dividend(fund))
     assert verdict.action in {"BUY", "STRONG BUY", "HOLD"}
     assert "múltiplo alto" in verdict.dissent
 
@@ -200,3 +203,148 @@ def test_committee_provider_in_eval_harness():
     by_name = {c.name: c for c in checks}
     assert by_name["valid_structure"].passed
     assert by_name["scores_deterministic"].passed
+
+
+# --------------------------------------------------------------------------- #
+#  Set corto: bloque compartido, PM con cartera real, voz de dividendo         #
+# --------------------------------------------------------------------------- #
+
+import copy  # noqa: E402
+
+from analysis.committee import (  # noqa: E402
+    DIVIDEND_VOTE_ROLE,
+    _portfolio_variant,
+    build_ticker_portfolio_context,
+)
+from analysis.committee_prompts import (  # noqa: E402
+    DIVIDEND_ROLE,
+    _role_prompt,
+    devils_advocate_prompt,
+    portfolio_manager_prompt,
+)
+from config import COMMITTEE, STRESS_SCENARIOS  # noqa: E402
+
+_PM_LEGACY_INSTRUCTIONS = (
+    "Concilá las visiones (fundamental, macro y el bear case del abogado del diablo) y "
+    "decidí el dimensionamiento práctico para una cartera de retiro conservadora "
+    "(máximo prudente por nombre ~8-15%). Tu stance es la decisión de cartera, no un "
+    "análisis aislado: pesá el upside contra el riesgo de capital. Si el bear case es "
+    "serio, reflejalo en una postura y un tamaño más cautos."
+)
+
+
+def _fund_with(**overrides):
+    fund, tech = _fund_tech()
+    fund = copy.deepcopy(fund)
+    for k, v in overrides.items():
+        setattr(fund, k, v)
+    return fund, tech
+
+
+def _routing_fake(dividend_stance="SELL"):
+    base = make_fake(
+        fundamental=_fundamental_json("BUY", "HIGH"),
+        macro=_agent_json("BUY"),
+        devil=_agent_json("HOLD", concerns=["valuación"]),
+        pm=_agent_json("BUY", "HIGH"),
+        coach=_agent_json("HOLD"),
+    )
+
+    def call_fn(prompt):
+        if DIVIDEND_ROLE in prompt:
+            return _agent_json(dividend_stance)
+        return base(prompt)
+    return call_fn
+
+
+def test_devils_advocate_now_sees_engine_warnings():
+    fund, tech = _fund_with(warnings=["Payout alto 140% — el dividendo puede no ser sostenible"])
+    prompt = devils_advocate_prompt(fund, tech)
+    assert "Alertas del motor" in prompt
+    assert "Payout alto 140%" in prompt
+
+
+def test_shared_block_adds_country_and_omits_empty_facts():
+    fund, tech = _fund_with(country="Argentina", warnings=[])
+    prompt = devils_advocate_prompt(fund, tech)
+    assert "País: Argentina" in prompt
+    assert "Alertas del motor" not in prompt
+
+
+def test_pm_prompt_byte_identical_without_portfolio():
+    fund, tech = _fund_tech()
+    legacy = _role_prompt("Portfolio Manager", _PM_LEGACY_INSTRUCTIONS, fund, tech)
+    assert portfolio_manager_prompt(fund, tech) == legacy
+    assert portfolio_manager_prompt(fund, tech, None) == legacy
+
+
+def test_pm_prompt_carries_real_weight_and_sector_shock():
+    fund, tech = _fund_tech()
+    ctx = build_ticker_portfolio_context(
+        fund.symbol, fund.sector,
+        position_weights={fund.symbol: 12.3, "KO": 87.7},
+        sector_weights={fund.sector: 40.0},
+    )
+    prompt = portfolio_manager_prompt(fund, tech, ctx)
+    assert "TU CARTERA REAL" in prompt
+    assert "12.3%" in prompt
+    worst_name, worst_shock = ctx["sector_shocks"][0]
+    assert worst_name in prompt and f"{worst_shock:.0f}%" in prompt
+
+
+def test_ticker_portfolio_context_edges():
+    assert build_ticker_portfolio_context("MSFT", "Technology", position_weights={}) is None
+
+    ctx = build_ticker_portfolio_context("MSFT", "Technology", position_weights={"KO": 100.0})
+    assert ctx["weight_pct"] == 0.0
+    assert "plan_target_pct" not in ctx
+    assert len(ctx["sector_shocks"]) == len(STRESS_SCENARIOS)
+
+    class _Plan:
+        name = "Retiro"
+
+        def target_weights(self):
+            return {"MSFT": 10.0, "KO": 90.0}
+
+    ctx = build_ticker_portfolio_context(
+        "MSFT", "Technology", position_weights={"MSFT": 15.0, "KO": 85.0}, active_plan=_Plan(),
+    )
+    assert ctx["plan_target_pct"] == 10.0
+    assert ctx["drift_pct"] == 5.0
+
+
+def test_dividend_voice_abstains_without_dividend_and_for_crypto():
+    for overrides in ({"dividend_yield": 0.0}, {"dividend_yield": None},
+                      {"dividend_yield": 3.0, "is_crypto": True}):
+        fund, tech = _fund_with(**overrides)
+        v = CommitteeAnalyzer(call_fn=_routing_fake(), use_cache=False).analyze(fund, tech)
+        assert all(o.role != DIVIDEND_VOTE_ROLE for o in v.opinions)
+        assert len(v.opinions) == 5
+        five = [o for o in v.opinions]
+        assert v.lean == aggregate(fund.symbol, five).lean
+
+
+def test_dividend_voice_votes_with_configured_weight():
+    fund, tech = _fund_with(dividend_yield=3.2)
+    v = CommitteeAnalyzer(call_fn=_routing_fake("SELL"), use_cache=False).analyze(fund, tech)
+    div = next(o for o in v.opinions if o.role == DIVIDEND_VOTE_ROLE)
+    assert div.stance == "SELL"
+
+    score = {"STRONG BUY": 2.0, "BUY": 1.0, "HOLD": 0.0, "REDUCE": -1.0, "SELL": -2.0}
+    w = COMMITTEE.vote_weights
+    num = sum(w[o.role] * score[o.stance] for o in v.opinions)
+    den = sum(w[o.role] for o in v.opinions)
+    assert w[DIVIDEND_VOTE_ROLE] == 0.6
+    assert v.lean == round(num / den, 4)
+
+
+def test_cache_key_distinguishes_portfolio_context():
+    c = CommitteeAnalyzer(call_fn=lambda p: "{}", use_cache=False)
+    ctx = build_ticker_portfolio_context("MSFT", "Technology", position_weights={"MSFT": 10.0})
+    plain = c._cache_key("MSFT", _portfolio_variant(None))
+    with_pf = c._cache_key("MSFT", _portfolio_variant(ctx))
+    assert plain == c._cache_key("MSFT")  # sin cartera: la clave de siempre
+    assert with_pf != plain
+    assert with_pf == c._cache_key("MSFT", _portfolio_variant(dict(ctx)))
+    other = build_ticker_portfolio_context("MSFT", "Technology", position_weights={"MSFT": 20.0})
+    assert c._cache_key("MSFT", _portfolio_variant(other)) != with_pf
