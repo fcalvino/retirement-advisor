@@ -2232,7 +2232,7 @@ class CommitteeConfig:
     reduce_lean: float = -0.5
     sell_lean: float = -1.5
     downgrade_confidence_on_strong_dissent: bool = True
-    prompt_version: str = "2026-09-18"
+    prompt_version: str = "2026-09-18b"
 
     # --- Portfolio-level committee (evalúa el PLAN, no un ticker) --------- #
     # Reuses the same deterministic aggregation + lean thresholds; only the

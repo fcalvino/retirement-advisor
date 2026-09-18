@@ -215,6 +215,8 @@ def _tailwind_context_block(fund) -> str:
     The curated tailwind is the source of truth — the LLM must reference it
     (anchored to the numbers) when material, never invent additional ones.
     Returns "" for Neutral / missing tailwinds so existing prompts are unchanged.
+    The ``last_reviewed`` date (YYYY-MM) is shown when present so the model
+    does not treat an old curated entry as current (#130 paso 3).
     """
     tw = getattr(fund, "tailwind_detail", None)
     tw_class = getattr(fund, "tailwind_classification", "") or ""
@@ -226,9 +228,11 @@ def _tailwind_context_block(fund) -> str:
         "Headwind": "VIENTO DE FRENTE",
     }.get(tw_class, tw_class)
     dur = f", durabilidad estimada ~{tw.durability_years} años" if getattr(tw, "durability_years", 0) else ""
+    reviewed = getattr(tw, "last_reviewed", "") or ""
+    rev = f", revisado por última vez: {reviewed}" if reviewed else ""
     return (
         f"\nCola de viento estructural sector-país (dato CURADO, fuente de verdad): "
-        f"{label} (score {getattr(tw, 'tailwind_score', 0.0):+.1f}, bonus {getattr(tw, 'bonus', 0.0):+.1f} pts ya incluido en el score ajustado{dur}).\n"
+        f"{label} (score {getattr(tw, 'tailwind_score', 0.0):+.1f}, bonus {getattr(tw, 'bonus', 0.0):+.1f} pts ya incluido en el score ajustado{dur}{rev}).\n"
         f"  Rationale curado: {getattr(tw, 'explanation', '')}\n"
         f"  Instrucción: NO inventes colas de viento adicionales. Si este factor es material para la tesis, "
         f"referencialo en reasoning y/o macro_factors anclándolo a los números provistos; si no lo es, ignoralo."
