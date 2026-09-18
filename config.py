@@ -2204,6 +2204,9 @@ class CommitteeConfig:
                           weighted lean score back to an action.
       downgrade_confidence_on_strong_dissent — when the bear case is strong, drop
                           the verdict confidence one notch (conservative bias).
+      prompt_version     — part of the verdict cache key. Bump it whenever a
+                          committee prompt changes, or cached verdicts built by
+                          the old prompt keep being served until they expire.
     """
     enabled: bool = True
     max_workers: int = 5
@@ -2229,6 +2232,7 @@ class CommitteeConfig:
     reduce_lean: float = -0.5
     sell_lean: float = -1.5
     downgrade_confidence_on_strong_dissent: bool = True
+    prompt_version: str = "2026-09-18"
 
     # --- Portfolio-level committee (evalúa el PLAN, no un ticker) --------- #
     # Reuses the same deterministic aggregation + lean thresholds; only the
@@ -2266,6 +2270,7 @@ class CommitteeConfig:
             "reduce_lean": self.reduce_lean,
             "sell_lean": self.sell_lean,
             "downgrade_confidence_on_strong_dissent": self.downgrade_confidence_on_strong_dissent,
+            "prompt_version": self.prompt_version,
             "portfolio_vote_weights": dict(self.portfolio_vote_weights),
             "portfolio_action_labels": dict(self.portfolio_action_labels),
         }

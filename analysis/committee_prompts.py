@@ -28,6 +28,7 @@ from typing import Optional
 
 from analysis.currency_metric_text import currency_metric_note, currency_metric_text
 from analysis.prompts import JSON_ONLY_CONTRACT, _payout_block, _tailwind_context_block
+from config import STRESS_SCENARIOS
 from data.product_ux import (
     DOWNSIDE_RATIO_LABEL,
     POT_CAGR_LABEL,
@@ -151,8 +152,32 @@ def macro_strategist_prompt(fund, tech, macro_context: str = "") -> str:
     return _role_prompt("Estratega Macro", instructions, fund, tech)
 
 
+def sector_stress_shocks(sector: str) -> list[tuple[str, float]]:
+    """Sector drawdown in each historical crisis of the stress test, worst first.
+
+    Pure: the shocks are the ``STRESS_SCENARIOS`` config constants, so the same
+    list reaches the Portfolio Manager (with a book) and the Devil's Advocate.
+    """
+    shocks = [
+        (sc.name, float(sc.sector_shocks.get(sector, sc.default_shock)))
+        for sc in STRESS_SCENARIOS
+    ]
+    return sorted(shocks, key=lambda t: t[1])
+
+
 def devils_advocate_prompt(fund, tech) -> str:
     """The structural red-team. Its mandate is to build the strongest bear case."""
+    # Solo el bear case recibe estos hechos: van en su rol y no en el bloque
+    # común, así las demás voces quedan byte-idénticas.
+    facts = ["", "=== HECHOS DE RIESGO ==="]
+    shocks = sector_stress_shocks(getattr(fund, "sector", "") or "")
+    facts.append(
+        "Caída de su sector en crisis históricas (stress test): "
+        + ", ".join(f"{name} {shock:.0f}%" for name, shock in shocks[:4])
+    )
+    tech_warnings = list(getattr(tech, "warnings", None) or [])
+    if tech_warnings:
+        facts.append("Alertas técnicas: " + "; ".join(str(w) for w in tech_warnings))
     return _role_prompt(
         "Risk Manager y Abogado del Diablo",
         "Tu mandato es CONSTRUIR EL BEAR CASE más fuerte y honesto posible: buscá "
@@ -160,7 +185,9 @@ def devils_advocate_prompt(fund, tech) -> str:
         "señalá fragilidades (apalancamiento, valuación exigente, dependencia cíclica, "
         "deterioro de márgenes, riesgo de moat). Aunque el activo parezca bueno, tu trabajo "
         "es el contrapunto: tu stance debe inclinarse a la cautela y tus concerns son el "
-        "núcleo del disenso del comité. No seas complaciente.",
+        "núcleo del disenso del comité. No seas complaciente. Usá la caída histórica de su "
+        "sector para dimensionar cuánto capital podría perder el inversor en una crisis."
+        + "\n".join(facts),
         fund, tech,
     )
 
