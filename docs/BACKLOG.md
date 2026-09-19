@@ -201,6 +201,12 @@ Nada de acá miente sobre lo que calcula; todo está mal calibrado o mal alcanza
 **Vacío.** U7-1 y U7-2 cerraron: `preset_gap` compara contra la corrida, y
 Fuente vacío es ninguna fila. Ver `ROADMAP.md`.
 
+- **PIT-TOOLS (prerrequisito para reabrir ReAct en el comité)**: `get_news` y
+  `MacroRagStore.retrieve` no aceptan `as_of` — leen el reloj real, así que una
+  tool que los exponga filtraría datos posteriores a la fecha de análisis y
+  haría irreproducibles los casos dorados de `eval_harness`. Sin eso, ReAct
+  queda descartado (se eligió inyección determinista, 2026-09-19).
+
 ---
 
 ## Bloque 5 — Oleadas nuevas

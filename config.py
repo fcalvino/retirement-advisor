@@ -2213,6 +2213,12 @@ class CommitteeConfig:
                           stale or reports at least this many missing key
                           metrics, the verdict confidence drops one notch; the
                           lean and the action are untouched (#130 paso 5).
+      drawdown_enabled   — inject the asset's own worst historical drawdown into
+                          the Devil's Advocate prompt; off = prompt unchanged.
+      drawdown_windows_years — look-back windows (years) of that drawdown,
+                          anchored at the last bar of the price history, never at
+                          the wall clock. A window the history does not fully
+                          cover is omitted, not extrapolated.
     """
     enabled: bool = True
     max_workers: int = 5
@@ -2238,8 +2244,10 @@ class CommitteeConfig:
     reduce_lean: float = -0.5
     sell_lean: float = -1.5
     downgrade_confidence_on_strong_dissent: bool = True
-    prompt_version: str = "2026-09-19a"
+    prompt_version: str = "2026-09-19b"
     data_quality_downgrade_missing_fields: int = 3
+    drawdown_enabled: bool = True
+    drawdown_windows_years: tuple = (1, 3, 5)
 
     # --- Portfolio-level committee (evalúa el PLAN, no un ticker) --------- #
     # Reuses the same deterministic aggregation + lean thresholds; only the
