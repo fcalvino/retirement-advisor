@@ -208,8 +208,7 @@ class TestSenalNoMedible:
 
         assert d.action == "BUY"
         assert d.decisive_reason == (
-            "Sin historia suficiente para confirmar el técnico — alcanza para "
-            "comprar, no para compra fuerte"
+            "Técnico sin historia suficiente — BUY, no STRONG BUY"
         )
         explicacion = decision_explanation(d)
         assert explicacion["is_downgrade"] is True
