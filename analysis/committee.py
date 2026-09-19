@@ -94,10 +94,11 @@ class AgentOpinion:
     key_points: List[str] = field(default_factory=list)
     concerns: List[str] = field(default_factory=list)
     error: str = ""
+    error_cause: str = ""
 
     @property
     def ok(self) -> bool:
-        return not self.error and self.stance in _STANCE_SCORE
+        return not self.error and not self.error_cause and self.stance in _STANCE_SCORE
 
 
 @dataclass
@@ -111,12 +112,24 @@ class CommitteeVerdict:
     lean: float = 0.0
 
     @property
+    def available(self) -> bool:
+        """Whether at least one agent supplied a valid investment opinion."""
+        return any(o.ok for o in self.opinions)
+
+    @property
+    def failure_causes(self) -> List[str]:
+        """Safe, classified causes for failed agents, preserving panel order."""
+        return _dedupe([o.error_cause or AI_FALLBACK.OTRO for o in self.opinions if not o.ok])
+
+    @property
     def complete(self) -> bool:
         """True only when every agent returned a parseable vote (no ``error``)."""
         return bool(self.opinions) and all(o.ok for o in self.opinions)
 
     def to_decision(self, fund=None, tech=None) -> Decision:
         """Map the verdict into a standard Decision (numbers stay deterministic)."""
+        if not self.available:
+            raise ValueError("Committee verdict unavailable: no valid AI opinions")
         score = 0.0
         signal = ""
         mos = False
@@ -153,6 +166,15 @@ class CommitteeVerdict:
         return "\n".join(parts)
 
 
+def _failed_opinion(role: str, exc: BaseException) -> AgentOpinion:
+    """Retain the failure category, never an SDK exception containing credentials."""
+    from analysis.ai_analyzer import classify_ai_failure
+
+    cause = classify_ai_failure(exc)
+    logger.warning(f"committee agent {role} failed — cause={cause}")
+    return AgentOpinion(role=role, stance="HOLD", confidence="LOW", error=cause, error_cause=cause)
+
+
 # --------------------------------------------------------------------------- #
 #  Parsing                                                                    #
 # --------------------------------------------------------------------------- #
@@ -161,7 +183,7 @@ def _parse_agent(role: str, raw: str) -> AgentOpinion:
     try:
         data = extract_json_object(raw)
     except Exception as exc:
-        return AgentOpinion(role=role, stance="HOLD", confidence="LOW", error=f"parse: {exc}")
+        return _failed_opinion(role, exc)
     stance = str(data.get("stance", "HOLD")).upper().strip()
     if stance not in _STANCE_SCORE:
         stance = "HOLD"
@@ -180,7 +202,7 @@ def _parse_fundamental(raw: str) -> AgentOpinion:
     try:
         data = extract_json_object(raw)
     except Exception as exc:
-        return AgentOpinion(role=role, stance="HOLD", confidence="LOW", error=f"parse: {exc}")
+        return _failed_opinion(role, exc)
     stance = str(data.get("action", "HOLD")).upper().strip()
     if stance not in _STANCE_SCORE:
         stance = "HOLD"
@@ -227,6 +249,11 @@ def aggregate(
     """
     weights = weights or COMMITTEE.vote_weights
     valid = [o for o in opinions if o.ok]
+    if not valid:
+        return CommitteeVerdict(
+            symbol=symbol, action="UNAVAILABLE", confidence="LOW",
+            consensus_points=[], dissent=[], opinions=opinions,
+        )
 
     # Weighted lean across the agents that voted.
     num = 0.0
@@ -711,7 +738,7 @@ class CommitteeAnalyzer:
         verdict = aggregate(symbol, opinions, data_quality=dq)
         logger.info(
             f"committee[{symbol}]: {verdict.action} ({verdict.confidence}) lean={verdict.lean} "
-            f"dissent={len(verdict.dissent)} complete={verdict.complete}"
+            f"dissent={len(verdict.dissent)} complete={verdict.complete} failures={verdict.failure_causes}"
         )
         if self._use_cache and verdict.complete:
             self._set_cached(symbol, verdict, variant)
@@ -744,7 +771,8 @@ class CommitteeAnalyzer:
         verdict = aggregate(plan_key, opinions, weights=COMMITTEE.portfolio_vote_weights)
         logger.info(
             f"committee[{cache_symbol}]: {verdict.action} ({verdict.confidence}) "
-            f"lean={verdict.lean} dissent={len(verdict.dissent)} complete={verdict.complete}"
+            f"lean={verdict.lean} dissent={len(verdict.dissent)} complete={verdict.complete} "
+            f"failures={verdict.failure_causes}"
         )
         if self._use_cache and verdict.complete:
             self._set_cached(cache_symbol, verdict)
@@ -769,14 +797,8 @@ class CommitteeAnalyzer:
                         )
                         time.sleep(wait)
                         continue
-                    logger.warning(f"committee agent {role} failed — {exc}")
-                    return AgentOpinion(
-                        role=role, stance="HOLD", confidence="LOW", error=str(exc),
-                    )
-            logger.warning(f"committee agent {role} failed — {last_exc}")
-            return AgentOpinion(
-                role=role, stance="HOLD", confidence="LOW", error=str(last_exc),
-            )
+                    return _failed_opinion(role, exc)
+            return _failed_opinion(role, last_exc or RuntimeError("AI request failed"))
 
         workers = max(1, min(self._max_workers, len(jobs)))
         with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -829,7 +851,8 @@ def _verdict_to_dict(v: CommitteeVerdict) -> dict:
         "consensus_points": v.consensus_points, "dissent": v.dissent, "lean": v.lean,
         "opinions": [
             {"role": o.role, "stance": o.stance, "confidence": o.confidence,
-             "key_points": o.key_points, "concerns": o.concerns, "error": o.error}
+             "key_points": o.key_points, "concerns": o.concerns, "error": o.error,
+             "error_cause": o.error_cause}
             for o in v.opinions
         ],
     }
@@ -841,7 +864,7 @@ def _verdict_from_dict(d: dict) -> CommitteeVerdict:
             role=o.get("role", ""), stance=o.get("stance", "HOLD"),
             confidence=o.get("confidence", "MEDIUM"),
             key_points=o.get("key_points", []), concerns=o.get("concerns", []),
-            error=o.get("error", ""),
+            error=o.get("error", ""), error_cause=o.get("error_cause", ""),
         )
         for o in d.get("opinions", [])
     ]

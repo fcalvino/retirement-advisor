@@ -13,6 +13,7 @@ from dashboard.shared import (
     _get_ai_config,
     cached_full_analysis,
     render_ai_badge,
+    render_committee_status,
 )
 from data.product_ux import guided_empty_state
 
@@ -100,11 +101,11 @@ if run and symbol:
             st.error(f"No se pudo ejecutar el comité: {exc}")
             st.stop()
 
+    st.session_state["comite_last_symbol"] = symbol
     if not verdict.complete:
-        st.warning(
-            "El comité no completó todos los agentes (rate limit u otro error). "
-            "Este dictamen **no** se cachea ni se registra en el Track Record."
-        )
+        st.session_state.pop("comite_last_verdict", None)
+    if not render_committee_status(verdict):
+        st.stop()
 
     # Log to track record only a complete panel — a 429 that drops PM/Macro
     # reweights the lean toward the Devil's Advocate.
@@ -178,8 +179,9 @@ if run and symbol:
             f"{portfolio_ctx['weight_pct']:.1f}% y su sector {portfolio_ctx['sector_weight_pct']:.1f}%."
         )
     st.session_state["comite_last_symbol"] = symbol
-    st.session_state["comite_last_verdict"] = {
-        "symbol": symbol,
-        "action": getattr(verdict, "action", ""),
-        "confidence": getattr(verdict, "confidence", ""),
-    }
+    if verdict.complete:
+        st.session_state["comite_last_verdict"] = {
+            "symbol": symbol,
+            "action": getattr(verdict, "action", ""),
+            "confidence": getattr(verdict, "confidence", ""),
+        }

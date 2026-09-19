@@ -1701,6 +1701,29 @@ def run_holdings_committee(
     )
 
 
+def render_committee_status(verdict) -> bool:
+    """Explain failed agents before presenting any investment verdict."""
+    from config import AI_FALLBACK
+
+    if verdict.complete:
+        return True
+    causes = ", ".join(AI_FALLBACK.label(cause) for cause in verdict.failure_causes)
+    message = (
+        f"Falló la IA del comité: {causes or AI_FALLBACK.label(AI_FALLBACK.OTRO)}. "
+        "Este resultado no se cachea ni se registra en el Track Record."
+    )
+    if AI_FALLBACK.KEY_INVALIDA in verdict.failure_causes:
+        message += " Revisá la credencial del proveedor elegido en Ajustes o en .env y volvé a convocar."
+    if not verdict.available:
+        st.error("Sin dictamen: ningún agente pudo responder. " + message)
+    else:
+        st.warning("Dictamen parcial: faltan agentes. " + message)
+    for opinion in verdict.opinions:
+        if not opinion.ok:
+            st.caption(f"⚠️ {opinion.role}: {AI_FALLBACK.label(opinion.error_cause)}")
+    return verdict.available
+
+
 def render_committee_verdict(verdict, *, footer_facts: str = "") -> None:
     """Render a portfolio committee verdict: plan-health banner + consensus/dissent.
 
@@ -1708,6 +1731,9 @@ def render_committee_verdict(verdict, *, footer_facts: str = "") -> None:
     "hard numbers" string shown under a 📊 Calculado badge.
     """
     from config import COMMITTEE
+
+    if not render_committee_status(verdict):
+        return
 
     label = COMMITTEE.portfolio_action_labels.get(verdict.action, verdict.action)
     color = ACTION_COLOR.get(verdict.action, "#888")
