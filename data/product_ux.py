@@ -1707,7 +1707,7 @@ SCREENER_COLUMN_SPECS: Dict[str, Dict[str, Any]] = {
     "Sector":      {"kind": "text",     "help": "Sector según el proveedor de datos."},
     "Fuente":      {"kind": "text",     "help": "Curado = viene del universo · ⚠️ Propio = lo agregaste vos, tratalo como experimental."},
     "Signal":      {"kind": "text",     "help": "Decisión final: combina score, señal técnica, margen de seguridad y la política de calidad de datos."},
-    "Motivo":      {"kind": "text",     "help": "Por qué la señal es esa. Cuando el motor bloquea o baja la acción (por técnico, margen de seguridad o calidad de datos), acá aparece la razón. Tocá la fila para el detalle completo."},
+    "Motivo":      {"kind": "text",     "width": "large", "help": "Por qué la señal es esa. Cuando el motor bloquea o baja la acción (por técnico, margen de seguridad o calidad de datos), acá aparece la razón. Tocá la fila para el detalle completo."},
     "Conf.":       {"kind": "text",     "help": "Confianza determinística: HIGH / MEDIUM / LOW. Se deriva del score, la señal técnica y la calidad de datos — nunca del LLM. Si la IA sugería una confianza distinta se muestra en el detalle de la fila como 🤖."},
     "Percentil":   {"kind": "number",   "format": "%.0f", "help": "Posición dentro de las acciones analizadas en ESTA corrida. Cambia si cambiás el universo."},
     "Adj. Score":  {"kind": "progress", "format": "%.1f", "min": 0, "max": 100,

@@ -229,3 +229,57 @@ def test_both_new_columns_are_specced():
     for col in ("Motivo", "Conf."):
         assert col in SCREENER_COLUMN_SPECS
         assert SCREENER_COLUMN_SPECS[col]["help"]
+
+
+# --------------------------------------------------------------------------- #
+#  The cell has to fit — st.dataframe does not wrap                           #
+# --------------------------------------------------------------------------- #
+# Streamlit 1.57 renders one line per cell even with `row_height` (tried on the
+# Screener), and `decision_explanation` cuts at 90 chars with "…". Reasons of
+# 84–98 chars showed up as "…mantener,…" in both tables. The full reasoning lives
+# in the row's detail panel; the cell only needs the cause.
+_MOTIVO_MAX_CHARS = 60
+# An f-string placeholder is measured as the longest action name. That is exact
+# for `f"{decision.action} capado a HOLD …"`; for "Bloqueado: {reason}" it only
+# bounds the fixed part — block reasons come from `_check_safety_blocks`.
+_PLACEHOLDER = "X" * len("STRONG BUY")
+
+
+def _engine_reason_literals() -> list[str]:
+    import ast
+
+    tree = ast.parse((ROOT / "analysis" / "strategy.py").read_text(encoding="utf-8"))
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        value = node.value
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            text = value.value
+        elif isinstance(value, ast.JoinedStr):
+            text = "".join(
+                part.value if isinstance(part, ast.Constant) else _PLACEHOLDER
+                for part in value.values
+            )
+        else:
+            continue
+        for target in node.targets:
+            name = target.attr if isinstance(target, ast.Attribute) else getattr(target, "id", "")
+            if name in ("decisive_reason", "note", "AI_MORE_PRUDENT_REASON"):
+                found.append(text)
+    return found
+
+
+def test_engine_reasons_fit_the_motivo_cell():
+    reasons = _engine_reason_literals()
+    assert len(reasons) >= 7, "the AST walk stopped finding the engine's reasons"
+    assert any("patrimonio neto negativo" in r for r in reasons), "f-string reasons not scanned"
+    too_long = [r for r in reasons if len(r) > _MOTIVO_MAX_CHARS]
+    assert not too_long, too_long
+
+
+def test_motivo_column_is_wide():
+    from data.product_ux import SCREENER_COLUMN_SPECS
+
+    assert SCREENER_COLUMN_SPECS["Motivo"]["width"] == "large"
+    assert "width = spec.get(\"width\")" in SHARED

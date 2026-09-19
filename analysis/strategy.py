@@ -45,8 +45,7 @@ _BUY_ACTIONS = ("STRONG BUY", "BUY")
 #: más prudente que la que la matriz sostiene. Vive acá, con los demás literales de
 #: motivo, y no en ``ai_analyzer`` — el copy de la celda «Motivo» tiene un solo dueño.
 AI_MORE_PRUDENT_REASON = (
-    "El análisis de IA fue más cauto que las reglas del motor — se respeta la acción "
-    "más prudente"
+    "La IA fue más cauta que las reglas — se respeta su acción"
 )
 
 
@@ -306,7 +305,7 @@ def apply_data_quality_policy(
 
     if level == "poor" and decision.action in ("STRONG BUY", "BUY"):
         decision.action = "HOLD"
-        note = "BUY degradado a HOLD por data quality pobre (datos incompletos)"
+        note = "BUY degradado a HOLD: data quality pobre"
         decision.decisive_reason = note
         if note not in (decision.rationale or []):
             decision.rationale = [note] + list(decision.rationale or [])
@@ -315,7 +314,7 @@ def apply_data_quality_policy(
     if level == "partial":
         if getattr(config, "partial_caps_strong_buy", True) and decision.action == "STRONG BUY":
             decision.action = "BUY"
-            note = "STRONG BUY capado a BUY por data quality partial (métricas incompletas)"
+            note = "STRONG BUY capado a BUY: data quality partial"
             decision.decisive_reason = note
             if note not in (decision.rationale or []):
                 decision.rationale = [note] + list(decision.rationale or [])
@@ -507,8 +506,7 @@ class RetirementStrategy:
             else:
                 decision.action = "BUY"
                 decision.decisive_reason = (
-                    "Fundamentales de STRONG BUY, pero todavía sin margen de seguridad — "
-                    "esperar una baja"
+                    "STRONG BUY sin margen de seguridad — esperar una baja"
                 )
                 decision.rationale.append("Strong fundamentals but no margin of safety yet — wait for pullback")
 
@@ -520,8 +518,7 @@ class RetirementStrategy:
             # que es justo lo que el estado no medible desmiente (SIGNAL-5).
             if score >= CFG.strong_buy_score and tech == TECH_CFG.signal_not_measurable:
                 decision.decisive_reason = (
-                    "Sin historia suficiente para confirmar el técnico — alcanza para "
-                    "comprar, no para compra fuerte"
+                    "Técnico sin historia suficiente — BUY, no STRONG BUY"
                 )
                 decision.rationale.append(
                     "Strong fundamentals but the technical signal is not measurable "
@@ -531,7 +528,7 @@ class RetirementStrategy:
         elif score >= CFG.hold_score:
             decision.action = "HOLD"
             if tech == "BEARISH":
-                decision.decisive_reason = "Fundamentales sólidos pero técnico débil — mantener, no agregar"
+                decision.decisive_reason = "Técnico débil — mantener, no agregar"
                 decision.rationale.append("Solid fundamentals but technical weakness — hold, do not add")
 
         elif score >= CFG.reduce_score:
@@ -549,8 +546,7 @@ class RetirementStrategy:
             if not technical_uptrend_confirmed(technical):
                 decision.action = "HOLD"
                 decision.decisive_reason = (
-                    "Los fundamentales dan para comprar, pero no hay tendencia alcista "
-                    "confirmada — mantener, no agregar"
+                    "Sin tendencia alcista confirmada — no agregar"
                 )
                 decision.rationale.append(
                     "Fundamentals support buying but technical uptrend not confirmed "

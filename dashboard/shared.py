@@ -190,17 +190,20 @@ def screener_column_config(columns) -> dict:
             continue
         kind = spec.get("kind", "text")
         help_text = spec.get("help")
+        # "large" = 400px (TextColumn docstring, Streamlit 1.57). st.dataframe
+        # does not wrap cells, so a width is all the config can do for long text.
+        width = spec.get("width")
         if kind == "progress":
             config[col] = st.column_config.ProgressColumn(
-                col, help=help_text, format=spec.get("format", "%.1f"),
+                col, help=help_text, width=width, format=spec.get("format", "%.1f"),
                 min_value=spec.get("min", 0), max_value=spec.get("max", 100),
             )
         elif kind == "number":
             config[col] = st.column_config.NumberColumn(
-                col, help=help_text, format=spec.get("format"),
+                col, help=help_text, width=width, format=spec.get("format"),
             )
         else:
-            config[col] = st.column_config.TextColumn(col, help=help_text)
+            config[col] = st.column_config.TextColumn(col, help=help_text, width=width)
     return config
 
 
