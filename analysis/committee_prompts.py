@@ -24,11 +24,14 @@ hard numbers are injected as context so agents anchor to data, never invent it.
 
 from __future__ import annotations
 
+import re
+from datetime import datetime
 from typing import Optional
 
 from analysis.currency_metric_text import currency_metric_note, currency_metric_text
 from analysis.prompts import JSON_ONLY_CONTRACT, _payout_block, _tailwind_context_block
 from config import STRESS_SCENARIOS
+from data.clock import utc_now
 from data.product_ux import (
     DOWNSIDE_RATIO_LABEL,
     POT_CAGR_LABEL,
@@ -165,7 +168,62 @@ def sector_stress_shocks(sector: str) -> list[tuple[str, float]]:
     return sorted(shocks, key=lambda t: t[1])
 
 
-def devils_advocate_prompt(fund, tech) -> str:
+_NAME_NOISE = {"the", "inc", "corp", "corporation", "co", "company", "group", "holdings", "plc", "ltd", "sa"}
+
+
+def relevant_headlines(news, fund, *, now: Optional[datetime] = None) -> list:
+    """Headlines that name this asset, fresh, newest first (#130 paso 7).
+
+    The feed mixes in sector and market stories (48/100 named the company in
+    the spike), so a headline must mention the symbol as a whole word or the
+    first meaningful word of the company name.
+    """
+    from config import NEWS
+
+    if not news:
+        return []
+    symbol = (getattr(fund, "symbol", "") or "").upper()
+    name_words = [
+        w for w in re.findall(r"[a-z0-9&]+", (getattr(fund, "company_name", "") or "").lower())
+        if w not in _NAME_NOISE
+    ]
+    patterns = []
+    if symbol:
+        patterns.append(re.compile(rf"(?<![A-Za-z0-9]){re.escape(symbol)}(?![A-Za-z0-9])"))
+    if name_words and len(name_words[0]) > 2:
+        patterns.append(re.compile(rf"\b{re.escape(name_words[0])}", re.IGNORECASE))
+    if not patterns:
+        return []
+    today = (now or utc_now()).date()
+    kept = []
+    for item in news:
+        try:
+            age = (today - datetime.strptime(item["published"], "%Y-%m-%d").date()).days
+        except (KeyError, TypeError, ValueError):
+            continue
+        if age > NEWS.max_age_days:
+            continue
+        text = f"{item.get('title', '')} {item.get('summary', '')}"
+        if any(p.search(text) for p in patterns):
+            kept.append(item)
+    kept.sort(key=lambda i: i["published"], reverse=True)
+    return kept[: NEWS.max_items]
+
+
+def _headlines_lines(headlines: list) -> list:
+    from config import NEWS
+
+    lines = ["Titulares recientes (fechados; usalos como hechos, no inventes otros):"]
+    for h in headlines:
+        src = f" ({h['provider']})" if h.get("provider") else ""
+        body = h["title"] + (f": {h['summary']}" if h.get("summary") else "")
+        if len(body) > NEWS.max_chars_per_item:
+            body = body[: NEWS.max_chars_per_item].rstrip() + "…"
+        lines.append(f"- [{h['published']}]{src} {body}")
+    return lines
+
+
+def devils_advocate_prompt(fund, tech, news=None) -> str:
     """The structural red-team. Its mandate is to build the strongest bear case."""
     # Solo el bear case recibe estos hechos: van en su rol y no en el bloque
     # común, así las demás voces quedan byte-idénticas.
@@ -178,6 +236,9 @@ def devils_advocate_prompt(fund, tech) -> str:
     tech_warnings = list(getattr(tech, "warnings", None) or [])
     if tech_warnings:
         facts.append("Alertas técnicas: " + "; ".join(str(w) for w in tech_warnings))
+    headlines = relevant_headlines(news, fund)
+    if headlines:
+        facts.extend(_headlines_lines(headlines))
     return _role_prompt(
         "Risk Manager y Abogado del Diablo",
         "Tu mandato es CONSTRUIR EL BEAR CASE más fuerte y honesto posible: buscá "

@@ -1,8 +1,10 @@
 """Shared fixtures for the Retirement Advisor test suite.
 
-Data-shaped, with two exceptions: an autouse fixture that zeroes the network
-retry backoff (see ``no_retry_backoff``) and the import-time redirection of the
-track record and the alert store away from the user's database (see below).
+Data-shaped, with three exceptions: an autouse fixture that zeroes the network
+retry backoff (see ``no_retry_backoff``), another that keeps the committee off
+the yfinance news feed (see ``no_committee_news``), and the import-time
+redirection of the track record and the alert store away from the user's
+database (see below).
 """
 
 from __future__ import annotations
@@ -276,3 +278,15 @@ def no_retry_backoff(monkeypatch):
     from config import FETCH
 
     monkeypatch.setattr(FETCH, "retry_base_delay_s", 0.0)
+
+
+# ---- Committee news feed (#130 paso 7) --------------------------- #
+
+@pytest.fixture(autouse=True)
+def no_committee_news(monkeypatch):
+    """``CommitteeAnalyzer.analyze`` fetches yfinance headlines for the DA.
+
+    Without this, every committee test would reach the network and its prompt
+    would depend on today's news. Tests that want headlines patch it back.
+    """
+    monkeypatch.setattr("analysis.committee._ticker_news", lambda symbol: [])

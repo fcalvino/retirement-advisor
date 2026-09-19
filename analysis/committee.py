@@ -614,6 +614,25 @@ def build_portfolio_committee_context(
 #  Orchestrator                                                               #
 # --------------------------------------------------------------------------- #
 
+def _ticker_news(symbol: str) -> list:
+    """yfinance headlines for the Devil's Advocate (#130 paso 7); ``[]`` on any failure.
+
+    Not part of the cache key: headlines move within the 24 h verdict TTL, and
+    a verdict built on this morning's news is still a valid verdict.
+    """
+    from config import NEWS
+
+    if not NEWS.enabled:
+        return []
+    try:
+        from data.fetcher import get_news
+
+        return get_news(symbol)
+    except Exception as exc:
+        logger.debug(f"committee[{symbol}]: news fetch failed — {exc}")
+        return []
+
+
 class CommitteeAnalyzer:
     """Runs the committee for a single asset and returns a verdict.
 
@@ -669,6 +688,7 @@ class CommitteeAnalyzer:
             macro_ctx = ""
 
         is_crypto = bool(getattr(fund, "is_crypto", False))
+        news = [] if is_crypto else _ticker_news(symbol)
         if is_crypto:
             fundamental_prompt = crypto_decision_prompt(fund, tech)
         else:
@@ -677,7 +697,7 @@ class CommitteeAnalyzer:
         jobs = {
             "Analista Fundamental": (fundamental_prompt, _parse_fundamental),
             "Estratega Macro": (macro_strategist_prompt(fund, tech, macro_ctx), lambda r: _parse_agent("Estratega Macro", r)),
-            "Abogado del Diablo": (devils_advocate_prompt(fund, tech), lambda r: _parse_agent("Abogado del Diablo", r)),
+            "Abogado del Diablo": (devils_advocate_prompt(fund, tech, news), lambda r: _parse_agent("Abogado del Diablo", r)),
             "Portfolio Manager": (portfolio_manager_prompt(fund, tech, portfolio_ctx), lambda r: _parse_agent("Portfolio Manager", r)),
             "Behavioral Coach": (behavioral_coach_prompt(fund, tech), lambda r: _parse_agent("Behavioral Coach", r)),
         }

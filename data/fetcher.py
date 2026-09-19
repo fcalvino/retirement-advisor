@@ -1,7 +1,7 @@
 """yfinance wrapper with caching, retries and robust error handling."""
 
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 import yfinance as yf
@@ -216,6 +216,45 @@ def get_dividends(symbol: str) -> pd.Series:
     # Convert Timestamp index to strings for JSON compatibility
     cache.set(key, {str(k): v for k, v in divs.to_dict().items()})
     return divs
+
+
+def _normalize_news_item(item: Any) -> Optional[Dict[str, str]]:
+    """yfinance 1.x news item → ``{title, summary, published, provider}`` (None = drop).
+
+    Only text stories with a publication date: videos carry no summary worth
+    quoting, and an undated headline cannot be a dated fact.
+    """
+    content = (item or {}).get("content") or {}
+    if content.get("contentType") != "STORY":
+        return None
+    title = (content.get("title") or "").strip()
+    published = (content.get("pubDate") or "")[:10]
+    if not title or len(published) != 10:
+        return None
+    return {
+        "title": title,
+        "summary": (content.get("summary") or "").strip(),
+        "published": published,
+        "provider": ((content.get("provider") or {}).get("displayName") or "").strip(),
+    }
+
+
+def get_news(symbol: str) -> List[Dict[str, str]]:
+    """Recent dated headlines for *symbol* (#130 paso 7). Cached; ``[]`` on failure."""
+    key = f"news:{symbol}"
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+
+    def _fetch():
+        return yf.Ticker(symbol).news or []
+
+    raw = _fetch_with_retry(_fetch, symbol, "news")
+    if raw is None:
+        return []
+    items = [n for n in (_normalize_news_item(i) for i in raw) if n]
+    cache.set(key, items)
+    return items
 
 
 def get_info_age_hours(symbol: str) -> Optional[float]:
