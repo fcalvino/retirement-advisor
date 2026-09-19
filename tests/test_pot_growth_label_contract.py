@@ -182,8 +182,8 @@ def test_the_expression_is_not_reimplemented_anywhere_else():
     pattern = re.compile(r"\*\*\s*\(\s*1\s*/\s*(?:horizon_years|years|float\()")
     offenders = [
         f"{rel}:{n}: {line.strip()}"
-        for rel in ("dashboard/pages/7_Simulaciones.py",
-                    "dashboard/pages/12_Plan.py",
+        for rel in ("dashboard/views/7_Simulaciones.py",
+                    "dashboard/views/12_Plan.py",
                     "dashboard/shared.py",
                     "reports/investment_plan.py")
         for n, line in enumerate(_src(rel).splitlines(), start=1)
@@ -247,7 +247,7 @@ def test_without_flows_the_help_does_not_cry_wolf():
 def test_the_no_hacer_is_respected_no_irr_was_built():
     """U1-7 forbids building the money-weighted return in this wave."""
     for rel in ("data/product_ux.py", "portfolio/monte_carlo.py",
-                "dashboard/pages/7_Simulaciones.py"):
+                "dashboard/views/7_Simulaciones.py"):
         src = _src(rel)
         assert not re.search(r"\bdef\s+\w*(?:irr|tir|xirr)\w*\s*\(", src, re.IGNORECASE), (
             f"{rel} implementa una TIR — el no_hacer de U1-7 lo prohíbe"
@@ -265,8 +265,8 @@ def test_the_no_hacer_is_respected_no_irr_was_built():
 #: ``12_Plan.py`` shows no growth figure today; it is swept so that adding one
 #: without the vocabulary fails here.
 MC_RENDERING_SURFACES = [
-    "dashboard/pages/7_Simulaciones.py",
-    "dashboard/pages/12_Plan.py",
+    "dashboard/views/7_Simulaciones.py",
+    "dashboard/views/12_Plan.py",
     "reports/investment_plan.py",
     "analysis/committee_prompts.py",
 ]
@@ -274,7 +274,7 @@ MC_RENDERING_SURFACES = [
 #: The subset that actually prints it today, and therefore must import the
 #: vocabulary rather than merely avoid the word.
 SURFACES_THAT_PRINT_IT = [
-    "dashboard/pages/7_Simulaciones.py",
+    "dashboard/views/7_Simulaciones.py",
     "reports/investment_plan.py",
     "analysis/committee_prompts.py",
 ]
@@ -348,7 +348,7 @@ def test_the_gap_levers_no_longer_feed_the_growth_in_as_a_return():
     one deflated by withdrawals understates the shortfall. Either way the levers
     print numbers that are wrong in a direction the user cannot see.
     """
-    page = _src("dashboard/pages/7_Simulaciones.py")
+    page = _src("dashboard/views/7_Simulaciones.py")
     # Anchor on the call site (``annual_return=_er``), not on the import above it.
     idx = page.index("annual_return=_er")
     window = page[max(0, idx - 1200):idx]

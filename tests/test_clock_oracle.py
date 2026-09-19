@@ -4,7 +4,7 @@ La fila decía «15 `utcnow` vivos entre relojes UTC-naive y local-naive» en tr
 archivos. Verificado contra el código, las dos mitades están mal:
 
   * **son 31, en seis archivos.** `alerts/store.py` tiene 12 y ni figura en la
-    fila; `analysis/macro_rag.py` tres y `dashboard/pages/8_Alertas.py` uno.
+    fila; `analysis/macro_rag.py` tres y `dashboard/views/8_Alertas.py` uno.
   * **no hay ningún cruce de relojes activo.** Cada módulo es internamente
     consistente: `data/cache.py` escribe y lee con `utcnow`, `screener_store.py`
     escribe y lee con `now()`, `last_refreshed_at` se sella y se mide con el
@@ -118,7 +118,7 @@ class TestNingunModuloDeProduccionUsaElRelojDeprecado:
         "analysis/track_record.py",
         "data/cache.py",
         "analysis/macro_rag.py",
-        "dashboard/pages/8_Alertas.py",
+        "dashboard/views/8_Alertas.py",
         "analysis/track_record_scorer.py",
     ]
 

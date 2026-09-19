@@ -27,7 +27,7 @@ from analysis.asset_class import (
 from config import ASSET_CLASS, AssetClassConfig
 
 ROOT = Path(__file__).resolve().parents[1]
-SCREENER = (ROOT / "dashboard" / "pages" / "1_Screener.py").read_text(encoding="utf-8")
+SCREENER = (ROOT / "dashboard" / "views" / "1_Screener.py").read_text(encoding="utf-8")
 
 
 # --------------------------------------------------------------------------- #

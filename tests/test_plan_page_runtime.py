@@ -23,7 +23,7 @@ from streamlit.testing.v1 import AppTest
 from data.plan_store import PlanSnapshot
 
 ROOT = Path(__file__).resolve().parents[1]
-PAGE = str(ROOT / "dashboard" / "pages" / "12_Plan.py")
+PAGE = str(ROOT / "dashboard" / "views" / "12_Plan.py")
 
 # Prices at save time vs "today": a uniform -20% move, comfortably past both
 # ALERTS.portfolio_drift_threshold_pct and HEALTH.degradation_drift_pct.
@@ -230,7 +230,7 @@ def test_refresh_stamps_the_clock_that_home_reads(stores):
 
 def test_narrative_button_does_not_touch_the_market_clock(stores):
     """Generating a narrative fetches no prices, so it must not claim freshness."""
-    source = (ROOT / "dashboard" / "pages" / "12_Plan.py").read_text(encoding="utf-8")
+    source = (ROOT / "dashboard" / "views" / "12_Plan.py").read_text(encoding="utf-8")
     narrative_block = source.split("_render_plan_ai")[-1]
     assert "snap.last_refreshed_at" not in narrative_block
 

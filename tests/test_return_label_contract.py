@@ -69,10 +69,10 @@ USER_FACING = [
 
 #: Surfaces fed by the optimizer proxy — they must never say a bare "Sharpe".
 PROXY_FED = [
-    "dashboard/pages/10_About.py",
-    "dashboard/pages/12_Plan.py",
-    "dashboard/pages/5_Optimizer.py",
-    "dashboard/pages/7_Simulaciones.py",
+    "dashboard/views/10_About.py",
+    "dashboard/views/12_Plan.py",
+    "dashboard/views/5_Optimizer.py",
+    "dashboard/views/7_Simulaciones.py",
     "reports/investment_plan.py",
     "analysis/prompts.py",
     "analysis/committee_prompts.py",
@@ -187,7 +187,7 @@ def test_plan_pdf_and_prompts_use_the_canonical_return_label():
     se renderizaba en puntos porcentuales— a «Índice de atractivo (0–100)». Lo
     que este contrato exige no cambió: que la superficie use la constante
     canónica y no un string suelto. Cambió cuál es la constante."""
-    plan = _src("dashboard/pages/12_Plan.py")
+    plan = _src("dashboard/views/12_Plan.py")
     assert '"Retorno esp."' not in plan
     assert "PROXY_INDEX_SHORT" in plan
 
@@ -204,7 +204,7 @@ def test_plan_pdf_and_prompts_use_the_canonical_return_label():
 
 
 def test_frontier_axis_is_the_proxy_not_a_forecast():
-    opt = _src("dashboard/pages/5_Optimizer.py")
+    opt = _src("dashboard/views/5_Optimizer.py")
     assert '"Retorno Esperado % (anual)"' not in opt
     assert "Atractivo estimado % (anual)" in opt
 
@@ -240,11 +240,11 @@ def test_the_sweep_still_catches_a_bare_sharpe_ratio():
 
 
 def test_proxy_ratio_label_reaches_every_proxy_surface():
-    assert "PROXY_RATIO_LABEL" in _src("dashboard/pages/12_Plan.py")
-    assert "PROXY_RATIO_LABEL" in _src("dashboard/pages/5_Optimizer.py")
-    assert "PROXY_RATIO_LABEL" in _src("dashboard/pages/7_Simulaciones.py")
+    assert "PROXY_RATIO_LABEL" in _src("dashboard/views/12_Plan.py")
+    assert "PROXY_RATIO_LABEL" in _src("dashboard/views/5_Optimizer.py")
+    assert "PROXY_RATIO_LABEL" in _src("dashboard/views/7_Simulaciones.py")
     assert "PROXY_RATIO_LABEL" in _src("reports/investment_plan.py")
-    assert '"Sharpe Ratio"' not in _src("dashboard/pages/5_Optimizer.py")
+    assert '"Sharpe Ratio"' not in _src("dashboard/views/5_Optimizer.py")
 
 
 # --------------------------------------------------------------------------- #
@@ -294,8 +294,8 @@ def test_the_engine_does_not_call_its_own_objective_a_sharpe():
 
 def test_realized_sharpe_keeps_its_name():
     """Portfolio / Backtesting measure the actual equity curve — do not rename."""
-    assert 'col4.metric("Sharpe Ratio"' in _src("dashboard/pages/3_Portfolio.py")
-    assert 'col1.metric("Sharpe Ratio"' in _src("dashboard/pages/6_Backtesting.py")
+    assert 'col4.metric("Sharpe Ratio"' in _src("dashboard/views/3_Portfolio.py")
+    assert 'col1.metric("Sharpe Ratio"' in _src("dashboard/views/6_Backtesting.py")
     committee = _src("analysis/committee_prompts.py")
     assert "Riesgo/retorno REALIZADO" in committee
     assert "Sharpe: {_num(rz.get('sharpe_ratio'))}" in committee

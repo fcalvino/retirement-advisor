@@ -26,7 +26,7 @@ from analysis.strategy import Decision
 from data.product_ux import decision_explanation
 
 ROOT = Path(__file__).resolve().parents[1]
-SCREENER = (ROOT / "dashboard" / "pages" / "1_Screener.py").read_text(encoding="utf-8")
+SCREENER = (ROOT / "dashboard" / "views" / "1_Screener.py").read_text(encoding="utf-8")
 SHARED = (ROOT / "dashboard" / "shared.py").read_text(encoding="utf-8")
 STRATEGY = (ROOT / "analysis" / "strategy.py").read_text(encoding="utf-8")
 

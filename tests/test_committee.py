@@ -493,7 +493,7 @@ def test_retry_after_prefers_header_then_body():
 
 def test_comite_page_prefetches_without_ai():
     src = (
-        Path(__file__).resolve().parents[1] / "dashboard/pages/15_Comite.py"
+        Path(__file__).resolve().parents[1] / "dashboard/views/15_Comite.py"
     ).read_text()
     assert "cached_full_analysis(\n            symbol, ai_cfg.provider, ai_cfg.model, False" in src
     assert "if verdict.complete:" in src

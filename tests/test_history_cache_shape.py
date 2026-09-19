@@ -15,7 +15,7 @@ What it cost, in order of how quietly it failed:
     score yet / skip". That scorer fills ``recommendation_outcome``, which has zero
     rows against 57 logged recommendations — the empirical evidence every calibration
     question in this project has been deferred to.
-  * ``dashboard/pages/2_Stock_Analysis.py`` plots ``x=hist.index`` and drew bar
+  * ``dashboard/views/2_Stock_Analysis.py`` plots ``x=hist.index`` and drew bar
     numbers instead of dates whenever the history was cached.
   * ``analysis/backtesting.py`` and ``data/crypto_fetcher.py`` each carry their own
     workaround for it, spelled differently.

@@ -646,7 +646,7 @@ retirement_advisor/
     └── pages/                   # 18 páginas (3 solo en modo DEV_MODE)
 ```
 
-El listado vivo de cada `.md` (guía vs metodología vs auditoría vs ideación) está en [`docs/INDEX.md`](docs/INDEX.md). No uses un recuento fijo de páginas del dashboard como si fuera el menú actual: hay 18 archivos en `dashboard/pages/` (Eval IA, Calidad de Datos y Macro RAG solo aparecen con `DEV_MODE`).
+El listado vivo de cada `.md` (guía vs metodología vs auditoría vs ideación) está en [`docs/INDEX.md`](docs/INDEX.md). No uses un recuento fijo de páginas del dashboard como si fuera el menú actual: hay 18 archivos en `dashboard/views/` (Eval IA, Calidad de Datos y Macro RAG solo aparecen con `DEV_MODE`).
 
 ---
 

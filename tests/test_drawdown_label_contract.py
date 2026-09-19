@@ -45,8 +45,8 @@ def _src(rel: str) -> str:
 
 #: Every surface that prints the number to a person or to the model.
 RENDERING_SURFACES = [
-    "dashboard/pages/5_Optimizer.py",
-    "dashboard/pages/12_Plan.py",
+    "dashboard/views/5_Optimizer.py",
+    "dashboard/views/12_Plan.py",
     "analysis/prompts.py",
 ]
 
@@ -82,7 +82,7 @@ def test_no_surface_prints_the_estimate_without_the_rule():
 
 def test_the_benchmark_column_says_it_mixes_two_measurements():
     """The portfolio row is the rule; the benchmark rows are realized history."""
-    page = _src("dashboard/pages/5_Optimizer.py")
+    page = _src("dashboard/views/5_Optimizer.py")
     assert '_BENCH_DD_COL = "Max DD hist. / regla %"' in page
     assert '"Max DD %"' not in page, "quedó la columna vieja, que no dice cuál es cuál"
     # The benchmark figures it mixes with are still the hardcoded historical ones.
@@ -90,11 +90,11 @@ def test_the_benchmark_column_says_it_mixes_two_measurements():
 
 
 def test_each_surface_imports_the_canonical_wording():
-    optimizer_page = _src("dashboard/pages/5_Optimizer.py")
+    optimizer_page = _src("dashboard/views/5_Optimizer.py")
     assert "MAX_DD_ESTIMATE_LABEL" in optimizer_page
     assert "max_dd_estimate_help" in optimizer_page
 
-    plan_page = _src("dashboard/pages/12_Plan.py")
+    plan_page = _src("dashboard/views/12_Plan.py")
     assert "MAX_DD_ESTIMATE_SHORT" in plan_page
     assert "max_dd_estimate_help()" in plan_page
 

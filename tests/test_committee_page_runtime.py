@@ -9,7 +9,7 @@ from streamlit.testing.v1 import AppTest
 
 from analysis.eval_cases import golden_cases
 
-PAGE = Path(__file__).resolve().parents[1] / "dashboard/pages/15_Comite.py"
+PAGE = Path(__file__).resolve().parents[1] / "dashboard/views/15_Comite.py"
 
 
 def test_auth_failure_is_visible_and_not_saved_as_last_verdict(monkeypatch):

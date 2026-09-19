@@ -2347,7 +2347,7 @@ def assemble_plan_pdf_mc_params(
     profile_name: str = "",
     personal: Optional[Mapping[str, Any]] = None,
 ) -> dict:
-    """Real Plan-page PDF param assembly (mirrors dashboard/pages/12_Plan path).
+    """Real Plan-page PDF param assembly (mirrors dashboard/views/12_Plan path).
 
     ``session`` is a mapping of Streamlit session_state-like keys from Simulaciones.
     ``prefs`` is UserPreferences (or duck-type). Pure — no Streamlit import.
@@ -2379,7 +2379,7 @@ def plan_load_session_updates(
 ) -> Dict[str, Any]:
     """session_state keys to seed when loading a saved plan ("what-if" hand-off).
 
-    Mirrors ``dashboard/pages/12_Plan.py::_render_load_plan``. Returns **only**
+    Mirrors ``dashboard/views/12_Plan.py::_render_load_plan``. Returns **only**
     the keys that carry a real value from the plan: a key the plan cannot answer
     is left out so the user's current widget value survives.
 

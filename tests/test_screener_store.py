@@ -30,7 +30,7 @@ from data.screener_store import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-SCREENER_SRC = (ROOT / "dashboard" / "pages" / "1_Screener.py").read_text(encoding="utf-8")
+SCREENER_SRC = (ROOT / "dashboard" / "views" / "1_Screener.py").read_text(encoding="utf-8")
 
 
 def _row(tk, score=80.0, hours_ago=0.0):

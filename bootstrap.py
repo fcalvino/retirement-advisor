@@ -5,7 +5,7 @@ Call ``ensure_project_root()`` at process entry points (CLI, Streamlit app,
 scripts) before importing project packages (``analysis``, ``config``, …).
 
 Streamlit multipage entry is ``streamlit run dashboard/app.py`` (or ``run.sh``),
-which bootstraps the root before pages are loaded via ``st.Page``. Pages
+which bootstraps the root before pages (``dashboard/views/``) are loaded via ``st.Page``. Pages
 themselves should not re-insert into ``sys.path``.
 
 Hermes / OAuth vendor paths (``hermes_path``) are unrelated and stay local to

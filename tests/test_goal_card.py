@@ -21,7 +21,7 @@ from portfolio.goals import (
     sorr_risk_badge,
 )
 
-PAGE = Path(__file__).resolve().parents[1] / "dashboard" / "pages" / "7_Simulaciones.py"
+PAGE = Path(__file__).resolve().parents[1] / "dashboard" / "views" / "7_Simulaciones.py"
 
 
 # ------------------------------------------------------------------ #

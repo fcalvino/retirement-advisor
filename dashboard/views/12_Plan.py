@@ -463,7 +463,7 @@ def _render_engine_staleness(snap: PlanSnapshot) -> None:
         st.session_state["mc_initial_capital"] = float(
             (snap.personal or {}).get("current_capital", 0) or 0
         ) or st.session_state.get("mc_initial_capital", 0)
-        st.switch_page("pages/7_Simulaciones.py")
+        st.switch_page(str(Path(__file__).parent / "7_Simulaciones.py"))
 
 
 def _render_snapshot(snap: PlanSnapshot) -> None:

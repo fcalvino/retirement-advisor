@@ -147,7 +147,7 @@ class TestTheUserCanActuallySetIt:
     def test_settings_exposes_an_input(self):
         from pathlib import Path
 
-        page = (Path(__file__).resolve().parents[1] / "dashboard" / "pages" /
+        page = (Path(__file__).resolve().parents[1] / "dashboard" / "views" /
                 "9_Settings.py").read_text(encoding="utf-8")
         assert "usd_ars_parallel" in page
 

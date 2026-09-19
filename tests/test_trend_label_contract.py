@@ -167,7 +167,7 @@ def test_prompts_tell_the_model_the_window_is_weekly():
 
 
 def test_stock_analysis_labels_come_from_the_constants():
-    page = _src("dashboard/pages/2_Stock_Analysis.py")
+    page = _src("dashboard/views/2_Stock_Analysis.py")
     for name in ("TREND_MA_SHORT", "MID_MA_SHORT", "FAST_MA_SHORT", "TREND_MA_HELP"):
         assert name in page, name
     assert '"Above SMA200"' not in page

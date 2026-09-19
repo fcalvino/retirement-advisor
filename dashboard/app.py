@@ -3,7 +3,7 @@ Retirement Advisor — Streamlit entry point.
 
 Handles page config, one-time startup validation, shared session_state
 initialization, sidebar branding, and multipage navigation.
-All page logic lives in dashboard/pages/*.py.
+All page logic lives in dashboard/views/*.py (not pages/: see CONTEXT §8).
 All shared helpers live in dashboard/shared.py.
 
 Run with:
@@ -355,7 +355,7 @@ def _home_page() -> None:
     _render_getting_started()
 
 
-_pages_dir = Path(__file__).parent / "pages"
+_pages_dir = Path(__file__).parent / "views"
 
 # Menu grouped by user intention (not by technical module). Developer/admin
 # tools (Eval IA, Calidad de Datos, Macro RAG) only appear when dev mode is on,
@@ -498,7 +498,7 @@ try:
             type="primary",
             width="stretch",
         ):
-            st.switch_page(str(Path(__file__).parent / "pages" / "8_Alertas.py"))
+            st.switch_page(str(_pages_dir / "8_Alertas.py"))
     else:
         st.sidebar.caption("🔔 Sin alertas pendientes")
 except Exception:

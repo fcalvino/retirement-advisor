@@ -11,7 +11,7 @@ from analysis.strategy import RetirementStrategy
 from analysis.technical import TechnicalResult
 from tests.test_currency_metric_surfaces import BACKSTOP, currency_note, fund_fixture
 
-PAGE = Path(__file__).resolve().parents[1] / "dashboard/pages/2_Stock_Analysis.py"
+PAGE = Path(__file__).resolve().parents[1] / "dashboard/views/2_Stock_Analysis.py"
 
 
 @pytest.fixture
