@@ -88,7 +88,7 @@ class TestMoatDetailPercentages:
     def test_stock_analysis_page_uses_moat_pct_properties(self):
         from pathlib import Path
 
-        page = Path(__file__).resolve().parents[1] / "dashboard" / "pages" / "2_Stock_Analysis.py"
+        page = Path(__file__).resolve().parents[1] / "dashboard" / "views" / "2_Stock_Analysis.py"
         text = page.read_text(encoding="utf-8")
         assert "_moat_detail.quant_pct" in text
         assert "_moat_detail.ai_pct" in text

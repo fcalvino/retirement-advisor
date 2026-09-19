@@ -70,7 +70,7 @@ _DENIAL_RE = re.compile(
 #: list**, not a number the engine computed. Kept as (path, marker) pairs so the
 #: allowlist cannot quietly grow — every entry is asserted to still exist.
 CURATED_UNIVERSE_ALLOWLIST = [
-    ("dashboard/pages/5_Optimizer.py", '"description": "Dividend Aristocrats + REITs.'),
+    ("dashboard/views/5_Optimizer.py", '"description": "Dividend Aristocrats + REITs.'),
     ("data/universes/dividend_focus.json", '"description": "Dividend Aristocrats,'),
 ]
 

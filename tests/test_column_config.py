@@ -17,7 +17,7 @@ from pathlib import Path
 from data.product_ux import SCREENER_COLUMN_SPECS, screener_column_spec
 
 ROOT = Path(__file__).resolve().parents[1]
-SCREENER = (ROOT / "dashboard" / "pages" / "1_Screener.py").read_text(encoding="utf-8")
+SCREENER = (ROOT / "dashboard" / "views" / "1_Screener.py").read_text(encoding="utf-8")
 SHARED = (ROOT / "dashboard" / "shared.py").read_text(encoding="utf-8")
 
 

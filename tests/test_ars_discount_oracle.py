@@ -111,7 +111,7 @@ class TestNoSecondMechanism:
         """A field that never arrives cannot be keyed off."""
         from pathlib import Path
 
-        page = (Path(__file__).resolve().parents[1] / "dashboard" / "pages" /
+        page = (Path(__file__).resolve().parents[1] / "dashboard" / "views" /
                 "5_Optimizer.py").read_text(encoding="utf-8")
         assert '"country"' in page
 

@@ -216,7 +216,7 @@ class TestTheReturnIsNamedForWhatItIs:
         from pathlib import Path
 
         root = Path(__file__).resolve().parents[1]
-        page = (root / "dashboard" / "pages" / "3_Portfolio.py").read_text(encoding="utf-8")
+        page = (root / "dashboard" / "views" / "3_Portfolio.py").read_text(encoding="utf-8")
         assert "IRR" not in page
         assert "ANNUALIZED_RETURN_CAVEAT" in page
 

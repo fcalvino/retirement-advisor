@@ -199,7 +199,7 @@ class TestTheYieldIsDisclosed:
         assert f"{THRESHOLDS.graham_aaa_yield_pct:g}" in help_text
         assert "proxy" in help_text.lower()
 
-        page = Path("dashboard/pages/2_Stock_Analysis.py").read_text(encoding="utf-8")
+        page = Path("dashboard/views/2_Stock_Analysis.py").read_text(encoding="utf-8")
         assert "graham_value_help" in page
         assert 'st.metric("Graham Intrinsic Value", f"${fund.graham_value:.2f}")' not in page
 

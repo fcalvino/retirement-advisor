@@ -19,7 +19,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 ROOT = Path(__file__).resolve().parents[1]
-PAGE = str(ROOT / "dashboard" / "pages" / "1_Screener.py")
+PAGE = str(ROOT / "dashboard" / "views" / "1_Screener.py")
 
 # (ticker, company, sector, asset_class, score, action, dq_level)
 _FIXTURE = [

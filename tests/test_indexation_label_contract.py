@@ -48,7 +48,7 @@ def _src(rel: str) -> str:
 
 USER_FACING = [
     "portfolio/sensitivity.py",
-    "dashboard/pages/7_Simulaciones.py",
+    "dashboard/views/7_Simulaciones.py",
     "data/product_ux.py",
 ]
 

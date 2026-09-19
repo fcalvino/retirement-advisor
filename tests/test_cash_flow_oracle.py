@@ -363,7 +363,7 @@ class TestContributionUnitsContract:
     helper en vez de multiplicar por su cuenta.
     """
 
-    PAGE = "dashboard/pages/7_Simulaciones.py"
+    PAGE = "dashboard/views/7_Simulaciones.py"
 
     def _page(self) -> str:
         from pathlib import Path

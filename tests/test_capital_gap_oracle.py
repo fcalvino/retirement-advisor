@@ -138,7 +138,7 @@ class TestNoSurfaceQuotesAMixedYearSum:
         from pathlib import Path
 
         root = Path(__file__).resolve().parents[1]
-        for rel in ("dashboard/pages/7_Simulaciones.py", "reports/investment_plan.py"):
+        for rel in ("dashboard/views/7_Simulaciones.py", "reports/investment_plan.py"):
             src = (root / rel).read_text(encoding="utf-8")
             assert "capital_gap_today" in src, rel
             assert "hoy" in src.lower(), rel

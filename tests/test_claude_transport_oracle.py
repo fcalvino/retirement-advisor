@@ -231,7 +231,7 @@ class TestCatalogoDeModelos:
         # que la llamada rechazaba, alcanzable desde la UI sin tocar código.
         # Se miran sólo las líneas de código: los comentarios del PR nombran los
         # IDs viejos a propósito, para explicar por qué se fueron.
-        path = Path(__file__).resolve().parents[1] / "dashboard/pages/9_Settings.py"
+        path = Path(__file__).resolve().parents[1] / "dashboard/views/9_Settings.py"
         codigo = [
             ln for ln in path.read_text(encoding="utf-8").splitlines()
             if not ln.lstrip().startswith("#")
@@ -266,13 +266,13 @@ _GROQ_DEFAULT_MODEL = "openai/gpt-oss-120b"
 
 def _settings_src() -> str:
     return (
-        Path(__file__).resolve().parents[1] / "dashboard/pages/9_Settings.py"
+        Path(__file__).resolve().parents[1] / "dashboard/views/9_Settings.py"
     ).read_text(encoding="utf-8")
 
 
 def _about_src() -> str:
     return (
-        Path(__file__).resolve().parents[1] / "dashboard/pages/10_About.py"
+        Path(__file__).resolve().parents[1] / "dashboard/views/10_About.py"
     ).read_text(encoding="utf-8")
 
 
@@ -382,7 +382,7 @@ class TestSettingsListaGroqSinHermes:
 
         from data.preferences import UserPreferences
 
-        page = Path(__file__).resolve().parents[1] / "dashboard/pages/9_Settings.py"
+        page = Path(__file__).resolve().parents[1] / "dashboard/views/9_Settings.py"
         at = AppTest.from_file(str(page), default_timeout=30)
         at.session_state["user_prefs"] = UserPreferences()
         at.session_state["universe"] = ["MSFT"]

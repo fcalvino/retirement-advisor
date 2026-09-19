@@ -984,7 +984,7 @@ def render_row_actions(df, event, *, prefix: str = "row") -> str | None:
     if c1.button(f"🔍 Analizar {symbol}", key=f"{prefix}_analyze", type="primary",
                  width="stretch"):
         st.session_state.analysis_target = symbol
-        st.switch_page(str(Path(__file__).parent / "pages" / "2_Stock_Analysis.py"))
+        st.switch_page(str(Path(__file__).parent / "views" / "2_Stock_Analysis.py"))
 
     if c2.button(f"📋 Seguir {symbol}", key=f"{prefix}_watch", width="stretch"):
         prefs = get_user_prefs()
@@ -997,7 +997,7 @@ def render_row_actions(df, event, *, prefix: str = "row") -> str | None:
     # `comite_last_symbol` is the key that page already seeds its input from.
     if c3.button(f"🏛️ Comité sobre {symbol}", key=f"{prefix}_committee", width="stretch"):
         st.session_state["comite_last_symbol"] = symbol
-        st.switch_page(str(Path(__file__).parent / "pages" / "15_Comite.py"))
+        st.switch_page(str(Path(__file__).parent / "views" / "15_Comite.py"))
 
     return symbol
 

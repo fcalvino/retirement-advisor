@@ -208,7 +208,7 @@ def test_the_per_ticker_benchmark_leg_comes_from_the_aligned_window():
 
 
 def test_the_backtesting_page_reads_the_label_from_the_one_source():
-    page = _src("dashboard/pages/6_Backtesting.py")
+    page = _src("dashboard/views/6_Backtesting.py")
     assert "EXCESS_RETURN_LABEL" in page or "excess_return_column_label" in page
     assert "alpha_pct" not in page
 

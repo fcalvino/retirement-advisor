@@ -187,7 +187,7 @@ def test_copy_quotes_the_cuts_the_engine_actually_applies():
 
 
 def test_stock_analysis_tooltip_comes_from_the_constant():
-    page = _src("dashboard/pages/2_Stock_Analysis.py")
+    page = _src("dashboard/views/2_Stock_Analysis.py")
     assert "roic_sustained_help()" in page
     # The stale tooltip quoted the legacy absolute bands as if they were live.
     assert "ROIC promedio histórico (≥20%=2, ≥12%=1)" not in page

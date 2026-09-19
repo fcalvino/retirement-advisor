@@ -233,9 +233,9 @@ def test_ui_labels_report_the_window_instead_of_hardcoding_5y():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1]
-    screener = (root / "dashboard" / "pages" / "1_Screener.py").read_text()
+    screener = (root / "dashboard" / "views" / "1_Screener.py").read_text()
     shared = (root / "dashboard" / "shared.py").read_text()
-    stock = (root / "dashboard" / "pages" / "2_Stock_Analysis.py").read_text()
+    stock = (root / "dashboard" / "views" / "2_Stock_Analysis.py").read_text()
 
     assert "Rev CAGR 5Y" not in screener and "Rev CAGR 5Y" not in shared
     assert '"Rev CAGR %"' in screener and '"CAGR años"' in screener

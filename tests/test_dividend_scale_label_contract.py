@@ -30,7 +30,7 @@ def _src(rel: str) -> str:
 
 
 USER_FACING = [
-    "dashboard/pages/2_Stock_Analysis.py",
+    "dashboard/views/2_Stock_Analysis.py",
     "analysis/prompts.py",
     "main.py",
 ]

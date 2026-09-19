@@ -478,7 +478,7 @@ LA_CASA = "analysis/track_record.py"
 #: la lista no pueda crecer en silencio: cada entrada se verifica que siga
 #: existiendo, y cualquier acceso nuevo que no esté acá rompe el barrido.
 LECTORES_DIRECTOS_PERMITIDOS = {
-    ("dashboard/pages/13_Track_Record.py", "get_recommendations"): (
+    ("dashboard/views/13_Track_Record.py", "get_recommendations"): (
         "Alimenta la métrica «Recomendaciones logueadas», que es el conteo de "
         "filas que el motor efectivamente emitió. Ese número es crudo a "
         "propósito: deduplicarlo escondería que el motor repitió. Las cinco "
@@ -548,7 +548,7 @@ def test_cada_permiso_del_barrido_sigue_existiendo():
 
 def test_los_dos_consumidores_de_las_metricas_pasan_por_get_scored_rows():
     """Confirmado el 2026-08-30: son exactamente estos dos, y no hay un tercero."""
-    esperados = {"dashboard/pages/13_Track_Record.py", "dashboard/shared.py"}
+    esperados = {"dashboard/views/13_Track_Record.py", "dashboard/shared.py"}
     encontrados = {
         str(path.relative_to(ROOT))
         for paquete in PAQUETES

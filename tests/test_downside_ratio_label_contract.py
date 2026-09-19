@@ -201,7 +201,7 @@ def test_the_formula_was_left_alone():
 
 
 def test_every_surface_reads_the_label_from_the_one_source():
-    for rel in ("dashboard/pages/6_Backtesting.py", "dashboard/pages/3_Portfolio.py",
+    for rel in ("dashboard/views/6_Backtesting.py", "dashboard/views/3_Portfolio.py",
                 "analysis/committee_prompts.py"):
         assert "DOWNSIDE_RATIO_LABEL" in _src(rel), rel
 

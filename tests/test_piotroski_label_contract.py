@@ -37,9 +37,9 @@ LIVING_DOC_ROLES = frozenset({"living-guide", "how-to", "methodology", "ai-conte
 #: Surfaces that render the F-Score to a person.
 USER_FACING = [
     "data/product_ux.py",
-    "dashboard/pages/1_Screener.py",
-    "dashboard/pages/2_Stock_Analysis.py",
-    "dashboard/pages/10_About.py",
+    "dashboard/views/1_Screener.py",
+    "dashboard/views/2_Stock_Analysis.py",
+    "dashboard/views/10_About.py",
     "analysis/scoring.py",
     "config.py",
 ]

@@ -19,8 +19,8 @@ from data.product_ux import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-SCREENER = (ROOT / "dashboard" / "pages" / "1_Screener.py").read_text(encoding="utf-8")
-STOCK = (ROOT / "dashboard" / "pages" / "2_Stock_Analysis.py").read_text(encoding="utf-8")
+SCREENER = (ROOT / "dashboard" / "views" / "1_Screener.py").read_text(encoding="utf-8")
+STOCK = (ROOT / "dashboard" / "views" / "2_Stock_Analysis.py").read_text(encoding="utf-8")
 SHARED = (ROOT / "dashboard" / "shared.py").read_text(encoding="utf-8")
 
 
@@ -346,7 +346,7 @@ def test_settings_copy_cites_groq_cap():
 
     from config import SCREENER
 
-    src = (Path(__file__).resolve().parents[1] / "dashboard/pages/9_Settings.py").read_text()
+    src = (Path(__file__).resolve().parents[1] / "dashboard/views/9_Settings.py").read_text()
     assert "SCREENER.groq_ai_max_tickers" in src
     assert "8K TPM" in src
     assert str(SCREENER.groq_ai_max_tickers) == "8"

@@ -21,10 +21,10 @@ import pytest
 from dashboard.shared import selected_ticker
 
 ROOT = Path(__file__).resolve().parents[1]
-SCREENER = (ROOT / "dashboard" / "pages" / "1_Screener.py").read_text(encoding="utf-8")
+SCREENER = (ROOT / "dashboard" / "views" / "1_Screener.py").read_text(encoding="utf-8")
 SHARED = (ROOT / "dashboard" / "shared.py").read_text(encoding="utf-8")
-STOCK = (ROOT / "dashboard" / "pages" / "2_Stock_Analysis.py").read_text(encoding="utf-8")
-COMITE = (ROOT / "dashboard" / "pages" / "15_Comite.py").read_text(encoding="utf-8")
+STOCK = (ROOT / "dashboard" / "views" / "2_Stock_Analysis.py").read_text(encoding="utf-8")
+COMITE = (ROOT / "dashboard" / "views" / "15_Comite.py").read_text(encoding="utf-8")
 
 
 def _event(rows):

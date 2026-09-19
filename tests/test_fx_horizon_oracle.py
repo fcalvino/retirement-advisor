@@ -52,8 +52,8 @@ from data.product_ux import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-SIM_PAGE = ROOT / "dashboard" / "pages" / "7_Simulaciones.py"
-PLAN_PAGE = ROOT / "dashboard" / "pages" / "12_Plan.py"
+SIM_PAGE = ROOT / "dashboard" / "views" / "7_Simulaciones.py"
+PLAN_PAGE = ROOT / "dashboard" / "views" / "12_Plan.py"
 
 
 # --------------------------------------------------------------------------- #

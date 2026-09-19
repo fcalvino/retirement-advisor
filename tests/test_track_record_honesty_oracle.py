@@ -304,7 +304,7 @@ class TestUnaCategoriaVaciaLoDice:
         """El caption decía «un modelo bien calibrado acierta más cuando dice
         HIGH que cuando dice LOW». Con HIGH n=0 y LOW n=2 esa comparación no se
         puede hacer, y el texto no lo advertía."""
-        page = _src("dashboard/pages/13_Track_Record.py")
+        page = _src("dashboard/views/13_Track_Record.py")
         bloque = page[page.index("Calibración por nivel de confianza"):][:1200].lower()
         assert "muestra" in bloque or "n=" in bloque or "sin señal" in bloque, (
             "la sección de calibración sigue sin decir que un nivel puede no "

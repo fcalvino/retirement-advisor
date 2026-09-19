@@ -219,7 +219,7 @@ def test_thresholds_come_from_config():
 def test_screener_shows_the_funnel_not_a_bare_buy_count():
     from pathlib import Path
 
-    src = (Path(__file__).resolve().parents[1] / "dashboard" / "pages" / "1_Screener.py").read_text()
+    src = (Path(__file__).resolve().parents[1] / "dashboard" / "views" / "1_Screener.py").read_text()
     assert "build_shortlist" in src
     assert "attach_percentiles" in src
     assert "_shortlist.summary()" in src
@@ -330,7 +330,7 @@ def test_filters_never_touch_the_funnel():
     """Item 09 must not silently redefine what 'top 25%' means (item 06)."""
     from pathlib import Path
 
-    src = (Path(__file__).resolve().parents[1] / "dashboard" / "pages" / "1_Screener.py").read_text()
+    src = (Path(__file__).resolve().parents[1] / "dashboard" / "views" / "1_Screener.py").read_text()
     funnel_at = src.index("build_shortlist(_ranked)")
     filters_at = src.index("apply_filters(")
     assert funnel_at < filters_at, "the funnel must be computed before any filtering"

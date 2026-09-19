@@ -17,7 +17,7 @@ from config import SCREENER, SECTOR_MAP
 from data.product_ux import SCREENER_COLUMN_SPECS
 
 ROOT = Path(__file__).resolve().parents[1]
-SCREENER_SRC = (ROOT / "dashboard" / "pages" / "1_Screener.py").read_text(encoding="utf-8")
+SCREENER_SRC = (ROOT / "dashboard" / "views" / "1_Screener.py").read_text(encoding="utf-8")
 SHARED = (ROOT / "dashboard" / "shared.py").read_text(encoding="utf-8")
 
 
