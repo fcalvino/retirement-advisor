@@ -214,3 +214,49 @@ class TestATransientFailureIsSurvived:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestGetNews:
+    """#130 paso 7: yfinance 1.x news → dated, text-only headlines."""
+
+    def _item(self, **content):
+        base = {"contentType": "STORY", "title": "Microsoft beats", "summary": "Cloud up.",
+                "pubDate": "2026-09-18T17:07:26Z", "provider": {"displayName": "Reuters"}}
+        base.update(content)
+        return {"id": "x", "content": base}
+
+    def test_normalizes_and_drops_videos_and_undated(self, monkeypatch):
+        monkeypatch.setattr(fetcher.cache, "get", lambda *a, **k: None)
+        stored = {}
+        monkeypatch.setattr(fetcher.cache, "set", lambda k, v: stored.update({k: v}))
+        raw = [self._item(), self._item(contentType="VIDEO"), self._item(pubDate="")]
+
+        class _Ticker:
+            def __init__(self, symbol):
+                pass
+            news = raw
+
+        monkeypatch.setattr(fetcher.yf, "Ticker", _Ticker)
+        out = fetcher.get_news("MSFT")
+        assert out == [{"title": "Microsoft beats", "summary": "Cloud up.",
+                        "published": "2026-09-18", "provider": "Reuters"}]
+        assert stored["news:MSFT"] == out
+
+    def test_cached_empty_feed_is_an_answer(self, monkeypatch):
+        monkeypatch.setattr(fetcher.cache, "get", lambda *a, **k: [])
+
+        def _boom(symbol):
+            raise AssertionError("no debe ir a la red")
+
+        monkeypatch.setattr(fetcher.yf, "Ticker", _boom)
+        assert fetcher.get_news("MSFT") == []
+
+    def test_permanent_failure_returns_empty(self, monkeypatch):
+        monkeypatch.setattr(fetcher.cache, "get", lambda *a, **k: None)
+        monkeypatch.setattr(fetcher.cache, "set", lambda *a, **k: None)
+
+        def _boom(symbol):
+            raise ConnectionError("boom")
+
+        monkeypatch.setattr(fetcher.yf, "Ticker", _boom)
+        assert fetcher.get_news("MSFT") == []

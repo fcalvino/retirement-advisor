@@ -2238,7 +2238,7 @@ class CommitteeConfig:
     reduce_lean: float = -0.5
     sell_lean: float = -1.5
     downgrade_confidence_on_strong_dissent: bool = True
-    prompt_version: str = "2026-09-18c"
+    prompt_version: str = "2026-09-19a"
     data_quality_downgrade_missing_fields: int = 3
 
     # --- Portfolio-level committee (evalúa el PLAN, no un ticker) --------- #
@@ -2410,6 +2410,30 @@ class MacroRagConfig:
             "min_score": self.min_score,
             "max_context_chars": self.max_context_chars,
         }
+
+
+@dataclass
+class NewsConfig:
+    """
+    yfinance headlines as dated facts for the Devil's Advocate (#130 paso 7).
+
+    Spike (yfinance 1.7.0, 10 tickers, 2026-09-18): ``.news`` returns 10 items
+    per ticker, all with an ISO UTC ``pubDate``; only 48/100 name the ticker or
+    the company, and there is no ``stockTickers`` field — so headlines are
+    filtered by mention. They stay out of the macro RAG on purpose:
+    ``MacroRagStore.retrieve`` has no tag filter, so one ticker's news would
+    leak into every other ticker's macro context.
+
+    Fields:
+      enabled            — master switch; off means the DA prompt is unchanged.
+      max_items          — relevant headlines injected, newest first.
+      max_age_days       — drop headlines older than this.
+      max_chars_per_item — cap on each ``title: summary`` line (token cost).
+    """
+    enabled: bool = True
+    max_items: int = 5
+    max_age_days: int = 14
+    max_chars_per_item: int = 240
 
 
 @dataclass
@@ -2887,6 +2911,7 @@ EVAL = EvalConfig()
 COMMITTEE = CommitteeConfig()
 MULTI_SOURCE = MultiSourceConfig()
 MACRO_RAG = MacroRagConfig()
+NEWS = NewsConfig()
 CHAT = ChatConfig()
 STRESS_TEST = StressTestConfig()
 TECHNICAL = TechnicalConfig()

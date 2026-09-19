@@ -605,3 +605,93 @@ def test_analyze_keys_cache_and_confidence_by_data_quality(monkeypatch):
     assert (stale.lean, stale.action) == (fresh.lean, fresh.action)
     rank = ["LOW", "MEDIUM", "HIGH"]
     assert rank.index(stale.confidence) == max(0, rank.index(fresh.confidence) - 1)
+
+
+# --------------------------------------------------------------------------- #
+#  #130 paso 7 — titulares de yfinance solo para el Abogado del Diablo        #
+# --------------------------------------------------------------------------- #
+
+from datetime import datetime  # noqa: E402
+
+from analysis.committee import _ticker_news as _real_ticker_news  # noqa: E402  (antes del autouse)
+from analysis.committee_prompts import relevant_headlines  # noqa: E402
+from analysis.prompts import equity_decision_prompt  # noqa: E402
+from data.clock import utc_now  # noqa: E402
+
+_NOW = datetime(2026, 9, 18, 12, 0)
+_NEWS = [
+    {"title": "Microsoft faces antitrust probe in EU", "summary": "Regulators open a case.",
+     "published": "2026-09-17", "provider": "Reuters"},
+    {"title": "Nvidia-backed Nscale files for IPO", "summary": "AI data centers.",
+     "published": "2026-09-18", "provider": "Stocktwits"},
+    {"title": "MSFT slides after guidance cut", "summary": "",
+     "published": "2026-09-18", "provider": "Barrons"},
+    {"title": "Microsoft old story", "summary": "", "published": "2026-07-01", "provider": ""},
+]
+
+
+def test_relevant_headlines_keeps_mentions_fresh_newest_first():
+    fund, _ = _fund_tech()
+    kept = relevant_headlines(_NEWS, fund, now=_NOW)
+    assert [h["title"] for h in kept] == [
+        "MSFT slides after guidance cut",
+        "Microsoft faces antitrust probe in EU",
+    ]
+
+
+def test_relevant_headlines_respects_max_items():
+    fund, _ = _fund_tech()
+    with patch.object(__import__("config").NEWS, "max_items", 1):
+        assert len(relevant_headlines(_NEWS, fund, now=_NOW)) == 1
+
+
+def test_devils_advocate_sees_dated_headlines():
+    fund, tech = _fund_tech()
+    with patch("analysis.committee_prompts.utc_now", return_value=_NOW):
+        prompt = devils_advocate_prompt(fund, tech, _NEWS)
+    assert "Titulares recientes" in prompt
+    assert "- [2026-09-17] (Reuters) Microsoft faces antitrust probe in EU: Regulators open a case." in prompt
+    assert "Nscale" not in prompt
+    assert "old story" not in prompt
+
+
+def test_devils_advocate_byte_identical_without_headlines():
+    fund, tech = _fund_tech()
+    base = devils_advocate_prompt(fund, tech)
+    assert devils_advocate_prompt(fund, tech, []) == base
+    assert devils_advocate_prompt(fund, tech, None) == base
+    with patch("analysis.committee_prompts.utc_now", return_value=_NOW):
+        irrelevant = [_NEWS[1]]
+        assert devils_advocate_prompt(fund, tech, irrelevant) == base
+
+
+def test_only_the_devils_advocate_receives_news():
+    seen = []
+    base = make_fake(
+        fundamental=_fundamental_json("BUY", "HIGH"),
+        macro=_agent_json("BUY"),
+        devil=_agent_json("HOLD"),
+        pm=_agent_json("BUY"),
+        coach=_agent_json("HOLD"),
+    )
+
+    def call_fn(prompt):
+        seen.append(prompt)
+        return base(prompt)
+
+    fund, tech = _fund_tech()
+    fresh = [dict(_NEWS[0], published=utc_now().strftime("%Y-%m-%d"))]
+    with patch("analysis.committee._ticker_news", return_value=fresh):
+        CommitteeAnalyzer(call_fn=call_fn, use_cache=False).analyze(fund, tech)
+    with_news = [p for p in seen if "antitrust probe" in p]
+    assert len(with_news) == 1
+    assert "Abogado del Diablo" in with_news[0]
+    assert "antitrust" not in equity_decision_prompt(fund, tech)
+
+
+def test_news_failure_degrades_to_no_headlines():
+    with patch("data.fetcher.get_news", side_effect=ConnectionError("boom")):
+        assert _real_ticker_news("MSFT") == []
+    with patch.object(__import__("config").NEWS, "enabled", False), \
+            patch("data.fetcher.get_news", side_effect=AssertionError("no debe llamarse")):
+        assert _real_ticker_news("MSFT") == []
