@@ -223,7 +223,36 @@ def _headlines_lines(headlines: list) -> list:
     return lines
 
 
-def devils_advocate_prompt(fund, tech, news=None) -> str:
+def price_drawdowns(close, windows_years) -> dict:
+    """Worst peak-to-trough drop (%) of ``close`` in each look-back window.
+
+    Pure. Windows end at the LAST bar of the series, never at the wall clock, so
+    the same history always yields the same facts (point-in-time). A window the
+    series does not fully cover is omitted rather than extrapolated. Returns
+    ``{"as_of": "YYYY-MM-DD", "by_window": [(years, dd_pct), ...]}``, or ``{}``.
+    """
+    import pandas as pd
+
+    if close is None or len(close) == 0:
+        return {}
+    s = close.dropna().sort_index()
+    if s.empty or not isinstance(s.index, pd.DatetimeIndex):
+        return {}
+    last = s.index[-1]
+    by_window = []
+    for years in windows_years:
+        start = last - pd.DateOffset(years=int(years))
+        if s.index[0] > start:
+            continue
+        w = s[s.index >= start]
+        dd = float((w / w.cummax() - 1.0).min() * 100.0)
+        by_window.append((int(years), round(dd, 1)))
+    if not by_window:
+        return {}
+    return {"as_of": last.strftime("%Y-%m-%d"), "by_window": by_window}
+
+
+def devils_advocate_prompt(fund, tech, news=None, drawdowns=None) -> str:
     """The structural red-team. Its mandate is to build the strongest bear case."""
     # Solo el bear case recibe estos hechos: van en su rol y no en el bloque
     # común, así las demás voces quedan byte-idénticas.
@@ -233,6 +262,11 @@ def devils_advocate_prompt(fund, tech, news=None) -> str:
         "Caída de su sector en crisis históricas (stress test): "
         + ", ".join(f"{name} {shock:.0f}%" for name, shock in shocks[:4])
     )
+    if drawdowns and drawdowns.get("by_window"):
+        facts.append(
+            f"Peor caída del propio activo (al {drawdowns['as_of']}): "
+            + ", ".join(f"{y}a {dd:.0f}%" for y, dd in drawdowns["by_window"])
+        )
     tech_warnings = list(getattr(tech, "warnings", None) or [])
     if tech_warnings:
         facts.append("Alertas técnicas: " + "; ".join(str(w) for w in tech_warnings))
@@ -247,7 +281,8 @@ def devils_advocate_prompt(fund, tech, news=None) -> str:
         "deterioro de márgenes, riesgo de moat). Aunque el activo parezca bueno, tu trabajo "
         "es el contrapunto: tu stance debe inclinarse a la cautela y tus concerns son el "
         "núcleo del disenso del comité. No seas complaciente. Usá la caída histórica de su "
-        "sector para dimensionar cuánto capital podría perder el inversor en una crisis."
+        "sector (y la del propio activo, si figura) para dimensionar cuánto capital podría "
+        "perder el inversor en una crisis."
         + "\n".join(facts),
         fund, tech,
     )

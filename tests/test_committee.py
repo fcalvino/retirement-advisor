@@ -695,3 +695,94 @@ def test_news_failure_degrades_to_no_headlines():
     with patch.object(__import__("config").NEWS, "enabled", False), \
             patch("data.fetcher.get_news", side_effect=AssertionError("no debe llamarse")):
         assert _real_ticker_news("MSFT") == []
+
+
+# --------------------------------------------------------------------------- #
+#  Drawdowns del propio activo, solo para el Abogado del Diablo (alternativa   #
+#  determinista a un loop ReAct: hechos fechados, sin tool calling)            #
+# --------------------------------------------------------------------------- #
+
+import pandas as pd  # noqa: E402
+
+from analysis.committee import _ticker_drawdowns as _real_ticker_drawdowns  # noqa: E402
+from analysis.committee_prompts import price_drawdowns  # noqa: E402
+
+
+def _weekly(values, end="2026-09-18"):
+    idx = pd.date_range(end=end, periods=len(values), freq="W-FRI")
+    return pd.Series(values, index=idx, dtype=float)
+
+
+def test_price_drawdowns_oracle():
+    # 100 → 120 → 60 → 90 en la última semana: pico 120, valle 60 ⇒ −50 %.
+    close = _weekly([100.0] * 60 + [120.0, 60.0, 90.0])
+    dd = price_drawdowns(close, (1,))
+    assert dd == {"as_of": close.index[-1].strftime("%Y-%m-%d"), "by_window": [(1, -50.0)]}
+
+
+def test_price_drawdowns_window_only_sees_its_own_bars():
+    # Caída de hace ~2 años (−80 %): fuera de la ventana de 1 año, dentro de la de 3.
+    close = _weekly([100.0] * 60 + [20.0] + [100.0] * 101 + [90.0])
+    got = dict(price_drawdowns(close, (1, 3))["by_window"])
+    assert got[1] == -10.0
+    assert got[3] == -80.0
+
+
+def test_price_drawdowns_omits_uncovered_windows_and_empty():
+    close = _weekly([100.0] * 70)  # ~1,3 años de historia
+    assert [y for y, _ in price_drawdowns(close, (1, 3, 5))["by_window"]] == [1]
+    assert price_drawdowns(_weekly([100.0] * 10), (1,)) == {}
+    assert price_drawdowns(pd.Series(dtype=float), (1,)) == {}
+    assert price_drawdowns(None, (1,)) == {}
+
+
+def test_price_drawdowns_anchor_is_last_bar_not_clock():
+    close = _weekly([100.0] * 60 + [120.0, 60.0, 90.0], end="2020-01-03")
+    with patch("analysis.committee_prompts.utc_now", return_value=_NOW):
+        dd = price_drawdowns(close, (1,))
+    assert dd["as_of"] == "2020-01-03"
+
+
+def test_devils_advocate_sees_dated_drawdowns():
+    fund, tech = _fund_tech()
+    dd = {"as_of": "2026-09-18", "by_window": [(1, -12.3), (3, -34.0), (5, -41.6)]}
+    prompt = devils_advocate_prompt(fund, tech, None, dd)
+    assert "Peor caída del propio activo (al 2026-09-18): 1a -12%, 3a -34%, 5a -42%" in prompt
+
+
+def test_devils_advocate_byte_identical_without_drawdowns():
+    fund, tech = _fund_tech()
+    base = devils_advocate_prompt(fund, tech)
+    assert devils_advocate_prompt(fund, tech, None, None) == base
+    assert devils_advocate_prompt(fund, tech, None, {}) == base
+
+
+def test_only_the_devils_advocate_receives_drawdowns():
+    seen = []
+    base = make_fake(
+        fundamental=_fundamental_json("BUY", "HIGH"),
+        macro=_agent_json("BUY"),
+        devil=_agent_json("HOLD"),
+        pm=_agent_json("BUY"),
+        coach=_agent_json("HOLD"),
+    )
+
+    def call_fn(prompt):
+        seen.append(prompt)
+        return base(prompt)
+
+    fund, tech = _fund_tech()
+    dd = {"as_of": "2026-09-18", "by_window": [(1, -12.0)]}
+    with patch("analysis.committee._ticker_drawdowns", return_value=dd):
+        CommitteeAnalyzer(call_fn=call_fn, use_cache=False).analyze(fund, tech)
+    with_dd = [p for p in seen if "Peor caída del propio activo" in p]
+    assert len(with_dd) == 1
+    assert "Abogado del Diablo" in with_dd[0]
+
+
+def test_drawdowns_failure_degrades_to_empty():
+    with patch("data.fetcher.get_history", side_effect=ConnectionError("boom")):
+        assert _real_ticker_drawdowns("MSFT") == {}
+    with patch.object(__import__("config").COMMITTEE, "drawdown_enabled", False), \
+            patch("data.fetcher.get_history", side_effect=AssertionError("no debe llamarse")):
+        assert _real_ticker_drawdowns("MSFT") == {}

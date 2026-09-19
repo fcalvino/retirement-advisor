@@ -290,3 +290,4 @@ def no_committee_news(monkeypatch):
     would depend on today's news. Tests that want headlines patch it back.
     """
     monkeypatch.setattr("analysis.committee._ticker_news", lambda symbol: [])
+    monkeypatch.setattr("analysis.committee._ticker_drawdowns", lambda symbol: {})
