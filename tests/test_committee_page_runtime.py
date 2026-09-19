@@ -4,7 +4,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-import httpx
 import openai
 from streamlit.testing.v1 import AppTest
 
@@ -21,7 +20,7 @@ def test_auth_failure_is_visible_and_not_saved_as_last_verdict(monkeypatch):
     case = golden_cases()[0]
     monkeypatch.setattr(shared, "cached_full_analysis", lambda *a: (case.fund, case.tech, None))
     monkeypatch.setattr(committee.CommitteeAnalyzer, "_get_cached", lambda *a: None)
-    response = httpx.Response(401, request=httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions"))
+    response = Mock(status_code=401, headers={})
     failure = openai.AuthenticationError("Invalid API Key", response=response, body=None)
     monkeypatch.setattr(AIAnalyzer, "_call_api", Mock(side_effect=failure))
     record = Mock()
