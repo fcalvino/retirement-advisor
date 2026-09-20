@@ -40,7 +40,10 @@ if not getattr(ai_cfg, "enabled", False):
     st.stop()
 
 _default_sym = st.session_state.get("comite_last_symbol") or "MSFT"
-symbol = st.text_input("Ticker a evaluar", value=_default_sym).strip().upper()
+# Keyed + seeded once: a key-less widget whose `value` changes after each run is
+# rebuilt by Streamlit, dropping the ticker typed for the next convene.
+st.session_state.setdefault("comite_symbol_input", _default_sym)
+symbol = st.text_input("Ticker a evaluar", key="comite_symbol_input").strip().upper()
 run = st.button("🏛️ Convocar al comité", type="primary")
 
 # Show last verdict instead of a dead-empty page (backlog 2)
@@ -59,6 +62,8 @@ elif not run:
     )
     if st.button(f"Probar con {_es['demo_ticker']}", key="comite_demo"):
         st.session_state["comite_last_symbol"] = _es["demo_ticker"]
+        # The input is already instantiated: drop it so the rerun re-seeds it.
+        st.session_state.pop("comite_symbol_input", None)
         st.rerun()
 
 if run and symbol:
@@ -128,7 +133,7 @@ if run and symbol:
     st.markdown(
         f"<div style='padding:14px;border-radius:10px;background:{_color}1a;"
         f"border-left:6px solid {_color}'>"
-        f"<b style='color:{_color};font-size:1.3em'>Dictamen: {verdict.action}</b>"
+        f"<b style='color:{_color};font-size:1.3em'>Dictamen {symbol}: {verdict.action}</b>"
         f" &nbsp;|&nbsp; Confianza: <b>{verdict.confidence}</b>"
         f" &nbsp;|&nbsp; Lean: {verdict.lean:+.2f}</div>",
         unsafe_allow_html=True,

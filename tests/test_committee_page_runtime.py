@@ -32,7 +32,7 @@ def test_auth_failure_is_visible_and_not_saved_as_last_verdict(monkeypatch):
     next(b for b in app.button if "Convocar" in b.label).click().run()
     assert not app.exception
     assert any("API key inválida" in e.value for e in app.error)
-    assert not any("Dictamen: HOLD" in e.value for e in app.markdown)
+    assert not any("Dictamen" in e.value for e in app.markdown)
     assert "comite_last_verdict" not in app.session_state
     record.assert_not_called()
     app.run()
