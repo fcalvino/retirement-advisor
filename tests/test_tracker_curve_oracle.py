@@ -58,8 +58,16 @@ def _history_start() -> str:
     was empty, making ``test_the_curve_has_no_step_from_a_purchase`` fail with
     ``assert nan < 0.5`` on every machine and in CI. Nothing about what the
     oracle asserts changed; only its clock did.
+
+    Anchoring the *start* to the clock was not enough. ``freq="W"`` snaps every
+    bar to a Sunday at 00:00, so the last bar landed before ``datetime.now()``
+    and the bracket assertion below failed for the ``weeks_ago=0`` purchase —
+    one day in seven, whenever today *is* that Sunday (CI, 2026-09-20). The
+    start is therefore counted back from a week ahead: the last bar then always
+    falls after now, which is what "the history brackets the purchase" means.
     """
-    return (datetime.now() - timedelta(weeks=_HISTORY_WEEKS - 1)).date().isoformat()
+    last = (datetime.now() + timedelta(weeks=1)).date()
+    return (last - timedelta(weeks=_HISTORY_WEEKS - 1)).isoformat()
 
 
 def _weekly(start: str, n: int, start_price: float, weekly_drift: float) -> pd.DataFrame:
