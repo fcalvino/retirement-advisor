@@ -1706,7 +1706,7 @@ def run_holdings_committee(
 
 def render_committee_status(verdict) -> bool:
     """Explain failed agents before presenting any investment verdict."""
-    from config import AI_FALLBACK
+    from config import AI_FALLBACK, COMMITTEE
 
     if verdict.complete:
         return True
@@ -1717,8 +1717,15 @@ def render_committee_status(verdict) -> bool:
     )
     if AI_FALLBACK.KEY_INVALIDA in verdict.failure_causes:
         message += " Revisá la credencial del proveedor elegido en Ajustes o en .env y volvé a convocar."
-    if not verdict.available:
+    if not any(o.ok for o in verdict.opinions):
         st.error("Sin dictamen: ningún agente pudo responder. " + message)
+    elif not verdict.available:
+        # Votaron algunos, pero tan pocos que el veredicto lo dominaría uno solo.
+        st.error(
+            f"Sin dictamen: votó el {verdict.quorum_pct:.0f} % del panel, por debajo del "
+            f"{COMMITTEE.min_quorum_weight_pct:.0f} % mínimo. Con tan pocas voces el "
+            "veredicto reflejaría el mandato de un agente, no el del comité. " + message
+        )
     else:
         st.warning("Dictamen parcial: faltan agentes. " + message)
     for opinion in verdict.opinions:

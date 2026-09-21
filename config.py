@@ -2219,6 +2219,12 @@ class CommitteeConfig:
                           anchored at the last bar of the price history, never at
                           the wall clock. A window the history does not fully
                           cover is omitted, not extrapolated.
+      min_quorum_weight_pct — minimum share (%) of the CONVENED vote weight that
+                          must actually vote for there to be a verdict at all.
+                          Below it the verdict is UNAVAILABLE rather than a
+                          partial panel. The denominator is what was convened
+                          (the dividend voice only counts when it was called),
+                          not the sum of ``vote_weights``.
     """
     enabled: bool = True
     max_workers: int = 5
@@ -2244,8 +2250,16 @@ class CommitteeConfig:
     reduce_lean: float = -0.5
     sell_lean: float = -1.5
     downgrade_confidence_on_strong_dissent: bool = True
-    prompt_version: str = "2026-09-19b"
+    prompt_version: str = "2026-09-20"
     data_quality_downgrade_missing_fields: int = 3
+    # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
+    # to be the majority of the surviving panel, in both panels: it would need a
+    # live weight below 1.4 (ticker) or 1.6 (plan), and the floors are 1.9 and
+    # 1.75. At 40 % the property breaks (plan: DA+Macro = 43 % passes and the DA
+    # is 53 % of it); at 60 % healthy pairs start being rejected (ticker:
+    # Fundamental+PM = 53 %). If the per-role weights change, RE-VERIFY this —
+    # the property is not inherited.
+    min_quorum_weight_pct: float = 50.0
     drawdown_enabled: bool = True
     drawdown_windows_years: tuple = (1, 3, 5)
 
@@ -2286,6 +2300,7 @@ class CommitteeConfig:
             "sell_lean": self.sell_lean,
             "downgrade_confidence_on_strong_dissent": self.downgrade_confidence_on_strong_dissent,
             "prompt_version": self.prompt_version,
+            "min_quorum_weight_pct": self.min_quorum_weight_pct,
             "portfolio_vote_weights": dict(self.portfolio_vote_weights),
             "portfolio_action_labels": dict(self.portfolio_action_labels),
         }

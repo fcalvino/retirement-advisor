@@ -22,6 +22,7 @@ from analysis.committee import (
     _retry_after_seconds,
     aggregate,
 )
+from analysis.committee_prompts import DIVIDEND_ROLE
 from analysis.eval_cases import golden_cases
 from config import AI_FALLBACK, COMMITTEE, AIConfig
 
@@ -54,8 +55,9 @@ def _fundamental_json(action, confidence="HIGH", rationale=None, risks=None):
     }, ensure_ascii=False)
 
 
-def make_fake(*, fundamental, macro, devil, pm, coach):
+def make_fake(*, fundamental, macro, devil, pm, coach, dividend=None):
     """Route the fake response by the role title embedded in each prompt."""
+    dividend = dividend or _agent_json("HOLD")
     def call_fn(prompt: str) -> str:
         if "Abogado del Diablo" in prompt:
             return devil
@@ -65,6 +67,11 @@ def make_fake(*, fundamental, macro, devil, pm, coach):
             return pm
         if "Behavioral Coach" in prompt:
             return coach
+        if DIVIDEND_ROLE in prompt:
+            # La voz de Dividendo usa el esquema `stance`, no el `action` del
+            # Fundamental: caer al default le daba un voto ilegible que antes se
+            # coercía a HOLD en silencio — el defecto mismo, dentro del fixture.
+            return dividend
         return fundamental  # the equity_decision_prompt has none of the above titles
     return call_fn
 
@@ -143,10 +150,19 @@ def test_parse_agent_handles_garbage():
     assert op.stance == "HOLD"
 
 
-def test_parse_agent_normalizes_invalid_stance():
+def test_parse_agent_rejects_a_stance_outside_the_vocabulary():
+    """Antes se normalizaba a HOLD con ``ok=True`` — ese era el HOLD silencioso.
+
+    Un `stance` que el vocabulario no reconoce no es una postura neutra: es un
+    voto que no se pudo leer, y tiene que salir del quórum como cualquier otro
+    fallo del agente. `confidence` sí se coerce: no entra al lean.
+    """
     op = _parse_agent("Estratega Macro", json.dumps({"stance": "MAYBE", "confidence": "WAT"}))
-    assert op.stance == "HOLD"
-    assert op.confidence == "MEDIUM"
+    assert not op.ok
+    assert op.error_cause == AI_FALLBACK.JSON_INVALIDO
+
+    ok_op = _parse_agent("Estratega Macro", json.dumps({"stance": "BUY", "confidence": "WAT"}))
+    assert ok_op.ok and ok_op.stance == "BUY" and ok_op.confidence == "MEDIUM"
 
 
 # --------------------------------------------------------------------------- #
@@ -246,7 +262,6 @@ from analysis.committee import (  # noqa: E402
     build_ticker_portfolio_context,
 )
 from analysis.committee_prompts import (  # noqa: E402
-    DIVIDEND_ROLE,
     _role_prompt,
     devils_advocate_prompt,
     portfolio_manager_prompt,
@@ -426,6 +441,8 @@ def test_rate_limit_retries_then_succeeds():
             return _agent_json("BUY", "HIGH")
         if "Behavioral Coach" in prompt:
             return _agent_json("HOLD")
+        if DIVIDEND_ROLE in prompt:
+            return _agent_json("HOLD")
         return _fundamental_json("BUY", "HIGH")
 
     with patch("analysis.committee.time.sleep"):
@@ -454,6 +471,8 @@ def test_permanent_429_does_not_cache(monkeypatch):
         if "Estratega Macro" in prompt:
             return _agent_json("BUY")
         if "Behavioral Coach" in prompt:
+            return _agent_json("HOLD")
+        if DIVIDEND_ROLE in prompt:
             return _agent_json("HOLD")
         return _fundamental_json("BUY", "HIGH")
 

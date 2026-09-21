@@ -110,11 +110,24 @@ class CommitteeVerdict:
     dissent: List[str]
     opinions: List[AgentOpinion]
     lean: float = 0.0
+    #: Share (%) of the convened vote weight that actually voted. Defaults to
+    #: "quorum met" because ``_verdict_from_dict`` does not deserialise it: a
+    #: cache hit must not come back looking like a failed panel.
+    quorum_pct: float = 100.0
 
     @property
     def available(self) -> bool:
-        """Whether at least one agent supplied a valid investment opinion."""
-        return any(o.ok for o in self.opinions)
+        """Whether enough of the panel voted for there to be a verdict at all.
+
+        One valid opinion is not a committee. The per-role weights are calibrated
+        as a *share* of the total (the Devil's Advocate is ~14 % of the lean by
+        design), so a decimated panel would publish one agent's standing mandate
+        under the committee's name — and the DA's mandate is bearish by
+        construction. ``COMMITTEE.min_quorum_weight_pct`` is the floor.
+        """
+        if not any(o.ok for o in self.opinions):
+            return False
+        return self.quorum_pct >= COMMITTEE.min_quorum_weight_pct
 
     @property
     def failure_causes(self) -> List[str]:
@@ -179,17 +192,50 @@ def _failed_opinion(role: str, exc: BaseException) -> AgentOpinion:
 #  Parsing                                                                    #
 # --------------------------------------------------------------------------- #
 
+def _invalid_vote(role: str, field: str, raw_value) -> AgentOpinion:
+    """A vote outside the stance vocabulary is a FAILED agent, not a neutral one.
+
+    Coercing it to HOLD used to return ``ok=True``, so the vote entered the
+    weighted average with its full weight and a score of 0.0: a formatting slip
+    by the model dragged the lean toward the centre, ``complete`` stayed True,
+    and the verdict was cached for 24 h and written to the track record with no
+    signal that anything had failed. Excluding it instead renormalises the lean
+    over the agents that really voted — the same rule ``_pays_dividend`` already
+    applies to the dividend voice (an unconvened voice leaves the lean untouched;
+    a forced HOLD dilutes it).
+    """
+    logger.warning(
+        f"committee agent {role}: vote rejected — {field}={str(raw_value)[:40]!r} "
+        f"is outside the stance vocabulary"
+    )
+    return AgentOpinion(
+        role=role, stance="HOLD", confidence="LOW",
+        error=AI_FALLBACK.JSON_INVALIDO, error_cause=AI_FALLBACK.JSON_INVALIDO,
+    )
+
+
+def _coerced_confidence(role: str, raw_value) -> str:
+    """``confidence`` does not enter the lean, so a bad label never voids a vote."""
+    confidence = str(raw_value).upper().strip() if raw_value is not None else "MEDIUM"
+    if confidence in _CONFIDENCE_RANK:
+        return confidence
+    if raw_value is not None:
+        logger.warning(
+            f"committee agent {role}: confidence={str(raw_value)[:40]!r} unknown — using MEDIUM"
+        )
+    return "MEDIUM"
+
+
 def _parse_agent(role: str, raw: str) -> AgentOpinion:
     try:
         data = extract_json_object(raw)
     except Exception as exc:
         return _failed_opinion(role, exc)
-    stance = str(data.get("stance", "HOLD")).upper().strip()
+    raw_stance = data.get("stance")
+    stance = str(raw_stance).upper().strip()
     if stance not in _STANCE_SCORE:
-        stance = "HOLD"
-    confidence = str(data.get("confidence", "MEDIUM")).upper().strip()
-    if confidence not in _CONFIDENCE_RANK:
-        confidence = "MEDIUM"
+        return _invalid_vote(role, "stance", raw_stance)
+    confidence = _coerced_confidence(role, data.get("confidence"))
     key_points = [str(x) for x in (data.get("key_points") or [])]
     concerns = [str(x) for x in (data.get("concerns") or [])]
     return AgentOpinion(role=role, stance=stance, confidence=confidence,
@@ -203,12 +249,11 @@ def _parse_fundamental(raw: str) -> AgentOpinion:
         data = extract_json_object(raw)
     except Exception as exc:
         return _failed_opinion(role, exc)
-    stance = str(data.get("action", "HOLD")).upper().strip()
+    raw_action = data.get("action")
+    stance = str(raw_action).upper().strip()
     if stance not in _STANCE_SCORE:
-        stance = "HOLD"
-    confidence = str(data.get("confidence", "MEDIUM")).upper().strip()
-    if confidence not in _CONFIDENCE_RANK:
-        confidence = "MEDIUM"
+        return _invalid_vote(role, "action", raw_action)
+    confidence = _coerced_confidence(role, data.get("confidence"))
     return AgentOpinion(
         role=role, stance=stance, confidence=confidence,
         key_points=[str(x) for x in (data.get("rationale") or [])],
@@ -249,19 +294,32 @@ def aggregate(
     """
     weights = weights or COMMITTEE.vote_weights
     valid = [o for o in opinions if o.ok]
-    if not valid:
-        return CommitteeVerdict(
-            symbol=symbol, action="UNAVAILABLE", confidence="LOW",
-            consensus_points=[], dissent=[], opinions=opinions,
-        )
 
-    # Weighted lean across the agents that voted.
+    # Weighted lean across the agents that voted. The denominator is the weight
+    # that voted, not the weight convened: an agent that failed is EXCLUDED, not
+    # counted as a zero — counting it would drag every lean toward HOLD.
     num = 0.0
     den = 0.0
     for o in valid:
         w = float(weights.get(o.role, 0.5))
         num += w * _STANCE_SCORE[o.stance]
         den += w
+    convened = sum(float(weights.get(o.role, 0.5)) for o in opinions)
+    quorum_pct = round(100.0 * den / convened, 2) if convened else 0.0
+
+    if not valid or quorum_pct < COMMITTEE.min_quorum_weight_pct:
+        if valid:
+            logger.warning(
+                f"committee[{symbol}]: quorum {quorum_pct:.0f}% < "
+                f"{COMMITTEE.min_quorum_weight_pct:.0f}% — no verdict "
+                f"(lean of the surviving {len(valid)} would have been {num / den:+.4f})"
+            )
+        return CommitteeVerdict(
+            symbol=symbol, action="UNAVAILABLE", confidence="LOW",
+            consensus_points=[], dissent=[], opinions=opinions,
+            quorum_pct=quorum_pct,
+        )
+
     lean = (num / den) if den else 0.0
     action = _lean_to_action(lean)
 
@@ -313,7 +371,7 @@ def aggregate(
     return CommitteeVerdict(
         symbol=symbol, action=action, confidence=confidence,
         consensus_points=consensus_points, dissent=dissent,
-        opinions=opinions, lean=round(lean, 4),
+        opinions=opinions, lean=round(lean, 4), quorum_pct=quorum_pct,
     )
 
 
@@ -760,7 +818,8 @@ class CommitteeAnalyzer:
         verdict = aggregate(symbol, opinions, data_quality=dq)
         logger.info(
             f"committee[{symbol}]: {verdict.action} ({verdict.confidence}) lean={verdict.lean} "
-            f"dissent={len(verdict.dissent)} complete={verdict.complete} failures={verdict.failure_causes}"
+            f"dissent={len(verdict.dissent)} complete={verdict.complete} "
+            f"quorum={verdict.quorum_pct:.0f}% failures={verdict.failure_causes}"
         )
         if self._use_cache and verdict.complete:
             self._set_cached(symbol, verdict, variant)
@@ -794,7 +853,7 @@ class CommitteeAnalyzer:
         logger.info(
             f"committee[{cache_symbol}]: {verdict.action} ({verdict.confidence}) "
             f"lean={verdict.lean} dissent={len(verdict.dissent)} complete={verdict.complete} "
-            f"failures={verdict.failure_causes}"
+            f"quorum={verdict.quorum_pct:.0f}% failures={verdict.failure_causes}"
         )
         if self._use_cache and verdict.complete:
             self._set_cached(cache_symbol, verdict)
