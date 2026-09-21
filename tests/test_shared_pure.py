@@ -316,3 +316,47 @@ class TestExportPlanBundle:
         json_bytes, _, _ = shared.export_plan_bundle(_snapshot(name="Jubilación Ñoño €"))
         bundle = json.loads(json_bytes.decode("utf-8"))
         assert bundle["snapshot"]["name"] == "Jubilación Ñoño €"
+
+
+class TestCommitteeEmptyCaptions:
+    """COM-VOTO-VACÍO: the caption must not read an unargued verdict as a disagreement.
+
+    A vote with a valid stance but empty ``key_points``/``concerns`` still counts
+    toward the lean, so the consensus and dissent boxes come back empty without
+    anything having failed. These two helpers are the only place that tells the
+    two causes apart, and both committee views read them.
+    """
+
+    @staticmethod
+    def _verdict(opinions):
+        from analysis.committee import aggregate
+
+        return aggregate("ACME", opinions)
+
+    @staticmethod
+    def _op(role, stance="HOLD", key_points=None, concerns=None):
+        from analysis.committee import AgentOpinion
+
+        return AgentOpinion(role, stance, "MEDIUM", key_points or [], concerns or [])
+
+    def test_consensus_caption_names_the_missing_argument(self):
+        v = self._verdict([self._op("Estratega Macro"), self._op("Analista Fundamental")])
+        assert "sin dar argumentos" in shared.consensus_empty_caption(v)
+
+    def test_consensus_caption_keeps_classic_text_when_agents_argued(self):
+        v = self._verdict([
+            self._op("Analista Fundamental", "BUY", ["crece el FCF"]),
+            self._op("Estratega Macro", "SELL", ["tasas al alza"]),
+        ])
+        assert v.unreasoned_roles == []
+        assert shared.consensus_empty_caption(v) == "Sin puntos de consenso claros."
+
+    def test_dissent_caption_calls_out_a_mute_devil(self):
+        v = self._verdict([self._op("Abogado del Diablo")])
+        assert v.dissent == []
+        assert "Abogado del Diablo" in shared.dissent_empty_caption(v)
+
+    def test_dissent_caption_keeps_classic_text_without_a_devil(self):
+        """No DA convened is not a broken guarantee — only a mute DA is."""
+        v = self._verdict([self._op("Analista Fundamental", "BUY", ["crece el FCF"])])
+        assert shared.dissent_empty_caption(v) == "Sin disenso registrado."

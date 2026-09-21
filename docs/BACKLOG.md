@@ -201,15 +201,45 @@ Nada de acá miente sobre lo que calcula; todo está mal calibrado o mal alcanza
 **Vacío.** U7-1 y U7-2 cerraron: `preset_gap` compara contra la corrida, y
 Fuente vacío es ninguna fila. Ver `ROADMAP.md`.
 
-- **COM-VOTO-VACÍO**: un voto con `stance` válido pero `key_points` y `concerns`
-  en `[]` pasa todas las guardas — es `ok`, vota con su peso completo, y produce
-  un dictamen cuyo `consensus_points` y `dissent` quedan vacíos
-  (`analysis/committee.py`, el armado de consenso/disenso en `aggregate`). Es el
-  otro camino a «un veredicto sin razonamiento real» que quedó fuera del fix del
-  HOLD silencioso (2026-09-20), y en el caso del Abogado del Diablo rompe la
-  garantía de disenso siempre presente. Medir primero cuán seguido pasa: el log
-  de `failures=` no lo ve, porque no es un fallo. Repro: bloque C de
+- **COM-VOTO-VACÍO** — *presentación resuelta (2026-09-21); la medición sigue
+  abierta*. Un voto con `stance` válido pero `key_points` y `concerns` en `[]`
+  pasa todas las guardas y vota con su peso completo. **Se decidió que siga
+  votando**: la prosa no entra al lean (`analysis/committee.py`, `aggregate` sólo
+  usa `_STANCE_SCORE` y el peso), así que excluirlo cambiaría números del motor
+  para arreglar un problema de presentación — y si el proveedor es tacaño de
+  forma sistemática, `quorum_pct` cae a 0 y *todo* dictamen sale `UNAVAILABLE`.
+  Lo que sí se arregló: `CommitteeVerdict.unreasoned_roles` y `devil_silent`
+  nombran el caso, `aggregate` loguea un warning cuando el Abogado del Diablo
+  vota sin fundamentar, y los captions de las dos vistas
+  (`consensus_empty_caption` / `dissent_empty_caption` en `dashboard/shared.py`)
+  dejaron de decir «sin consenso» cuando lo que pasó es que nadie argumentó.
+  **Queda abierto**: medir la frecuencia por proveedor/modelo. Es el único dato
+  que movería la decisión hacia excluir el voto del quórum — ahí dejaría de ser
+  un apagón global y pasaría a ser un filtro de calidad legítimo. El log de
+  `failures=` no lo ve, porque no es un fallo. Repro: bloque C de
   `.context/repro_silent_hold.py`.
+- **COM-QUORUM-MEDICION**: nadie midió la frecuencia real de votos malformados,
+  que es el único dato que diría si `COMMITTEE.min_quorum_weight_pct = 50.0` es
+  demasiado estricto en la práctica. El log ya expone `quorum=` y `failures=` en
+  cada línea de `analyze`, y la retención del sink pasó de 7 a 90 días
+  (`dashboard/app.py`) justamente para que la evidencia sobreviva — a 7 días se
+  tiraba antes de juntarse. **No escribir el agregador todavía**: el cuello de
+  botella es volumen de uso, no herramienta (al 2026-09-21 hay 3 corridas
+  orgánicas, todas `quorum=100% failures=[]`). Reactivar con ≥200 `analyze`
+  orgánicos registrados; ahí, si la tasa de `failures=` no vacío supera ~5 % o
+  aparece algún `quorum<50%` no inyectado, se revisa el 50 %. Ojo: la nota de
+  `config.py` avisa que la propiedad del 50 % **no se hereda** si cambian los
+  `vote_weights` — tocar uno obliga a re-verificar el otro.
+- ~~**COM-CACHE-HOLD**~~ — *descartada (2026-09-21)*. La hipótesis era que
+  `_verdict_from_dict` deserializa un `action` ausente como `"HOLD"`
+  (`analysis/committee.py`, `d.get("action", "HOLD")`). El caso es **inalcanzable**
+  por dos barreras independientes: `data/cache.py` borra y devuelve `None` para
+  toda entrada más vieja que el TTL (24 h), así que cualquier payload anterior a
+  #137 (2026-09-19) ya está expirado y físicamente borrado; y `_cache_key`
+  incluye `v{prompt_version}`, o sea que un payload viejo tiene otra clave y ni
+  se consulta. Sumado a que `_verdict_to_dict` **siempre** escribe `action` y
+  `_set_cached` está gateado por `complete`, ese default es código defensivo
+  muerto. No hacía falta ninguna base con caché vieja para confirmarlo.
 - **PIT-TOOLS (prerrequisito para reabrir ReAct en el comité)**: `get_news` y
   `MacroRagStore.retrieve` no aceptan `as_of` — leen el reloj real, así que una
   tool que los exponga filtraría datos posteriores a la fecha de análisis y

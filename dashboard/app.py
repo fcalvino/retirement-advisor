@@ -63,7 +63,11 @@ def _ensure_logger() -> None:
     logger.add(
         _LOG_PATH,
         rotation="10 MB",
-        retention="7 days",
+        # 90 días, no 7: la línea `committee[...] quorum=% failures=[]` de cada
+        # `analyze` es la única fuente para calibrar COMMITTEE.min_quorum_weight_pct,
+        # y a 7 días la evidencia se tiraba antes de juntar muestra (hoy: 3 corridas
+        # orgánicas). Ver COM-QUORUM-MEDICION en docs/BACKLOG.md.
+        retention="90 days",
         level="INFO",
         format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{line} | {message}",
         enqueue=True,

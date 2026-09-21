@@ -12,6 +12,8 @@ from dashboard.shared import (
     CALC_BADGE,
     _get_ai_config,
     cached_full_analysis,
+    consensus_empty_caption,
+    dissent_empty_caption,
     render_ai_badge,
     render_committee_status,
 )
@@ -146,14 +148,14 @@ if run and symbol:
             for p in verdict.consensus_points:
                 st.markdown(f"- {p}")
         else:
-            st.caption("Sin puntos de consenso fuertes.")
+            st.caption(consensus_empty_caption(verdict))
     with col_d:
         st.subheader("⚖️ Disenso (bear case)")
         if verdict.dissent:
             for d in verdict.dissent:
                 st.markdown(f"- {d}")
         else:
-            st.caption("El comité no registró disenso material.")
+            st.caption(dissent_empty_caption(verdict))
 
     st.divider()
     st.subheader("🗣️ Opiniones por agente")

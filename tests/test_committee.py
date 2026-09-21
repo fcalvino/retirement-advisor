@@ -105,6 +105,105 @@ def test_dissent_always_includes_devil_concerns():
     assert "la valuación es exigente" in v.dissent
 
 
+# --------------------------------------------------------------------------- #
+#  COM-VOTO-VACÍO: a legible stance with no prose behind it                    #
+# --------------------------------------------------------------------------- #
+
+def _mute_panel():
+    """A whole panel that votes with a valid stance and not one word of prose."""
+    return [
+        AgentOpinion("Analista Fundamental", "HOLD", "MEDIUM"),
+        AgentOpinion("Estratega Macro", "HOLD", "MEDIUM"),
+        AgentOpinion("Abogado del Diablo", "HOLD", "MEDIUM"),
+    ]
+
+
+def test_unreasoned_roles_lists_votes_with_no_prose():
+    v = aggregate("ACME", _mute_panel())
+    assert v.unreasoned_roles == [
+        "Analista Fundamental", "Estratega Macro", "Abogado del Diablo",
+    ]
+
+
+def test_unreasoned_roles_is_empty_when_everyone_argued():
+    ops = [
+        AgentOpinion("Analista Fundamental", "BUY", "HIGH", ["a"], ["r"]),
+        AgentOpinion("Abogado del Diablo", "BUY", "LOW", ["c"], ["bear point"]),
+    ]
+    assert aggregate("MSFT", ops).unreasoned_roles == []
+
+
+def test_unreasoned_ignores_whitespace_only_prose():
+    """``key_points=["  "]`` is prose in form only — ``_dedupe`` drops it anyway."""
+    ops = [AgentOpinion("Estratega Macro", "BUY", "HIGH", ["   "], [""])]
+    assert aggregate("MSFT", ops).unreasoned_roles == ["Estratega Macro"]
+
+
+def test_devil_silent_is_true_when_the_bear_case_has_no_concerns():
+    v = aggregate("ACME", _mute_panel())
+    assert v.devil_silent
+    assert v.dissent == []
+
+
+def test_devil_silent_is_false_when_the_devil_named_a_concern():
+    ops = [
+        AgentOpinion("Analista Fundamental", "BUY", "HIGH", ["a"], ["r"]),
+        AgentOpinion("Abogado del Diablo", "BUY", "LOW", ["c"], ["la deuda crece"]),
+    ]
+    assert not aggregate("MSFT", ops).devil_silent
+
+
+def test_a_failed_devil_is_not_a_silent_devil():
+    """``devil_silent`` is about a vote that carried no reason, not a dead agent.
+
+    A crashed DA is already reported through ``failure_causes``/``complete``;
+    conflating the two would double-report it and blur what the caption means.
+    """
+    ops = [
+        AgentOpinion("Analista Fundamental", "BUY", "HIGH", ["a"], ["r"]),
+        AgentOpinion("Abogado del Diablo", "HOLD", "LOW",
+                     error=AI_FALLBACK.JSON_INVALIDO, error_cause=AI_FALLBACK.JSON_INVALIDO),
+    ]
+    assert not aggregate("MSFT", ops).devil_silent
+
+
+def test_silent_devil_is_logged():
+    """The case leaves no trace otherwise: the vote is valid, so `failures=` is empty."""
+    from loguru import logger
+
+    messages = []
+    handler = logger.add(lambda m: messages.append(str(m)))
+    try:
+        v = aggregate("ACME", _mute_panel())
+    finally:
+        logger.remove(handler)
+
+    assert v.failure_causes == []  # nothing failed — that is the whole problem
+    assert any("Abogado del Diablo" in m and "sin fundamentar" in m for m in messages)
+
+
+def test_empty_prose_does_not_move_the_engine():
+    """The guard for this change: prose is presentation, it must not touch numbers.
+
+    Same stances, with and without prose — lean, action, availability and
+    completeness have to come out identical. If this ever fails, the fix stopped
+    being cosmetic and started changing what the committee recommends.
+    """
+    mute = aggregate("ACME", _mute_panel())
+    spoken = aggregate("ACME", [
+        AgentOpinion("Analista Fundamental", "HOLD", "MEDIUM", ["a"], ["r"]),
+        AgentOpinion("Estratega Macro", "HOLD", "MEDIUM", ["b"], ["r"]),
+        AgentOpinion("Abogado del Diablo", "HOLD", "MEDIUM", ["c"], ["bear"]),
+    ])
+
+    assert (mute.lean, mute.action, mute.confidence) == (
+        spoken.lean, spoken.action, spoken.confidence
+    )
+    assert mute.available is spoken.available is True
+    assert mute.complete is spoken.complete is True
+    assert mute.quorum_pct == spoken.quorum_pct == 100.0
+
+
 def test_strong_dissent_downgrades_confidence():
     ops = [
         AgentOpinion("Analista Fundamental", "BUY", "HIGH", ["a"], ["r"]),

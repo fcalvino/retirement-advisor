@@ -139,6 +139,36 @@ class CommitteeVerdict:
         """True only when every agent returned a parseable vote (no ``error``)."""
         return bool(self.opinions) and all(o.ok for o in self.opinions)
 
+    @property
+    def unreasoned_roles(self) -> List[str]:
+        """Roles that voted without offering a single reason (no points, no concerns).
+
+        NOT a failure: the stance is legible, so the vote is real and keeps its
+        weight in the quorum — excluding it would change the lean to fix what is
+        a presentation problem, and a model that is systematically terse would
+        take the whole panel below ``min_quorum_weight_pct``. But a verdict built
+        only on these is not an *argued* verdict, and the consensus/dissent boxes
+        come back empty for a reason the UI must not confuse with disagreement.
+        """
+        return [
+            o.role for o in self.opinions
+            if o.ok and not any(t.strip() for t in (*o.key_points, *o.concerns))
+        ]
+
+    @property
+    def devil_silent(self) -> bool:
+        """The Devil's Advocate voted but named no concern.
+
+        The panel's one hard guarantee is that the bear case is always surfaced
+        (see the module docstring). When the DA returns no ``concerns`` the
+        guarantee produces nothing, and because the vote itself is valid nothing
+        else in the pipeline registers it.
+        """
+        devil = next((o for o in self.opinions if o.ok and o.role == "Abogado del Diablo"), None)
+        # `any(...)` and not `not devil.concerns`: ``concerns=[""]`` is prose only
+        # in form — ``_dedupe`` drops it, so the dissent box ends up empty anyway.
+        return devil is not None and not any(c.strip() for c in devil.concerns)
+
     def to_decision(self, fund=None, tech=None) -> Decision:
         """Map the verdict into a standard Decision (numbers stay deterministic)."""
         if not self.available:
@@ -367,6 +397,17 @@ def aggregate(
     # De-duplicate while preserving order.
     consensus_points = _dedupe(consensus_points)
     dissent = _dedupe(dissent)
+
+    # The bear case is the panel's one hard guarantee, and a DA that votes without
+    # naming a concern defeats it without failing: the vote is valid, so `complete`
+    # stays True and `failures=` sees nothing. Checked AFTER _dedupe, which drops
+    # empty strings — concerns=[""] reaches here as no dissent at all. Leaves a
+    # trace only: the stance was legible, so the lean is untouched.
+    if devil and not dissent:
+        logger.warning(
+            f"committee[{symbol}]: el Abogado del Diablo votó ({devil.stance}) sin fundamentar "
+            f"el bear case — dictamen sin disenso"
+        )
 
     return CommitteeVerdict(
         symbol=symbol, action=action, confidence=confidence,
