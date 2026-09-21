@@ -201,6 +201,15 @@ Nada de acá miente sobre lo que calcula; todo está mal calibrado o mal alcanza
 **Vacío.** U7-1 y U7-2 cerraron: `preset_gap` compara contra la corrida, y
 Fuente vacío es ninguna fila. Ver `ROADMAP.md`.
 
+- **COM-VOTO-VACÍO**: un voto con `stance` válido pero `key_points` y `concerns`
+  en `[]` pasa todas las guardas — es `ok`, vota con su peso completo, y produce
+  un dictamen cuyo `consensus_points` y `dissent` quedan vacíos
+  (`analysis/committee.py`, el armado de consenso/disenso en `aggregate`). Es el
+  otro camino a «un veredicto sin razonamiento real» que quedó fuera del fix del
+  HOLD silencioso (2026-09-20), y en el caso del Abogado del Diablo rompe la
+  garantía de disenso siempre presente. Medir primero cuán seguido pasa: el log
+  de `failures=` no lo ve, porque no es un fallo. Repro: bloque C de
+  `.context/repro_silent_hold.py`.
 - **PIT-TOOLS (prerrequisito para reabrir ReAct en el comité)**: `get_news` y
   `MacroRagStore.retrieve` no aceptan `as_of` — leen el reloj real, así que una
   tool que los exponga filtraría datos posteriores a la fecha de análisis y
