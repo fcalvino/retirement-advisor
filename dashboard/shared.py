@@ -1734,6 +1734,32 @@ def render_committee_status(verdict) -> bool:
     return verdict.available
 
 
+def consensus_empty_caption(verdict) -> str:
+    """Why the consensus box is empty — "nobody argued" is not "nobody agreed".
+
+    Pure so both committee views (portfolio and per-ticker) read the same wording
+    and it can be pinned without Streamlit. A vote with a valid stance but no
+    prose still counts toward the lean (see ``CommitteeVerdict.unreasoned_roles``),
+    so the old caption presented an unargued verdict as a disagreement.
+    """
+    if verdict.unreasoned_roles:
+        return (
+            "Los agentes votaron sin dar argumentos, así que no hay consenso que "
+            "mostrar: el dictamen no está fundamentado."
+        )
+    return "Sin puntos de consenso claros."
+
+
+def dissent_empty_caption(verdict) -> str:
+    """Why the dissent box is empty. The DA voting mute is a broken guarantee."""
+    if verdict.devil_silent:
+        return (
+            "El Abogado del Diablo votó sin fundamentar el bear case, así que este "
+            "dictamen se publica sin el disenso que el comité siempre debe mostrar."
+        )
+    return "Sin disenso registrado."
+
+
 def render_committee_verdict(verdict, *, footer_facts: str = "") -> None:
     """Render a portfolio committee verdict: plan-health banner + consensus/dissent.
 
@@ -1772,14 +1798,14 @@ def render_committee_verdict(verdict, *, footer_facts: str = "") -> None:
             for _p in verdict.consensus_points:
                 st.success(_p)
         else:
-            st.caption("Sin puntos de consenso claros.")
+            st.caption(consensus_empty_caption(verdict))
     with _c2:
         st.markdown("**⚖️ Disenso (bear case)**")
         if verdict.dissent:
             for _d in verdict.dissent:
                 st.warning(_d)
         else:
-            st.caption("Sin disenso registrado.")
+            st.caption(dissent_empty_caption(verdict))
 
     with st.expander("👥 Ver cada agente"):
         for o in verdict.opinions:

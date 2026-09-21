@@ -49,3 +49,29 @@ render_committee_verdict(verdict)
     assert not app.exception
     assert app.error
     assert not any("Veredicto:" in e.value for e in app.markdown)
+
+
+def test_renderer_says_nobody_argued_instead_of_nobody_agreed():
+    """COM-VOTO-VACÍO end-to-end through the real Streamlit renderer.
+
+    Every agent returns a legible stance and not one word of prose, so consensus
+    and dissent are both empty with nothing having failed. The verdict still
+    renders (the votes are valid), but the captions must name the real cause.
+    """
+    app = AppTest.from_string('''
+from analysis.committee import AgentOpinion, aggregate
+from dashboard.shared import render_committee_verdict
+verdict = aggregate("portfolio", [
+    AgentOpinion("Estratega del Plan", "HOLD", "MEDIUM"),
+    AgentOpinion("Gestor de Riesgo", "HOLD", "MEDIUM"),
+    AgentOpinion("Abogado del Diablo", "HOLD", "MEDIUM"),
+])
+render_committee_verdict(verdict)
+''').run()
+
+    assert not app.exception
+    assert not app.error  # nothing failed — the panel voted
+    captions = " ".join(c.value for c in app.caption)
+    assert "sin dar argumentos" in captions
+    assert "Abogado del Diablo" in captions
+    assert "Sin puntos de consenso claros." not in captions
