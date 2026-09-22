@@ -3,6 +3,7 @@
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 import yfinance as yf
 from loguru import logger
@@ -118,17 +119,73 @@ def _restore_date_index(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _drop_trailing_empty_bars(df: pd.DataFrame, symbol: str = "") -> pd.DataFrame:
+    """Drop the trailing run of bars that have no ``close`` (U5-19).
+
+    yfinance returns a bar for the *week in progress*; asked before that week has
+    traded it comes back with OHLC all NaN and a partial ``volume``. It is not a
+    price — it is the absence of one — and a single NaN at the tail makes every
+    trailing rolling window NaN at once, so ``above_sma50/100/200`` and
+    ``sma200_slope_pct`` all read ``None`` and the technical signal collapses to
+    ``NEUTRAL``. See ``config.FetchConfig.drop_trailing_empty_bars`` for what that
+    then costs downstream.
+
+    Deliberately narrow:
+
+    * only the **trailing** run — an interior NaN is a hole in the feed, and
+      deleting it would shift the windows rather than shorten them;
+    * never the whole frame — "no data at all" is already handled by the callers
+      (``TechnicalAnalyzer.analyze`` bails at ``len(df) < 50``), and returning an
+      empty frame here would turn a warm cache into a fetch failure;
+    * ``close`` only, not ``volume`` — volume is the field that *does* arrive on
+      the incomplete bar, so keying on it would keep exactly the row to drop.
+
+    Dropping the bar shortens the series, so a ticker that genuinely lacks the
+    history still answers ``None``. The fix removes the false negatives, not the
+    distinction.
+    """
+    from config import FETCH
+
+    if not FETCH.drop_trailing_empty_bars or df.empty:
+        return df
+
+    close_col = next((c for c in df.columns if str(c).strip().lower() == "close"), None)
+    if close_col is None:
+        return df
+
+    valid = df[close_col].notna().to_numpy()
+    if valid.all() or not valid.any():
+        return df
+
+    last_valid = len(valid) - 1 - int(np.argmax(valid[::-1]))
+    if last_valid == len(valid) - 1:
+        return df
+
+    dropped = len(valid) - 1 - last_valid
+    logger.info(
+        f"{symbol or 'history'}: dropping {dropped} trailing bar(s) with no close "
+        "(incomplete period)"
+    )
+    return df.iloc[: last_valid + 1]
+
+
 def get_history(symbol: str, period: str = "10y", interval: str = "1wk") -> pd.DataFrame:
     """Return OHLCV DataFrame. Weekly bars, 10 years by default for long-term context.
 
     The frame is identical whether it came from the network or the cache: a
     ``DatetimeIndex`` named ``Date`` with lower-case OHLCV columns. See
     ``_restore_date_index`` for why that needs saying.
+
+    The trailing incomplete bar is dropped on **both** paths (U5-19): filtering
+    only before ``cache.set`` would leave whatever is already on disk poisoned
+    until its own ``CACHE_TTL_HOURS`` runs out.
     """
     key = f"history:{symbol}:{period}:{interval}"
     cached = cache.get(key)
     if cached:
-        return _restore_date_index(pd.DataFrame(cached))
+        return _drop_trailing_empty_bars(
+            _restore_date_index(pd.DataFrame(cached)), symbol
+        )
 
     def _fetch():
         ticker = yf.Ticker(symbol)
@@ -141,6 +198,7 @@ def get_history(symbol: str, period: str = "10y", interval: str = "1wk") -> pd.D
 
     df = _fetch_with_retry(_fetch, symbol, "history")
     if df is not None and not df.empty:
+        df = _drop_trailing_empty_bars(df, symbol)
         cache.set(key, df.reset_index().to_dict(orient="records"))
         return df
     logger.warning(f"{symbol}: no price history available")

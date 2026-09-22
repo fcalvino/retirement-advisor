@@ -89,6 +89,25 @@ def technical_uptrend_confirmed(technical: TechnicalResult) -> bool:
     )
 
 
+def technical_trend_not_measurable(technical: TechnicalResult) -> bool:
+    """¿El gate falló porque *no hay tendencia alcista* o porque nadie la midió?
+
+    U5-19: ``technical_uptrend_confirmed`` devuelve ``False`` en los dos casos, y
+    el motivo que veía el usuario ("Sin tendencia alcista confirmada") los
+    afirmaba a ambos como un juicio de mercado. Es la misma distinción que U3-1
+    le dio a ``above_sma200`` (``None`` = la ventana es más larga que la serie) y
+    SIGNAL-5 al campo ``signal``: una no-medición no es una medición negativa.
+
+    ``above_sma200 is None`` es el predicado operativo, no ``signal``: entre 50 y
+    199 barras el análisis corre y emite ``NEUTRAL`` medido en momentum, pero la
+    media de 200 semanas — la única que este gate mira — sigue sin existir.
+    """
+    return (
+        getattr(technical, "signal", "") == TECH_CFG.signal_not_measurable
+        or getattr(technical, "above_sma200", None) is None
+    )
+
+
 def confidence_for(
     action: str,
     effective_score: float,
@@ -545,13 +564,24 @@ class RetirementStrategy:
         if CFG.require_technical_uptrend and decision.action in ("BUY", "STRONG BUY"):
             if not technical_uptrend_confirmed(technical):
                 decision.action = "HOLD"
-                decision.decisive_reason = (
-                    "Sin tendencia alcista confirmada — no agregar"
-                )
-                decision.rationale.append(
-                    "Fundamentals support buying but technical uptrend not confirmed "
-                    "(require_technical_uptrend) — hold, do not add"
-                )
+                if technical_trend_not_measurable(technical):
+                    # U5-19: nadie midió la tendencia. Decir "no confirmada" acá
+                    # presenta la ausencia de dato como una lectura del mercado.
+                    decision.decisive_reason = (
+                        "Tendencia no medible — sin historia suficiente, no agregar"
+                    )
+                    decision.rationale.append(
+                        "Fundamentals support buying but the long-term trend is not "
+                        "measurable (insufficient price history) — hold, do not add"
+                    )
+                else:
+                    decision.decisive_reason = (
+                        "Sin tendencia alcista confirmada — no agregar"
+                    )
+                    decision.rationale.append(
+                        "Fundamentals support buying but technical uptrend not confirmed "
+                        "(require_technical_uptrend) — hold, do not add"
+                    )
 
         # --- Step 3: Add rationale ---
         self._build_rationale(decision, fundamental, technical)
