@@ -13,6 +13,7 @@ from dashboard.shared import (
     CALC_BADGE,
     _get_ai_config,
     cached_full_analysis,
+    concentration_hold_note,
     consensus_empty_caption,
     dissent_empty_caption,
     render_ai_badge,
@@ -149,6 +150,9 @@ if run and symbol:
         f" &nbsp;|&nbsp; Lean: {verdict.lean:+.2f}</div>",
         unsafe_allow_html=True,
     )
+    _concentration = concentration_hold_note(verdict, portfolio_ctx)
+    if _concentration:
+        st.info(_concentration, icon="⚖️")
 
     col_c, col_d = st.columns(2)
     with col_c:

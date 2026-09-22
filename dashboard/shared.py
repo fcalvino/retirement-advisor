@@ -1765,6 +1765,55 @@ def dissent_empty_caption(verdict) -> str:
     return "Sin disenso registrado."
 
 
+def concentration_hold_note(verdict, portfolio_ctx) -> str | None:
+    """Why a good business got a cautious verdict: the PM saw a concentrated book.
+
+    Pure, and it only states what can be checked: the PM saw the real book
+    (``portfolio_ctx``), voted HOLD or below, the book is over the engine's own
+    concentration limits (``STRATEGY.max_sector_pct`` / ``max_position_pct``),
+    and the PM is the swing vote — with a BUY from it the same panel would have
+    reached a more bullish action. It never claims to know the PM's motive; its
+    arguments are right below. None when any condition fails.
+    """
+    from analysis.committee import _STANCE_SCORE, counterfactual_verdict
+    from config import STRATEGY
+
+    if not portfolio_ctx:
+        return None
+    pm = next((o for o in verdict.opinions if o.role == "Portfolio Manager" and o.ok), None)
+    if pm is None or _STANCE_SCORE[pm.stance] > 0:
+        return None
+
+    sector_pct = float(portfolio_ctx.get("sector_weight_pct") or 0.0)
+    weight_pct = float(portfolio_ctx.get("weight_pct") or 0.0)
+    facts = []
+    if sector_pct > STRATEGY.max_sector_pct:
+        facts.append(
+            f"{portfolio_ctx.get('sector') or 'su sector'} ya pesa {sector_pct:.1f} % "
+            f"(límite por sector {STRATEGY.max_sector_pct:.0f} %)"
+        )
+    if weight_pct > STRATEGY.max_position_pct:
+        facts.append(
+            f"{portfolio_ctx.get('symbol') or verdict.symbol} ya pesa {weight_pct:.1f} % "
+            f"(límite por posición {STRATEGY.max_position_pct:.0f} %)"
+        )
+    if not facts:
+        return None
+
+    what_if = counterfactual_verdict(verdict, "Portfolio Manager", "BUY")
+    if what_if.action not in _STANCE_SCORE or verdict.action not in _STANCE_SCORE:
+        return None
+    if _STANCE_SCORE[what_if.action] <= _STANCE_SCORE[verdict.action]:
+        return None
+
+    return (
+        f"El Portfolio Manager votó {pm.stance} mirando tu cartera real: {' y '.join(facts)}. "
+        f"Ese voto es el que separa este dictamen de un {what_if.action}: con el PM en BUY el "
+        f"lean sería {what_if.lean:+.2f}. Es una señal sobre la concentración de tu cartera, no "
+        "necesariamente sobre el negocio — mirá los argumentos del PM abajo."
+    )
+
+
 def render_committee_verdict(verdict, *, footer_facts: str = "") -> None:
     """Render a portfolio committee verdict: plan-health banner + consensus/dissent.
 

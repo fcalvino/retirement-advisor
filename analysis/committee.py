@@ -28,7 +28,7 @@ from __future__ import annotations
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable, Dict, List, Optional
 
 from loguru import logger
@@ -414,6 +414,20 @@ def aggregate(
         consensus_points=consensus_points, dissent=dissent,
         opinions=opinions, lean=round(lean, 4), quorum_pct=quorum_pct,
     )
+
+
+def counterfactual_verdict(verdict: CommitteeVerdict, role: str, stance: str) -> CommitteeVerdict:
+    """The verdict the same panel would have produced had ``role`` voted ``stance``.
+
+    Pure what-if over the deterministic aggregation: no AI call, no new numbers.
+    Only a valid opinion is swapped — a failed agent stays failed, so the quorum
+    is the original one. ``verdict`` is not mutated.
+    """
+    opinions = [
+        replace(o, stance=stance) if o.role == role and o.ok else o
+        for o in verdict.opinions
+    ]
+    return aggregate(verdict.symbol, opinions)
 
 
 def _data_quality_flags(dq: Optional[dict]) -> Optional[tuple]:
@@ -807,7 +821,15 @@ class CommitteeAnalyzer:
         from analysis.ai_analyzer import AIAnalyzer
 
         analyzer = AIAnalyzer(ai_config)
-        return lambda prompt: analyzer._call_api(prompt, max_tokens=COMMITTEE.max_tokens)
+
+        def _call(prompt: str) -> str:
+            # Without the pre-flight a missing key reaches the transport, whose
+            # "No credentials found" is string-matched as key_invalida — the UI
+            # then asks the user to fix a key they never set.
+            analyzer._preflight()
+            return analyzer._call_api(prompt, max_tokens=COMMITTEE.max_tokens)
+
+        return _call
 
     def analyze(self, fund, tech, portfolio_ctx: Optional[dict] = None) -> CommitteeVerdict:
         """``portfolio_ctx`` (from ``build_ticker_portfolio_context``) reaches only the PM."""
