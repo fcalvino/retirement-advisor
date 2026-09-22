@@ -923,11 +923,33 @@ class FetchConfig:
     from 23 s to 7m26). Off reproduces that double fetch — scoring still never
     reads SEC/FMP; those stay on the verification path. Do not synthesize
     statement DataFrames from a 10-K.
+
+    ``drop_trailing_empty_bars`` (U5-19): yfinance emits a bar for the *week in
+    progress*. Asked on a day with no trades yet (a Sunday/Monday open), that bar
+    comes back with ``open/high/low/close`` all NaN and only a partial ``volume``,
+    and ``get_history`` cached it verbatim. One NaN at the tail poisons every
+    trailing window at once: ``price.rolling(200).mean().iloc[-1]`` is NaN, so
+    ``above_sma50/100/200`` and ``sma200_slope_pct`` all fall to ``None``
+    (``analysis/technical.py``), the signal collapses to ``NEUTRAL`` and
+    ``require_technical_uptrend`` rewrites every BUY as HOLD — a *non-measurement
+    presented as a market judgement*, on a row the data-quality layer still calls
+    OK. Measured on the real cache: 84 of 108 cached histories.
+
+    The bar is dropped on **both** the network and the cache-hit path on purpose.
+    Sanitizing only before ``cache.set`` would leave the entries already on disk
+    poisoned until their own ``CACHE_TTL_HOURS`` expires, which is precisely the
+    window in which the defect was observed. Filtering on read makes the fix
+    retroactive without a migration or a cache purge.
+
+    Only the *trailing* run is dropped, and never all of it: an interior NaN is a
+    different pathology (a hole in the feed) and silently deleting it would shift
+    every rolling window instead of shortening it.
     """
 
     max_retries: int = 3
     retry_base_delay_s: float = 2.0
     adapter_reads_cache_only: bool = True
+    drop_trailing_empty_bars: bool = True
 
 
 @dataclass
