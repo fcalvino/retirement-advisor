@@ -904,6 +904,50 @@ class CryptoMoatConfig:
     tech_pts_bearish_strong: float = 4.0
     max_vol_for_buy: float = 70.0
 
+    def max_achievable_score(self) -> float:
+        """El techo aritmético de ``adjusted_score`` en la escala cripto.
+
+        Derivado, nunca escrito a mano: si los componentes se recalibran, la
+        escala que los prompts declaran se mueve con ellos. Es el mejor caso
+        absoluto — técnico máximo, moat máximo y CERO penalización de volatilidad
+        y drawdown —, así que ningún cripto real lo alcanza: BTC arrastra un
+        drawdown histórico de −83 % que es un máximo de toda la serie y por lo
+        tanto una penalización permanente.
+
+        Existe porque la escala de equity llega a 100 y ésta no, y el número se le
+        mostraba al comité etiquetado ``/100``. Los agentes lo comparaban contra la
+        distribución de acciones — «una valoración muy desfavorable comparada con
+        otros activos tradicionales», textual del Abogado del Diablo el 2026-09-21.
+        """
+        return self.base_score + self.tech_pts_bullish_strong + self.max_bonus
+
+
+@dataclass
+class CryptoCommitteeConfig:
+    """Cómo el comité le habla a un activo cripto (nada de esto va inline).
+
+    El panel razonaba sobre un cripto con el vocabulario de una empresa: el
+    Abogado del Diablo tenía mandato de buscar "apalancamiento, deterioro de
+    márgenes, valuación exigente" y el Portfolio Manager dimensionaba con la banda
+    de equity (~8-15 %) mientras ``ProfileConfig.max_crypto_pct`` dice 3/5/10.
+    Peor: las métricas nativas que el motor YA calcula (volatilidad, drawdown,
+    CAGR, escasez de suministro, ciclo de halving) nunca salían de
+    ``fund.notes`` — sólo el Analista Fundamental las veía, así que Macro, PM y
+    Coach argumentaban sin un solo dato propio del activo.
+
+    ``sizing_profile`` ancla el techo que cita el PM. El comité no recibe el
+    perfil del inversor, y su prompt ya declara "filosofía conservadora
+    (preservación de capital primero)": tomar otro perfil contradiría el encuadre.
+
+    ``context_note_keys`` son las claves de ``fund.notes`` que escribe
+    ``CryptoAnalyzer``; el orden es el orden en que se imprimen.
+    """
+
+    sizing_profile: str = "conservative"
+    context_note_keys: tuple = (
+        "crypto_vol", "crypto_dd", "crypto_cagr", "crypto_supply", "crypto_halving",
+    )
+
 
 @dataclass
 class FetchConfig:
@@ -2272,7 +2316,11 @@ class CommitteeConfig:
     reduce_lean: float = -0.5
     sell_lean: float = -1.5
     downgrade_confidence_on_strong_dissent: bool = True
-    prompt_version: str = "2026-09-20"
+    # Sufijo de letra por la convención de versiones del mismo día (2026-09-19a,
+    # 19b, …): el moat cripto no medido y el contexto/mandatos cripto fueron dos
+    # versiones de prompt del 2026-09-21 durante el desarrollo, y llegan juntas en
+    # un solo merge con la segunda.
+    prompt_version: str = "2026-09-21b"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a
@@ -2284,6 +2332,16 @@ class CommitteeConfig:
     min_quorum_weight_pct: float = 50.0
     drawdown_enabled: bool = True
     drawdown_windows_years: tuple = (1, 3, 5)
+    # The committee page runs quant-only so the panel keeps the Groq TPM budget.
+    # For an equity that costs a label the quant moat layer already computed; for
+    # a CRYPTO the moat is 100 % AI (``CryptoMoatConfig``), so quant-only means
+    # the asset's only qualitative dimension is never computed at all — and the
+    # panel used to be handed the resulting default as if it were a finding.
+    # The extra spend is one call per ticker per WEEK (``ai_cache_ttl_hours=168``)
+    # and it must go out as ``enrich_only``: without it, ``full_analysis`` also
+    # runs the uncached decision call. Equity is untouched either way — the
+    # crypto fast path returns before the equity moat/tailwind pipelines.
+    crypto_requires_moat: bool = True
 
     # --- Portfolio-level committee (evalúa el PLAN, no un ticker) --------- #
     # Reuses the same deterministic aggregation + lean thresholds; only the
@@ -2938,6 +2996,7 @@ TAXES = TaxConfig()
 ARS_RISK = ArsRiskConfig()
 FETCH = FetchConfig()
 CRYPTO_MOAT = CryptoMoatConfig()
+CRYPTO_COMMITTEE = CryptoCommitteeConfig()
 OPTIMIZER = OptimizerConfig()
 REPORT = ReportConfig()
 MONTE_CARLO = MonteCarloConfig()

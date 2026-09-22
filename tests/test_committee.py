@@ -609,11 +609,24 @@ def test_retry_after_prefers_header_then_body():
     assert classify_ai_failure(_Fake429()) == AI_FALLBACK.RATE_LIMIT
 
 
-def test_comite_page_prefetches_without_ai():
+def test_comite_page_prefetches_without_ai_except_for_the_crypto_moat():
+    """La página sigue siendo quant-only, salvo por la única capa que cripto no tiene.
+
+    Para un equity el moat cuantitativo ya corrió, así que apagar la IA le saca un
+    enriquecimiento. Para un cripto el moat es 100 % IA (``CryptoMoatConfig``), así
+    que le sacaba su única dimensión cualitativa — y el panel recibía el default
+    como si fuera un hallazgo. El gasto extra es una llamada por ticker por semana
+    y tiene que salir como ``enrich_only``, o ``full_analysis`` agrega además la
+    llamada del decisor, que no tiene caché.
+    """
     src = (
         Path(__file__).resolve().parents[1] / "dashboard/views/15_Comite.py"
     ).read_text()
-    assert "cached_full_analysis(\n            symbol, ai_cfg.provider, ai_cfg.model, False" in src
+    assert "_enrich_crypto = COMMITTEE.crypto_requires_moat and is_crypto(symbol)" in src
+    assert "ai_enrich_only=_enrich_crypto" in src
+    # El 4.º posicional es `ai_enabled`: sigue siendo False para todo lo que no
+    # sea cripto, que es lo que este test cuidaba desde el principio.
+    assert "ai_cfg.model, _enrich_crypto, ai_cfg.api_key" in src
     assert "if verdict.complete:" in src
 
 

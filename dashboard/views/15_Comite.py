@@ -7,6 +7,7 @@ from pathlib import Path
 import streamlit as st
 from loguru import logger
 
+from config import COMMITTEE, is_crypto
 from dashboard.shared import (
     AI_BADGE,
     CALC_BADGE,
@@ -72,8 +73,16 @@ if run and symbol:
     with st.spinner(f"Analizando {symbol}…"):
         # Quant only — moat/decisión AI here would burn the same Groq TPM the
         # panel needs. The committee is the AI surface on this page.
+        #
+        # Salvo para cripto: su moat es 100 % IA, así que "quant only" no le
+        # quitaba una capa de enriquecimiento, le quitaba su ÚNICA dimensión
+        # cualitativa, y el panel recibía el default como si fuera un hallazgo.
+        # `enrich_only` deja la decisión rule-based: es una sola llamada (el moat,
+        # cacheado 168 h), no la del decisor. Equity no cambia.
+        _enrich_crypto = COMMITTEE.crypto_requires_moat and is_crypto(symbol)
         fund, tech, _ = cached_full_analysis(
-            symbol, ai_cfg.provider, ai_cfg.model, False, ai_cfg.api_key
+            symbol, ai_cfg.provider, ai_cfg.model, _enrich_crypto, ai_cfg.api_key,
+            ai_enrich_only=_enrich_crypto,
         )
 
     # The PM sizes against the REAL book (tracker values fetched once; no recompute).

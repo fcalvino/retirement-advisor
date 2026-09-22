@@ -225,6 +225,38 @@ def classify_moat(total: float, *, ai_available: bool, cfg=None) -> str:
     return MoatAnalyzer._classify_with(cfg or MOAT, total, ai_available)
 
 
+def reported_moat_label(fund) -> Optional[str]:
+    """The moat label only when a moat was actually *measured*; ``None`` otherwise.
+
+    Same contract as ``fundamental.reported_metric``: ``None`` means "nobody
+    looked", never "we looked and found nothing". ``moat_classification`` cannot
+    carry that distinction — it is a plain ``str`` whose default is the literal
+    ``"None"``, which reads as the worst measured bucket.
+
+    Only **crypto** can be unmeasured, and that asymmetry is the point. An equity
+    always has a moat: ``_run_moat_pipeline`` scores the quantitative layer before
+    the AI is even consulted, so its label is a measurement whether or not the AI
+    ran. A crypto moat is **100 % AI by design** (``CryptoMoatConfig``: "no
+    quantitative financial-statement layer"), so with the AI off, failed, or
+    rate-limited, ``CryptoMoatDetail`` keeps its zero defaults and the label
+    collapses to ``"None"``. The committee read that as a finding and voted on it
+    — four of five agents cited "no hay moat" for BTC in the 2026-09-21 run, on a
+    number nobody had computed.
+
+    Deliberately does NOT also gate on ``moat_detail is None`` for equities: that
+    failure mode does not exist in the pipeline, and inventing it here would make
+    every equity prompt depend on a field that fixtures do not set.
+
+    Duck-typed on purpose: takes anything ``FundamentalResult``-shaped, so this
+    module does not import the analyzer that imports it.
+    """
+    if bool(getattr(fund, "is_crypto", False)):
+        detail = getattr(fund, "crypto_moat_detail", None)
+        if detail is None or not getattr(detail, "ai_available", False):
+            return None
+    return str(getattr(fund, "moat_classification", "") or "") or None
+
+
 class MoatAnalyzer:
     """
     Evaluates the economic moat of a company in two independent layers.

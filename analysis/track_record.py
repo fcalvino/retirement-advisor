@@ -85,6 +85,15 @@ class RecommendationLog(_Base):
     # This is the one gap that could not wait: a recommendation's metrics cannot be
     # reconstructed once prices and statements have moved on, so every day without
     # these columns produced evidence that would never be usable.
+    # equity | fund | crypto (``analysis.asset_class``). Sin esto,
+    # ``fundamental_score`` mezcla DOS ESCALAS INCOMPATIBLES en una columna: la de
+    # equity llega a 100, la de cripto a ``CRYPTO_MOAT.max_achievable_score()``, y
+    # agrupar por umbral sobre la mezcla calibra contra un promedio que no describe
+    # a ninguna de las dos. Las filas escritas antes de esta columna quedan en
+    # ``''`` —clase desconocida, no se infiere—; se agrega ya porque el dato no se
+    # puede reconstruir después: es la misma lección que obligó a sumar las
+    # columnas de calibración en 2026-08.
+    asset_class       = Column(String, default="")
     sector            = Column(String, default="")
     industry          = Column(String, default="")
     profitability_score = Column(Float, nullable=True)
@@ -279,6 +288,11 @@ _INDUSTRY_METRICS = (
 #: keep the object around — the Screener, which builds rows inside a thread pool —
 #: can snapshot the raw values and rebuild an equivalent stand-in later.
 CALIBRATION_ATTRS = (
+    # ``is_crypto`` viaja además de ``asset_class`` porque es el fallback que
+    # ``calibration_fields`` consulta: si no estuviera acá, el stand-in
+    # reconstruido perdería la clase justo para el activo cuya escala de score es
+    # distinta, y el round-trip dejaría de valer sin que nada falle.
+    "asset_class", "is_crypto",
     "sector", "industry",
     "profitability_score", "health_score", "valuation_score",
     "growth_score", "dividend_score",
@@ -326,10 +340,18 @@ def calibration_fields(fundamental: Any) -> dict:
             return None
 
     out: dict = {}
-    for attr in ("sector", "industry"):
+    for attr in ("asset_class", "sector", "industry"):
         value = safe(attr)
         if value:
             out[attr] = str(value)
+    # ``asset_class`` es el default del dataclass salvo que el pipeline lo haya
+    # resuelto, así que un resultado a medio construir puede traerlo vacío. Para
+    # cripto el sentinel ``is_crypto`` es el que nunca miente: lo fija
+    # ``CryptoAnalyzer`` en la primera línea, antes de cualquier fetch.
+    if not out.get("asset_class") and safe("is_crypto"):
+        from analysis.asset_class import CRYPTO
+
+        out["asset_class"] = CRYPTO
 
     for attr in ("profitability_score", "health_score", "valuation_score",
                  "growth_score", "dividend_score"):
@@ -377,6 +399,7 @@ class TrackRecordStore:
         fail. Same shape as ``alerts/store.py:_migrate``.
         """
         migrations = [
+            ("recommendation_log", "asset_class",         "VARCHAR DEFAULT ''"),
             ("recommendation_log", "sector",              "VARCHAR DEFAULT ''"),
             ("recommendation_log", "industry",            "VARCHAR DEFAULT ''"),
             ("recommendation_log", "profitability_score", "FLOAT"),
