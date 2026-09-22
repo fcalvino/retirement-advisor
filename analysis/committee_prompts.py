@@ -29,8 +29,13 @@ from datetime import datetime
 from typing import Optional
 
 from analysis.currency_metric_text import currency_metric_note, currency_metric_text
-from analysis.prompts import JSON_ONLY_CONTRACT, _payout_block, _tailwind_context_block
-from config import STRESS_SCENARIOS
+from analysis.prompts import (
+    JSON_ONLY_CONTRACT,
+    MOAT_NOT_MEASURED_LABEL,
+    _payout_block,
+    _tailwind_context_block,
+)
+from config import CRYPTO_COMMITTEE, CRYPTO_MOAT, STRESS_SCENARIOS
 from data.clock import utc_now
 from data.product_ux import (
     DOWNSIDE_RATIO_LABEL,
@@ -82,6 +87,68 @@ def _num(value, suffix: str = "") -> str:
         return "n/d"
 
 
+def _moat_line(fund) -> str:
+    """The moat line, which must never present a non-measurement as a finding.
+
+    ``moat_classification`` defaults to the literal ``"None"``, and for a crypto
+    the moat is 100 % AI (``CryptoMoatConfig``), so an AI that is off, failed or
+    rate-limited produced ``Moat: None`` — indistinguishable from "we measured it
+    and it has no moat". In the 2026-09-21 BTC run four of five agents cited that
+    as grounds to REDUCE, and it reached the published consensus and the track
+    record. ``reported_moat_label`` is the seam that keeps the two apart.
+    """
+    from analysis.moat import reported_moat_label
+
+    label = reported_moat_label(fund)
+    if label is not None:
+        return f"Moat: {label}"
+    return (
+        f"Moat: {MOAT_NOT_MEASURED_LABEL} — NO lo interpretes como ausencia de moat "
+        f"ni lo uses como argumento en ninguna dirección"
+    )
+
+
+def _score_line(fund, score, is_crypto: bool) -> str:
+    """El score, y en qué escala está medido.
+
+    ``/100`` es verdad para un equity y mentira para un cripto: la fórmula cripto
+    (``base + técnico − vol − drawdown + moat``) tiene un techo aritmético muy por
+    debajo de 100, y para BTC más bajo todavía porque su drawdown histórico de
+    −83 % es un máximo de toda la serie y penaliza siempre. El sufijo
+    ``[cripto: adjusted_score]`` nombraba la FUENTE del número, no su escala, así
+    que los agentes seguían leyéndolo contra la distribución de acciones — donde
+    68 es BUY y 40 es un suspenso. Textual del Abogado del Diablo el 2026-09-21:
+    «El score determinista de 35/100 indica una valoración muy desfavorable
+    comparada con otros activos tradicionales».
+    """
+    if not is_crypto:
+        return f"Score del motor (determinista): {_num(score)}/100"
+    return (
+        f"Score del motor (determinista): {_num(score)}/{CRYPTO_MOAT.max_achievable_score():.0f} "
+        f"en la ESCALA CRIPTO (adjusted_score = base + técnico − volatilidad − drawdown + moat). "
+        f"NO la compares con el 0–100 de acciones: son escalas distintas y "
+        f"{CRYPTO_MOAT.max_achievable_score():.0f} es el máximo teórico, inalcanzable para un "
+        f"activo con drawdown histórico alto"
+    )
+
+
+def _crypto_metric_lines(fund) -> list:
+    """Las métricas nativas del activo, que el motor ya calculó y nadie leía.
+
+    ``CryptoAnalyzer`` deja volatilidad, drawdown, CAGR, escasez de suministro y
+    fase del ciclo de halving en ``fund.notes``, y hasta acá sólo las veía el
+    Analista Fundamental (vía ``crypto_decision_prompt``). Macro, PM y Coach
+    recibían ocho líneas sin un solo dato propio del activo y opinaban igual.
+    Reemplazan al bloque de ROE/márgenes/múltiplos, que para un cripto no existe.
+    """
+    notes = getattr(fund, "notes", None) or {}
+    lines = [str(notes[k]) for k in CRYPTO_COMMITTEE.context_note_keys if notes.get(k)]
+    market_cap = getattr(fund, "market_cap", None)
+    if market_cap:
+        lines.append(f"Market cap: ${float(market_cap) / 1e9:.1f}B USD")
+    return lines
+
+
 def committee_context_block(fund, tech) -> str:
     """Compact, hard-numbers context shared by every committee agent."""
     is_crypto = bool(getattr(fund, "is_crypto", False))
@@ -94,12 +161,13 @@ def committee_context_block(fund, tech) -> str:
     if country:
         lines.append(f"País: {country}")
     lines += [
-        f"Score del motor (determinista): {_num(score)}/100"
-        + ("  [cripto: adjusted_score]" if is_crypto else ""),
-        f"Moat: {getattr(fund, 'moat_classification', 'n/d')}",
+        _score_line(fund, score, is_crypto),
+        _moat_line(fund),
         f"Precio actual: {_num(getattr(fund, 'current_price', 0))}",
     ]
-    if not is_crypto:
+    if is_crypto:
+        lines += _crypto_metric_lines(fund)
+    else:
         lines += [
             f"ROE: {_num(getattr(fund, 'roe', None), '%')} | ROIC: {_num(getattr(fund, 'roic', None), '%')} | "
             f"Margen neto: {_num(getattr(fund, 'net_margin', None), '%')}",
@@ -138,14 +206,30 @@ def _role_prompt(role_title: str, role_instructions: str, fund, tech) -> str:
     )
 
 
+def _is_crypto(fund) -> bool:
+    return bool(getattr(fund, "is_crypto", False))
+
+
 def macro_strategist_prompt(fund, tech, macro_context: str = "") -> str:
-    instructions = (
-        "Evaluá el contexto macro relevante para ESTE activo: tasas de interés, ciclo "
-        "económico, riesgo país (especialmente si es un ADR emergente/argentino), liquidez y "
-        "régimen de inflación. Conectá cada factor macro a los números concretos del activo "
-        "(valuación, sector, deuda). Tu stance refleja cómo el macro inclina la decisión, no "
-        "la calidad del negocio en sí."
-    )
+    if _is_crypto(fund):
+        instructions = (
+            "Evaluá el contexto macro relevante para ESTE activo digital: régimen de "
+            "liquidez global, tasas reales, fortaleza del dólar, apetito por riesgo y "
+            "régimen regulatorio (aprobaciones de ETF, custodia, tratamiento impositivo, "
+            "adopción soberana). Conectá cada factor a los números concretos del activo "
+            "(volatilidad, drawdown, fase del ciclo de halving, escasez de suministro). "
+            "No hay tasas de descuento sobre flujos ni riesgo país de emisor: este activo "
+            "no tiene cash flows ni domicilio. Tu stance refleja cómo el macro inclina la "
+            "decisión, no la calidad del protocolo en sí."
+        )
+    else:
+        instructions = (
+            "Evaluá el contexto macro relevante para ESTE activo: tasas de interés, ciclo "
+            "económico, riesgo país (especialmente si es un ADR emergente/argentino), liquidez y "
+            "régimen de inflación. Conectá cada factor macro a los números concretos del activo "
+            "(valuación, sector, deuda). Tu stance refleja cómo el macro inclina la decisión, no "
+            "la calidad del negocio en sí."
+        )
     if macro_context:
         # Fase 3B: dated facts injected — the agent must use these, not its memory.
         instructions += (
@@ -273,12 +357,27 @@ def devils_advocate_prompt(fund, tech, news=None, drawdowns=None) -> str:
     headlines = relevant_headlines(news, fund)
     if headlines:
         facts.extend(_headlines_lines(headlines))
+    # Las fragilidades que se le piden buscar tienen que existir en la clase de
+    # activo. Pedirle "deterioro de márgenes" sobre algo sin estados contables no
+    # produce escepticismo, produce relleno: el 2026-09-21 devolvió "dependencia
+    # cíclica" y "riesgo de moat" sobre un activo sin márgenes ni apalancamiento.
+    if _is_crypto(fund):
+        fragilities = (
+            "concentración de tenencias en pocas billeteras, riesgo regulatorio y de "
+            "custodia, competencia de otros protocolos, dependencia de la demanda "
+            "especulativa, reflexividad del ciclo de halving, y el hecho de que no hay "
+            "flujos de caja que sostengan un piso de valuación"
+        )
+    else:
+        fragilities = (
+            "apalancamiento, valuación exigente, dependencia cíclica, deterioro de "
+            "márgenes, riesgo de moat"
+        )
     return _role_prompt(
         "Risk Manager y Abogado del Diablo",
         "Tu mandato es CONSTRUIR EL BEAR CASE más fuerte y honesto posible: buscá "
         "activamente por qué NO comprar o por qué reducir. Cuestioná la tesis optimista, "
-        "señalá fragilidades (apalancamiento, valuación exigente, dependencia cíclica, "
-        "deterioro de márgenes, riesgo de moat). Aunque el activo parezca bueno, tu trabajo "
+        f"señalá fragilidades ({fragilities}). Aunque el activo parezca bueno, tu trabajo "
         "es el contrapunto: tu stance debe inclinarse a la cautela y tus concerns son el "
         "núcleo del disenso del comité. No seas complaciente. Usá la caída histórica de su "
         "sector (y la del propio activo, si figura) para dimensionar cuánto capital podría "
@@ -314,14 +413,41 @@ def _ticker_portfolio_block(ctx: dict) -> str:
     return "\n".join(lines)
 
 
+def _crypto_position_cap_pct() -> float:
+    """El techo por ticker cripto del perfil que el comité declara (conservador).
+
+    El motor ya tiene este número — ``ProfileConfig.max_crypto_pct``, que el
+    optimizer respeta como cota dura de SLSQP — y el PM citaba en su lugar la
+    banda de equity, ~8-15 %, entre 3 y 5 veces más alta. Un dimensionamiento que
+    contradice la restricción que la cartera sí va a aplicar no es un consejo
+    conservador, es un consejo que el optimizer después descarta en silencio.
+    """
+    from analysis.ai_analyzer import resolve_optimizer_profile
+
+    return float(resolve_optimizer_profile(CRYPTO_COMMITTEE.sizing_profile).max_crypto_pct)
+
+
 def portfolio_manager_prompt(fund, tech, portfolio_ctx: Optional[dict] = None) -> str:
-    instructions = (
-        "Concilá las visiones (fundamental, macro y el bear case del abogado del diablo) y "
-        "decidí el dimensionamiento práctico para una cartera de retiro conservadora "
-        "(máximo prudente por nombre ~8-15%). Tu stance es la decisión de cartera, no un "
-        "análisis aislado: pesá el upside contra el riesgo de capital. Si el bear case es "
-        "serio, reflejalo en una postura y un tamaño más cautos."
-    )
+    if _is_crypto(fund):
+        instructions = (
+            "Concilá las visiones (fundamental, macro y el bear case del abogado del "
+            "diablo) y decidí el dimensionamiento práctico para una cartera de retiro "
+            f"conservadora. El techo por ticker cripto de este perfil es "
+            f"{_crypto_position_cap_pct():.0f}% — es la restricción que el optimizer "
+            "aplica de verdad, no una sugerencia, y NO es la banda de una acción. "
+            "Tu stance es la decisión de cartera, no un análisis aislado: pesá el upside "
+            "contra el riesgo de capital, y recordá que este activo no paga renta, así que "
+            "todo su aporte depende del precio. Si el bear case es serio, reflejalo en una "
+            "postura y un tamaño más cautos."
+        )
+    else:
+        instructions = (
+            "Concilá las visiones (fundamental, macro y el bear case del abogado del diablo) y "
+            "decidí el dimensionamiento práctico para una cartera de retiro conservadora "
+            "(máximo prudente por nombre ~8-15%). Tu stance es la decisión de cartera, no un "
+            "análisis aislado: pesá el upside contra el riesgo de capital. Si el bear case es "
+            "serio, reflejalo en una postura y un tamaño más cautos."
+        )
     if portfolio_ctx:
         instructions += _ticker_portfolio_block(portfolio_ctx)
     return _role_prompt("Portfolio Manager", instructions, fund, tech)
@@ -366,12 +492,25 @@ def dividend_capital_prompt(fund, tech) -> str:
 
 
 def behavioral_coach_prompt(fund, tech) -> str:
+    traps = ""
+    if _is_crypto(fund):
+        # Las trampas conductuales de un cripto son propias y el activo las trae
+        # medidas: el ciclo de halving es un calendario que invita a anticipar, y
+        # un drawdown de −80 % es donde la gente capitula, no donde rebalancea.
+        traps = (
+            " En esta clase de activo las trampas concretas son: el FOMO alrededor del "
+            "ciclo de halving, el anclaje al máximo histórico como si fuera el precio "
+            "'real', la capitulación en drawdowns de −70/−80% (que acá son normales, no "
+            "excepcionales), y confundir una narrativa de adopción con una tesis de "
+            "retiro. Nombrá las que apliquen a los números de arriba."
+        )
     return _role_prompt(
         "Behavioral Coach",
         "Traducí la situación a lenguaje humano y anclá al plan de largo plazo del inversor. "
         "Tu foco es el comportamiento: evitar el pánico en caídas y la euforia en subas. Tu "
         "stance debe favorecer la consistencia con un plan de retiro (sesgo a HOLD salvo señal "
-        "clara) y tus concerns apuntan a las trampas conductuales de este caso concreto.",
+        "clara) y tus concerns apuntan a las trampas conductuales de este caso concreto."
+        + traps,
         fund, tech,
     )
 

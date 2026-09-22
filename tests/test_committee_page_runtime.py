@@ -18,7 +18,9 @@ def test_auth_failure_is_visible_and_not_saved_as_last_verdict(monkeypatch):
     from dashboard import shared
 
     case = golden_cases()[0]
-    monkeypatch.setattr(shared, "cached_full_analysis", lambda *a: (case.fund, case.tech, None))
+    monkeypatch.setattr(
+        shared, "cached_full_analysis", lambda *a, **kw: (case.fund, case.tech, None)
+    )
     monkeypatch.setattr(committee.CommitteeAnalyzer, "_get_cached", lambda *a: None)
     response = Mock(status_code=401, headers={})
     failure = openai.AuthenticationError("Invalid API Key", response=response, body=None)

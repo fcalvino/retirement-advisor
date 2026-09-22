@@ -68,6 +68,13 @@ JSON_ONLY_CONTRACT = (
     "Respondé EXCLUSIVAMENTE con un objeto JSON válido, sin texto antes ni después"
 )
 
+#: Cómo se nombra un moat que nadie midió. Canónico acá y no en
+#: ``committee_prompts`` por la misma razón que ``JSON_ONLY_CONTRACT``: dos
+#: redacciones del mismo hecho divergen. Deliberadamente NO es un nombre de
+#: bucket — ``moat_classification`` default es el literal ``"None"``, y todo valor
+#: de ese campo se lee como un hallazgo sobre el que los agentes votan.
+MOAT_NOT_MEASURED_LABEL = "no medido en esta corrida"
+
 # Argentine ADR tickers — used by equity_decision_prompt (and helpers) for country context
 ARGENTINA_ADRS = {
     "YPF", "PAM", "CEPU", "LOMA", "MELI", "GLOB", "DESP",
@@ -727,7 +734,14 @@ def crypto_decision_prompt(fund, tech) -> str:
         return f"{val:.{decimals}f}{suffix}"
 
     moat = getattr(fund, "crypto_moat_detail", None)
-    moat_section = ""
+    # Omitir el bloque no era neutral: sin él el modelo no sabe que falta, y en la
+    # corrida del 2026-09-21 rellenó el hueco afirmando «moat crypto amplio (wide)»
+    # sobre un moat que nadie había medido. Decir que no se midió cuesta una línea.
+    moat_section = f"""
+--- MOAT CRYPTO (AI) — {MOAT_NOT_MEASURED_LABEL} ---
+  No se calculó el moat cripto en esta corrida.
+  NO lo interpretes como ausencia de moat ni como un moat débil.
+  No lo uses como argumento en ninguna dirección."""
     if moat and getattr(moat, "ai_available", False):
         moat_section = f"""
 --- MOAT CRYPTO (AI) — {moat.classification} ({moat.total:.1f}/8) ---

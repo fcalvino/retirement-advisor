@@ -245,6 +245,15 @@ Fuente vacío es ninguna fila. Ver `ROADMAP.md`.
   tool que los exponga filtraría datos posteriores a la fecha de análisis y
   haría irreproducibles los casos dorados de `eval_harness`. Sin eso, ReAct
   queda descartado (se eligió inyección determinista, 2026-09-19).
+- **SCR-DIVYIELD-NONE** (2026-09-22, cosmético): en la tabla «🧺 Fondos, ETFs y
+  cripto» del Screener, BTC muestra `Div Yield %` = `None` literal. El valor es
+  `None` a propósito (`analysis/crypto_analyzer.py`, `result.dividend_yield =
+  None`: un cripto no paga renta) y la columna es numérica
+  (`SCREENER_COLUMN_SPECS`, `format: "%.2f %%"`). Hipótesis sin verificar: con
+  una sola fila todo-`None` la columna queda con dtype `object` y Streamlit
+  imprime el literal en vez de una celda vacía. Visto al verificar PR 1–4; el
+  diff de `1_Screener.py` era vacío, así que es previo. No presenta una medición
+  falsa, por eso va acá y no en el bloque 2.
 
 ---
 
