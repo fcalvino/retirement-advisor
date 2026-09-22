@@ -57,6 +57,7 @@ Roles:
 | historical-plan | `docs/IMPLEMENTATION_PLAN.md` | Plan 2026-06 del Gran Salto — las 5 fases ya están shipped |
 | ideation | `docs/VISION_GRAN_SALTO.md` | Visión de producto 2026-06; las 3 apuestas ya están en el código |
 | ideation | `docs/DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md` | Diagnóstico + brainstorming 2026-09 basado en código; complementa `brainstorm/99_PRIORIZACION.md` |
+| ideation | `docs/ideacion/EVALUACION_SYSTEM_ONE_JEV_2026-09-21.md` | Evaluación 2026-09-21 de "System One models"/Jev (TypeSafe AI): qué demuestra vs. qué afirma, mapeo al comité, y por qué se descarta para el motor |
 | ideation | `docs/prefilter_contract.md` | Contrato del prefiltro (portero): salto → C → 5 puertas → embudo 50–80–120 |
 | ideation | `docs/brainstorm/` | Colección: un archivo por pantalla + capas; índice `00_INDICE.md` |
 | refactor-backlog | `docs/REFACTOR_BACKLOG.md` | Backlog de refactorización: ordenamiento, simplicidad, performance (2026-09-02) |
