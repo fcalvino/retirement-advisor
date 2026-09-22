@@ -917,3 +917,19 @@ def test_drawdowns_failure_degrades_to_empty():
     with patch.object(__import__("config").COMMITTEE, "drawdown_enabled", False), \
             patch("data.fetcher.get_history", side_effect=AssertionError("no debe llamarse")):
         assert _real_ticker_drawdowns("MSFT") == {}
+
+
+def test_counterfactual_verdict_swaps_one_vote_without_mutating():
+    """The what-if behind the concentration note reuses the real aggregation."""
+    from analysis.committee import AgentOpinion, counterfactual_verdict
+
+    stances = {
+        "Analista Fundamental": "STRONG BUY", "Estratega Macro": "HOLD",
+        "Abogado del Diablo": "REDUCE", "Portfolio Manager": "HOLD",
+        "Behavioral Coach": "HOLD", "Analista de Dividendo": "HOLD",
+    }
+    verdict = aggregate("MSFT", [AgentOpinion(r, s, "MEDIUM", ["x"], ["y"]) for r, s in stances.items()])
+    what_if = counterfactual_verdict(verdict, "Portfolio Manager", "BUY")
+    assert (what_if.action, what_if.lean) == ("BUY", 0.5227)
+    assert (verdict.action, verdict.lean) == ("HOLD", 0.2955)
+    assert next(o for o in verdict.opinions if o.role == "Portfolio Manager").stance == "HOLD"

@@ -360,3 +360,63 @@ class TestCommitteeEmptyCaptions:
         """No DA convened is not a broken guarantee — only a mute DA is."""
         v = self._verdict([self._op("Analista Fundamental", "BUY", ["crece el FCF"])])
         assert shared.dissent_empty_caption(v) == "Sin disenso registrado."
+
+
+class TestConcentrationHoldNote:
+    """COM-HOLD-CONCENTRACIÓN: say when the PM's view of the book is what held a good name.
+
+    Measured on 2026-09-22 against the real book (Technology 41.7 %): MSFT came out
+    HOLD at +0.2955 with the Fundamental on STRONG BUY, and BUY at +0.52 once the
+    PM stopped seeing the book. The banner read the same as a HOLD over the business.
+    """
+
+    _MSFT = {
+        "Analista Fundamental": "STRONG BUY", "Estratega Macro": "HOLD",
+        "Abogado del Diablo": "REDUCE", "Portfolio Manager": "HOLD",
+        "Behavioral Coach": "HOLD", "Analista de Dividendo": "HOLD",
+    }
+    _BOOK = {"symbol": "MSFT", "sector": "Technology", "weight_pct": 0.0, "sector_weight_pct": 41.7}
+
+    @staticmethod
+    def _verdict(stances, **errors):
+        from analysis.committee import AgentOpinion, aggregate
+
+        return aggregate("MSFT", [
+            AgentOpinion(role, stance, "MEDIUM", ["argumento"], ["riesgo"], error=errors.get(role, ""))
+            for role, stance in stances.items()
+        ])
+
+    def test_msft_case_names_the_sector_and_the_swing(self):
+        v = self._verdict(self._MSFT)
+        assert (v.action, v.lean) == ("HOLD", 0.2955)
+        note = shared.concentration_hold_note(v, self._BOOK)
+        assert "Technology ya pesa 41.7 %" in note
+        assert "límite por sector 25 %" in note
+        assert "de un BUY" in note and "+0.52" in note
+
+    def test_position_over_its_limit_is_named_too(self):
+        note = shared.concentration_hold_note(
+            self._verdict(self._MSFT), {**self._BOOK, "weight_pct": 21.1, "sector_weight_pct": 10.0}
+        )
+        assert "MSFT ya pesa 21.1 %" in note and "límite por posición 8 %" in note
+        assert "Technology" not in note
+
+    def test_no_book_no_note(self):
+        assert shared.concentration_hold_note(self._verdict(self._MSFT), None) is None
+
+    def test_book_within_limits_no_note(self):
+        book = {**self._BOOK, "weight_pct": 3.0, "sector_weight_pct": 20.0}
+        assert shared.concentration_hold_note(self._verdict(self._MSFT), book) is None
+
+    def test_pm_voting_buy_no_note(self):
+        v = self._verdict({**self._MSFT, "Portfolio Manager": "BUY"})
+        assert shared.concentration_hold_note(v, self._BOOK) is None
+
+    def test_pm_not_the_swing_vote_no_note(self):
+        """A HOLD the PM could not have turned: the note would blame the book for nothing."""
+        v = self._verdict({**self._MSFT, "Analista Fundamental": "HOLD"})  # -0.16 → +0.07
+        assert shared.concentration_hold_note(v, self._BOOK) is None
+
+    def test_failed_pm_no_note(self):
+        v = self._verdict(self._MSFT, **{"Portfolio Manager": "key_invalida"})
+        assert shared.concentration_hold_note(v, self._BOOK) is None
