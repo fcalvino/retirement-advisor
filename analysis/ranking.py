@@ -241,6 +241,7 @@ class FilterCriteria:
 
     search: str = ""
     sectors: tuple = ()
+    countries: tuple = ()
     signals: tuple = ()
     moats: tuple = ()
     quality_levels: tuple = ()
@@ -250,7 +251,7 @@ class FilterCriteria:
 
     def is_active(self) -> bool:
         return bool(
-            self.search or self.sectors or self.signals or self.moats
+            self.search or self.sectors or self.countries or self.signals or self.moats
             or self.quality_levels or self.min_score > 0 or self.min_percentile > 0
             or self.only_watchlist
         )
@@ -273,6 +274,7 @@ def apply_filters(
     want_moats = {str(m) for m in criteria.moats}
     want_quality = {str(q) for q in criteria.quality_levels}
     want_sectors = set(criteria.sectors)
+    want_countries = set(criteria.countries)
 
     out: List[dict] = []
     for row in rows:
@@ -281,6 +283,8 @@ def apply_filters(
             if needle not in haystack:
                 continue
         if want_sectors and row.get("Sector") not in want_sectors:
+            continue
+        if want_countries and row.get("País") not in want_countries:
             continue
         if want_signals and strip_badge(row.get("Signal")).upper() not in want_signals:
             continue
@@ -312,6 +316,7 @@ def filter_preset(name: str, *, config=None) -> FilterCriteria:
 #: checkbox cannot be silently dropped, because they are not chosen from options.
 _GAP_AXES: Sequence[tuple] = (
     ("sectors", "Sector"),
+    ("countries", "Pa\u00eds"),
     ("signals", "Se\u00f1al"),
     ("moats", "Foso"),
     ("quality_levels", "Calidad de datos"),

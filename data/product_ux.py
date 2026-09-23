@@ -1705,6 +1705,7 @@ SCREENER_COLUMN_SPECS: Dict[str, Dict[str, Any]] = {
     "Ticker":      {"kind": "text",     "help": "Símbolo. Tocá la fila para analizarlo."},
     "Company":     {"kind": "text",     "help": "Nombre (truncado a 25 caracteres)."},
     "Sector":      {"kind": "text",     "help": "Sector según el proveedor de datos."},
+    "País":        {"kind": "text",     "help": "País de la empresa: el curado del universo o, si no está curado, el que reporta el proveedor de datos."},
     "Fuente":      {"kind": "text",     "help": "Curado = viene del universo · ⚠️ Propio = lo agregaste vos, tratalo como experimental."},
     "Signal":      {"kind": "text",     "help": "Decisión final: combina score, señal técnica, margen de seguridad y la política de calidad de datos."},
     "Motivo":      {"kind": "text",     "width": "large", "help": "Por qué la señal es esa. Cuando el motor bloquea o baja la acción (por técnico, margen de seguridad o calidad de datos), acá aparece la razón. Tocá la fila para el detalle completo."},
@@ -1729,7 +1730,9 @@ SCREENER_COLUMN_SPECS: Dict[str, Dict[str, Any]] = {
     "CAGR años":   {"kind": "number",   "format": "%d a",  "help": "Años que cubre el CAGR. yfinance entrega 4 estados anuales, así que suele ser 3."},
     "Div Yield %": {"kind": "number",   "format": "%.2f %%", "help": "Dividendo anual sobre precio."},
     "MoS %":       {"kind": "number",   "format": "%.1f %%", "help": "Margen de seguridad vs el valor intrínseco de Graham."},
-    "Price":       {"kind": "number",   "format": "$%.2f", "help": "Último precio de mercado conocido."},
+    # Sin "$": un listado de Tokio cotiza en JPY y uno de Londres en GBp (peniques).
+    "Price":       {"kind": "number",   "format": "%.2f", "help": "Último precio de mercado conocido, en la moneda de la columna Moneda."},
+    "Moneda":      {"kind": "text",     "help": "Moneda de cotización del precio (GBp = peniques). Los ratios y el score no dependen de la moneda; el precio sí."},
     "Datos":       {"kind": "text",     "help": "Completitud y frescura: 🟢 OK · 🟡 Parcial · 🔴 Pobre · ⏳ cache viejo."},
     "Clase":       {"kind": "text",     "help": "Acción, fondo/ETF o cripto. Solo las acciones se puntúan."},
 }

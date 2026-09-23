@@ -174,3 +174,38 @@ class TestLogScreenerRun:
 
         monkeypatch.setattr("analysis.track_record.track_record_store", Broken())
         assert log_screener_run([_row()]) == 0
+
+
+# --------------------------------------------------------------------------- #
+#  Currency — graded against SPY only in SPY's currency                       #
+# --------------------------------------------------------------------------- #
+
+class TestOnlyTheBenchmarkCurrencyIsLogged:
+    """A JPY or pence return graded against SPY measures the exchange rate.
+
+    Until the track record converts currencies, a screener row quoted in
+    anything other than ``TRACK_RECORD.benchmark_currency`` is not evidence.
+    """
+
+    def test_usd_quote_is_logged(self, store):
+        assert log_screener_run([_row(_fund(symbol="AAPL", currency="USD"))]) == 1
+
+    @pytest.mark.parametrize("sym,ccy", [("7203.T", "JPY"), ("SHEL.L", "GBp"), ("SAP.DE", "EUR")])
+    def test_foreign_quote_is_skipped(self, store, sym, ccy):
+        assert log_screener_run([_row(_fund(symbol=sym, currency=ccy))]) == 0
+        assert store.get_recommendations(limit=10) == []
+
+    def test_a_mixed_run_logs_only_the_usd_rows(self, store):
+        rows = [
+            _row(_fund(symbol="AAPL", currency="USD")),
+            _row(_fund(symbol="7203.T", currency="JPY")),
+            _row(_fund(symbol="MELI", currency="USD")),
+        ]
+        assert log_screener_run(rows) == 2
+        assert {r.symbol for r in store.get_recommendations(limit=10)} == {"AAPL", "MELI"}
+
+    def test_rows_stored_before_the_field_existed_are_still_logged(self, store):
+        row = _row(_fund(symbol="O"))       # _fund carries no currency attribute
+        assert "currency" in row["_track"] and row["_track"]["currency"] == ""
+        del row["_track"]["currency"]       # a payload persisted by the old page
+        assert log_screener_run([row]) == 1

@@ -517,6 +517,15 @@ SECTOR_MAP: Dict[str, List[str]] = {
     "Crypto": ["BTC-USD", "ETH-USD"],
 }
 
+# Quote currencies that yfinance reports in a minor unit, with their factor to
+# the major one. London quotes in pence ("GBp") while ``trailingEps`` is already
+# in pounds: measured 2026-09-23, SHEL.L 3580 GBp / EPS 3.38 = 1059, and
+# (3580 / 100) / 3.38 = 10.59 = yfinance's own trailingPE. Comparing a Graham
+# value built from that EPS against the raw price put every London margin of
+# safety near −5000 %, so no `.L` name could ever reach STRONG BUY. Ratios the
+# feed computes itself (trailingPE, priceToBook) already come normalized.
+QUOTE_MINOR_UNITS: Dict[str, int] = {"GBp": 100, "ZAc": 100, "ILA": 100}
+
 # Asset allocation by age lives with the profiles it depends on — see
 # ``recommended_bond_pct`` below ``OPTIMIZER_PROFILES`` (U5-7).
 
@@ -1675,6 +1684,67 @@ class ScreenerConfig:
 
 
 @dataclass
+class UniverseConfig:
+    """
+    Reglas de los universos de ``data/universes/`` (Screener global).
+
+    La lista del Screener se mantuvo corta mientras la IA evaluaba cada ticker.
+    Hoy el Screener asigna la señal por thresholds, así que un universo de ~120
+    nombres de varios países cuesta tiempo de descarga, no llamadas a la IA.
+
+    Los thresholds del motor son ratios (ROE, márgenes, P/E, Piotroski) y no
+    dependen de la moneda: medido en vivo (2026-09-22) sobre listados .L/.DE/.PA/
+    .SW/.AS/.T/.AX/.HK/.TO/.SA/.MX, yfinance devuelve quoteType, país, sector,
+    ratios y 4–5 años de estados. Lo que NO es comparable entre mercados es el
+    precio (JPY, GBp en peniques…) — por eso la columna ``Moneda``. El Merval
+    (.BA) queda afuera a propósito: en ARS con inflación el ROE y el P/E no se
+    pueden leer con la misma vara (GGAL.BA: ROE 1 %, P/E 124); los ADRs
+    argentinos ya cubren esas empresas.
+
+    Fields:
+      max_ticker_len     — largo máximo aceptado por el loader. Era 7, que
+                           descartaba en silencio ``WALMEX.MX`` o ``NOVO-B.CO``.
+      exchange_suffixes  — sufijo yfinance → mercado. ``""`` = listado USA/ADR.
+      countries          — países válidos, con el nombre que usa yfinance
+                           (``info["country"]``) para que el curado y el feed
+                           coincidan en el filtro.
+      industries         — taxonomía de sectores de yfinance.
+      unknown_country    — etiqueta para una fila sin país conocido.
+      screener_only      — universos que el Optimizer NO suma solo ("Combinar
+                           universos", "Comparar todos"). El optimizer y el
+                           backtest trabajan sobre series de precio sin
+                           convertir moneda; mezclar JPY, GBp y USD ahí no es un
+                           resultado sino un artefacto. Elegirlo como universo
+                           activo sigue siendo posible, con un aviso.
+    """
+
+    max_ticker_len: int = 12
+    exchange_suffixes: Dict[str, str] = field(
+        default_factory=lambda: {
+            "": "USA / ADR",
+            ".L": "Londres", ".DE": "Xetra", ".PA": "París", ".SW": "Suiza",
+            ".AS": "Ámsterdam", ".CO": "Copenhague", ".ST": "Estocolmo",
+            ".MC": "Madrid", ".MI": "Milán", ".OL": "Oslo", ".BR": "Bruselas",
+            ".T": "Tokio", ".AX": "Australia", ".HK": "Hong Kong", ".SI": "Singapur",
+            ".TO": "Toronto", ".SA": "São Paulo", ".MX": "México", ".SN": "Santiago",
+        }
+    )
+    countries: Tuple[str, ...] = (
+        "United States", "United Kingdom", "Germany", "France", "Switzerland",
+        "Netherlands", "Denmark", "Sweden", "Spain", "Italy", "Norway", "Belgium",
+        "Japan", "Australia", "Hong Kong", "China", "Taiwan", "South Korea",
+        "Singapore", "India", "Canada", "Brazil", "Mexico", "Chile",
+    )
+    industries: Tuple[str, ...] = (
+        "Technology", "Healthcare", "Financial Services", "Consumer Defensive",
+        "Consumer Cyclical", "Industrials", "Energy", "Basic Materials",
+        "Communication Services", "Utilities", "Real Estate",
+    )
+    unknown_country: str = "—"
+    screener_only: Tuple[str, ...] = ("global_quality",)
+
+
+@dataclass
 class AssetClassConfig:
     """
     Which assets the fundamental scorer is allowed to judge (audit item 01).
@@ -2170,6 +2240,10 @@ class TrackRecordConfig:
     """
     horizons_days: tuple = (30, 90, 365)
     benchmark: str = "SPY"
+    # Currency the benchmark is priced in. A screener row quoted in anything else
+    # (7203.T in JPY, SHEL.L in GBp) is not logged: its excess return over SPY
+    # would be mostly the exchange rate, not the call.
+    benchmark_currency: str = "USD"
     hold_band_pct: float = 5.0
     hold_band_pct_by_horizon: dict = field(default_factory=lambda: {
         30: 5.0,     # shipped anchor
@@ -3003,6 +3077,7 @@ MONTE_CARLO = MonteCarloConfig()
 DATA_QUALITY = DataQualityConfig()
 ASSET_CLASS = AssetClassConfig()
 SCREENER = ScreenerConfig()
+UNIVERSE = UniverseConfig()
 TAILWINDS = TailwindConfig()
 DRAGS = EconomicDragConfig()
 WITHDRAWAL = WithdrawalConfig()

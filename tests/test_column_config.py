@@ -50,8 +50,12 @@ def test_percent_columns_render_a_percent_sign():
         assert "%%" in SCREENER_COLUMN_SPECS[col]["format"], col
 
 
-def test_price_is_money_and_counts_are_integers():
-    assert SCREENER_COLUMN_SPECS["Price"]["format"].startswith("$")
+def test_price_carries_no_currency_symbol_and_counts_are_integers():
+    # A global universe prices 7203.T in JPY and SHEL.L in GBp: a "$" would be
+    # a false unit. The unit lives in the "Moneda" column instead.
+    assert "$" not in SCREENER_COLUMN_SPECS["Price"]["format"]
+    assert "Moneda" in SCREENER_COLUMN_SPECS["Price"]["help"]
+    assert "GBp" in SCREENER_COLUMN_SPECS["Moneda"]["help"]
     assert SCREENER_COLUMN_SPECS["Piotroski/9"]["format"] == "%d"
     assert SCREENER_COLUMN_SPECS["CAGR años"]["format"].startswith("%d")
 
@@ -67,7 +71,7 @@ def test_helps_explain_the_traps_we_already_fixed():
 def test_spec_lookup_copies_and_tolerates_unknown_columns():
     spec = screener_column_spec("Price")
     spec["format"] = "MUTATED"
-    assert SCREENER_COLUMN_SPECS["Price"]["format"] == "$%.2f"
+    assert SCREENER_COLUMN_SPECS["Price"]["format"] == "%.2f"
     assert screener_column_spec("no existe") is None
 
 

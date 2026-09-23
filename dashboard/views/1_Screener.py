@@ -20,7 +20,7 @@ from analysis.ranking import (
     preset_gap,
     strip_badge,
 )
-from config import AI_FALLBACK, DATA_QUALITY, SCREENER, STRATEGY
+from config import AI_FALLBACK, DATA_QUALITY, SCREENER, STRATEGY, UNIVERSE
 
 # NOTE: dashboard.shared must be imported first — it seeds the repo root onto
 # sys.path (via bootstrap) so the first-party imports below resolve when this
@@ -49,9 +49,10 @@ from data.screener_store import (
     screener_run_store,
     uncovered_selected,
 )
+from data.universe_loader import apply_universe_metadata, load_universe_metadata
 
-# Letters, digits, dot and dash — covers BRK-B, BTC-USD, MELI.
-_WATCH_RE = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,9}$")
+# Letters, digits, dot and dash — covers BRK-B, BTC-USD, MELI, GFNORTEO.MX.
+_WATCH_RE = re.compile(rf"^[A-Z0-9][A-Z0-9.\-]{{0,{UNIVERSE.max_ticker_len - 1}}}$")
 
 # ------------------------------------------------------------------ #
 #  Page                                                                #
@@ -435,7 +436,13 @@ if not rows:
     )
     st.stop()
 
-df = pd.DataFrame(rows).sort_values("Adj. Score", ascending=False)
+# Curated country/industry of the active universe (empty for the legacy,
+# symbol-only universes — those keep what the feed reported).
+df = pd.DataFrame(
+    apply_universe_metadata(rows, load_universe_metadata(_universe_key))
+).sort_values("Adj. Score", ascending=False)
+# Rows stored by an older page version have no quote currency.
+df["Moneda"] = df["Moneda"].fillna("") if "Moneda" in df.columns else ""
 render_calc_badge("ranking del universo — fórmulas + reglas; la IA solo si está activada en screener")
 
 # Item 3 — mark each ticker's source (curated vs user-added custom).
@@ -479,8 +486,8 @@ def _render_non_scorable(frame) -> None:
         icon="🧺",
     )
     _other_cols = [
-        "⭐", "Ticker", "Company", "Clase", "Fuente", "Technical",
-        "Div Yield %", "Price", "Datos",
+        "⭐", "Ticker", "Company", "Clase", "País", "Fuente", "Technical",
+        "Div Yield %", "Price", "Moneda", "Datos",
     ]
     st.dataframe(
         frame[_other_cols],
@@ -570,7 +577,7 @@ if _shortlist.rows:
             icon="🎯",
         )
     _short_cols = [
-        "⭐", "Ticker", "Company", "Sector", "Signal", "Motivo", "Conf.",
+        "⭐", "Ticker", "Company", "Sector", "País", "Signal", "Motivo", "Conf.",
         "Percentil", "Adj. Score", "Score bruto", "Moat", "Viento", "Datos",
     ]
     _short_event = st.dataframe(
@@ -625,7 +632,7 @@ st.caption(
 )
 
 _FILTER_KEYS = {
-    "flt_search": "", "flt_sectors": [], "flt_signals": [], "flt_moats": [],
+    "flt_search": "", "flt_sectors": [], "flt_countries": [], "flt_signals": [], "flt_moats": [],
     "flt_quality": [], "flt_pct": 0, "flt_watch": False,
 }
 
@@ -650,6 +657,7 @@ def _apply_preset() -> None:
     crit = filter_preset(name)
     st.session_state["flt_search"] = crit.search
     st.session_state["flt_sectors"] = list(crit.sectors)
+    st.session_state["flt_countries"] = list(crit.countries)
     st.session_state["flt_signals"] = list(crit.signals)
     # The "Foso ancho" preset asks on this axis; without the widget it seeded
     # nothing, cleared every other filter, and showed the whole table under a
@@ -662,17 +670,21 @@ def _apply_preset() -> None:
 
 _NO_PRESET = "— sin preset —"
 _sector_opts = sorted(df_equity["Sector"].dropna().unique().tolist())
+_country_opts = sorted(df_equity["País"].dropna().unique().tolist())
 _signal_opts = sorted({strip_badge(s) for s in df_equity["Signal"] if strip_badge(s)})
 # `apply_filters` has always supported the moat axis and two presets ask on it —
 # the widget was simply never built, so those presets did nothing.
 _moat_opts = sorted({strip_badge(m) for m in df_equity["Moat"] if strip_badge(m)})
 
 with st.container(border=True):
-    _f1, _f2, _f3 = st.columns([2, 2, 2])
+    _f1, _f2, _f3, _f3b = st.columns([2, 2, 2, 2])
     _f1.text_input("Buscar", key="flt_search", placeholder="AAPL o Apple…")
     _f2.selectbox("Preset", [_NO_PRESET] + list(SCREENER.filter_presets),
                   key="flt_preset", on_change=_apply_preset)
     _f3.multiselect("Sector", _sector_opts, key="flt_sectors")
+    _f3b.multiselect("País", _country_opts, key="flt_countries",
+                     help="País de la empresa. Los ratios del score no dependen de la "
+                          "moneda; el precio sí — mirá la columna Moneda.")
 
     _f4, _f5, _f6, _f7, _f8 = st.columns([2, 2, 2, 2, 1.4])
     _f4.multiselect("Señal", _signal_opts, key="flt_signals")
@@ -686,6 +698,7 @@ with st.container(border=True):
 _criteria = FilterCriteria(
     search=st.session_state.get("flt_search", ""),
     sectors=tuple(st.session_state.get("flt_sectors", [])),
+    countries=tuple(st.session_state.get("flt_countries", [])),
     signals=tuple(st.session_state.get("flt_signals", [])),
     moats=tuple(st.session_state.get("flt_moats", [])),
     quality_levels=tuple(st.session_state.get("flt_quality", [])),
@@ -703,6 +716,7 @@ _active_preset = st.session_state.get("flt_preset", _NO_PRESET)
 # hand is a custom filter, not "the preset failed to apply".
 _available = FilterCriteria(
     sectors=tuple(_sector_opts),
+    countries=tuple(_country_opts),
     signals=tuple(_signal_opts),
     moats=tuple(_moat_opts),
     quality_levels=("good", "partial", "poor"),
@@ -749,10 +763,10 @@ else:
         "Moat Score":  "Moat/20",
     })
     _all_cols = [
-        "⭐", "Ticker", "Company", "Sector", "Fuente", "Signal", "Motivo", "Conf.",
+        "⭐", "Ticker", "Company", "Sector", "País", "Fuente", "Signal", "Motivo", "Conf.",
         "Percentil", "Adj. Score",
         "Score bruto", "Consist./15", "Piotroski/9", "Moat/20", "Moat", "Viento",
-        "Technical", "P/E", "ROE %", "Rev CAGR %", "CAGR años", "Div Yield %", "MoS %", "Price", "Datos",
+        "Technical", "P/E", "ROE %", "Rev CAGR %", "CAGR años", "Div Yield %", "MoS %", "Price", "Moneda", "Datos",
     ]
     _all_event = st.dataframe(
         _all_df[_all_cols],

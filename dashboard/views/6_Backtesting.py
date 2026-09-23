@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from analysis.backtesting import BacktestEngine, BacktestResult
-from config import BACKTEST
+from config import BACKTEST, UNIVERSE
 from dashboard.shared import _fetch_universe_parallel, _get_ai_config
 from data.product_ux import (
     DOWNSIDE_RATIO_HELP,
@@ -84,6 +84,14 @@ elif universe_choice == "Solo Argentina ADRs":
     backtest_universe = _ARGENTINA_ADR
 else:
     backtest_universe = [t for t in st.session_state.universe if t not in (benchmark,)]
+    if st.session_state.get("active_universe_key") in UNIVERSE.screener_only:
+        st.warning(
+            "🌍 El universo activo mezcla monedas (JPY, GBp, EUR…) y el backtest usa "
+            "precios sin convertir a una moneda común, contra un benchmark en USD: el "
+            "retorno y el alfa incluyen el tipo de cambio. Para backtestear, preferí un "
+            "universo en USD en **Inicio** o una de las opciones «Solo …».",
+            icon="🌍",
+        )
 
 st.caption(
     f"Universo seleccionado: {len(backtest_universe)} tickers — "
