@@ -292,3 +292,31 @@ def prioritize_universe(
         return (tier, -scores.get(sym, 0.0), idx)
 
     return [sym for _, sym in sorted(enumerate(tickers), key=rank)]
+
+
+#: Failure type the Screener uses for a symbol the feed answered with nothing.
+EMPTY_FEED_TYPE = "SinDatos"
+
+
+def is_empty_feed(fund: Any) -> bool:
+    """True when the feed answered a symbol with nothing to judge.
+
+    A delisted or mistyped ticker (``NODATA.DE``, ``ROG.SW`` after Yahoo dropped
+    it) does not raise: the analyzer builds a result with no price and every
+    metric missing, the score comes out 0, and the strategy's bottom band turns
+    that into **SELL** — which the data-quality policy never softens, because it
+    only caps buys. The row then read as "exit this position" and was logged to
+    the track record as a real SELL. The absence of data is a failed fetch, not a
+    verdict, so the Screener routes it to the failures list instead.
+
+    Both conditions are required: a real stock can have poor data with a price,
+    and a price alone means the feed did answer. Crypto builds its own result
+    and is never judged by this rule.
+    """
+    if getattr(fund, "is_crypto", False) or getattr(fund, "asset_class", "") == "crypto":
+        return False
+    price = getattr(fund, "current_price", None)
+    if price is not None and price > 0:
+        return False
+    dq = getattr(fund, "data_quality", None) or {}
+    return isinstance(dq, dict) and dq.get("level") == "poor"
