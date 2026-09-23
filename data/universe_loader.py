@@ -12,14 +12,25 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, NamedTuple
 
 from loguru import logger
+
+from config import UNIVERSE
 
 _UNIVERSES_DIR = Path(__file__).parent / "universes"
 
 # Canonical order for UI display
-_DISPLAY_ORDER = ["default", "growth_moat", "dividend_focus", "us_quality", "latam_adrs"]
+_DISPLAY_ORDER = [
+    "default", "growth_moat", "dividend_focus", "us_quality", "latam_adrs", "global_quality",
+]
+
+
+class TickerMeta(NamedTuple):
+    """Curated country/industry of one universe entry. Empty = not curated."""
+
+    country: str = ""
+    industry: str = ""
 
 
 def _universe_path(key: str) -> Path:
@@ -30,7 +41,7 @@ def _is_valid_ticker(t: object) -> bool:
     if not isinstance(t, str):
         return False
     cleaned = t.strip().upper()
-    if not cleaned or len(cleaned) > 7:
+    if not cleaned or len(cleaned) > UNIVERSE.max_ticker_len:
         return False
     # Allow letters, digits, hyphens and dots (e.g. BRK-B, BF.B)
     return all(c.isalnum() or c in "-." for c in cleaned)
@@ -42,6 +53,24 @@ def _load_raw(key: str) -> dict:
     if not path.exists():
         raise FileNotFoundError(f"Universe '{key}' not found at {path}")
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def optimizer_universes() -> List[str]:
+    """``list_universes()`` minus the Screener-only ones (``UNIVERSE.screener_only``).
+
+    The Optimizer combines and compares universes over raw price series with no
+    FX conversion, so a multi-currency universe must not join those lists by
+    merely existing on disk.
+    """
+    excluded = set(UNIVERSE.screener_only)
+    return [k for k in list_universes() if k not in excluded]
+
+
+def _entry_symbol(entry: object) -> object:
+    """A universe entry is a bare symbol or ``{"ticker", "country", "industry"}``."""
+    if isinstance(entry, dict):
+        return entry.get("ticker")
+    return entry
 
 
 def list_universes() -> List[str]:
@@ -56,8 +85,9 @@ def load_universe(key: str) -> List[str]:
     """
     Load and return a validated ticker list for the given universe key.
 
-    Validation: silently skips entries that are not 1-6 uppercase alphanumeric
-    characters (with optional hyphen), and warns if >20% are filtered.
+    Validation: silently skips entries longer than ``UNIVERSE.max_ticker_len`` or
+    with characters other than letters, digits, dot and hyphen; warns if >20%
+    are filtered. Entries may be bare symbols or ``{"ticker", ...}`` dicts.
     """
     try:
         raw = _load_raw(key)
@@ -65,7 +95,7 @@ def load_universe(key: str) -> List[str]:
         logger.warning(f"Universe '{key}' not found — falling back to 'default'")
         raw = _load_raw("default")
 
-    tickers_raw: List[str] = raw.get("tickers", [])
+    tickers_raw: List[object] = [_entry_symbol(e) for e in raw.get("tickers", [])]
     valid   = [t for t in tickers_raw if _is_valid_ticker(t)]
     dropped = len(tickers_raw) - len(valid)
 
@@ -78,6 +108,56 @@ def load_universe(key: str) -> List[str]:
             logger.debug(msg)
 
     return valid
+
+
+def load_universe_metadata(key: str) -> Dict[str, TickerMeta]:
+    """Curated ``{symbol: TickerMeta}`` for a universe; empty for bare-symbol files.
+
+    The legacy universes list symbols only, so they return ``{}`` and every
+    consumer falls back to what the feed reports — their behaviour is unchanged.
+    """
+    try:
+        raw = _load_raw(key)
+    except FileNotFoundError:
+        return {}
+    out: Dict[str, TickerMeta] = {}
+    for entry in raw.get("tickers", []):
+        if not isinstance(entry, dict) or not _is_valid_ticker(entry.get("ticker")):
+            continue
+        out[str(entry["ticker"]).upper().strip()] = TickerMeta(
+            country=str(entry.get("country") or ""),
+            industry=str(entry.get("industry") or ""),
+        )
+    return out
+
+
+def apply_universe_metadata(
+    rows: List[dict],
+    meta: Dict[str, TickerMeta],
+    *,
+    unknown_country: str | None = None,
+) -> List[dict]:
+    """Copies of Screener rows with ``País`` filled and a missing sector repaired.
+
+    Country: the curated value wins, then what the feed reported, then
+    ``UNIVERSE.unknown_country`` — never an empty cell, so the country filter
+    has an option for every row (rows stored by an older page have no ``País``).
+
+    Sector: the feed stays authoritative (it is what the scorer used). The
+    curated industry only fills a feed that returned nothing, so a ticker whose
+    ``info`` came back empty still lands in a sector bucket instead of "Unknown".
+    With ``meta == {}`` (legacy universes) only the country default applies.
+    """
+    unknown = UNIVERSE.unknown_country if unknown_country is None else unknown_country
+    out: List[dict] = []
+    for row in rows:
+        new = dict(row)
+        m = meta.get(str(new.get("Ticker", "")).upper().strip(), TickerMeta())
+        new["País"] = m.country or str(new.get("País") or "") or unknown
+        if m.industry and str(new.get("Sector") or "") in ("", "Unknown"):
+            new["Sector"] = m.industry
+        out.append(new)
+    return out
 
 
 def get_effective_universe(

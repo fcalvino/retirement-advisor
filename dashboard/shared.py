@@ -1894,6 +1894,8 @@ def _track_payload(fund, decision) -> dict:
         "technical_signal": getattr(decision, "technical_signal", "") or "",
         "rationale": list(getattr(decision, "rationale", []) or [])[:4],
         "price_at_rec": getattr(fund, "current_price", None) or None,
+        # Quote currency of price_at_rec — see TRACK_RECORD.benchmark_currency.
+        "currency": getattr(fund, "currency", "") or "",
         "asset_class": getattr(fund, "asset_class", "equity") or "equity",
         "inputs": snapshot_calibration_inputs(fund),
         "ai_provider": getattr(decision, "ai_provider", "") or "",
@@ -1924,6 +1926,7 @@ def log_screener_run(rows: list) -> int:
 
     from analysis.asset_class import is_fundamentally_scorable
     from analysis.track_record import track_record_store
+    from config import TRACK_RECORD
 
     written = 0
     for row in rows or []:
@@ -1931,6 +1934,13 @@ def log_screener_run(rows: list) -> int:
         if not payload or not payload.get("action"):
             continue
         if not is_fundamentally_scorable(payload.get("asset_class", "equity")):
+            continue
+        # No FX conversion exists yet, so a non-USD return measured against SPY
+        # would grade the exchange rate. Rows stored before the field existed
+        # carry no currency and keep being logged, as they were.
+        ccy = payload.get("currency") or ""
+        if ccy and ccy != TRACK_RECORD.benchmark_currency:
+            logger.debug(f"screener track-record: {payload.get('symbol')} skipped ({ccy} quote)")
             continue
         try:
             decision = SimpleNamespace(
@@ -1972,6 +1982,8 @@ def _extract_row_data(sym: str, fund, tech, decision) -> dict:
         "sym": sym,
         "company_name": fund.company_name,
         "sector": fund.sector,
+        "country": getattr(fund, "country", "") or "",
+        "currency": getattr(fund, "currency", "") or "",
         "asset_class": getattr(fund, "asset_class", "equity") or "equity",
         "action": decision.action,
         "action_emoji": decision.action_emoji,
@@ -2020,6 +2032,11 @@ def _format_row_for_display(d: dict) -> dict:
         "Ticker": d["sym"],
         "Company": d["company_name"][:25],
         "Sector": ("🪙 Crypto" if d["sector"] == "Crypto" else d["sector"]),
+        # As the feed reports it; the page overlays the curated universe value.
+        "País": d.get("country") or "",
+        # Quote currency of "Price" — JPY, GBp… the price is not comparable
+        # across markets, so the table has to say which unit it is in.
+        "Moneda": d.get("currency") or "",
         # Audit item 01 — funds/crypto have no statements; carried so the page
         # can segment instead of ranking them against companies.
         "Clase": d["asset_class"],

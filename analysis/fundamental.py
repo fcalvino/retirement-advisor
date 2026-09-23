@@ -55,6 +55,10 @@ class FundamentalResult:
     #: cotización (`currency`) para un ADR LatAm. Se registra para que un consumidor
     #: sepa por qué `fcf_yield` puede quedar en None. Ver financial_currency_mismatch.
     financial_currency: str = ""
+    #: Moneda de cotización (`info["currency"]`): en qué está `current_price`.
+    #: Un listado de Londres cotiza en GBp (peniques), Tokio en JPY — el precio
+    #: no se compara entre mercados, los ratios sí.
+    currency: str = ""
     market_cap: float = 0.0
     current_price: float = 0.0
 
@@ -859,6 +863,7 @@ class FundamentalAnalyzer:
         # Moneda de los estados, registrada siempre (no sólo en la rama FCF): la
         # leen los guards de fcf_yield y p_ffo y las superficies que explican el None.
         result.financial_currency = str(info.get("financialCurrency") or "")
+        result.currency = str(info.get("currency") or "")
         result.current_price = _safe_float(
             info.get("currentPrice") or info.get("regularMarketPrice")
         )
@@ -977,6 +982,10 @@ class FundamentalAnalyzer:
         # negative below g = −4.25.
         if eps > 0 and growth_used >= 0:
             graham = eps * (8.5 + 2 * growth_used) * 4.4 / y_aaa
+            # Express the value in the unit the price is quoted in: EPS arrives
+            # in the major unit (pounds) while a London price is in pence.
+            from config import QUOTE_MINOR_UNITS
+            graham *= QUOTE_MINOR_UNITS.get(result.currency, 1)
             result.graham_value = round(graham, 2)
             if result.current_price > 0:
                 mos = (graham - result.current_price) / graham * 100
