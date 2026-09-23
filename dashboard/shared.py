@@ -38,7 +38,7 @@ from data.product_ux import (
     guardrails_help,
     technical_signal_label,
 )
-from data.screener_store import format_eta
+from data.screener_store import EMPTY_FEED_TYPE, format_eta, is_empty_feed
 
 # ------------------------------------------------------------------ #
 #  .env helpers                                                        #
@@ -2157,6 +2157,16 @@ def _analyse_universe_parallel(
             fund, tech, decision = cached_full_analysis(
                 sym, run_cfg.provider, run_cfg.model, run_cfg.enabled, run_cfg.api_key
             )
+            # A symbol the feed answered with nothing scores 0 and would be
+            # published (and logged) as SELL. It is a failed fetch, not a verdict.
+            if is_empty_feed(fund):
+                logger.warning(f"Screener: {sym} — el proveedor no devolvió datos")
+                return None, {
+                    "Ticker": sym,
+                    "Tipo": EMPTY_FEED_TYPE,
+                    "Error": "El proveedor no devolvió precio ni datos de la empresa "
+                             "(¿ticker mal escrito o deslistado?)",
+                }
             # Extraction only — the display dict (badges, emoji, truncation) is
             # built on the main thread by _format_row_for_display (S22).
             return _extract_row_data(sym, fund, tech, decision), None
