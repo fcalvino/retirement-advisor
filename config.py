@@ -2393,8 +2393,9 @@ class CommitteeConfig:
     # Sufijo de letra por la convención de versiones del mismo día (2026-09-19a,
     # 19b, …): el moat cripto no medido y el contexto/mandatos cripto fueron dos
     # versiones de prompt del 2026-09-21 durante el desarrollo, y llegan juntas en
-    # un solo merge con la segunda.
-    prompt_version: str = "2026-09-21b"
+    # un solo merge con la segunda. 2026-09-24: UM-4 reemplaza la regla «P/B < 0»
+    # de los constraints duros por la de patrimonio neto negativo.
+    prompt_version: str = "2026-09-24"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a

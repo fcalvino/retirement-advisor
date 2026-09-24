@@ -370,30 +370,11 @@ class TestPayoutRiskUsesEffectiveBasis:
 #  Cada guard duro, por separado y en sus bordes                      #
 # ------------------------------------------------------------------ #
 #
-# `TestMaxDebtEquity` cubre el de leverage. Los otros dos de
-# `_check_safety_blocks` — book value negativo y movimiento parabólico — no
-# tenían test, y el parabólico tiene dos umbrales distintos (100 % en equity,
-# 120 % en crypto) más una condición de RSI que puede no estar medida.
-
-
-class TestGuardBookValueNegativo:
-    def test_pb_negativo_bloquea_en_el_camino_rule_based(self):
-        d = RetirementStrategy().decide(_fund(score=90.0, pb_ratio=-1.5), _tech())
-        assert d.action == "AVOID" and d.blocked is True
-        assert "book value" in d.block_reason.lower()
-        assert d.decisive_reason.startswith("Bloqueado")
-
-    def test_pb_negativo_bloquea_tambien_al_llm(self):
-        out = apply_safety_overlay(
-            Decision(symbol="X", action="STRONG BUY", fundamental_score=90.0),
-            _fund(score=90.0, pb_ratio=-1.5), _tech(),
-        )
-        assert out.action == "AVOID" and out.blocked is True
-
-    def test_pb_cero_no_bloquea(self):
-        """El guard es `< 0`: un P/B de 0 no es patrimonio negativo."""
-        d = RetirementStrategy().decide(_fund(score=70.0, pb_ratio=0.0), _tech())
-        assert d.blocked is False
+# `TestMaxDebtEquity` cubre el de leverage y abajo va el parabólico, que tiene
+# dos umbrales distintos (100 % en equity, 120 % en crypto) más una condición de
+# RSI que puede no estar medida. El guard de book value negativo ya no existe
+# (UM-4): era inalcanzable y contradecía la política de patrimonio negativo, que
+# capa a HOLD sin bloquear — ver `tests/test_negative_equity_guard.py`.
 
 
 class TestGuardParabolico:

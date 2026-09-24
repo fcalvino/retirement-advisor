@@ -349,9 +349,10 @@ def apply_negative_equity_policy(
 ) -> "Decision":
     """Cap the action when shareholders' equity is negative (audit 2026-08-22, P1-3).
 
-    Both hard guards in ``_check_safety_blocks`` key off fields that yfinance
+    The hard guards in ``_check_safety_blocks`` keyed off fields that yfinance
     *omits* for exactly this population: ``debtToEquity`` (so ``> max_debt_equity``
-    never fires) and ``priceToBook`` (so ``< 0`` never fires). Measured on the
+    never fires) and ``priceToBook`` (the ``< 0`` guard never fired, and was removed
+    in UM-4 — this policy is the only answer to negative equity). Measured on the
     cached universe, MCD, SBUX, ABBV, YUM and LOW sailed through both — MCD with
     $54.8B of debt against −$1.79B of equity — and on top of that collected 7 of
     20 health points with the note "Very low debt D/E=0.00".
@@ -628,9 +629,9 @@ class RetirementStrategy:
         ):
             return True, f"Excessive leverage (D/E = {fundamental.debt_equity:.1f})"
 
-        # Negative equity (book value < 0)
-        if fundamental.pb_ratio is not None and fundamental.pb_ratio < 0:
-            return True, "Negative book value — potential insolvency risk"
+        # No hay guard de book value negativo (UM-4): `pb_ratio` nunca es ≤ 0 —
+        # `reported_positive_metric` lo filtra— y el patrimonio negativo no es
+        # insolvencia. Lo trata `apply_negative_equity_policy`, que capa a HOLD.
 
         # Parabolic overextension — price >40% above 52-week average
         if technical.price_vs_52w_low_pct > 100 and technical.rsi_weekly and technical.rsi_weekly > 80:

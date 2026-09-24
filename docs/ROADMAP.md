@@ -10,6 +10,23 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## UM-4 — El bloqueo de P/B negativo no existía para el motor (2026-09-24)
+
+`_check_safety_blocks` bloqueaba con AVOID («potential insolvency risk») si
+`pb_ratio < 0`, pero el único productor de `pb_ratio` es `reported_positive_metric`,
+que convierte todo valor ≤ 0 en `None`: la rama nunca disparaba. Sus tres tests
+pasaban porque armaban el `FundamentalResult` a mano. Y si hubiera disparado,
+contradecía la decisión de P1-3 (2026-08-22): el patrimonio negativo no es
+insolvencia, **capa a HOLD y no bloquea** (`apply_negative_equity_policy`). Se
+borró la rama; el prompt de decisión, que le decía a la IA «P/B < 0 → no BUY»,
+ahora nombra la regla que el motor sí aplica. `COMMITTEE.prompt_version` →
+`2026-09-24`. Medido con `scripts/measure_score_impact.py` sobre 186 tickers:
+**0 scores y 0 señales**. Oráculo: `TestUnaSolaPoliticaDePatrimonioNegativo` en
+`tests/test_negative_equity_guard.py`, en rojo antes del cambio. Hallazgo de
+[`AUDIT_UNIDADES_MONEDA_2026-09.md`](AUDIT_UNIDADES_MONEDA_2026-09.md).
+
+---
+
 ## N3 — Tema Streamlit declarado (2026-09-01)
 
 No había `.streamlit/config.toml`, así que el dashboard heredaba el default de
