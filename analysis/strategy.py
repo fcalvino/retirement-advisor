@@ -31,7 +31,7 @@ from analysis.technical import TechnicalResult
 from config import DATA_QUALITY
 from config import STRATEGY as CFG
 from config import TECHNICAL as TECH_CFG
-from data.product_ux import TREND_MA_LABEL_EN
+from data.product_ux import TREND_MA_LABEL_EN, with_currency
 
 _CONFIDENCE_RANK = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
 
@@ -666,7 +666,10 @@ class RetirementStrategy:
         if p_ffo_currency_text:
             decision.rationale.append(p_ffo_currency_text)
         if f.is_value_stock() and f.margin_of_safety_pct is not None:
-            decision.rationale.append(f"Margin of Safety: {f.margin_of_safety_pct:.0f}% vs Graham value ${f.graham_value:.2f}")
+            decision.rationale.append(
+                f"Margin of Safety: {f.margin_of_safety_pct:.0f}% vs Graham value "
+                f"{with_currency(f'{f.graham_value:.2f}', getattr(f, 'currency', ''))}"
+            )
 
         # Sector-country structural tailwind (Idea 2) — surface only when material
         tw_class = getattr(f, "tailwind_classification", "Neutral")
