@@ -23,6 +23,7 @@ from loguru import logger
 from analysis.moat import MoatAnalyzer, MoatDetail
 from analysis.scoring import ConsistencyDetail, EnhancedScoring, PiotroskiDetail
 from analysis.tailwind import TailwindAnalyzer, TailwindDetail
+from analysis.unit_consistency import contradicted_declared_currency, statement_legs
 from analysis.utils import (
     aligned_latest,
     corporate_tax_rate_pct,
@@ -912,13 +913,25 @@ class FundamentalAnalyzer:
                 # *achica* el múltiplo (las bandas son cotas superiores), así que no
                 # hay backstop numérico: un piso borraría REITs legítimamente baratos.
                 mismatch = financial_currency_mismatch(info)
-                if mismatch is not None:
-                    fin_ccy, quote_ccy = mismatch
-                    msg = (
-                        f"P/FFO no medible: el FFO viene en {fin_ccy} y el market cap "
-                        f"en {quote_ccy}; un múltiplo sólo está definido si ambas "
-                        f"patas comparten moneda."
-                    )
+                # UM-2: la etiqueta puede decir «misma moneda» y mentir.
+                declared = None if mismatch is not None else contradicted_declared_currency(
+                    info, statement_legs(income_stmt, None)
+                )
+                if mismatch is not None or declared is not None:
+                    if mismatch is not None:
+                        fin_ccy, quote_ccy = mismatch
+                        msg = (
+                            f"P/FFO no medible: el FFO viene en {fin_ccy} y el market cap "
+                            f"en {quote_ccy}; un múltiplo sólo está definido si ambas "
+                            f"patas comparten moneda."
+                        )
+                    else:
+                        msg = (
+                            f"P/FFO no medible: la etiqueta declara los estados en "
+                            f"{declared}, la moneda de cotización, pero sus cifras no lo "
+                            f"están; un múltiplo sólo está definido si ambas patas "
+                            f"comparten moneda."
+                        )
                     logger.warning(msg)
                     result.warnings.append(msg)
                     result.notes["p_ffo_currency"] = msg
@@ -1600,13 +1613,27 @@ class FundamentalAnalyzer:
             # moneda. La mitad CAGR de abajo es inmune (cociente de dos flujos de
             # la MISMA moneda) y sigue puntuando fuera de este guard.
             mismatch = financial_currency_mismatch(info)
-            if mismatch is not None:
-                fin_ccy, quote_ccy = mismatch
-                msg = (
-                    f"FCF yield no medible: el free cash flow viene en {fin_ccy} y el "
-                    f"market cap en {quote_ccy}; un yield sólo está definido si ambas "
-                    f"patas comparten moneda."
-                )
+            # UM-2: la etiqueta puede decir «misma moneda» y mentir (PETR4.SA,
+            # VALE3.SA: BRL declarado, estados en USD). Se contrasta con dos vías
+            # que no la leen — ver analysis/unit_consistency.py.
+            declared = None if mismatch is not None else contradicted_declared_currency(
+                info, statement_legs(income_stmt, None)
+            )
+            if mismatch is not None or declared is not None:
+                if mismatch is not None:
+                    fin_ccy, quote_ccy = mismatch
+                    msg = (
+                        f"FCF yield no medible: el free cash flow viene en {fin_ccy} y el "
+                        f"market cap en {quote_ccy}; un yield sólo está definido si ambas "
+                        f"patas comparten moneda."
+                    )
+                else:
+                    msg = (
+                        f"FCF yield no medible: la etiqueta declara los estados en "
+                        f"{declared}, la moneda de cotización, pero sus cifras no lo "
+                        f"están; un yield sólo está definido si ambas patas comparten "
+                        f"moneda."
+                    )
                 logger.warning(msg)
                 result.warnings.append(msg)
                 result.notes["fcf_yield_currency"] = msg

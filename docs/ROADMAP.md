@@ -10,6 +10,27 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## UM-2 — La etiqueta de moneda de los estados podía mentir (2026-09-24)
+
+La guarda de `fcf_yield` y `p_ffo` (serie FCF, #113–#116) compara la etiqueta
+`financialCurrency` contra la moneda de cotización. PETR4.SA y VALE3.SA declaran
+BRL, igual que su cotización, pero sus estados vienen en USD: la guarda no
+disparaba y el motor publicaba el FCF en USD dividido por un market cap en BRL
+— **2,44 %** contra **12,44 %** convertido con BRLUSD 0,196 (PETR4), 0,92 % contra
+4,68 % (VALE3). Ahora `analysis/unit_consistency.contradicted_declared_currency`
+contrasta la etiqueta «igual» con dos vías que no la leen —el tipo de cambio
+implícito `marketCap/(P/E × utilidad)` y `marketCap/(P/S × ingresos)`— y si las
+dos salen de `[0,5 ; 2]` el yield y el P/FFO quedan «no medible» con su propia
+plantilla, que la ficha, el prompt y el rationale reconocen. Medido sobre la
+caché: solo esos dos disparan; MRK y FEMSA tienen una sola vía fuera de banda
+(ganancia anómala) y siguen midiéndose. **PETR4 81,5 → 79,5 (BUY), VALE3 47,5 →
+46,5 (REDUCE); ninguna señal cambia.** El costo es el de la serie FCF: su yield
+real merecería más puntos, pero convertir exigiría un tipo de cambio que el
+motor no fabrica. `ENGINE_VERSION` → tier10, `COMMITTEE.prompt_version` →
+`2026-09-24b`. Oráculo en rojo antes del cambio: `tests/test_declared_currency_oracle.py`.
+
+---
+
 ## UM-4 — El bloqueo de P/B negativo no existía para el motor (2026-09-24)
 
 `_check_safety_blocks` bloqueaba con AVOID («potential insolvency risk») si

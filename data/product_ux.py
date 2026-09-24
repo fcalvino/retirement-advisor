@@ -2132,6 +2132,16 @@ ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
         "usarse mal, así que el puntaje de esos papeles puede bajar. No afecta la "
         "proyección de tu retiro; si tu plan no incluía esos ADR, no cambia nada.",
     ),
+    (
+        "2026.09-tier10",
+        "Algunas acciones declaran que sus estados contables están en la misma "
+        "moneda en que cotizan, pero no lo están: Petrobras y Vale dicen reales y "
+        "reportan en dólares. El control anterior se fiaba de esa etiqueta y "
+        "calculaba el FCF yield mezclando monedas. Ahora se contrasta la etiqueta "
+        "con las propias cifras y, si no cierran, ese dato no se usa. El puntaje "
+        "de esos papeles puede bajar un poco; ninguna recomendación cambia y no "
+        "afecta la proyección de tu retiro.",
+    ),
 )
 
 
