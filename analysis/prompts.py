@@ -39,9 +39,11 @@ from data.product_ux import (
     PROXY_RATIO_LABEL,
     TREND_MA_LABEL,
     format_dividend_score,
+    market_cap_currency,
     max_dd_estimate_help,
     proxy_attractiveness_index,
     technical_signal_label,
+    with_currency,
 )
 
 # ---------------------------------------------------------------------------
@@ -480,6 +482,13 @@ def equity_decision_prompt(fund, tech, macro_context: str = "") -> str:
     p_ffo_text = currency_metric_text(fund, "p_ffo")
     pb_text = currency_metric_text(fund, "pb_ratio") or fmt(fund.pb_ratio, "x")
     ev_text = currency_metric_text(fund, "ev_ebitda") or fmt(fund.ev_ebitda, "x")
+    # UM-3: cada monto dice su moneda; en USD el texto queda igual que siempre.
+    quote_ccy = getattr(fund, "currency", "") or ""
+    price_text = with_currency(fmt(fund.current_price, decimals=2), quote_ccy)
+    market_cap_text = with_currency(
+        f"{(fund.market_cap or 0)/1e9:.1f}B", market_cap_currency(quote_ccy)
+    )
+    graham_text = with_currency(fmt(fund.graham_value, decimals=2), quote_ccy)
     p_ffo_context = ""
     if is_reit(fund) or p_ffo_text:
         p_ffo_context = f" | P/FFO={p_ffo_text or fmt(getattr(fund, 'p_ffo', None), 'x')}"
@@ -514,7 +523,7 @@ IDIOMA OBLIGATORIO: Responde SIEMPRE en español. Todos los campos de texto (rat
 
 EMPRESA: {fund.company_name} ({fund.symbol})
 SECTOR: {fund.sector} | INDUSTRIA: {fund.industry}
-PRECIO: ${fmt(fund.current_price, decimals=2)} | MARKET CAP: ${(fund.market_cap or 0)/1e9:.1f}B
+PRECIO: {price_text} | MARKET CAP: {market_cap_text}
 {country_context}
 --- ANÁLISIS FUNDAMENTAL ---
 Profitabilidad ({fund.profitability_score:.0f}/25):
@@ -532,7 +541,7 @@ Crecimiento ({fund.growth_score:.0f}/20):
 Dividendos ({format_dividend_score(fund.dividend_score, getattr(fund, "asset_class", None))}):
   Yield={fmt(fund.dividend_yield, "%")} | {_payout_block(fund)}
 
-Graham Value: ${fmt(fund.graham_value, decimals=2)} | Margen de Seguridad: {fmt(fund.margin_of_safety_pct, "%")}
+Graham Value: {graham_text} | Margen de Seguridad: {fmt(fund.margin_of_safety_pct, "%")}
 Score rule-based: {fund.total_score:.1f}/100 | Score ajustado: {fund.adjusted_score:.1f}/100
 {moat_ctx}{tailwind_ctx}
 Alertas: {", ".join(fund.warnings) if fund.warnings else "ninguna"}

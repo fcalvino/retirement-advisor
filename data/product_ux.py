@@ -17,7 +17,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 # Module-level: the copy constants below are built at import time, so they cannot
 # use the lazy `from config import X as config` the functions in this file do.
 # Safe in both directions — config.py imports nothing from data/.
-from config import CASH_BUFFER_PCT, MOAT, TECHNICAL
+from config import CASH_BUFFER_PCT, MOAT, QUOTE_MINOR_MAJOR, TECHNICAL
 
 # --------------------------------------------------------------------------- #
 #  Señal técnica: el estado "no medible" nunca se muestra crudo (SIGNAL-5)     #
@@ -2051,6 +2051,37 @@ def graham_value_help(thresholds: Any = None) -> str:
         "estable y rentable que no crece **sí** tiene valor. Con g < 0 no se publica "
         "ninguno."
     )
+
+
+# --------------------------------------------------------------------------- #
+#  Un monto dice en qué moneda está (UM-3)                                     #
+# --------------------------------------------------------------------------- #
+
+def with_currency(number_text: str, currency: Optional[str]) -> str:
+    """Rotula un monto ya formateado con su moneda.
+
+    USD —o una moneda desconocida— se escribe como siempre, ``$1234.50``, así que
+    las superficies de un ticker en dólares quedan byte-idénticas. Cualquier otra
+    nombra su código y no lleva ``$``: ``3025.00 JPY``. Antes todas decían ``$``,
+    y Toyota llegaba al LLM con 35,8 billones de yenes rotulados como dólares.
+    """
+    code = str(currency or "").strip()
+    if not code or code.upper() == "USD":
+        return f"${number_text}"
+    if number_text == "N/A":
+        return number_text
+    return f"{number_text} {code}"
+
+
+def market_cap_currency(quote_currency: Optional[str]) -> Optional[str]:
+    """La capitalización de un listado en subunidad viene en la unidad mayor.
+
+    Un ``.L`` cotiza en peniques (GBp) pero su ``marketCap`` está en libras:
+    ``marketCap / (precio × acciones) = 0,01``, medido en la auditoría de unidades.
+    """
+    if not quote_currency:
+        return quote_currency
+    return QUOTE_MINOR_MAJOR.get(str(quote_currency), str(quote_currency))
 
 
 # --------------------------------------------------------------------------- #

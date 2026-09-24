@@ -2449,8 +2449,9 @@ class CommitteeConfig:
     # de los constraints duros por la de patrimonio neto negativo. 2026-09-24b:
     # UM-2 — el FCF yield de una etiqueta de moneda que miente pasa a «no medible».
     # 2026-09-24c: UM-1 — un P/B roto por unidad llega a la IA como «no medible».
-    # 2026-09-24d: ídem para EV/EBITDA.
-    prompt_version: str = "2026-09-24d"
+    # 2026-09-24d: ídem para EV/EBITDA. 2026-09-24e: UM-3 — precio, market cap y
+    # valor de Graham nombran su moneda en vez de anteponer «$».
+    prompt_version: str = "2026-09-24e"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a

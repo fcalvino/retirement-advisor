@@ -74,7 +74,7 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | id | banda | qué |
 |---|---|---|
 | **TEST-CACHE** | 3 | La suite no aísla la caché de datos (`data/db`): borra filas vencidas y baja historiales de la red. Ver bloque 4 |
-| **UM-3** | 4 | Montos en moneda local impresos con `$` en la ficha y en el prompt de decisión (Toyota llega al LLM como `$35821.5B`) |
+| **PORTFOLIO-CCY** | 1 | «Agregar al Portfolio» guarda el precio en moneda local como «Costo promedio (USD)»: corrompe la cartera real de cualquier ticker no-USD. Va con #154. Ver bloque 4 |
 | **U5-1b** | 3 | Recalibrar Piotroski vs moat. Bloqueado: n=11 orgánico a 30 días, o hasta PIT-1/PIT-2 (evidencia sintética a 1 año) |
 | **PIT-1** | 2 | Medir los outcomes del backtesting point-in-time vía yfinance y escribir las 8 columnas de `synthetic_recommendation`. Bloquea a U5-1b. Alcance abierto (`AskUserQuestion`) |
 | **PIT-2** | 3 | Correr el volumen amplio y exponer la evidencia (F-Score vs retorno forward) en una lectura — hoy no la lee nadie |
@@ -140,7 +140,7 @@ para todo Agresivo, a toda edad, en dos superficies — y de paso el mismo `advi
 calificaba la concentración con los topes globales mientras el Optimizer usaba los
 del perfil, así que las dos pantallas se contradecían — ver `ROADMAP.md`).
 Fuera de las oleadas 3–7,
-**U0-2**, **N6c**, **N9**, **U0-3**, **N4**, **N8**, **N7**, **U3-1b**, **U5-19**, **U7-1**, **U7-2**, **N2b**, **N3**, **UM-4**, **UM-2** y **UM-1** también cerraron — ver `ROADMAP.md`.
+**U0-2**, **N6c**, **N9**, **U0-3**, **N4**, **N8**, **N7**, **U3-1b**, **U5-19**, **U7-1**, **U7-2**, **N2b**, **N3**, **UM-4**, **UM-2**, **UM-1** y **UM-3** también cerraron — ver `ROADMAP.md`.
 
 ---
 
@@ -245,10 +245,15 @@ Fuente vacío es ninguna fila. Ver `ROADMAP.md`.
   se consulta. Sumado a que `_verdict_to_dict` **siempre** escribe `action` y
   `_set_cached` está gateado por `complete`, ese default es código defensivo
   muerto. No hacía falta ninguna base con caché vieja para confirmarlo.
-- **UM-3** (2026-09-24): `analysis/prompts.py:516/534`,
-  `dashboard/views/2_Stock_Analysis.py:221/672/680`, `analysis/fundamental.py:1350` y
-  `analysis/strategy.py:668` anteponen `$` a montos en moneda de cotización o de estados.
-  90 de 186 tickers cacheados no cotizan en USD. No mueve el score; sí lo que lee el LLM.
+- **PORTFOLIO-CCY** (2026-09-24, visto al cerrar UM-3): el formulario «➕ Agregar al
+  Portfolio» de `dashboard/views/2_Stock_Analysis.py` precarga `fund.current_price` en un
+  campo rotulado «Costo promedio (USD)» y `Portfolio.add_position` lo guarda como tal. Para
+  7203.T eso es una posición de 3025 **dólares** por acción: la cartera real, su valor, su
+  deriva contra el plan y el comité sobre la cartera leen ese número. Banda 1 porque cambia
+  lo que el usuario cree que tiene, sin aviso. No entró en UM-3 (que es de rótulos): arreglarlo
+  exige convertir o guardar la moneda de la posición, que es el trabajo de #154.
+  **Leído en el código, no medido**: falta verificar sobre una cartera real qué
+  superficies suman ese costo como USD antes de fijar la banda.
 - **TEST-CACHE** (2026-09-24): los tests aíslan el track record y las alertas
   (`tests/conftest.py`) pero **no la caché de datos**, que vive en la misma base
   (`config.DB_PATH`, tabla `cache`). Un test que llega a `data.fetcher` con un símbolo

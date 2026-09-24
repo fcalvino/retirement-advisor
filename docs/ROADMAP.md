@@ -10,6 +10,27 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## UM-3 — Un monto dice en qué moneda está (2026-09-24)
+
+90 de 186 tickers cacheados cotizan fuera de USD, y el prompt de decisión, la ficha
+y dos textos del motor anteponían `$` a montos en la moneda de cotización o de los
+estados: Toyota llegaba al LLM como `MARKET CAP: $35821.5B` (billones de yenes
+rotulados como dólares, ~150× inflados) y Fast Retailing con precio `$67680`.
+`data/product_ux.with_currency` rotula cada monto: en USD, o con moneda desconocida,
+queda **byte-idéntico** (`$1234.50`); en otra moneda nombra el código sin `$`
+(`3025.00 JPY`). La capitalización de un `.L` se rotula en libras aunque el precio
+esté en peniques, porque así viene del feed (`market_cap_currency`). Superficies:
+prompt de decisión (precio, market cap, Graham), ficha (caption, valor de Graham,
+margen de seguridad), rationale de Graham y warning de patrimonio negativo, este en
+la moneda de los estados. **0 scores y 0 señales** (harness, 186 tickers).
+`COMMITTEE.prompt_version` → `2026-09-24e`; `ENGINE_VERSION` sin cambio. Oráculo en
+rojo antes del cambio: `tests/test_money_currency_oracle.py`. Cierra la serie de
+[`AUDIT_UNIDADES_MONEDA_2026-09.md`](AUDIT_UNIDADES_MONEDA_2026-09.md). Al cerrarla
+quedó anotado **PORTFOLIO-CCY** (BACKLOG): «Agregar al Portfolio» guarda un precio en
+moneda local como costo en USD.
+
+---
+
 ## UM-1 (EV/EBITDA) — Un EV/EBITDA roto por unidad dejó de puntuar (2026-09-24)
 
 La otra mitad de UM-1. Con la cotización y los estados en monedas distintas, el

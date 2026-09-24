@@ -32,8 +32,10 @@ from data.product_ux import (
     dividend_score_help,
     format_dividend_score,
     graham_value_help,
+    market_cap_currency,
     roic_sustained_help,
     technical_signal_label,
+    with_currency,
 )
 from portfolio.tracker import Portfolio
 
@@ -218,7 +220,10 @@ if symbol:
             f"## {decision.action_emoji} {fund.company_name} ({symbol}){_crypto_badge}",
             unsafe_allow_html=True,
         )
-        caption = f"{fund.sector} · {fund.industry} · Market Cap: ${fund.market_cap/1e9:.1f}B"
+        caption = (
+            f"{fund.sector} · {fund.industry} · Market Cap: "
+            f"{with_currency(f'{fund.market_cap/1e9:.1f}B', market_cap_currency(fund.currency))}"
+        )
         if decision.ai_reasoning:
             caption += f" · 🤖 {ai_cfg.model}"
         st.caption(caption)
@@ -672,7 +677,8 @@ if symbol:
                 st.divider()
                 col1, col2 = st.columns(2)
                 col1.metric(
-                    "Graham Intrinsic Value", f"${fund.graham_value:.2f}",
+                    "Graham Intrinsic Value",
+                    with_currency(f"{fund.graham_value:.2f}", fund.currency),
                     help=graham_value_help(),
                 )
                 if fund.margin_of_safety_pct is not None:
@@ -680,7 +686,7 @@ if symbol:
                     col2.metric(
                         "Margin of Safety",
                         f"{fund.margin_of_safety_pct:.1f}%",
-                        delta=f"vs ${fund.current_price:.2f} current",
+                        delta=f"vs {with_currency(f'{fund.current_price:.2f}', fund.currency)} current",
                         delta_color=delta_color,
                         delta_arrow="off",
                     )

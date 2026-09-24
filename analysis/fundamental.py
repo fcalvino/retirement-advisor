@@ -49,7 +49,7 @@ from data.fetcher import (
     get_financials,
     get_info,
 )
-from data.product_ux import dividend_streak_note
+from data.product_ux import dividend_streak_note, with_currency
 
 
 @dataclass
@@ -1371,7 +1371,7 @@ class FundamentalAnalyzer:
         if equity < 0:
             result.negative_equity = True
             result.warnings.append(
-                f"Patrimonio neto negativo (${equity/1e9:.2f}B) — D/E indefinido, "
+                f"Patrimonio neto negativo ({with_currency(f'{equity/1e9:.2f}B', result.financial_currency)}) — D/E indefinido, "
                 "el apalancamiento no es verificable con este dato"
             )
             return None
