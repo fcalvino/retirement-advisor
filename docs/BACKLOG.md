@@ -73,7 +73,8 @@ archivo tiene que nombrar estas y ninguna cerrada:
 
 | id | banda | qué |
 |---|---|---|
-| **UM-1** | 1 | P/B y EV/EBITDA del feed rotos por unidad por acción (ADRs de reportantes extranjeros, SQM-B.SN, BRK-B, CIB/BSBR); EQNR.OL cambia de señal. Absorbe PB-CURRENCY. Ver bloque 2 y `AUDIT_UNIDADES_MONEDA_2026-09.md` |
+| **UM-1** | 1 | EV/EBITDA del feed roto por unidad (TSM, SQM-B.SN, CEMEXCPO.MX, EQNR.OL). La mitad P/B cerró (tier11). Ver bloque 2 y `AUDIT_UNIDADES_MONEDA_2026-09.md` |
+| **TEST-CACHE** | 3 | La suite no aísla la caché de datos (`data/db`): borra filas vencidas y baja historiales de la red. Ver bloque 4 |
 | **UM-3** | 4 | Montos en moneda local impresos con `$` en la ficha y en el prompt de decisión (Toyota llega al LLM como `$35821.5B`) |
 | **U5-1b** | 3 | Recalibrar Piotroski vs moat. Bloqueado: n=11 orgánico a 30 días, o hasta PIT-1/PIT-2 (evidencia sintética a 1 año) |
 | **PIT-1** | 2 | Medir los outcomes del backtesting point-in-time vía yfinance y escribir las 8 columnas de `synthetic_recommendation`. Bloquea a U5-1b. Alcance abierto (`AskUserQuestion`) |
@@ -184,6 +185,10 @@ HOLD→BUY al corregir**; 6 scores se mueven −2…+5. Anular a `None` castiga 
 BRK-B (BUY→HOLD). Oráculo propuesto en el informe; bandas sin guarda en
 `analysis/fundamental.py:1462-1483`.
 
+> **2026-09-24 — mitad P/B cerrada (tier11):** se contrasta con `P/E × ROE` sin tipo de
+> cambio; BRK-B se reconstruye (0,00096 → 1,50, sigue BUY) y los ADRs quedan «no
+> medible» (KB −1). Ver ROADMAP. Queda EV/EBITDA.
+
 **U6-1** cerró el 2026-08-29. La fila llamaba «inventado» al proxy del
 optimizer; medido sobre 149 equities, resultó ser lo contrario de inventado y
 peor de lo que decía a la vez: el score **sí** predice el CAGR (p < 0,0001, con
@@ -259,6 +264,18 @@ Fuente vacío es ninguna fila. Ver `ROADMAP.md`.
   `dashboard/views/2_Stock_Analysis.py:221/672/680`, `analysis/fundamental.py:1350` y
   `analysis/strategy.py:668` anteponen `$` a montos en moneda de cotización o de estados.
   90 de 186 tickers cacheados no cotizan en USD. No mueve el score; sí lo que lee el LLM.
+- **TEST-CACHE** (2026-09-24): los tests aíslan el track record y las alertas
+  (`tests/conftest.py`) pero **no la caché de datos**, que vive en la misma base
+  (`config.DB_PATH`, tabla `cache`). Un test que llega a `data.fetcher` con un símbolo
+  real lee con el TTL normal, así que **borra las filas vencidas** y baja datos de la
+  red. Medido con una copia de la base (22–23/09): una corrida completa borró 4 filas
+  (`info`/`financials` de AZN.L y SHEL.L) y reescribió 7 historiales desde la red
+  (BND, JNJ, KO, PG, SPY, SCHD, ARS=X). En el checkout del usuario, `make test` hace
+  eso sobre su caché real: se recupera sola, pero viola CONTEXT §5 («ningún test
+  escribe en la base del usuario») y vuelve la suite dependiente de la red. Apareció
+  en la serie UM porque las mediciones del harness se contaminaban (el cambio de
+  señal técnica de BND en #160). Arreglo probable: apuntar `data.cache.cache` a una
+  base temporal en `conftest.py`, como N6 hizo con el track record.
 - **PIT-TOOLS (prerrequisito para reabrir ReAct en el comité)**: `get_news` y
   `MacroRagStore.retrieve` no aceptan `as_of` — leen el reloj real, así que una
   tool que los exponga filtraría datos posteriores a la fecha de análisis y

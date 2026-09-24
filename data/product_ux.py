@@ -2142,6 +2142,16 @@ ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
         "de esos papeles puede bajar un poco; ninguna recomendación cambia y no "
         "afecta la proyección de tu retiro.",
     ),
+    (
+        "2026.09-tier11",
+        "El precio sobre valor libro (P/B) que da el proveedor de datos sale "
+        "muy distorsionado en algunos papeles: ADR de empresas que reportan en "
+        "otra moneda (como TSMC o HDFC) y Berkshire Hathaway, cuyo valor libro "
+        "viene por acción clase A. Ahora ese dato se contrasta con otros del "
+        "mismo proveedor; si no cierra, se recalcula cuando se puede y, si no, "
+        "no se usa. Algunos puntajes cambian uno o dos puntos; ninguna "
+        "recomendación cambia y no afecta la proyección de tu retiro.",
+    ),
 )
 
 

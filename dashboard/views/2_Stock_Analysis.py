@@ -656,7 +656,9 @@ if symbol:
             ]
             for i, (label, value, unit) in enumerate(metrics):
                 with cols[i % 3]:
-                    currency_key = {"FCF Yield": "fcf_yield", "P/FFO": "p_ffo"}.get(label)
+                    currency_key = {
+                        "FCF Yield": "fcf_yield", "P/FFO": "p_ffo", "P/B Ratio": "pb_ratio",
+                    }.get(label)
                     note = currency_metric_note(fund, currency_key) if currency_key else ""
                     if note:
                         st.metric(label, "no medible", help=note)
