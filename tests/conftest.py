@@ -1,16 +1,47 @@
 """Shared fixtures for the Retirement Advisor test suite.
 
-Data-shaped, with three exceptions: an autouse fixture that zeroes the network
-retry backoff (see ``no_retry_backoff``), another that keeps the committee off
-the yfinance news feed (see ``no_committee_news``), and the import-time
-redirection of the track record and the alert store away from the user's
-database (see below).
+Data-shaped, with four exceptions: the suite's own database, set before any
+project import (see below); the import-time redirection of the track record and
+the alert store to ``:memory:``; an autouse fixture that zeroes the network
+retry backoff (see ``no_retry_backoff``); and another that keeps the committee
+off the yfinance news feed (see ``no_committee_news``).
 """
 
 from __future__ import annotations
 
+import atexit
+import os
+import shutil
 import sys
+import tempfile
 from pathlib import Path
+
+# ------------------------------------------------------------------ #
+#  The suite never touches the user's database (TEST-CACHE)            #
+# ------------------------------------------------------------------ #
+#
+# N6 (below) moved the stores off ``config.DB_PATH``, but the data cache lives
+# in the same file, and ``DataCache.get`` *deletes* the row it finds expired:
+# one ``make test`` deleted 4 cached rows and re-downloaded 7 histories into the
+# user's cache, which is how BND's signal "changed" in the #160 measurement.
+#
+# Pointing ``config.DB_PATH`` elsewhere here — and not re-pointing each
+# singleton afterwards, the N6 way — was measured against both alternatives on
+# identical copies of the database (2026-09-24). Only this reaches the child
+# processes, which inherit the environment: ``test_direct_page_entry`` runs the
+# dashboard in four of them, and each still opened the user's cache and read
+# the real ``portfolio.json`` under the N6-style redirect. It also covers what
+# hangs off ``DB_PATH.parent`` (``portfolio.json``, saved backtests) and the
+# import-time opens the N6 blocks below used to make on the user's file. Those
+# blocks stay: the stores still get a ``:memory:`` of their own, so their rows
+# do not pile up in the file the whole suite shares.
+#
+# It has to run before the first project import, because ``config`` reads the
+# variable once. ``tests/test_data_cache_isolation_oracle.py`` fails if an
+# import moves above it.
+_test_db_dir = Path(tempfile.mkdtemp(prefix="ra-test-db-"))
+atexit.register(shutil.rmtree, _test_db_dir, ignore_errors=True)
+os.environ["RETIREMENT_ADVISOR_DB_PATH"] = str(_test_db_dir / "retirement_advisor.db")
 
 # scripts/_bootstrap.py is importable only when scripts/ is on sys.path.
 # Tests that import scripts.* modules need this added before collection.
@@ -52,7 +83,7 @@ import analysis.track_record as _track_record
 # Patching ``DB_PATH`` inside the module — not just the singleton — is what
 # covers the caller that constructs its own store instead of importing this one.
 # ``tests/test_track_record_isolation_oracle.py`` fails if any of this regresses.
-_track_record.track_record_store._engine.dispose()  # release the user's file
+_track_record.track_record_store._engine.dispose()  # release the suite's file
 _track_record.DB_PATH = ":memory:"
 _track_record.track_record_store = _track_record.TrackRecordStore()
 
@@ -100,7 +131,7 @@ _synthetic_backtest.synthetic_backtest_store = _synthetic_backtest.SyntheticBack
 # Patching ``DB_PATH`` inside the module — not just the singleton — is what
 # covers the caller that constructs its own store instead of importing this one.
 # ``tests/test_alert_store_isolation_oracle.py`` fails if any of this regresses.
-_alerts_store.alert_store._engine.dispose()  # release the user's file
+_alerts_store.alert_store._engine.dispose()  # release the suite's file
 _alerts_store.DB_PATH = ":memory:"
 _isolated_alerts = _alerts_store.AlertStore()
 _alerts_store.alert_store._engine = _isolated_alerts._engine

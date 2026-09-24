@@ -73,7 +73,7 @@ archivo tiene que nombrar estas y ninguna cerrada:
 
 | id | banda | qué |
 |---|---|---|
-| **TEST-CACHE** | 3 | La suite no aísla la caché de datos (`data/db`): borra filas vencidas y baja historiales de la red. Ver bloque 4 |
+| **TEST-NET** | 3 | Un oráculo de la suite depende del mercado del día: `test_longevity_horizon_oracle.py` baja SPY/BND/KO/JNJ/PG de la red, en el CI siempre. Ver bloque 4 |
 | **PORTFOLIO-CCY** | 1 | «Agregar al Portfolio» guarda el precio en moneda local como «Costo promedio (USD)»: corrompe la cartera real de cualquier ticker no-USD. Va con #154. Ver bloque 4 |
 | **U5-1b** | 3 | Recalibrar Piotroski vs moat. Bloqueado: n=11 orgánico a 30 días, o hasta PIT-1/PIT-2 (evidencia sintética a 1 año) |
 | **PIT-1** | 2 | Medir los outcomes del backtesting point-in-time vía yfinance y escribir las 8 columnas de `synthetic_recommendation`. Bloquea a U5-1b. Alcance abierto (`AskUserQuestion`) |
@@ -254,18 +254,28 @@ Fuente vacío es ninguna fila. Ver `ROADMAP.md`.
   exige convertir o guardar la moneda de la posición, que es el trabajo de #154.
   **Leído en el código, no medido**: falta verificar sobre una cartera real qué
   superficies suman ese costo como USD antes de fijar la banda.
-- **TEST-CACHE** (2026-09-24): los tests aíslan el track record y las alertas
-  (`tests/conftest.py`) pero **no la caché de datos**, que vive en la misma base
-  (`config.DB_PATH`, tabla `cache`). Un test que llega a `data.fetcher` con un símbolo
-  real lee con el TTL normal, así que **borra las filas vencidas** y baja datos de la
-  red. Medido con una copia de la base (22–23/09): una corrida completa borró 4 filas
-  (`info`/`financials` de AZN.L y SHEL.L) y reescribió 7 historiales desde la red
-  (BND, JNJ, KO, PG, SPY, SCHD, ARS=X). En el checkout del usuario, `make test` hace
-  eso sobre su caché real: se recupera sola, pero viola CONTEXT §5 («ningún test
-  escribe en la base del usuario») y vuelve la suite dependiente de la red. Apareció
-  en la serie UM porque las mediciones del harness se contaminaban (el cambio de
-  señal técnica de BND en #160). Arreglo probable: apuntar `data.cache.cache` a una
-  base temporal en `conftest.py`, como N6 hizo con el track record.
+- **TEST-CACHE** (abierto y cerrado 2026-09-24): los tests aislaban el track record
+  y las alertas pero **no la caché de datos**, que vive en la misma base
+  (`config.DB_PATH`, tabla `cache`). Una corrida completa borró 4 filas (AZN.L,
+  SHEL.L) y reescribió 7 historiales en la caché del usuario; así «cambió» la señal
+  de BND en #160. **Cerrado**: `config.DB_PATH` se lee de
+  `RETIREMENT_ADVISOR_DB_PATH` y `tests/conftest.py` la fija a un temporal antes del
+  primer import del proyecto. Se midió contra redirigir el singleton al importar
+  (estilo N6) y contra una fixture por test, sobre copias idénticas de la base: las
+  tres dejan 0 filas tocadas, pero solo la variable alcanza a los 4 subprocesos de
+  `test_direct_page_entry`, que heredan el entorno y seguían abriendo la caché y el
+  `portfolio.json` reales (la suite lo leía 5 veces). Oráculo en rojo antes del
+  cambio: `tests/test_data_cache_isolation_oracle.py`.
+- **TEST-NET** (2026-09-24): con la caché aislada, 8 tests siguen saliendo a la red
+  (yfinance vía `curl_cffi`, SEC vía `requests`). Cortándola en `Session.request`
+  fallan 6, todos de `tests/test_longevity_horizon_oracle.py`: el oráculo corre
+  Monte Carlo sobre la historia real de SPY/BND/KO/JNJ/PG, así que su input es el
+  mercado del día —en el CI, que arranca con la caché vacía, siempre—. Los otros 7
+  pasan sin red: es tráfico de más, no dependencia. Arreglo propuesto: historia
+  sintética sembrada en ese oráculo, parchar los 7, y recién después un guard
+  autouse a nivel `curl_cffi`/`requests` (**inferencia**: `pytest-socket` no vería
+  yfinance, porque `curl_cffi` abre sus sockets en C — la sonda de sockets de
+  Python vio 2 tests, la de HTTP 8).
 - **PIT-TOOLS (prerrequisito para reabrir ReAct en el comité)**: `get_news` y
   `MacroRagStore.retrieve` no aceptan `as_of` — leen el reloj real, así que una
   tool que los exponga filtraría datos posteriores a la fecha de análisis y

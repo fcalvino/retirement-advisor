@@ -10,6 +10,23 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## TEST-CACHE — La suite no toca la base del usuario (2026-09-24)
+
+N6 aisló los stores, pero la caché de datos vive en la misma base y `DataCache.get`
+borra la fila que encuentra vencida: una corrida de `make test` borró 4 filas y
+reescribió 7 historiales en la caché del usuario, y eso contaminó las mediciones de
+la serie UM (la señal de BND en #160). `config.DB_PATH` se lee ahora de
+`RETIREMENT_ADVISOR_DB_PATH`, y `tests/conftest.py` la apunta a un temporal antes
+del primer import del proyecto. Medido sobre copias idénticas de la base contra las
+dos alternativas: redirigir el singleton al importar y una fixture por test (esta
+subía la suite de 32 s a 78 s). Solo la variable llega a los subprocesos de páginas,
+que abrían la caché y leían el `portfolio.json` real. Resultado: 0 filas tocadas y
+0 aperturas de la base del usuario, incluidos los hijos. Oráculo en rojo antes del
+cambio: `tests/test_data_cache_isolation_oracle.py`. Queda **TEST-NET** (BACKLOG):
+un oráculo depende del mercado del día.
+
+---
+
 ## UM-3 — Un monto dice en qué moneda está (2026-09-24)
 
 90 de 186 tickers cacheados cotizan fuera de USD, y el prompt de decisión, la ficha
