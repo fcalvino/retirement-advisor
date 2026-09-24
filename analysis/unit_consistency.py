@@ -172,6 +172,27 @@ def statements_currency_relation(
     return SAME
 
 
+def contradicted_declared_currency(
+    info: Dict[str, Any], legs: StatementLegs, *, config=None
+) -> Optional[str]:
+    """La moneda declarada cuando la etiqueta dice «igual que la cotización» y miente.
+
+    Es el agujero de toda guarda que compara etiquetas (UM-2): PETR4.SA declara
+    BRL con estados en USD. Devuelve ``None`` si la etiqueta ya dice que difieren
+    —eso lo cubre ``financial_currency_mismatch``— o si nada la contradice.
+    """
+    cfg = config or UNIT_CONSISTENCY
+    if not cfg.enabled:
+        return None
+    quote = major_currency(info.get("currency"))
+    fin = major_currency(info.get("financialCurrency"))
+    if not quote or not fin or quote != fin:
+        return None
+    if statements_currency_relation(info, legs, config=cfg) == DIFFERENT:
+        return str(info.get("financialCurrency"))
+    return None
+
+
 def pb_reference(info: Dict[str, Any]) -> Optional[float]:
     """``P/E × ROE``: el P/B sin tipo de cambio y sin cifras por acción."""
     pe, roe = _positive(info, "trailingPE"), _positive(info, "returnOnEquity")

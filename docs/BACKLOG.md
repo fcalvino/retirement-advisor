@@ -74,7 +74,6 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | id | banda | qué |
 |---|---|---|
 | **UM-1** | 1 | P/B y EV/EBITDA del feed rotos por unidad por acción (ADRs de reportantes extranjeros, SQM-B.SN, BRK-B, CIB/BSBR); EQNR.OL cambia de señal. Absorbe PB-CURRENCY. Ver bloque 2 y `AUDIT_UNIDADES_MONEDA_2026-09.md` |
-| **UM-2** | 1 | `financialCurrency` miente (PETR4.SA/VALE3.SA): la guarda de `fcf_yield` no dispara, yield 5× más bajo. Precondición de cualquier guarda de UM-1 |
 | **UM-3** | 4 | Montos en moneda local impresos con `$` en la ficha y en el prompt de decisión (Toyota llega al LLM como `$35821.5B`) |
 | **U5-1b** | 3 | Recalibrar Piotroski vs moat. Bloqueado: n=11 orgánico a 30 días, o hasta PIT-1/PIT-2 (evidencia sintética a 1 año) |
 | **PIT-1** | 2 | Medir los outcomes del backtesting point-in-time vía yfinance y escribir las 8 columnas de `synthetic_recommendation`. Bloquea a U5-1b. Alcance abierto (`AskUserQuestion`) |
@@ -141,7 +140,7 @@ para todo Agresivo, a toda edad, en dos superficies — y de paso el mismo `advi
 calificaba la concentración con los topes globales mientras el Optimizer usaba los
 del perfil, así que las dos pantallas se contradecían — ver `ROADMAP.md`).
 Fuera de las oleadas 3–7,
-**U0-2**, **N6c**, **N9**, **U0-3**, **N4**, **N8**, **N7**, **U3-1b**, **U5-19**, **U7-1**, **U7-2**, **N2b**, **N3** y **UM-4** también cerraron — ver `ROADMAP.md`.
+**U0-2**, **N6c**, **N9**, **U0-3**, **N4**, **N8**, **N7**, **U3-1b**, **U5-19**, **U7-1**, **U7-2**, **N2b**, **N3**, **UM-4** y **UM-2** también cerraron — ver `ROADMAP.md`.
 
 ---
 
@@ -184,13 +183,6 @@ EV/EBITDA 10,8×, EQNR.OL 7,0×; más CIB/BSBR del 2026-09-10. **Medido: EQNR.OL
 HOLD→BUY al corregir**; 6 scores se mueven −2…+5. Anular a `None` castiga a
 BRK-B (BUY→HOLD). Oráculo propuesto en el informe; bandas sin guarda en
 `analysis/fundamental.py:1462-1483`.
-
-**UM-2 — `financialCurrency` miente (abierto 2026-09-24).** PETR4.SA y
-VALE3.SA dicen BRL y sus estados vienen en USD, así que la guarda de
-`fcf_yield` (que compara etiquetas) no dispara: 2,44 % publicado contra
-12,44 % real (PETR4), 0,92 % contra 4,68 % (VALE3). No cambia señales hoy
-(+1 y +2 de score), pero **toda guarda basada en la etiqueta hereda el
-agujero**, incluida la que se escriba para UM-1 — resolverlo antes o junto.
 
 **U6-1** cerró el 2026-08-29. La fila llamaba «inventado» al proxy del
 optimizer; medido sobre 149 equities, resultó ser lo contrario de inventado y

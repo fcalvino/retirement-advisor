@@ -171,11 +171,13 @@ def test_superseded_and_missing_engine_versions_are_stale():
     currency fix (tier9) moves the growth sub-score of the LatAm ADRs whose FCF is
     stated in a currency other than their quote: `fcf / market_cap` divided a
     local-currency flow by a USD market cap (CIB read 41 122 %), so those tickers
-    lose the FCF-yield points they were never entitled to.
+    lose the FCF-yield points they were never entitled to. UM-2 (tier10) closes
+    the hole that fix left: the guard compared currency labels, and PETR4.SA and
+    VALE3.SA declare BRL with statements in USD, so their yield came out 5.1x low.
     """
     from config import ENGINE_VERSION
 
-    assert ENGINE_VERSION == "2026.09-tier9"
+    assert ENGINE_VERSION == "2026.09-tier10"
 
     current = PlanSnapshot.from_session(name="actual", opt_result=_fake_opt_result())
     assert current.engine_version == ENGINE_VERSION
@@ -183,7 +185,8 @@ def test_superseded_and_missing_engine_versions_are_stale():
 
     for superseded in ("2026.08-tier0", "2026.08-tier1", "2026.08-tier2",
                        "2026.08-tier3", "2026.08-tier4", "2026.08-tier5",
-                       "2026.08-tier6", "2026.08-tier7", "2026.08-tier8"):
+                       "2026.08-tier6", "2026.08-tier7", "2026.08-tier8",
+                       "2026.09-tier9"):
         old = PlanSnapshot.from_session(name="viejo", opt_result=_fake_opt_result())
         old.engine_version = superseded
         assert old.is_engine_stale() is True

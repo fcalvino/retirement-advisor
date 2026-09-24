@@ -98,7 +98,14 @@ DB_PATH = DB_DIR / "retirement_advisor.db"
 #                   puede caer más allá del horizonte. Las métricas de riqueza no
 #                   se mueven: el horizonte se sortea primero y la cola se
 #                   empalma, así que el terminal queda byte-idéntico.
-ENGINE_VERSION = "2026.09-tier9"
+#   2026.09-tier10 — UM-2: la guarda de moneda de fcf_yield y P/FFO le creía a la
+#                   etiqueta financialCurrency, y PETR4.SA y VALE3.SA declaran BRL
+#                   con estados en USD: el yield salía 5,1× más bajo (PETR4 2,44 %
+#                   contra 12,44 % convertido). Ahora la etiqueta se contrasta con
+#                   dos vías sin tipo de cambio (analysis/unit_consistency.py) y el
+#                   yield queda «no medible». PETR4 −2 y VALE3 −1 de score; ninguna
+#                   señal cambia.
+ENGINE_VERSION = "2026.09-tier10"
 
 
 @dataclass(frozen=True)
@@ -2425,8 +2432,9 @@ class CommitteeConfig:
     # 19b, …): el moat cripto no medido y el contexto/mandatos cripto fueron dos
     # versiones de prompt del 2026-09-21 durante el desarrollo, y llegan juntas en
     # un solo merge con la segunda. 2026-09-24: UM-4 reemplaza la regla «P/B < 0»
-    # de los constraints duros por la de patrimonio neto negativo.
-    prompt_version: str = "2026-09-24"
+    # de los constraints duros por la de patrimonio neto negativo. 2026-09-24b:
+    # UM-2 — el FCF yield de una etiqueta de moneda que miente pasa a «no medible».
+    prompt_version: str = "2026-09-24b"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a
