@@ -12,7 +12,9 @@ load_dotenv()
 BASE_DIR = Path(__file__).parent
 DB_DIR = BASE_DIR / "data" / "db"
 DB_DIR.mkdir(parents=True, exist_ok=True)
-DB_PATH = DB_DIR / "retirement_advisor.db"
+# The suite points this at a temp file before importing anything (TEST-CACHE):
+# the data cache, the stores and ``portfolio.json`` all hang off it.
+DB_PATH = Path(os.getenv("RETIREMENT_ADVISOR_DB_PATH") or DB_DIR / "retirement_advisor.db")
 
 # Version of the numeric engine (Monte Carlo + decumulation + optimizer μ).
 # Stamped onto every saved PlanSnapshot so a plan can be traced back to the
