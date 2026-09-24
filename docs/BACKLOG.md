@@ -73,7 +73,6 @@ archivo tiene que nombrar estas y ninguna cerrada:
 
 | id | banda | qué |
 |---|---|---|
-| **UM-1** | 1 | EV/EBITDA del feed roto por unidad (TSM, SQM-B.SN, CEMEXCPO.MX, EQNR.OL). La mitad P/B cerró (tier11). Ver bloque 2 y `AUDIT_UNIDADES_MONEDA_2026-09.md` |
 | **TEST-CACHE** | 3 | La suite no aísla la caché de datos (`data/db`): borra filas vencidas y baja historiales de la red. Ver bloque 4 |
 | **UM-3** | 4 | Montos en moneda local impresos con `$` en la ficha y en el prompt de decisión (Toyota llega al LLM como `$35821.5B`) |
 | **U5-1b** | 3 | Recalibrar Piotroski vs moat. Bloqueado: n=11 orgánico a 30 días, o hasta PIT-1/PIT-2 (evidencia sintética a 1 año) |
@@ -141,7 +140,7 @@ para todo Agresivo, a toda edad, en dos superficies — y de paso el mismo `advi
 calificaba la concentración con los topes globales mientras el Optimizer usaba los
 del perfil, así que las dos pantallas se contradecían — ver `ROADMAP.md`).
 Fuera de las oleadas 3–7,
-**U0-2**, **N6c**, **N9**, **U0-3**, **N4**, **N8**, **N7**, **U3-1b**, **U5-19**, **U7-1**, **U7-2**, **N2b**, **N3**, **UM-4** y **UM-2** también cerraron — ver `ROADMAP.md`.
+**U0-2**, **N6c**, **N9**, **U0-3**, **N4**, **N8**, **N7**, **U3-1b**, **U5-19**, **U7-1**, **U7-2**, **N2b**, **N3**, **UM-4**, **UM-2** y **UM-1** también cerraron — ver `ROADMAP.md`.
 
 ---
 
@@ -160,7 +159,7 @@ equivocada. Ver `ROADMAP.md`.
 
 ## Bloque 2 — Números que cambian una decisión de compra
 
-**PB-CURRENCY — `priceToBook` entre monedas (abierto 2026-09-11).** La
+**PB-CURRENCY — `priceToBook` entre monedas (abierto 2026-09-11, cerrado 2026-09-24 como UM-1).** La
 medición del 2026-09-10 registró CIB: precio 103,12 USD, `bookValue` 44.394,48
 COP y `priceToBook` 0,0023; BSBR: 5,88 USD, `bookValue` 13,34 BRL y múltiplo
 0,4407. Ambos reciben la banda máxima de P/B del scorer. Es un campo derivado
@@ -171,23 +170,9 @@ elegir una corrección; ni conversión ni contraste entre campos del mismo feed
 están validados como solución. Evidencia: [`FIX_FCF_YIELD_MONEDA.md`](FIX_FCF_YIELD_MONEDA.md)
 §4; límites de la serie cerrada en `CONTEXT.md` §8.
 
-> **2026-09-24 — alcance revalidado y oráculo definido:** PB-CURRENCY queda
-> absorbida por **UM-1** (abajo). Ver [`AUDIT_UNIDADES_MONEDA_2026-09.md`](AUDIT_UNIDADES_MONEDA_2026-09.md).
-
-**UM-1 — P/B y EV/EBITDA del feed rotos por unidad por acción (abierto 2026-09-24).**
-El feed convierte bien la mayoría de los listados locales (21 de 28 con desajuste
-de moneda están en banda); se rompe en ADRs de reportantes extranjeros, en
-SQM-B.SN y en una clase de acción. Contra un oráculo que recomputa desde
-`marketCap` + estados + FX: SQM-B.SN P/B 854× y EV/EBITDA 313×, TSM P/B 6,7×,
-HDB 6,6×, KB 4,3×, BRK-B P/B 0,00096 (valor libro por acción A), CEMEXCPO.MX
-EV/EBITDA 10,8×, EQNR.OL 7,0×; más CIB/BSBR del 2026-09-10. **Medido: EQNR.OL
-HOLD→BUY al corregir**; 6 scores se mueven −2…+5. Anular a `None` castiga a
-BRK-B (BUY→HOLD). Oráculo propuesto en el informe; bandas sin guarda en
-`analysis/fundamental.py:1462-1483`.
-
-> **2026-09-24 — mitad P/B cerrada (tier11):** se contrasta con `P/E × ROE` sin tipo de
-> cambio; BRK-B se reconstruye (0,00096 → 1,50, sigue BUY) y los ADRs quedan «no
-> medible» (KB −1). Ver ROADMAP. Queda EV/EBITDA.
+> **2026-09-24:** PB-CURRENCY quedó absorbida por UM-1, que cerró en tier11 (P/B) y
+> tier12 (EV/EBITDA). Ver [`ROADMAP.md`](ROADMAP.md) y
+> [`AUDIT_UNIDADES_MONEDA_2026-09.md`](AUDIT_UNIDADES_MONEDA_2026-09.md).
 
 **U6-1** cerró el 2026-08-29. La fila llamaba «inventado» al proxy del
 optimizer; medido sobre 149 equities, resultó ser lo contrario de inventado y

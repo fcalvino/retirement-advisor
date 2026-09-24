@@ -112,7 +112,14 @@ DB_PATH = DB_DIR / "retirement_advisor.db"
 #                   0,00096 → 1,50, −2); monedas distintas → no medible (TSM, HDB,
 #                   KB −1, SQM; CIB y BSBR pierden la banda máxima que cobraban por
 #                   un P/B de 0,002 y 0,43). Ninguna señal cambia en la caché.
-ENGINE_VERSION = "2026.09-tier11"
+#   2026.09-tier12 — UM-1 (EV/EBITDA): con monedas distintas el enterpriseToEbitda
+#                   del feed sale roto en TSM (0,20×, cobraba la banda máxima),
+#                   SQM-B.SN (313×), CEMEXCPO.MX (10,8×) y EQNR.OL (7,0×). Se
+#                   contrasta con el EV de P/E × ROE × patrimonio y, roto, queda
+#                   no medible (nunca se reemplaza). Ningún adjusted_score cambia:
+#                   los otros tres ya pagaban 0 y TSM está en el tope de 100 (su
+#                   score sin tope baja de 110,5 a 105,5, sigue 2.º de 186).
+ENGINE_VERSION = "2026.09-tier12"
 
 
 @dataclass(frozen=True)
@@ -2442,7 +2449,8 @@ class CommitteeConfig:
     # de los constraints duros por la de patrimonio neto negativo. 2026-09-24b:
     # UM-2 — el FCF yield de una etiqueta de moneda que miente pasa a «no medible».
     # 2026-09-24c: UM-1 — un P/B roto por unidad llega a la IA como «no medible».
-    prompt_version: str = "2026-09-24c"
+    # 2026-09-24d: ídem para EV/EBITDA.
+    prompt_version: str = "2026-09-24d"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a

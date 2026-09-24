@@ -658,6 +658,7 @@ if symbol:
                 with cols[i % 3]:
                     currency_key = {
                         "FCF Yield": "fcf_yield", "P/FFO": "p_ffo", "P/B Ratio": "pb_ratio",
+                        "EV/EBITDA": "ev_ebitda",
                     }.get(label)
                     note = currency_metric_note(fund, currency_key) if currency_key else ""
                     if note:

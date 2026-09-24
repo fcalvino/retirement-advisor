@@ -479,6 +479,7 @@ def equity_decision_prompt(fund, tech, macro_context: str = "") -> str:
     fcf_yield_text = currency_metric_text(fund, "fcf_yield") or fmt(fund.fcf_yield, "%")
     p_ffo_text = currency_metric_text(fund, "p_ffo")
     pb_text = currency_metric_text(fund, "pb_ratio") or fmt(fund.pb_ratio, "x")
+    ev_text = currency_metric_text(fund, "ev_ebitda") or fmt(fund.ev_ebitda, "x")
     p_ffo_context = ""
     if is_reit(fund) or p_ffo_text:
         p_ffo_context = f" | P/FFO={p_ffo_text or fmt(getattr(fund, 'p_ffo', None), 'x')}"
@@ -523,7 +524,7 @@ Salud Financiera ({fund.health_score:.0f}/20):
   D/E={fmt(fund.debt_equity, "x")} | Current Ratio={fmt(fund.current_ratio)} | Cobertura de Intereses={fmt(fund.interest_coverage, "x")}
 
 Valuación ({fund.valuation_score:.0f}/25):
-  P/E={fmt(fund.pe_ratio, "x")} | PEG={fmt(fund.peg_ratio)} | EV/EBITDA={fmt(fund.ev_ebitda, "x")} | P/B={pb_text}{p_ffo_context}
+  P/E={fmt(fund.pe_ratio, "x")} | PEG={fmt(fund.peg_ratio)} | EV/EBITDA={ev_text} | P/B={pb_text}{p_ffo_context}
 
 Crecimiento ({fund.growth_score:.0f}/20):
   Revenue CAGR {getattr(fund, "revenue_cagr_years", 0) or "?"}Y={fmt(fund.revenue_cagr_5y, "%")} | {_eps_growth_label(fund)}={fmt(fund.eps_cagr_5y, "%")} | FCF Yield={fcf_yield_text}
