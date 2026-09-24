@@ -66,6 +66,7 @@ Roles:
 | historical-audit | `docs/AUDIT_DATA_QUALITY.md` | Calidad de datos + estado P0 |
 | historical-audit | `docs/AUDIT_REASONING_QUALITY.md` | Calidad de razonamiento (15/15 cerradas) |
 | historical-audit | `docs/DEAD_CODE_AUDIT.md` | Auditoría de código muerto (2026-07) |
+| historical-audit | `docs/AUDIT_UNIDADES_MONEDA_2026-09.md` | Unidades y moneda del feed (2026-09-24): oráculo de patas + FX, UM-1..UM-4, 1 señal de 186 cambia |
 | historical-audit | `docs/universe_coverage_analysis.md` | Cobertura del universo (snapshot 2026-07) |
 | historical-audit | `docs/issues/SIGNAL_REASON_CONFIDENCE_ISSUES.md` | Hallazgos 2026-09-12 de la cadena Signal → Motivo → Confidence, listos para abrir como GitHub Issues (tests en `xfail(strict=True)`) |
 | historical-plan | `docs/plans/SIGNAL_REASON_CONFIDENCE_PLAN.md` | Serie `signal_reason_confidence` (cerrada 2026-09-12): cómo se cerraron SIGNAL-1..SIGNAL-5 y las decisiones de diseño |
@@ -152,6 +153,7 @@ descripción viva del sistema.
 | [`AUDIT_DATA_QUALITY.md`](AUDIT_DATA_QUALITY.md) | Fuentes, badges, política partial/poor |
 | [`AUDIT_REASONING_QUALITY.md`](AUDIT_REASONING_QUALITY.md) | 15 debilidades de coherencia entre capas |
 | [`DEAD_CODE_AUDIT.md`](DEAD_CODE_AUDIT.md) | Dead code 2026-07 |
+| [`AUDIT_UNIDADES_MONEDA_2026-09.md`](AUDIT_UNIDADES_MONEDA_2026-09.md) | P/B, EV/EBITDA y FCF yield entre monedas y unidades por acción (UM-1..UM-4) |
 | [`universe_coverage_analysis.md`](universe_coverage_analysis.md) | Cobertura del universo default (2026-07) |
 | [`archive/code.review.md`](archive/code.review.md) | Dump de review may-2026 — **archivo, no guía** |
 
