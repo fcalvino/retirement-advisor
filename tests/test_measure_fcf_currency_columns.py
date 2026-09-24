@@ -65,18 +65,40 @@ class TestLaComparacion:
         row = _row(monkeypatch, _fake_fund(1.4), {"financialCurrency": "USD", "currency": "USD"})
         report = harness.render_comparison({"KO": row}, {"KO": dict(row)})
         assert "Con score modificado: **0**" in report
-        assert "Con `fcf_yield`/`p_ffo` modificado: **0**" in report
+        assert f"Con {harness._METRICS_LABEL} modificado: **0**" in report
 
     def test_metrica_que_cambia_sin_mover_score_se_ve(self, monkeypatch):
         before = _row(monkeypatch, _fake_fund(-494.22), {"financialCurrency": "CLP", "currency": "USD"})
         after = dict(before, fcf_yield=None)
         report = harness.render_comparison({"BSAC": before}, {"BSAC": after})
         assert "Con score modificado: **0**" in report
-        assert "Con `fcf_yield`/`p_ffo` modificado: **1**" in report
+        assert f"Con {harness._METRICS_LABEL} modificado: **1**" in report
         assert "| BSAC | fcf_yield | -494.22 | None | CLP/USD |" in report
 
     def test_baseline_sin_las_columnas_no_cuenta_como_cambio(self, monkeypatch):
         after = _row(monkeypatch, _fake_fund(None), {"financialCurrency": "BRL", "currency": "USD"})
         before = {k: v for k, v in after.items() if k not in harness._MEASURED_METRICS}
         report = harness.render_comparison({"ITUB": before}, {"ITUB": after})
-        assert "Con `fcf_yield`/`p_ffo` modificado: **0**" in report
+        assert f"Con {harness._METRICS_LABEL} modificado: **0**" in report
+
+
+class TestMultiplosDelFeed:
+    """UM-1: el P/B y el EV/EBITDA pueden pasar a «no medible» sin mover el score
+    (un P/B de 3037 y un None suman 0 los dos), así que la fila tiene que traerlos."""
+
+    def test_columnas_presentes(self, monkeypatch):
+        fund = _fake_fund(1.4)
+        fund.pb_ratio, fund.ev_ebitda = 91.39, 5.16
+        row = _row(monkeypatch, fund, {"financialCurrency": "TWD", "currency": "USD"})
+        assert row["pb_ratio"] == 91.39
+        assert row["ev_ebitda"] == 5.16
+
+    def test_un_pb_que_pasa_a_none_se_ve(self, monkeypatch):
+        fund = _fake_fund(1.4)
+        fund.pb_ratio, fund.ev_ebitda = 3037.57, 6339.0
+        before = _row(monkeypatch, fund, {"financialCurrency": "USD", "currency": "CLP"})
+        after = dict(before, pb_ratio=None, ev_ebitda=None)
+        report = harness.render_comparison({"SQM-B.SN": before}, {"SQM-B.SN": after})
+        assert "Con score modificado: **0**" in report
+        assert f"Con {harness._METRICS_LABEL} modificado: **2**" in report
+        assert "| SQM-B.SN | pb_ratio | 3037.57 | None | USD/CLP |" in report
