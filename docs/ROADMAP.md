@@ -10,6 +10,29 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## UM-1 (P/B) — Un P/B roto por unidad dejó de puntuar (2026-09-24)
+
+El `priceToBook` del feed sale de 4× a 900× de su valor cuando divide una cifra por
+acción en otra unidad: ADRs de empresas que reportan en otra moneda (TSM 91,4 contra
+13,7; HDB, KB, CIB 0,002, BSBR 0,43), SQM-B.SN (3.037) y BRK-B (0,00096: divide el
+precio B por el valor libro de la acción A). La banda de P/B lo puntuaba tal cual:
+CIB y BSBR cobraban los 5 puntos máximos por un número roto. `_score_valuation` ahora
+lo contrasta con `P/E × ROE`, que no necesita tipo de cambio y queda dentro de
+[0,5 ; 2] del P/B convertido en 164 de 165 equities. Fuera de `[1/3 ; 3]`: si los
+estados comparten moneda con la cotización se reconstruye como `marketCap /
+patrimonio` (BRK-B → 1,50); si no, queda «no medible», con la misma política que
+`fcf_yield`, y la ficha y el prompt lo dicen. Medido con el harness sobre 186
+tickers: **BRK-B 72,3 → 70,3 (sigue BUY), KB 63,8 → 62,8; 0 señales**; HDB, SQM y
+TSM no se mueven porque su P/B roto ya pagaba 0. `ENGINE_VERSION` → tier11,
+`COMMITTEE.prompt_version` → `2026-09-24c`. Oráculo en rojo antes del cambio:
+`tests/test_pb_unit_scoring_oracle.py`, contra el P/B convertido con el FX del día.
+La mitad EV/EBITDA de UM-1 sigue abierta.
+
+Al medir apareció **TEST-CACHE** (BACKLOG): la suite no aísla la caché de datos y
+borra o reescribe filas de `config.DB_PATH`.
+
+---
+
 ## UM-2 — La etiqueta de moneda de los estados podía mentir (2026-09-24)
 
 La guarda de `fcf_yield` y `p_ffo` (serie FCF, #113–#116) compara la etiqueta

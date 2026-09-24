@@ -105,7 +105,14 @@ DB_PATH = DB_DIR / "retirement_advisor.db"
 #                   dos vías sin tipo de cambio (analysis/unit_consistency.py) y el
 #                   yield queda «no medible». PETR4 −2 y VALE3 −1 de score; ninguna
 #                   señal cambia.
-ENGINE_VERSION = "2026.09-tier10"
+#   2026.09-tier11 — UM-1 (P/B): el priceToBook del feed sale de 4× a 900× de su
+#                   valor en ADRs de reportantes extranjeros, en SQM-B.SN y en
+#                   BRK-B (valor libro de la acción A). Se contrasta con P/E × ROE,
+#                   sin tipo de cambio: misma moneda → marketCap/patrimonio (BRK-B
+#                   0,00096 → 1,50, −2); monedas distintas → no medible (TSM, HDB,
+#                   KB −1, SQM; CIB y BSBR pierden la banda máxima que cobraban por
+#                   un P/B de 0,002 y 0,43). Ninguna señal cambia en la caché.
+ENGINE_VERSION = "2026.09-tier11"
 
 
 @dataclass(frozen=True)
@@ -2434,7 +2441,8 @@ class CommitteeConfig:
     # un solo merge con la segunda. 2026-09-24: UM-4 reemplaza la regla «P/B < 0»
     # de los constraints duros por la de patrimonio neto negativo. 2026-09-24b:
     # UM-2 — el FCF yield de una etiqueta de moneda que miente pasa a «no medible».
-    prompt_version: str = "2026-09-24b"
+    # 2026-09-24c: UM-1 — un P/B roto por unidad llega a la IA como «no medible».
+    prompt_version: str = "2026-09-24c"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a

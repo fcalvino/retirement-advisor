@@ -23,7 +23,15 @@ from loguru import logger
 from analysis.moat import MoatAnalyzer, MoatDetail
 from analysis.scoring import ConsistencyDetail, EnhancedScoring, PiotroskiDetail
 from analysis.tailwind import TailwindAnalyzer, TailwindDetail
-from analysis.unit_consistency import contradicted_declared_currency, statement_legs
+from analysis.unit_consistency import (
+    NOT_MEASURABLE,
+    REPLACED,
+    StatementLegs,
+    check_price_to_book,
+    contradicted_declared_currency,
+    statement_legs,
+    statements_currency_relation,
+)
 from analysis.utils import (
     aligned_latest,
     corporate_tax_rate_pct,
@@ -959,7 +967,9 @@ class FundamentalAnalyzer:
         + Enhanced scoring (Consistency + Piotroski)."""
         result.profitability_score = self._score_profitability(info, income_stmt, balance_sheet, result)
         result.health_score = self._score_financial_health(info, balance_sheet, income_stmt, result)
-        result.valuation_score = self._score_valuation(info, result)
+        result.valuation_score = self._score_valuation(
+            info, result, legs=statement_legs(income_stmt, balance_sheet)
+        )
         result.growth_score = self._score_growth(info, income_stmt, cashflow, result)
         result.dividend_score = self._score_dividends(info, result)
 
@@ -1400,7 +1410,13 @@ class FundamentalAnalyzer:
     #  Valuation — 25 pts                                                  #
     # ------------------------------------------------------------------ #
 
-    def _score_valuation(self, info: dict, result: FundamentalResult) -> float:
+    def _score_valuation(
+        self,
+        info: dict,
+        result: FundamentalResult,
+        *,
+        legs: Optional[StatementLegs] = None,
+    ) -> float:
         """Valuation — 25 pts. A multiple the feed does not report scores zero.
 
         Every band here is an upper bound, and the old code fed them
@@ -1483,11 +1499,35 @@ class FundamentalAnalyzer:
         elif ev_ebitda <= T.ev_ebitda_acceptable:
             score += 1
 
-        # P/B (5 pts)
-        pb = reported_positive_metric(info, "priceToBook")
+        # P/B (5 pts). UM-1: el priceToBook del feed puede venir roto por unidad por
+        # acción (ADR de un reportante extranjero, clase de acción). Se contrasta con
+        # P/E × ROE, que no necesita tipo de cambio: misma moneda → se reconstruye
+        # exacto; monedas distintas → no se mide. Ver analysis/unit_consistency.py.
+        legs = legs or StatementLegs()
+        pb_check = check_price_to_book(
+            info, legs, statements_currency_relation(info, legs)
+        )
+        pb = pb_check.value
         result.pb_ratio = pb
+        if pb_check.status == NOT_MEASURABLE:
+            msg = (
+                f"P/B no medible: el del feed ({pb_check.feed:.4g}) no cierra con "
+                f"P/E × ROE ({pb_check.reference:.3g}) y los estados vienen en otra "
+                f"moneda que la cotización; un múltiplo sólo está definido si ambas "
+                f"patas comparten unidad."
+            )
+            logger.warning(msg)
+            result.warnings.append(msg)
+            result.notes["pb_ratio_currency"] = msg
+        elif pb_check.status == REPLACED:
+            result.notes["pb_ratio_source"] = (
+                f"P/B reconstruido como market cap / patrimonio ({pb:.3g}): el del feed "
+                f"({pb_check.feed:.4g}) no cierra con P/E × ROE ({pb_check.reference:.3g})"
+            )
+            logger.info(result.notes["pb_ratio_source"])
         if pb is None:
-            missing.append("P/B")
+            if pb_check.status != NOT_MEASURABLE:
+                missing.append("P/B")
         elif pb <= T.pb_excellent:
             score += 5
         elif pb <= T.pb_good:

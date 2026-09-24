@@ -34,6 +34,20 @@ _DECLARED = {
 }
 
 
+#: UM-1: el múltiplo del feed no cierra con P/E × ROE y los estados vienen en otra
+#: moneda, así que no se puede reconstruir sin tipo de cambio.
+_UNIT = {
+    "pb_ratio": re.compile(
+        r"P/B no medible: el del feed \((\S+)\) no cierra con P/E × ROE \((\S+)\) y los "
+        r"estados vienen en otra moneda que la cotización; un múltiplo sólo está definido "
+        r"si ambas patas comparten unidad\."
+    ),
+}
+
+_LABEL = {"fcf_yield": "FCF yield", "p_ffo": "P/FFO", "pb_ratio": "P/B"}
+_NUMERATOR = {"fcf_yield": "FCF", "p_ffo": "FFO"}
+
+
 def currency_metric_note(fund, metric: str) -> str:
     """Original explanation, also used unchanged as the dashboard tooltip."""
     return (getattr(fund, "notes", None) or {}).get(f"{metric}_currency", "")
@@ -44,22 +58,27 @@ def currency_metric_text(fund, metric: str, *, rationale: bool = False) -> str:
     note = currency_metric_note(fund, metric)
     if not note:
         return ""
-    match = _MISMATCH[metric].fullmatch(note)
-    declared = None if match else _DECLARED[metric].fullmatch(note)
+    match = _MISMATCH[metric].fullmatch(note) if metric in _MISMATCH else None
+    declared = (
+        _DECLARED[metric].fullmatch(note) if not match and metric in _DECLARED else None
+    )
+    unit = _UNIT[metric].fullmatch(note) if metric in _UNIT else None
     if rationale:
-        label = "FCF yield" if metric == "fcf_yield" else "P/FFO"
         if match:
             reason = f"statements in {match[1]}, quote in {match[2]}"
         elif declared:
             reason = f"statements not in the declared {declared[1]}"
+        elif unit:
+            reason = "feed ratio inconsistent with P/E × ROE, statements in another currency"
         else:
             reason = note
-        return f"{label} not measurable: {reason}"
-    numerator = "FCF" if metric == "fcf_yield" else "FFO"
+        return f"{_LABEL[metric]} not measurable: {reason}"
     if match:
-        reason = f"{numerator} en {match[1]}, market cap en {match[2]}"
+        reason = f"{_NUMERATOR[metric]} en {match[1]}, market cap en {match[2]}"
     elif declared:
         reason = f"estados fuera de la moneda declarada, {declared[1]}"
+    elif unit:
+        reason = "el del feed no cierra con P/E × ROE y los estados vienen en otra moneda"
     else:
         reason = note
     return f"no medible ({reason})"
