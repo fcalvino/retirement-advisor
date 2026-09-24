@@ -168,6 +168,10 @@ def measure_symbol(symbol: str, ai_config=None) -> Optional[Dict[str, Any]]:
         # branch, and trees before #114 do not record it at all.
         "fcf_yield": getattr(fund, "fcf_yield", None),
         "p_ffo": getattr(fund, "p_ffo", None),
+        # The unit-consistency series (UM-1) reads these: the two multiples the
+        # feed precomputes and that can come out in the wrong unit per share.
+        "pb_ratio": getattr(fund, "pb_ratio", None),
+        "ev_ebitda": getattr(fund, "ev_ebitda", None),
         "financial_currency": _info_field(symbol, "financialCurrency"),
         "currency": _info_field(symbol, "currency"),
     }
@@ -201,7 +205,8 @@ def measure_all(symbols: List[str], ai_config=None) -> Dict[str, Dict[str, Any]]
 
 _SCORE_FIELDS = ("total_score", "adjusted_score", "profitability", "health",
                  "valuation", "growth", "dividend")
-_MEASURED_METRICS = ("fcf_yield", "p_ffo")
+_MEASURED_METRICS = ("fcf_yield", "p_ffo", "pb_ratio", "ev_ebitda")
+_METRICS_LABEL = "/".join(f"`{m}`" for m in _MEASURED_METRICS)
 
 
 def _delta(new: Any, old: Any) -> Optional[float]:
@@ -258,7 +263,7 @@ def render_comparison(before: Dict[str, Any], after: Dict[str, Any]) -> str:
         for f in _MEASURED_METRICS
         if f in before[s] and f in after[s] and before[s][f] != after[s][f]
     ]
-    lines.append(f"- Con `fcf_yield`/`p_ffo` modificado: **{len(metric_moves)}**\n")
+    lines.append(f"- Con {_METRICS_LABEL} modificado: **{len(metric_moves)}**\n")
 
     if moved:
         lines.append("## Deltas por ticker\n")
@@ -289,7 +294,7 @@ def render_comparison(before: Dict[str, Any], after: Dict[str, Any]) -> str:
             lines.append(f"- **{sym}**: {b} → {a} — {side}")
 
     if metric_moves:
-        lines.append("\n## Métricas bajo medición (`fcf_yield`, `p_ffo`)\n")
+        lines.append(f"\n## Métricas bajo medición ({_METRICS_LABEL})\n")
         lines.append("| Ticker | Métrica | Antes | Después | Monedas (estados/cotización) |")
         lines.append("|---|---|---:|---:|---|")
         for sym, f, b, a in metric_moves:

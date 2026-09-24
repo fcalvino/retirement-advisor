@@ -525,6 +525,10 @@ SECTOR_MAP: Dict[str, List[str]] = {
 # safety near −5000 %, so no `.L` name could ever reach STRONG BUY. Ratios the
 # feed computes itself (trailingPE, priceToBook) already come normalized.
 QUOTE_MINOR_UNITS: Dict[str, int] = {"GBp": 100, "ZAc": 100, "ILA": 100}
+# The major currency of each of those minor units. ``.upper()`` gets GBp right by
+# accident and ZAc/ILA wrong (ZAC, ILA are not ZAR, ILS). Read by
+# ``analysis.unit_consistency`` to compare a quote currency with the statements'.
+QUOTE_MINOR_MAJOR: Dict[str, str] = {"GBp": "GBP", "ZAc": "ZAR", "ILA": "ILS"}
 
 # Asset allocation by age lives with the profiles it depends on — see
 # ``recommended_bond_pct`` below ``OPTIMIZER_PROFILES`` (U5-7).
@@ -1600,6 +1604,33 @@ class DataQualityConfig:
     partial_optimizer_score_haircut: float = 0.95
     universe_poor_pct: float = 10.0
     universe_partial_pct: float = 20.0
+
+
+@dataclass
+class UnitConsistencyConfig:
+    """
+    Chequeo de unidades de los ratios del feed (``analysis/unit_consistency.py``).
+
+    Auditoría ``docs/AUDIT_UNIDADES_MONEDA_2026-09.md``: ``priceToBook`` y
+    ``enterpriseToEbitda`` salen de 4× a 900× de su valor en ADRs de reportantes
+    extranjeros, en SQM-B.SN y en BRK-B, y ``financialCurrency`` miente en PETR4.SA
+    y VALE3.SA. Las dos bandas se midieron sobre 179 equities cacheadas
+    (2026-09-22/23) más CIB y BSBR en vivo:
+
+      ratio_band        — feed / reconstrucción sin tipo de cambio. Los rotos
+                          confirmados quedan en ≥ 4,13× o ≤ 0,24× (BSBR, el más
+                          justo); el legítimo más lejano, en 2,69× (AMT, un REIT)
+                          y 2,13× (INFY). [1/3 ; 3] separa las dos poblaciones sin
+                          falsos positivos en esa muestra.
+      implied_fx_band   — tipo de cambio implícito cotización→estados por
+                          ganancias y por ventas. Fuera de la banda en las dos vías
+                          solo quedan PETR4.SA (7,1 / 6,1) y VALE3.SA (4,6 / 5,7);
+                          con una sola vía caen MRK y FEMSA por ruido de ganancias.
+      enabled           — interruptor de todo el chequeo.
+    """
+    enabled: bool = True
+    ratio_band: Tuple[float, float] = (1.0 / 3.0, 3.0)
+    implied_fx_band: Tuple[float, float] = (0.5, 2.0)
 
 
 @dataclass
@@ -3076,6 +3107,7 @@ OPTIMIZER = OptimizerConfig()
 REPORT = ReportConfig()
 MONTE_CARLO = MonteCarloConfig()
 DATA_QUALITY = DataQualityConfig()
+UNIT_CONSISTENCY = UnitConsistencyConfig()
 ASSET_CLASS = AssetClassConfig()
 SCREENER = ScreenerConfig()
 UNIVERSE = UniverseConfig()
