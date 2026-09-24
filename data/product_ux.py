@@ -2152,6 +2152,14 @@ ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
         "no se usa. Algunos puntajes cambian uno o dos puntos; ninguna "
         "recomendación cambia y no afecta la proyección de tu retiro.",
     ),
+    (
+        "2026.09-tier12",
+        "Lo mismo con el valor de empresa sobre EBITDA (EV/EBITDA): en algunos "
+        "papeles que cotizan en una moneda y reportan en otra —TSMC, SQM, Cemex, "
+        "Equinor— el dato del proveedor salía distorsionado. Ahora, si no cierra "
+        "con el resto de las cifras, no se usa. Ningún puntaje ni recomendación "
+        "cambia y no afecta la proyección de tu retiro.",
+    ),
 )
 
 

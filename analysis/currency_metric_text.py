@@ -42,9 +42,14 @@ _UNIT = {
         r"estados vienen en otra moneda que la cotización; un múltiplo sólo está definido "
         r"si ambas patas comparten unidad\."
     ),
+    "ev_ebitda": re.compile(
+        r"EV/EBITDA no medible: el del feed \((\S+)\) no cierra con el reconstruido desde "
+        r"P/E × ROE \((\S+)\) y los estados vienen en otra moneda que la cotización; un "
+        r"múltiplo sólo está definido si ambas patas comparten unidad\."
+    ),
 }
 
-_LABEL = {"fcf_yield": "FCF yield", "p_ffo": "P/FFO", "pb_ratio": "P/B"}
+_LABEL = {"fcf_yield": "FCF yield", "p_ffo": "P/FFO", "pb_ratio": "P/B", "ev_ebitda": "EV/EBITDA"}
 _NUMERATOR = {"fcf_yield": "FCF", "p_ffo": "FFO"}
 
 

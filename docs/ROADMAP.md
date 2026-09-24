@@ -10,6 +10,27 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## UM-1 (EV/EBITDA) — Un EV/EBITDA roto por unidad dejó de puntuar (2026-09-24)
+
+La otra mitad de UM-1. Con la cotización y los estados en monedas distintas, el
+`enterpriseToEbitda` del feed sale roto en TSM (5,16 contra 26,1 convertido: cobraba
+la banda máxima), SQM-B.SN (6.339 contra 20,3), CEMEXCPO.MX (81,9 contra 7,6) y
+EQNR.OL (23,3 contra 3,3). `_score_valuation` lo contrasta con el EV reconstruido
+como `P/E × ROE × patrimonio + deuda − caja` sobre el EBITDA de los estados, sin
+tipo de cambio, y fuera de `[1/3 ; 3]` queda «no medible». Nunca se reemplaza, y con
+la misma moneda no se chequea: ahí las diferencias contra la reconstrucción son de
+definición de EBITDA (NFLX, RWE.DE, 8058.T), no de unidad. Medido con el harness
+sobre 186 tickers: **0 scores y 0 señales**. SQM, CEMEX y EQNR ya pagaban 0 con
+el número roto, y TSM está en el tope de 100: su score sin tope baja de 110,5 a
+105,5 y sigue 2.º del ranking. **EQNR sigue en HOLD**: su EV/EBITDA verdadero le
+daría 5 puntos, pero medirlo exige un tipo de cambio que el motor no fabrica (la
+decisión de la serie, igual que `FIX_FCF_YIELD_MONEDA.md` §3). `ENGINE_VERSION` →
+tier12, `COMMITTEE.prompt_version` → `2026-09-24d`. Oráculo en rojo antes del
+cambio: `tests/test_ev_ebitda_unit_scoring_oracle.py`. Con esto UM-1 (y
+PB-CURRENCY, que absorbía) queda cerrada.
+
+---
+
 ## UM-1 (P/B) — Un P/B roto por unidad dejó de puntuar (2026-09-24)
 
 El `priceToBook` del feed sale de 4× a 900× de su valor cuando divide una cifra por
@@ -26,7 +47,7 @@ tickers: **BRK-B 72,3 → 70,3 (sigue BUY), KB 63,8 → 62,8; 0 señales**; HDB,
 TSM no se mueven porque su P/B roto ya pagaba 0. `ENGINE_VERSION` → tier11,
 `COMMITTEE.prompt_version` → `2026-09-24c`. Oráculo en rojo antes del cambio:
 `tests/test_pb_unit_scoring_oracle.py`, contra el P/B convertido con el FX del día.
-La mitad EV/EBITDA de UM-1 sigue abierta.
+La mitad EV/EBITDA cerró en el PR siguiente.
 
 Al medir apareció **TEST-CACHE** (BACKLOG): la suite no aísla la caché de datos y
 borra o reescribe filas de `config.DB_PATH`.

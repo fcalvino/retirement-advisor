@@ -27,6 +27,7 @@ from analysis.unit_consistency import (
     NOT_MEASURABLE,
     REPLACED,
     StatementLegs,
+    check_ev_ebitda,
     check_price_to_book,
     contradicted_declared_currency,
     statement_legs,
@@ -1487,11 +1488,27 @@ class FundamentalAnalyzer:
         elif peg <= T.peg_acceptable:
             score += 2
 
-        # EV/EBITDA (5 pts)
-        ev_ebitda = reported_positive_metric(info, "enterpriseToEbitda")
+        # EV/EBITDA (5 pts). UM-1: con monedas distintas el feed puede mezclar
+        # unidades (TSM, SQM-B.SN, CEMEXCPO.MX, EQNR.OL). Se contrasta con el EV de
+        # P/E × ROE × patrimonio; roto → no medible, nunca reemplazado.
+        legs = legs or StatementLegs()
+        relation = statements_currency_relation(info, legs)
+        ev_check = check_ev_ebitda(info, legs, relation)
+        ev_ebitda = ev_check.value
         result.ev_ebitda = ev_ebitda
+        if ev_check.status == NOT_MEASURABLE:
+            msg = (
+                f"EV/EBITDA no medible: el del feed ({ev_check.feed:.4g}) no cierra con "
+                f"el reconstruido desde P/E × ROE ({ev_check.reference:.3g}) y los "
+                f"estados vienen en otra moneda que la cotización; un múltiplo sólo "
+                f"está definido si ambas patas comparten unidad."
+            )
+            logger.warning(msg)
+            result.warnings.append(msg)
+            result.notes["ev_ebitda_currency"] = msg
         if ev_ebitda is None:
-            missing.append("EV/EBITDA")
+            if ev_check.status != NOT_MEASURABLE:
+                missing.append("EV/EBITDA")
         elif ev_ebitda <= T.ev_ebitda_excellent:
             score += 5
         elif ev_ebitda <= T.ev_ebitda_good:
@@ -1503,10 +1520,7 @@ class FundamentalAnalyzer:
         # acción (ADR de un reportante extranjero, clase de acción). Se contrasta con
         # P/E × ROE, que no necesita tipo de cambio: misma moneda → se reconstruye
         # exacto; monedas distintas → no se mide. Ver analysis/unit_consistency.py.
-        legs = legs or StatementLegs()
-        pb_check = check_price_to_book(
-            info, legs, statements_currency_relation(info, legs)
-        )
+        pb_check = check_price_to_book(info, legs, relation)
         pb = pb_check.value
         result.pb_ratio = pb
         if pb_check.status == NOT_MEASURABLE:
