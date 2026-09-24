@@ -73,7 +73,10 @@ archivo tiene que nombrar estas y ninguna cerrada:
 
 | id | banda | qué |
 |---|---|---|
-| **PB-CURRENCY** | 1 | Investigar `priceToBook` del feed entre monedas (CIB/BSBR); solución y oráculo pendientes. Ver bloque 2 y `FIX_FCF_YIELD_MONEDA.md` §4 |
+| **UM-1** | 1 | P/B y EV/EBITDA del feed rotos por unidad por acción (ADRs de reportantes extranjeros, SQM-B.SN, BRK-B, CIB/BSBR); EQNR.OL cambia de señal. Absorbe PB-CURRENCY. Ver bloque 2 y `AUDIT_UNIDADES_MONEDA_2026-09.md` |
+| **UM-2** | 1 | `financialCurrency` miente (PETR4.SA/VALE3.SA): la guarda de `fcf_yield` no dispara, yield 5× más bajo. Precondición de cualquier guarda de UM-1 |
+| **UM-3** | 4 | Montos en moneda local impresos con `$` en la ficha y en el prompt de decisión (Toyota llega al LLM como `$35821.5B`) |
+| **UM-4** | 5 | Bloqueo `P/B < 0` inalcanzable (`strategy.py:632`); lo cubre `apply_negative_equity_policy` |
 | **U5-1b** | 3 | Recalibrar Piotroski vs moat. Bloqueado: n=11 orgánico a 30 días, o hasta PIT-1/PIT-2 (evidencia sintética a 1 año) |
 | **PIT-1** | 2 | Medir los outcomes del backtesting point-in-time vía yfinance y escribir las 8 columnas de `synthetic_recommendation`. Bloquea a U5-1b. Alcance abierto (`AskUserQuestion`) |
 | **PIT-2** | 3 | Correr el volumen amplio y exponer la evidencia (F-Score vs retorno forward) en una lectura — hoy no la lee nadie |
@@ -169,6 +172,27 @@ elegir una corrección; ni conversión ni contraste entre campos del mismo feed
 están validados como solución. Evidencia: [`FIX_FCF_YIELD_MONEDA.md`](FIX_FCF_YIELD_MONEDA.md)
 §4; límites de la serie cerrada en `CONTEXT.md` §8.
 
+> **2026-09-24 — alcance revalidado y oráculo definido:** PB-CURRENCY queda
+> absorbida por **UM-1** (abajo). Ver [`AUDIT_UNIDADES_MONEDA_2026-09.md`](AUDIT_UNIDADES_MONEDA_2026-09.md).
+
+**UM-1 — P/B y EV/EBITDA del feed rotos por unidad por acción (abierto 2026-09-24).**
+El feed convierte bien la mayoría de los listados locales (21 de 28 con desajuste
+de moneda están en banda); se rompe en ADRs de reportantes extranjeros, en
+SQM-B.SN y en una clase de acción. Contra un oráculo que recomputa desde
+`marketCap` + estados + FX: SQM-B.SN P/B 854× y EV/EBITDA 313×, TSM P/B 6,7×,
+HDB 6,6×, KB 4,3×, BRK-B P/B 0,00096 (valor libro por acción A), CEMEXCPO.MX
+EV/EBITDA 10,8×, EQNR.OL 7,0×; más CIB/BSBR del 2026-09-10. **Medido: EQNR.OL
+HOLD→BUY al corregir**; 6 scores se mueven −2…+5. Anular a `None` castiga a
+BRK-B (BUY→HOLD). Oráculo propuesto en el informe; bandas sin guarda en
+`analysis/fundamental.py:1462-1483`.
+
+**UM-2 — `financialCurrency` miente (abierto 2026-09-24).** PETR4.SA y
+VALE3.SA dicen BRL y sus estados vienen en USD, así que la guarda de
+`fcf_yield` (que compara etiquetas) no dispara: 2,44 % publicado contra
+12,44 % real (PETR4), 0,92 % contra 4,68 % (VALE3). No cambia señales hoy
+(+1 y +2 de score), pero **toda guarda basada en la etiqueta hereda el
+agujero**, incluida la que se escriba para UM-1 — resolverlo antes o junto.
+
 **U6-1** cerró el 2026-08-29. La fila llamaba «inventado» al proxy del
 optimizer; medido sobre 149 equities, resultó ser lo contrario de inventado y
 peor de lo que decía a la vez: el score **sí** predice el CAGR (p < 0,0001, con
@@ -240,6 +264,13 @@ Fuente vacío es ninguna fila. Ver `ROADMAP.md`.
   se consulta. Sumado a que `_verdict_to_dict` **siempre** escribe `action` y
   `_set_cached` está gateado por `complete`, ese default es código defensivo
   muerto. No hacía falta ninguna base con caché vieja para confirmarlo.
+- **UM-3** (2026-09-24): `analysis/prompts.py:516/534`,
+  `dashboard/views/2_Stock_Analysis.py:221/672/680`, `analysis/fundamental.py:1350` y
+  `analysis/strategy.py:668` anteponen `$` a montos en moneda de cotización o de estados.
+  90 de 186 tickers cacheados no cotizan en USD. No mueve el score; sí lo que lee el LLM.
+- **UM-4** (2026-09-24): `strategy.py:632` bloquea `pb_ratio < 0`, pero
+  `reported_positive_metric` ya convirtió todo ≤ 0 en `None`. El patrimonio negativo
+  lo cubre `apply_negative_equity_policy`; la rama es código muerto que aparenta protección.
 - **PIT-TOOLS (prerrequisito para reabrir ReAct en el comité)**: `get_news` y
   `MacroRagStore.retrieve` no aceptan `as_of` — leen el reloj real, así que una
   tool que los exponga filtraría datos posteriores a la fecha de análisis y
