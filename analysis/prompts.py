@@ -276,8 +276,7 @@ def _hard_decision_constraints_block(fund, tech) -> str:
 
     de = getattr(fund, "debt_equity", None)
     de_s = f"{de:.2f}" if de is not None else "N/A"
-    pb = getattr(fund, "pb_ratio", None)
-    pb_s = f"{pb:.2f}" if pb is not None else "N/A"
+    neg_equity_s = "sí" if getattr(fund, "negative_equity", False) else "no"
     adj = float(getattr(fund, "adjusted_score", 0.0) or 0.0)
     base = float(getattr(fund, "total_score", 0.0) or 0.0)
     rsi = getattr(tech, "rsi_weekly", None)
@@ -288,7 +287,7 @@ def _hard_decision_constraints_block(fund, tech) -> str:
     return f"""
 --- CONSTRAINTS DUROS DEL MOTOR RULE-BASED (obligatorios) ---
 - D/E actual = {de_s}. Si D/E > {max_de:.1f} → no BUY ni STRONG BUY (máx HOLD/REDUCE/SELL).
-- P/B actual = {pb_s}. Si P/B < 0 → no BUY (riesgo de insolvencia / equity negativo).
+- Patrimonio neto negativo = {neg_equity_s}. Si es sí → máx HOLD (D/E indefinido, apalancamiento no verificable).
 - Parabólico: +100% vs 52w low y RSI weekly > 80 → no BUY (RSI={rsi_s}, vs_52w_low={vs_low:+.0f}%).
 - Umbrales score rule-based: STRONG≥{S.strong_buy_score:.0f}, BUY≥{S.buy_score:.0f}, HOLD≥{S.hold_score:.0f}.
 - Score a usar en el razonamiento: ADJUSTED = {adj:.1f} (base total_score = {base:.1f}). Priorizá adjusted.

@@ -76,7 +76,6 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **UM-1** | 1 | P/B y EV/EBITDA del feed rotos por unidad por acción (ADRs de reportantes extranjeros, SQM-B.SN, BRK-B, CIB/BSBR); EQNR.OL cambia de señal. Absorbe PB-CURRENCY. Ver bloque 2 y `AUDIT_UNIDADES_MONEDA_2026-09.md` |
 | **UM-2** | 1 | `financialCurrency` miente (PETR4.SA/VALE3.SA): la guarda de `fcf_yield` no dispara, yield 5× más bajo. Precondición de cualquier guarda de UM-1 |
 | **UM-3** | 4 | Montos en moneda local impresos con `$` en la ficha y en el prompt de decisión (Toyota llega al LLM como `$35821.5B`) |
-| **UM-4** | 5 | Bloqueo `P/B < 0` inalcanzable (`strategy.py:632`); lo cubre `apply_negative_equity_policy` |
 | **U5-1b** | 3 | Recalibrar Piotroski vs moat. Bloqueado: n=11 orgánico a 30 días, o hasta PIT-1/PIT-2 (evidencia sintética a 1 año) |
 | **PIT-1** | 2 | Medir los outcomes del backtesting point-in-time vía yfinance y escribir las 8 columnas de `synthetic_recommendation`. Bloquea a U5-1b. Alcance abierto (`AskUserQuestion`) |
 | **PIT-2** | 3 | Correr el volumen amplio y exponer la evidencia (F-Score vs retorno forward) en una lectura — hoy no la lee nadie |
@@ -142,7 +141,7 @@ para todo Agresivo, a toda edad, en dos superficies — y de paso el mismo `advi
 calificaba la concentración con los topes globales mientras el Optimizer usaba los
 del perfil, así que las dos pantallas se contradecían — ver `ROADMAP.md`).
 Fuera de las oleadas 3–7,
-**U0-2**, **N6c**, **N9**, **U0-3**, **N4**, **N8**, **N7**, **U3-1b**, **U5-19**, **U7-1**, **U7-2**, **N2b** y **N3** también cerraron — ver `ROADMAP.md`.
+**U0-2**, **N6c**, **N9**, **U0-3**, **N4**, **N8**, **N7**, **U3-1b**, **U5-19**, **U7-1**, **U7-2**, **N2b**, **N3** y **UM-4** también cerraron — ver `ROADMAP.md`.
 
 ---
 
@@ -268,9 +267,6 @@ Fuente vacío es ninguna fila. Ver `ROADMAP.md`.
   `dashboard/views/2_Stock_Analysis.py:221/672/680`, `analysis/fundamental.py:1350` y
   `analysis/strategy.py:668` anteponen `$` a montos en moneda de cotización o de estados.
   90 de 186 tickers cacheados no cotizan en USD. No mueve el score; sí lo que lee el LLM.
-- **UM-4** (2026-09-24): `strategy.py:632` bloquea `pb_ratio < 0`, pero
-  `reported_positive_metric` ya convirtió todo ≤ 0 en `None`. El patrimonio negativo
-  lo cubre `apply_negative_equity_policy`; la rama es código muerto que aparenta protección.
 - **PIT-TOOLS (prerrequisito para reabrir ReAct en el comité)**: `get_news` y
   `MacroRagStore.retrieve` no aceptan `as_of` — leen el reloj real, así que una
   tool que los exponga filtraría datos posteriores a la fecha de análisis y

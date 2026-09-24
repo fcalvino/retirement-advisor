@@ -241,3 +241,56 @@ class TestDecisionIsCapped:
             decision = Decision(symbol="MCD", action=action, confidence="HIGH")
             out = apply_negative_equity_policy(decision, _fund(negative=True))
             assert out.action == action
+
+
+# --------------------------------------------------------------------------- #
+#  UM-4 — una sola política: el patrimonio negativo capa, no bloquea          #
+# --------------------------------------------------------------------------- #
+
+class TestUnaSolaPoliticaDePatrimonioNegativo:
+    """UM-4 (``docs/AUDIT_UNIDADES_MONEDA_2026-09.md``).
+
+    ``_check_safety_blocks`` tenía una rama ``pb_ratio < 0`` → AVOID con el motivo
+    «potential insolvency risk». El pipeline nunca la alcanza —``pb_ratio`` sale
+    de ``reported_positive_metric``, que convierte todo valor ≤ 0 en ``None``—, y
+    si la alcanzara contradiría la decisión de P1-3: el patrimonio negativo no es
+    insolvencia (es el residuo contable de años de recompras), así que **capa a
+    HOLD y no bloquea**. Una misma empresa no puede tener dos veredictos según
+    cómo llegue expresado el dato.
+    """
+
+    @pytest.mark.parametrize("reported_pb", [-2.5, -0.01, 0.0])
+    def test_el_feed_no_puede_entregar_un_pb_no_positivo(self, reported_pb):
+        """Por qué la rama era inalcanzable: el único productor la filtra."""
+        result = FundamentalResult(symbol="TEST")
+        FundamentalAnalyzer()._score_valuation(_info(priceToBook=reported_pb), result)
+        assert result.pb_ratio is None
+
+    def test_patrimonio_negativo_capa_a_hold_aunque_llegue_como_pb_negativo(self):
+        fund = _fund(negative=True)
+        fund.pb_ratio = -1.5
+        decision = RetirementStrategy().decide(fund, _tech())
+        assert decision.blocked is False
+        assert decision.action == "HOLD"
+
+    def test_el_llm_tampoco_ve_un_bloqueo_que_la_politica_no_tiene(self):
+        fund = _fund(negative=True)
+        fund.pb_ratio = -1.5
+        llm = Decision(symbol="MCD", action="STRONG BUY", confidence="HIGH")
+        out = apply_safety_overlay(llm, fund, _tech())
+        assert out.blocked is False
+        assert out.action == "HOLD"
+
+    def test_el_prompt_nombra_la_regla_que_el_motor_aplica(self):
+        """El bloque de constraints le decía a la IA «P/B < 0 → no BUY», una regla
+        que el motor no puede disparar. Tiene que nombrar la que sí aplica."""
+        from analysis.prompts import _hard_decision_constraints_block
+
+        fund = _fund(negative=True)
+        block = _hard_decision_constraints_block(fund, _tech())
+        assert "P/B < 0" not in block
+        assert "Patrimonio neto negativo" in block
+        assert "máx HOLD" in block
+
+        healthy = _hard_decision_constraints_block(_fund(negative=False), _tech())
+        assert "Patrimonio neto negativo = no" in healthy
