@@ -78,6 +78,11 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **U5-1b** | 3 | Recalibrar Piotroski vs moat. Bloqueado: n=11 orgánico a 30 días, o hasta PIT-1/PIT-2 (evidencia sintética a 1 año) |
 | **PIT-1** | 2 | Medir los outcomes del backtesting point-in-time vía yfinance y escribir las 8 columnas de `synthetic_recommendation`. Bloquea a U5-1b. Alcance abierto (`AskUserQuestion`) |
 | **PIT-2** | 3 | Correr el volumen amplio y exponer la evidencia (F-Score vs retorno forward) en una lectura — hoy no la lee nadie |
+| **LLM-1** | 1 | El dictamen del comité no pasa por `apply_safety_overlay`: ADBE salió BUY dos días con el motor en HOLD por el veto técnico, y las dos filas están en el track record. Ver bloque 2 |
+| **LLM-2** | 3 | El comité registra `total_score` donde el resto registra `adjusted_score` (brecha mediana 25 pts) y no filtra moneda ni feed vacío. Son 5 de los 11 outcomes reales. Ver bloque 4 |
+| **LLM-4** | 3 | El banco de eval tiene 6 casos de 2026-07-11, corre sólo en replay y no cubre el moat con IA, que mueve el score. Ver bloque 4 |
+| **LLM-3** | 4 | Los titulares del feed entran al prompt del Abogado del Diablo como hechos, sin delimitar. Ver bloque 4 |
+| **LLM-5** / **LLM-6** | 5 | HTML de la narrativa del plan sin escapar; ninguna llamada registra tokens ni costo. Ver bloque 4 |
 
 Cerradas: **Asistente de gap** (`5eed792`, 2026-08-15 — la fila decía "falta la
 superficie" sobre una superficie que ya estaba en producción: el consejo de
@@ -174,6 +179,8 @@ están validados como solución. Evidencia: [`FIX_FCF_YIELD_MONEDA.md`](FIX_FCF_
 > tier12 (EV/EBITDA). Ver [`ROADMAP.md`](ROADMAP.md) y
 > [`AUDIT_UNIDADES_MONEDA_2026-09.md`](AUDIT_UNIDADES_MONEDA_2026-09.md).
 
+**LLM-1 — el comité no pasa por el overlay de seguridad (abierto 2026-09-25).** `CommitteeVerdict.to_decision` (`analysis/committee.py:172-200`) arma la decisión con la acción del voto ponderado y `dashboard/views/15_Comite.py:128-138` la registra; la decisión de una sola llamada, en cambio, pasa por `apply_safety_overlay` (`analysis/ai_analyzer.py:246`, `:261`), que es lo que hace cumplir SIGNAL-1 («el LLM puede ser más prudente que la escalera, nunca menos»). Por construcción, con el caso dorado `quality_compounder_buy` y D/E 4,0: el motor da AVOID y el comité, con todos los votos en BUY, registra BUY. En producción pasó dos veces: ADBE BUY del comité (ids 1022 y 1179, 15 y 16/09) contra HOLD del motor por `require_technical_uptrend`. Es el único caso en 25 pares en que el comité fue más optimista que el motor; los otros 23 son más prudentes. **Decisión abierta** antes del fix: pisar la acción del comité contra `decide()` o registrarla marcada como opinión. Evidencia y oráculo: [`AUDIT_LLM_2026-09.md`](AUDIT_LLM_2026-09.md).
+
 **U6-1** cerró el 2026-08-29. La fila llamaba «inventado» al proxy del
 optimizer; medido sobre 149 equities, resultó ser lo contrario de inventado y
 peor de lo que decía a la vez: el score **sí** predice el CAGR (p < 0,0001, con
@@ -231,7 +238,8 @@ Fuente vacío es ninguna fila. Ver `ROADMAP.md`.
   tiraba antes de juntarse. **No escribir el agregador todavía**: el cuello de
   botella es volumen de uso, no herramienta (al 2026-09-21 hay 3 corridas
   orgánicas, todas `quorum=100% failures=[]`). Reactivar con ≥200 `analyze`
-  orgánicos registrados; ahí, si la tasa de `failures=` no vacío supera ~5 % o
+  orgánicos registrados (al 2026-09-25: 15, todos `quorum=100% failures=[]`, ver
+  `AUDIT_LLM_2026-09.md`); ahí, si la tasa de `failures=` no vacío supera ~5 % o
   aparece algún `quorum<50%` no inyectado, se revisa el 50 %. Ojo: la nota de
   `config.py` avisa que la propiedad del 50 % **no se hereda** si cambian los
   `vote_weights` — tocar uno obliga a re-verificar el otro.
@@ -245,6 +253,11 @@ Fuente vacío es ninguna fila. Ver `ROADMAP.md`.
   se consulta. Sumado a que `_verdict_to_dict` **siempre** escribe `action` y
   `_set_cached` está gateado por `complete`, ese default es código defensivo
   muerto. No hacía falta ninguna base con caché vieja para confirmarlo.
+- **LLM-2** (2026-09-25): el comité escribe en el track record con otra regla que el resto. Guarda `total_score` (`analysis/committee.py:181`) donde los demás guardan `adjusted_score` (`analysis/strategy.py:176-184`): sobre los 25 pares comité–motor del mismo día la brecha mediana es 25 puntos, en la columna que se usa para calibrar umbrales. Tampoco aplica los filtros del Screener (`dashboard/shared.py:1941-1944` moneda, `:2162` feed vacío): AIR.PA y NOVN.SW (ids 1507, 1509) están registradas, igual que ABVE con score 0 (id 1021) y una fila con símbolo `BTC-USD — BITCOIN` (id 1350). Son 5 de los 11 outcomes reales. `dashboard/views/2_Stock_Analysis.py:160-170` tampoco filtra moneda (0 filas no-USD hoy).
+- **LLM-3** (2026-09-25): `_headlines_lines` (`analysis/committee_prompts.py:297-307`) mete título y resumen del feed bajo «usalos como hechos» y sin delimitador. Un titular con una instrucción llega textual al prompt del Abogado del Diablo (OWASP LLM01, inyección indirecta). **No medido**: si un modelo la obedece — eso es un eval en vivo, con presupuesto aparte.
+- **LLM-4** (2026-09-25): el banco de eval (`analysis/eval_cases.py`, 6 casos) no se tocó desde `5fb471c` (2026-07-11); 29 commits en prompts y capa de IA desde entonces. Corre sólo en replay (`analysis/eval_harness.py:246-251`), no guarda corridas en vivo y cubre 2 de 11 superficies: sin casos para el moat con IA —la única fuera del banco que mueve el score—, cripto, no-USD, voto vacío ni titular adversarial.
+- **LLM-5** (2026-09-25, cosmético/seguridad): `dashboard/views/12_Plan.py:826-839` interpola `factor`/`why`/`severity` del modelo en HTML sin escapar. Si Streamlit ejecuta algo en ese contexto no está verificado.
+- **LLM-6** (2026-09-25): ninguna llamada registra tokens ni costo (OWASP LLM10); el comité hace 5–6 llamadas por ticker.
 - **PORTFOLIO-CCY** (2026-09-24, visto al cerrar UM-3): el formulario «➕ Agregar al
   Portfolio» de `dashboard/views/2_Stock_Analysis.py` precarga `fund.current_price` en un
   campo rotulado «Costo promedio (USD)» y `Portfolio.add_position` lo guarda como tal. Para
