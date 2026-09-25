@@ -83,7 +83,7 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **LLM-3** | 4 | Los titulares del feed entran al prompt del Abogado del Diablo como hechos, sin delimitar. Ver bloque 4 |
 | **LLM-5** / **LLM-6** | 5 | HTML de la narrativa del plan sin escapar; ninguna llamada registra tokens ni costo. Ver bloque 4 |
 
-Cerradas: **LLM-1** (2026-09-25, decisión híbrida: el comité registra la acción limitada por `apply_safety_overlay` y la UI muestra el voto crudo; oráculo `tests/test_committee_overlay_oracle.py`), **Asistente de gap** (`5eed792`, 2026-08-15 — la fila decía "falta la
+Cerradas: **EMPTY-FEED-SA** (2026-09-25, QA manual en la app: Stock Analysis y Watchlist publicaban un ticker sin datos —inexistente o sin red— como SELL y Stock Analysis lo registraba en el track record; ahora usan `is_empty_feed` como el Screener, y el símbolo manual se valida antes de descargar; oráculo `tests/test_empty_feed_pages_oracle.py`), **LLM-1** (2026-09-25, decisión híbrida: el comité registra la acción limitada por `apply_safety_overlay` y la UI muestra el voto crudo; oráculo `tests/test_committee_overlay_oracle.py`), **Asistente de gap** (`5eed792`, 2026-08-15 — la fila decía "falta la
 superficie" sobre una superficie que ya estaba en producción: el consejo de
 ahorro en la card "🎯 Resultados por meta" de `7_Simulaciones.py` ya llama a
 `monthly_savings_for_probability`/`cached_goal_savings_target` y muestra "Para

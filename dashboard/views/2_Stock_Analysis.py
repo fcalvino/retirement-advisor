@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import plotly.graph_objects as go
 import streamlit as st
+from loguru import logger
 
 from analysis.currency_metric_text import currency_metric_note
 from analysis.fundamental import eps_growth_label
@@ -23,7 +24,7 @@ from dashboard.shared import (
     render_ai_badge,
     render_calc_badge,
 )
-from data.preferences import UserPreferences
+from data.preferences import UserPreferences, is_valid_ticker_symbol
 from data.product_ux import (
     FAST_MA_SHORT,
     MID_MA_SHORT,
@@ -37,6 +38,7 @@ from data.product_ux import (
     technical_signal_label,
     with_currency,
 )
+from data.screener_store import is_empty_feed
 from portfolio.tracker import Portfolio
 
 # Display labels make crypto searchable by full name (Bitcoin, Ethereum…)
@@ -150,6 +152,13 @@ if _selected and _selected != _target:
 
 symbol = _target
 
+if symbol and not is_valid_ticker_symbol(symbol):
+    st.error(
+        f"«{symbol}» no tiene forma de ticker: usá letras, números, «.» o «-» "
+        "(ej: MSFT, BRK-B, 7203.T)."
+    )
+    st.stop()
+
 if symbol:
     st.session_state["sa_last_symbol"] = symbol
     ai_cfg = _get_ai_config()
@@ -157,6 +166,18 @@ if symbol:
         fund, tech, decision = cached_full_analysis(
             symbol, ai_cfg.provider, ai_cfg.model, ai_cfg.enabled, ai_cfg.api_key
         )
+
+    # EMPTY-FEED-SA: sin precio y sin datos, el motor cae en la banda más baja y
+    # sale SELL. Es una descarga fallida, no un veredicto: no se muestra ni se
+    # registra en el track record (la misma regla que el Screener).
+    if is_empty_feed(fund):
+        logger.warning(f"Stock Analysis: {symbol} — el proveedor no devolvió datos")
+        st.error(
+            f"No hay datos para **{symbol}**: el proveedor no devolvió precio ni datos "
+            "de la empresa. ¿Ticker mal escrito, deslistado o sin conexión? "
+            "No se emite recomendación ni se registra en el Track Record."
+        )
+        st.stop()
 
     # Track record capture (Gran Salto, Fase 1) — dedupe protects against reruns.
     try:
