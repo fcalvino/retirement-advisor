@@ -420,6 +420,18 @@ class AlertConfig:
     smtp_port: int = int(os.getenv("SMTP_PORT", "587"))
     smtp_password: str = os.getenv("SMTP_PASSWORD", "")
 
+    @property
+    def email_ready(self) -> bool:
+        """SMTP-GUARD: email is on *and* has everything a send needs.
+
+        ``email_enabled`` only reads ``EMAIL_FROM``; with ``SMTP_PASSWORD`` empty
+        the notifier used to log in anyway (535 from Gmail) although
+        ``config_validator`` already reports the config as incomplete.
+        """
+        return bool(
+            self.email_enabled and self.email_from and self.email_to and self.smtp_password
+        )
+
     telegram_enabled: bool = bool(os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN"))
     telegram_token: str = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN", "")
     telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "")

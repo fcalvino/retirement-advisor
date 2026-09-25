@@ -71,15 +71,19 @@ def _markdown_to_html(text: str) -> str:
 class Notifier:
     def send(self, message: str, title: str = "Retirement Advisor Alert") -> None:
         """Dispatch alert through all enabled channels."""
-        if ALERTS.email_enabled:
+        if ALERTS.email_ready:
             self._send_email(title, message)
+        elif ALERTS.email_enabled:
+            logger.warning("Email alert skipped — configuración de email incompleta (ver config_validator)")
         if ALERTS.telegram_enabled:
             self._send_telegram(f"*{title}*\n\n{message}")
 
     def send_report(self, pdf_path: str, title: str = "Retirement Advisor — Reporte mensual") -> None:
         """Send email with PDF attached. Telegram gets a text-only notification."""
-        if ALERTS.email_enabled:
+        if ALERTS.email_ready:
             self._send_email_with_attachment(title, pdf_path)
+        elif ALERTS.email_enabled:
+            logger.warning("Report email skipped — configuración de email incompleta (ver config_validator)")
         if ALERTS.telegram_enabled:
             self._send_telegram(
                 f"📄 *{title}*\n\nEl reporte mensual fue generado y enviado por email."
