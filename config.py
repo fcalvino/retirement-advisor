@@ -812,6 +812,20 @@ class AIFallbackConfig:
         """Short badge/caption label. Unknown causes degrade to the generic one."""
         return self.labels.get(cause, self.labels[self.OTRO])
 
+    #: UX-QA: the chat has no rule-based verdict to fall back on, so the
+    #: `messages` above (which say "el motor calculó el veredicto") don't fit.
+    #: Only a transient cause is worth retrying.
+    chat_retryable: tuple = (RATE_LIMIT, RESPUESTA_TRUNCADA, RESPUESTA_VACIA, OTRO)
+
+    def chat_message(self, cause: str) -> str:
+        """Chat answer when the model call failed, naming the cause."""
+        hint = (
+            "Probá de nuevo en unos minutos."
+            if cause in self.chat_retryable
+            else "Revisá la configuración de IA en ⚙️ Settings."
+        )
+        return f"No pude redactar la respuesta: {self.label(cause)}. {hint}"
+
     def message(self, cause: str, provider: str) -> str:
         """Full sentence for the UI, always naming the *configured* provider."""
         template = self.messages.get(cause, self.messages[self.OTRO])

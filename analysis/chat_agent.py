@@ -29,7 +29,7 @@ from loguru import logger
 
 from analysis.chat_tools import Tool, build_default_registry, registry_spec
 from analysis.utils import extract_json_object
-from config import CHAT
+from config import AI_FALLBACK, CHAT
 
 LLMCall = Callable[[str], str]
 
@@ -148,7 +148,9 @@ class ChatAgent:
         try:
             return self._call_fn(prompt).strip()
         except Exception as exc:
+            from analysis.ai_analyzer import classify_ai_failure
+
             logger.error(f"chat narration failed — {exc}")
             if data.get("error"):
                 return f"No pude completar la consulta: {data['error']}"
-            return "Hubo un problema al redactar la respuesta. Probá de nuevo."
+            return AI_FALLBACK.chat_message(classify_ai_failure(exc))

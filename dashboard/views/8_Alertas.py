@@ -68,6 +68,13 @@ with tab_run:
 
     with col_run:
         st.subheader("🔍 Análisis de alertas")
+        if ALERTS.email_enabled and not ALERTS.email_ready:
+            # SMTP-GUARD saltea el envío; sin esto la corrida no decía nada.
+            st.warning(
+                "Configuración de email incompleta (falta remitente, destinatario o "
+                "SMTP_PASSWORD en .env): las alertas no se enviarán por email.",
+                icon="✉️",
+            )
         st.caption(
             "Analiza el universo completo contra el estado guardado y dispara "
             "alertas si se detectan cambios significativos. "
