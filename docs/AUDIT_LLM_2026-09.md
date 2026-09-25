@@ -79,7 +79,7 @@ y las guías de evaluación de
 | # | Superficie | Llamada | Qué hace el motor con la salida | Guarda determinista | Caso dorado |
 |---|---|---|---|---|---|
 | 1 | Decisión por ticker | `analysis/ai_analyzer.py:243` | acción + confianza; track record `source=ai` | `apply_safety_overlay` (`:246`, `:261`) | sí (6) |
-| 2 | Comité por ticker | `analysis/committee.py:830` | acción por voto ponderado; track record `source=committee` | **ninguna** (LLM-1) | sí, vía `CommitteeProvider` |
+| 2 | Comité por ticker | `analysis/committee.py:830` | acción por voto ponderado; track record `source=committee` | `apply_safety_overlay` en `to_decision` (LLM-1, cerrado) | sí, vía `CommitteeProvider` |
 | 3 | Comité sobre la cartera | `analysis/committee.py:908-915` | dictamen en pantalla; no se registra | no aplica (no hay acción del motor) | no |
 | 4 | Moat con IA (equity) | `analysis/moat.py:375` | tramo 0–8 que entra al `adjusted_score` vía `moat_bonus` | tope `MOAT.max_bonus`, caché 7 días | **no** |
 | 5 | Moat con IA (cripto) | `analysis/crypto_analyzer.py:429` | `moat_bonus` en el score cripto | tope `CRYPTO_MOAT.max_bonus` | no |
@@ -99,7 +99,23 @@ motor.
 
 ## Hallazgos
 
-### LLM-1 — El comité no pasa por el overlay de seguridad (banda 1: cambia una decisión)
+### LLM-1 — El comité no pasa por el overlay de seguridad (banda 1: cambia una decisión) — **cerrado 2026-09-25**
+
+> **Cierre.** Decisión: **híbrida**. `CommitteeVerdict.to_decision(fund, tech)` pasa la
+> decisión por `apply_safety_overlay`, igual que el camino de una sola llamada, y la página
+> del Comité registra esa decisión limitada. `verdict.action` conserva el voto crudo: el
+> banner lo sigue mostrando, y cuando el motor lo limitó aparece un aviso con la acción
+> registrada y el motivo. Por qué: (1) el contrato de `config.py` («más prudente, nunca
+> menos») es un límite de admisibilidad, y la opción B (guardar la opinión cruda) lo
+> dejaba en el track record; (2) `hit_rate_by_source`
+> (`analysis/track_record_scorer.py`) compara `committee` contra `ai`, y `ai` ya se registra
+> post-overlay: con B la comparación mezclaba escalas, y calificar la acción del motor bajo
+> `source=committee` la vaciaba; (3) no hay cambio de esquema, las filas históricas (1022,
+> 1179) no se reescriben y el cambio se revierte con un commit. Qué se pierde: el hit rate
+> de la opinión cruda del comité cuando es más optimista que el motor; si hace falta, es
+> una columna nueva, no un cambio de esta acción. Oráculo:
+> `tests/test_committee_overlay_oracle.py` (rojo antes del fix en los 4 casos).
+
 
 `CommitteeVerdict.to_decision` (`analysis/committee.py:172-200`) arma el `Decision` con la
 acción del voto ponderado y nada más; `dashboard/views/15_Comite.py:128-138` lo registra en el
@@ -170,8 +186,7 @@ input from external sources, such as websites or files»).
 **No medido**: si algún modelo del catálogo obedece la instrucción. Requiere una llamada real
 y queda fuera de esta auditoría. El techo del daño, en cambio, sí se lee en el código: el
 Abogado del Diablo pesa 0,7 sobre un panel de 3,8 (4,4 con la voz de dividendo;
-`config.py:2432-2439`), y hoy su voto entra al
-track record sin overlay (LLM-1).
+`config.py:2432-2439`); desde LLM-1 su voto entra al track record ya limitado por el overlay.
 
 ### LLM-4 — El banco de evaluación no sigue al código (banda 3)
 
@@ -242,7 +257,7 @@ esa medición y no se puede reconstruir.
 | LLM-5 | Test de que los campos de `macro_risks` se escapan antes de entrar al HTML. |
 | LLM-6 | Test de que cada llamada deja una línea de log con tokens de entrada, de salida y proveedor/modelo. |
 
-La corrección de LLM-1 tiene una decisión de diseño adentro: pisar la acción del comité contra
+La corrección de LLM-1 tenía una decisión de diseño adentro (resuelta: híbrida, ver el cierre en LLM-1): pisar la acción del comité contra
 `decide()` —como hace SIGNAL-1— o registrarla tal cual y marcarla como opinión. Pisarla vuelve
 inútil un comité que diga BUY donde el motor dice HOLD; registrarla sin pisar deja que el
 track record califique una recomendación que el motor no habría emitido.
