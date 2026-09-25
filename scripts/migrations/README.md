@@ -14,6 +14,7 @@ falta.
 |--------|----------|---------|----------|
 | `mark_test_fixture_rows.py` | Marca 53 filas de `recommendation_log` (escritas por la suite) con `source='test_fixture'` — no borra nada. | 2026-08-30 (`--apply`) | N6 / U5-18d — ver `docs/ROADMAP.md` y `docs/CONTEXT.md §8` |
 | `purge_test_alert_rows.py` | Borra 2 filas de cooldown `TEST1` que dejó la suite en `alert_cooldowns`. | 2026-08-31 (`--apply`) | N6c — ver `docs/ROADMAP.md` |
+| `mark_inadmissible_rows.py` | Marca 4 filas del comité (ids 1021, 1350, 1507, 1509: feed vacío, símbolo no-ticker, EUR, CHF) con `source='inadmissible'` — no borra nada. | pendiente (`--apply` lo corre el usuario) | LLM-2 — ver `docs/AUDIT_LLM_2026-09.md` |
 
 Uso (desde la raíz del repo):
 

@@ -1918,6 +1918,8 @@ def log_screener_run(rows: list) -> int:
 
     Non-scorable assets are skipped: an ETF's "SELL" is an artifact of scoring it with
     machinery built for companies, which is exactly what ``asset_class.py`` settled.
+    Quotes outside ``TRACK_RECORD.benchmark_currency`` are refused by the store's
+    admission gate (``admission_skip_reason``), the same rule for every writer.
 
     Best-effort throughout: the store already guarantees a logging failure cannot
     break its caller, and same-day duplicates are deduped there by symbol and action.
@@ -1926,7 +1928,6 @@ def log_screener_run(rows: list) -> int:
 
     from analysis.asset_class import is_fundamentally_scorable
     from analysis.track_record import track_record_store
-    from config import TRACK_RECORD
 
     written = 0
     for row in rows or []:
@@ -1934,13 +1935,6 @@ def log_screener_run(rows: list) -> int:
         if not payload or not payload.get("action"):
             continue
         if not is_fundamentally_scorable(payload.get("asset_class", "equity")):
-            continue
-        # No FX conversion exists yet, so a non-USD return measured against SPY
-        # would grade the exchange rate. Rows stored before the field existed
-        # carry no currency and keep being logged, as they were.
-        ccy = payload.get("currency") or ""
-        if ccy and ccy != TRACK_RECORD.benchmark_currency:
-            logger.debug(f"screener track-record: {payload.get('symbol')} skipped ({ccy} quote)")
             continue
         try:
             decision = SimpleNamespace(
@@ -1957,7 +1951,12 @@ def log_screener_run(rows: list) -> int:
                 decision,
                 source="screener",
                 price_at_rec=payload.get("price_at_rec"),
-                fundamental=SimpleNamespace(**(payload.get("inputs") or {})),
+                # The currency rides with the inputs so the store's admission gate
+                # (LLM-2) applies the same rule to every writer. Rows stored before
+                # the field existed carry none and keep being logged, as they were.
+                fundamental=SimpleNamespace(
+                    **{**(payload.get("inputs") or {}), "currency": payload.get("currency") or ""}
+                ),
             )
             if rec_id:
                 written += 1

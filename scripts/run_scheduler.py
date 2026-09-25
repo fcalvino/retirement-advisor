@@ -59,6 +59,8 @@ def _run_screener_for_alerts() -> list[dict]:
                 "moat_score":          getattr(fund, "moat_score", 0),
                 "dividend_yield":      fund.dividend_yield or 0,
                 "sector":              fund.sector or "Unknown",
+                # Quote currency: the track record refuses non-benchmark quotes (LLM-2).
+                "currency":            getattr(fund, "currency", "") or "",
             })
         except Exception as exc:
             logger.error(f"Scheduler: failed to analyse {sym}: {exc}")

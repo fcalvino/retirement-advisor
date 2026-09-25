@@ -21,6 +21,11 @@ fila es una recomendación**. 53 filas del log las escribió la suite de tests
 (N6); están marcadas con ``source = FIXTURE_SOURCE`` y las tres lecturas las
 excluyen por default. Tampoco se borran — pero el motivo no es el de U5-18b.
 
+La tercera pregunta es **si la fila se puede calificar**, y se decide al escribir,
+en un solo lugar para todos los escritores: ``admission_skip_reason`` (LLM-2).
+Las cuatro filas que el comité dejó entrar antes de esa compuerta llevan
+``source = INADMISSIBLE_SOURCE`` y salen de las mismas lecturas.
+
 Design notes (project conventions):
   - Config-driven: horizons, benchmark and dedupe behaviour come from
     ``config.TRACK_RECORD`` — never hardcoded here.
@@ -45,6 +50,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     create_engine,
+    or_,
 )
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
@@ -67,7 +73,8 @@ class RecommendationLog(_Base):
     fundamental_score = Column(Float, default=0.0)
     technical_signal  = Column(String, default="")
     # rule_based | ai | committee | screener | scheduler, y ``test_fixture``
-    # para una fila que **nunca fue una recomendación** (U5-18d, ver FIXTURE_SOURCE).
+    # para una fila que **nunca fue una recomendación** (U5-18d, ver FIXTURE_SOURCE)
+    # o ``inadmissible`` para una que no se puede calificar (LLM-2).
     source            = Column(String, default="rule_based")
     price_at_rec      = Column(Float, nullable=True)
     rationale         = Column(Text, default="")          # JSON-encoded list[str]
@@ -256,17 +263,77 @@ def filter_by_sources(
 #: conoce el marcador, nunca el patrón.
 FIXTURE_SOURCE = "test_fixture"
 
+#: ``source`` de una recomendación que sí se emitió pero **no se puede calificar**
+#: con la vara del track record: cotiza en otra moneda que el benchmark, el feed
+#: vino vacío o el símbolo no es un ticker. Desde LLM-2 ``admission_skip_reason``
+#: no deja entrar ninguna; las cuatro que el comité escribió antes (ids 1021,
+#: 1350, 1507, 1509) se marcan por id enumerado desde
+#: ``scripts/migrations/mark_inadmissible_rows.py``. El ``source`` original era
+#: ``committee`` en las cuatro y el script lo verifica antes de escribir.
+INADMISSIBLE_SOURCE = "inadmissible"
+
+_HIDDEN_SOURCES = (FIXTURE_SOURCE, INADMISSIBLE_SOURCE)
+
 
 def _visible_rows(query, include_fixtures: bool):
-    """Saca del query las filas marcadas como fixture.
+    """Saca del query las filas marcadas como fixture o como no calificables.
 
-    ``is_distinct_from`` y no ``!=`` porque en SQL ``NULL != 'x'`` es NULL, no
-    True: una fila con ``source`` nulo desaparecería de toda lectura. Compila a
-    ``IS NOT`` en SQLite.
+    ``include_fixtures=True`` es la puerta de auditoría para las dos marcas.
+    El ``source IS NULL`` explícito es por lo mismo que antes era
+    ``is_distinct_from``: en SQL ``NULL NOT IN (...)`` es NULL, no True, y una
+    fila con ``source`` nulo desaparecería de toda lectura.
     """
     if include_fixtures:
         return query
-    return query.filter(RecommendationLog.source.is_distinct_from(FIXTURE_SOURCE))
+    return query.filter(
+        or_(RecommendationLog.source.is_(None), RecommendationLog.source.notin_(_HIDDEN_SOURCES))
+    )
+
+
+def admission_skip_reason(symbol: str, fundamental: Any = None) -> Optional[str]:
+    """Por qué una recomendación **no** entra al track record, o ``None`` si entra.
+
+    Una sola regla para todos los escritores (LLM-2). El comité escribía con la
+    suya y registró lo que el Screener rechaza: AIR.PA y NOVN.SW en EUR/CHF, ABVE
+    sin datos y el símbolo ``BTC-USD — BITCOIN``. Tres condiciones, cada una con
+    su dueño:
+
+    - la forma del símbolo — ``is_valid_ticker_symbol``, la misma que valida el
+      input de Stock Analysis;
+    - la moneda de cotización — un exceso sobre ``TRACK_RECORD.benchmark`` medido
+      en otra moneda califica el tipo de cambio, no la decisión;
+    - el feed vacío — ``is_empty_feed``: la ausencia de datos no es un veredicto.
+
+    Lo que el escritor no sabe no bloquea: una moneda vacía (payloads previos al
+    campo, el loop de alertas) o un ``fundamental`` sin precio ni calidad de datos
+    entran como entraban. Pura, así la página puede decir lo mismo que el store.
+    """
+    from data.preferences import is_valid_ticker_symbol
+    from data.screener_store import is_empty_feed
+
+    symbol = str(symbol or "").strip().upper()
+    if not is_valid_ticker_symbol(symbol):
+        return f"«{symbol}» no tiene forma de ticker"
+    if fundamental is None:
+        return None
+    # Mismo contrato que ``calibration_fields``: un objeto hostil o a medio
+    # construir cuesta la verificación, nunca la fila.
+    try:
+        ccy = str(getattr(fundamental, "currency", "") or "")
+    except Exception:
+        ccy = ""
+    if ccy and ccy != TRACK_RECORD.benchmark_currency:
+        return (
+            f"cotiza en {ccy} y el benchmark ({TRACK_RECORD.benchmark}) en "
+            f"{TRACK_RECORD.benchmark_currency}: el exceso mediría el tipo de cambio"
+        )
+    try:
+        empty = is_empty_feed(fundamental)
+    except Exception:
+        empty = False
+    if empty:
+        return "el proveedor no devolvió datos"
+    return None
 
 
 #: Metrics worth keeping per company type, as ``(attribute, key)``. Deliberately
@@ -456,6 +523,10 @@ class TrackRecordStore:
             action = str(getattr(decision, "action", "") or "")
             if not symbol or not action:
                 logger.warning("track_record: skipping log — missing symbol/action")
+                return None
+            skip = admission_skip_reason(symbol, fundamental)
+            if skip:
+                logger.info(f"track_record: {symbol} ({source}) not logged — {skip}")
                 return None
 
             confidence = str(getattr(decision, "confidence", "MEDIUM") or "MEDIUM")

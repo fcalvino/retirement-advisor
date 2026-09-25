@@ -19,7 +19,9 @@ from dashboard.shared import (
     render_ai_badge,
     render_committee_status,
 )
+from data.preferences import is_valid_ticker_symbol
 from data.product_ux import guided_empty_state
+from data.screener_store import is_empty_feed
 
 st.title("🏛️ Comité de Inversión")
 st.caption(
@@ -70,6 +72,14 @@ elif not run:
         st.session_state.pop("comite_symbol_input", None)
         st.rerun()
 
+if run and symbol and not is_valid_ticker_symbol(symbol):
+    # LLM-2: «BTC-USD — BITCOIN» llegó al track record como símbolo (id 1350).
+    st.error(
+        f"«{symbol}» no tiene forma de ticker: usá letras, números, «.» o «-» "
+        "(ej: MSFT, BRK-B, 7203.T)."
+    )
+    st.stop()
+
 if run and symbol:
     with st.spinner(f"Analizando {symbol}…"):
         # Quant only — moat/decisión AI here would burn the same Groq TPM the
@@ -85,6 +95,18 @@ if run and symbol:
             symbol, ai_cfg.provider, ai_cfg.model, _enrich_crypto, ai_cfg.api_key,
             ai_enrich_only=_enrich_crypto,
         )
+
+    # EMPTY-FEED-SA / LLM-2: sin precio ni datos no hay nada que deliberar. Se
+    # corta antes del panel — 5 o 6 llamadas a la IA sobre un feed vacío — y no
+    # se registra (ABVE, id 1021, entró como REDUCE con score 0).
+    if is_empty_feed(fund):
+        logger.warning(f"Comité: {symbol} — el proveedor no devolvió datos")
+        st.error(
+            f"No hay datos para **{symbol}**: el proveedor no devolvió precio ni datos "
+            "de la empresa. ¿Ticker mal escrito, deslistado o sin conexión? "
+            "No se convoca al comité ni se registra en el Track Record."
+        )
+        st.stop()
 
     # The PM sizes against the REAL book (tracker values fetched once; no recompute).
     portfolio_ctx = None
@@ -129,7 +151,12 @@ if run and symbol:
     # LLM-1: lo registrado pasa por el overlay del motor; el banner sigue
     # mostrando el voto crudo del panel y, si el motor lo limitó, lo dice.
     logged_decision = verdict.to_decision(fund, tech)
-    if verdict.complete:
+    # LLM-2: la misma compuerta que aplica el store a todo escritor; se consulta
+    # acá sólo para que el caption diga lo que pasó.
+    from analysis.track_record import admission_skip_reason
+
+    skip_reason = admission_skip_reason(symbol, fund)
+    if verdict.complete and not skip_reason:
         try:
             from analysis.track_record import track_record_store
 
@@ -204,7 +231,9 @@ if run and symbol:
 
     render_ai_badge("dictamen multi-agente; se apoya en cálculos, no los reemplaza")
     st.caption(f"{CALC_BADGE} base del análisis · {AI_BADGE} votación del panel")
-    if verdict.complete:
+    if verdict.complete and skip_reason:
+        st.caption(f"No se registra en el Track Record: {symbol} {skip_reason}.")
+    elif verdict.complete:
         st.caption(
             f"Este dictamen quedó registrado en el Track Record con fuente `committee` "
             f"como {logged_decision.action}."

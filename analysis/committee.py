@@ -45,7 +45,7 @@ from analysis.committee_prompts import (
     risk_manager_portfolio_prompt,
     sector_stress_shocks,
 )
-from analysis.strategy import Decision, apply_safety_overlay
+from analysis.strategy import Decision, apply_safety_overlay, effective_decision_score
 from analysis.utils import extract_json_object
 from config import AI_FALLBACK, COMMITTEE
 
@@ -175,6 +175,13 @@ class CommitteeVerdict:
         With ``fund`` and ``tech`` the action goes through ``apply_safety_overlay``
         (LLM-1), so it can be lower than ``self.action`` but never higher than the
         engine's. Without them there is nothing to floor against.
+
+        The score is the one the decision matrix uses (``effective_decision_score``,
+        LLM-2), not ``total_score``: it is what ``source=committee`` stores next to
+        the Screener's and the single-call rows, and what ``confidence_for`` caps
+        the confidence against inside the overlay. ``total_score`` put the
+        committee's rows a median 25 points below the engine's on the same ticker
+        and day, in the column used to calibrate thresholds.
         """
         if not self.available:
             raise ValueError("Committee verdict unavailable: no valid AI opinions")
@@ -182,8 +189,7 @@ class CommitteeVerdict:
         signal = ""
         mos = False
         if fund is not None:
-            is_crypto = bool(getattr(fund, "is_crypto", False))
-            score = getattr(fund, "adjusted_score", 0.0) if is_crypto else getattr(fund, "total_score", 0.0)
+            score = effective_decision_score(fund)
             try:
                 mos = bool(fund.is_value_stock())
             except Exception:

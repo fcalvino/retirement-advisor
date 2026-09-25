@@ -145,7 +145,16 @@ El prompt del Analista Fundamental sí trae los constraints duros (reusa
 Es la única forma en que el comité fue más optimista que el motor en los 25 pares, y es
 exactamente la que SIGNAL-1 cerró para la decisión de una sola llamada.
 
-### LLM-2 — El comité registra con otra escala y sin los filtros del Screener (banda 3: corrompe la evidencia)
+### LLM-2 — El comité registra con otra escala y sin los filtros del Screener (banda 3: corrompe la evidencia) — **cerrado 2026-09-25**
+
+> **Cierre.** Escala: `to_decision` guarda `effective_decision_score(fund)`, el score de `decide()`. Admisión: una
+> sola compuerta, `admission_skip_reason` (`analysis/track_record.py`), corre dentro de `log_recommendation` para
+> todo escritor — forma de ticker, `TRACK_RECORD.benchmark_currency` e `is_empty_feed`; el Screener dejó su filtro
+> de moneda propio. Filas previas (decisión del usuario): las 4 inadmisibles (1021, 1350, 1507, 1509) se marcan
+> `source='inadmissible'` por id con `scripts/migrations/mark_inadmissible_rows.py`; las 36 restantes del comité
+> quedan con `total_score`, que no se puede reconstruir. Fuera de alcance: el prompt del comité sigue mostrando
+> `total_score` a los agentes (tocarlo es un cambio de prompt, ver LLM-4). Oráculo:
+> `tests/test_track_record_admission_oracle.py`.
 
 Tres diferencias con el resto de los escritores de `recommendation_log`:
 
