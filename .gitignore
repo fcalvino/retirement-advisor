@@ -8,13 +8,17 @@ data/db/
 *.db
 .env
 *.egg-info/
-# Share only the project decision skill; keep other Claude resources local.
+# Share only the project decision skill and the project subagents; keep other Claude resources local.
 .claude/*
 !.claude/skills/
 .claude/skills/*
 !.claude/skills/decidir-proyecto/
 .claude/skills/decidir-proyecto/*
 !.claude/skills/decidir-proyecto/SKILL.md
+!.claude/agents/
+.claude/agents/*
+!.claude/agents/engine-reviewer.md
+!.claude/agents/pit-investigator.md
 .rtk/
 .ruff_cache/
 .pytest_cache/
