@@ -14,6 +14,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import List
@@ -21,6 +22,15 @@ from typing import List
 from loguru import logger
 
 _PREFS_PATH = Path(__file__).parent / "user_preferences.json"
+
+# Format of a symbol the user may type: letters, digits, "." and "-" (BRK-B,
+# 7203.T, BTC-USD). Format only — whether the feed knows it is `is_empty_feed`'s job.
+_TICKER_SYMBOL_RE = re.compile(r"[A-Z0-9.\-]{1,12}")
+
+
+def is_valid_ticker_symbol(symbol: str) -> bool:
+    """True when ``symbol`` (already upper-cased) has the shape of a ticker."""
+    return bool(symbol) and _TICKER_SYMBOL_RE.fullmatch(symbol) is not None
 # Tracked template used to seed a fresh clone. The real file above is
 # gitignored — it contains the user's personal financial profile (audit D6).
 _PREFS_EXAMPLE_PATH = Path(__file__).parent / "user_preferences.example.json"
@@ -236,9 +246,8 @@ class UserPreferences:
         user can extend the universe, with loud data-quality warnings elsewhere.
         """
         import datetime
-        import re
         sym = (symbol or "").upper().strip()
-        if not sym or not re.fullmatch(r"[A-Z0-9.\-]{1,12}", sym):
+        if not is_valid_ticker_symbol(sym):
             return False
         if sym in self.custom_symbols():
             return False

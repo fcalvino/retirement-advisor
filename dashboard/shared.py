@@ -2236,6 +2236,12 @@ def _fetch_universe_parallel(
             fund, tech, decision = cached_full_analysis(
                 sym, ai_cfg.provider, ai_cfg.model, ai_cfg.enabled, ai_cfg.api_key
             )
+            # EMPTY-FEED-SA: same rule as the Screener — no data is a failed fetch,
+            # not a SELL. Dropped like any other failure; the Watchlist shows it
+            # as «⚠️ sin datos».
+            if is_empty_feed(fund):
+                logger.warning(f"{label}: {sym} — el proveedor no devolvió datos")
+                return None
             return (sym, fund, tech, decision)
         except Exception as exc:
             logger.error(f"{label}: {sym} failed — {exc}")
