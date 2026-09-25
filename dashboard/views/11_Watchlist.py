@@ -86,8 +86,8 @@ if newly_triggered:
     for alert in newly_triggered:
         cond_str = "superó" if alert["condition"] == "above" else "cayó por debajo de"
         st.warning(
-            f"🔔 **{alert['symbol']}** {cond_str} **${alert['target']:,.2f}** "
-            f"(precio actual: ${prices_now.get(alert['symbol'], 0):,.2f})",
+            f"🔔 **{alert['symbol']}** {cond_str} **\\${alert['target']:,.2f}** "
+            f"(precio actual: \\${prices_now.get(alert['symbol'], 0):,.2f})",
             icon="🔔",
         )
 
@@ -96,7 +96,7 @@ for alert in _prefs.price_alerts:
     if alert.get("triggered") and alert not in newly_triggered:
         cond_str = "superó" if alert["condition"] == "above" else "cayó por debajo de"
         st.warning(
-            f"🔔 **{alert['symbol']}** {cond_str} **${alert['target']:,.2f}** "
+            f"🔔 **{alert['symbol']}** {cond_str} **\\${alert['target']:,.2f}** "
             f"(alerta cumplida — eliminala cuando hayas tomado acción)",
             icon="✅",
         )

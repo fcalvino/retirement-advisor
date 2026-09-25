@@ -8,7 +8,7 @@ from loguru import logger
 
 from analysis.currency_metric_text import currency_metric_note
 from analysis.fundamental import eps_growth_label
-from config import MOAT
+from config import AI_FALLBACK, MOAT
 from dashboard.shared import (
     _MOAT_DESCRIPTION,
     _MOAT_EMOJI,
@@ -281,6 +281,10 @@ if symbol:
         unsafe_allow_html=True,
     )
     render_calc_badge("score fundamental y señal calculados con fórmulas (sin IA)")
+    # UX-QA: con la IA activada, un fallback no puede leerse como «sin IA» a secas.
+    _fallback = getattr(decision, "ai_fallback_reason", "") or ""
+    if ai_cfg.enabled and _fallback:
+        st.warning(AI_FALLBACK.message(_fallback, ai_cfg.provider), icon="🤖")
 
     if _is_crypto:
         # ── Crypto score panel ──────────────────────────────────────────

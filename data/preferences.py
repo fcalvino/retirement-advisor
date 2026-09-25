@@ -326,7 +326,7 @@ class UserPreferences:
                 continue
             cond   = alert.get("condition")
             target = alert.get("target", 0)
-            fired  = (cond == "above" and price >= target) or (cond == "below" and price <= target)
+            fired  = (cond == "above" and price > target) or (cond == "below" and price < target)
             if fired:
                 alert["triggered"] = True
                 triggered.append(alert)
