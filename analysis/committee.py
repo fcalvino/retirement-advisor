@@ -45,7 +45,7 @@ from analysis.committee_prompts import (
     risk_manager_portfolio_prompt,
     sector_stress_shocks,
 )
-from analysis.strategy import Decision
+from analysis.strategy import Decision, apply_safety_overlay
 from analysis.utils import extract_json_object
 from config import AI_FALLBACK, COMMITTEE
 
@@ -170,7 +170,12 @@ class CommitteeVerdict:
         return devil is not None and not any(c.strip() for c in devil.concerns)
 
     def to_decision(self, fund=None, tech=None) -> Decision:
-        """Map the verdict into a standard Decision (numbers stay deterministic)."""
+        """Map the verdict into a standard Decision (numbers stay deterministic).
+
+        With ``fund`` and ``tech`` the action goes through ``apply_safety_overlay``
+        (LLM-1), so it can be lower than ``self.action`` but never higher than the
+        engine's. Without them there is nothing to floor against.
+        """
         if not self.available:
             raise ValueError("Committee verdict unavailable: no valid AI opinions")
         score = 0.0
@@ -187,7 +192,7 @@ class CommitteeVerdict:
             signal = getattr(tech, "signal", "")
 
         reasoning = self._debate_summary()
-        return Decision(
+        decision = Decision(
             symbol=self.symbol,
             action=self.action,
             confidence=self.confidence,
@@ -198,6 +203,13 @@ class CommitteeVerdict:
             risks=list(self.dissent),
             ai_reasoning=reasoning,
         )
+        # LLM-1: the same floor as the single-call path (SIGNAL-1/SIGNAL-6) — the
+        # panel may be more prudent than decide(), never less. ``self.action``
+        # keeps the raw vote for display; the Decision (what the track record
+        # logs as ``source=committee``) carries the floored action.
+        if fund is not None and tech is not None:
+            decision = apply_safety_overlay(decision, fund, tech)
+        return decision
 
     def _debate_summary(self) -> str:
         parts = [f"Dictamen del comité: {self.action} (confianza {self.confidence})."]

@@ -126,12 +126,15 @@ if run and symbol:
 
     # Log to track record only a complete panel — a 429 that drops PM/Macro
     # reweights the lean toward the Devil's Advocate.
+    # LLM-1: lo registrado pasa por el overlay del motor; el banner sigue
+    # mostrando el voto crudo del panel y, si el motor lo limitó, lo dice.
+    logged_decision = verdict.to_decision(fund, tech)
     if verdict.complete:
         try:
             from analysis.track_record import track_record_store
 
             track_record_store.log_recommendation(
-                verdict.to_decision(fund, tech),
+                logged_decision,
                 source="committee",
                 price_at_rec=getattr(fund, "current_price", None) or None,
                 fundamental=fund,
@@ -150,6 +153,16 @@ if run and symbol:
         f" &nbsp;|&nbsp; Lean: {verdict.lean:+.2f}</div>",
         unsafe_allow_html=True,
     )
+    if logged_decision.action != verdict.action:
+        _why = logged_decision.block_reason or logged_decision.decisive_reason or ""
+        st.warning(
+            f"Voto del panel: **{verdict.action}**. El motor no permite más que "
+            f"**{logged_decision.action}** para {symbol}"
+            + (f" ({_why})" if _why else "")
+            + ": la IA puede ser más prudente que el motor, nunca menos. "
+            f"Se registra {logged_decision.action}.",
+            icon="🛡️",
+        )
     _concentration = concentration_hold_note(verdict, portfolio_ctx)
     if _concentration:
         st.info(_concentration, icon="⚖️")
@@ -192,7 +205,10 @@ if run and symbol:
     render_ai_badge("dictamen multi-agente; se apoya en cálculos, no los reemplaza")
     st.caption(f"{CALC_BADGE} base del análisis · {AI_BADGE} votación del panel")
     if verdict.complete:
-        st.caption("Este dictamen quedó registrado en el Track Record con fuente `committee`.")
+        st.caption(
+            f"Este dictamen quedó registrado en el Track Record con fuente `committee` "
+            f"como {logged_decision.action}."
+        )
     if portfolio_ctx:
         st.caption(
             f"El Portfolio Manager dimensionó sobre tu cartera real: {symbol} pesa "
