@@ -45,6 +45,17 @@ from analysis.fundamental import (
     normalize_dividend_yield_pct,
 )
 
+
+@pytest.fixture(autouse=True)
+def _no_dividend_history(monkeypatch):
+    """``_score_dividends`` reads the payment history for the symbol under test.
+    An empty series is what an outage returns, so the scoring here is the one it
+    already was offline — only the traffic goes (TEST-NET)."""
+    import pandas as pd
+
+    monkeypatch.setattr("analysis.fundamental.get_dividends", lambda symbol: pd.Series(dtype=float))
+
+
 # --------------------------------------------------------------------------- #
 #  Los 8 casos reales, con los cinco campos tal como los trae la caché         #
 #  (2026-08-29). `tay` va incluido A PROPÓSITO: los fixtures que lo omitían    #

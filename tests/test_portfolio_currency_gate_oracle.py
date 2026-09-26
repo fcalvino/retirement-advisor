@@ -109,6 +109,8 @@ def _stock_page(monkeypatch, tmp_path, symbol, currency, price):
     monkeypatch.setattr(shared, "cached_full_analysis", lambda *a, **k: (fund, case.tech, decision))
     monkeypatch.setattr(track_record, "track_record_store", SimpleNamespace(log_recommendation=Mock()))
     monkeypatch.setattr(tracker_mod, "get_info", _info)
+    # The chart asks for the price history; an empty frame is what an outage gives (TEST-NET).
+    monkeypatch.setattr(shared, "get_price_history", lambda *a, **k: pd.DataFrame())
     app = AppTest.from_file(str(PAGE), default_timeout=60)
     app.session_state["analysis_target"] = symbol
     app.session_state["portfolio"] = Portfolio(file_path=tmp_path / "portfolio.json")

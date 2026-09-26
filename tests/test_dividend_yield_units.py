@@ -33,6 +33,17 @@ from analysis.fundamental import (
 )
 from config import THRESHOLDS, FundamentalThresholds
 
+
+@pytest.fixture(autouse=True)
+def _no_dividend_history(monkeypatch):
+    """``_score_dividends`` reads the payment history for the symbol under test.
+    An empty series is what an outage returns, so the scoring here is the one it
+    already was offline — only the traffic goes (TEST-NET)."""
+    import pandas as pd
+
+    monkeypatch.setattr("analysis.fundamental.get_dividends", lambda symbol: pd.Series(dtype=float))
+
+
 # --------------------------------------------------------------------------- #
 #  Oracle: yield = dividends per share over one year / price, in percent       #
 # --------------------------------------------------------------------------- #

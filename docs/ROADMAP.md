@@ -10,6 +10,38 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## TEST-NET — La suite no sale a la red (2026-09-26)
+
+`tests/test_longevity_horizon_oracle.py` se declaraba «sin red» y corría Monte Carlo
+sobre diez años reales de SPY/BND/KO/JNJ/PG: en el CI, que arranca con la caché
+vacía, su input era el mercado del día y un verde no probaba nada. La fila decía 8
+tests; con el guard en modo registro, que bloquea sin fallar para que ninguna caché
+esconda a los siguientes, eran **112**:
+- 83 por la verificación cruzada contra SEC, que corre en todo `analyze()` y que
+  `SecEdgarSource._cik_map` escondía detrás del primer acierto;
+- 16 del oráculo de longevidad, el único que dependía de la respuesta;
+- 13 de tracker, dividendos, Settings y dos páginas de Stock Analysis.
+
+El guard (`tests/_network_guard.py`) se instala al importar `conftest.py` y tiene
+tres capas:
+- la clase de `curl_cffi`, por yfinance (abre sus sockets en C, así que
+  `pytest-socket` no lo vería);
+- la clase de `requests`;
+- un audit hook de sockets para todo lo demás.
+
+El test que intenta salir falla aunque el producto se trague la excepción, que es lo
+que hace `_fetch_with_retry`. Los arreglos:
+- `no_sec_edgar` en el conftest;
+- stubs que devuelven lo mismo que una caída de red;
+- una historia sintética fija con dos variantes en el oráculo de longevidad, medida
+  con el motor: los escalones 25→35→45 bajan 8,3 y 5,4 pp.
+
+Los procesos hijos no heredan el guard; medido, ninguno sale a la red. Oráculo:
+`tests/test_network_guard_oracle.py` (6 en rojo sin el guard, 2 controles). Era la
+precondición de PIT-1.
+
+---
+
 ## PORTFOLIO-CCY — Una posición en otra moneda no entra al Portfolio (2026-09-26)
 
 «➕ Agregar al Portfolio» en Stock Analysis precargaba `fund.current_price`, el precio

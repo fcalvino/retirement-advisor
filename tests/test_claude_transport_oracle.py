@@ -377,10 +377,15 @@ class TestSettingsListaGroqSinHermes:
         assert 'ai_provider in ("xai", "nous")' in src
         assert "groq" not in 'ai_provider in ("xai", "nous")'
 
-    def test_selectbox_incluye_groq_y_el_default_del_catalogo(self):
+    def test_selectbox_incluye_groq_y_el_default_del_catalogo(self, monkeypatch):
         from streamlit.testing.v1 import AppTest
 
+        from dashboard import shared
         from data.preferences import UserPreferences
+
+        # Settings quotes ARS=X for the peso block; None is what an outage gives
+        # and the page falls back to the labelled placeholder (TEST-NET).
+        monkeypatch.setattr(shared, "usd_ars_quote", lambda symbol="ARS=X": None)
 
         page = Path(__file__).resolve().parents[1] / "dashboard/views/9_Settings.py"
         at = AppTest.from_file(str(page), default_timeout=30)

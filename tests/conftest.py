@@ -1,8 +1,9 @@
 """Shared fixtures for the Retirement Advisor test suite.
 
-Data-shaped, with four exceptions: the suite's own database, set before any
-project import (see below); the import-time redirection of the track record and
-the alert store to ``:memory:``; an autouse fixture that zeroes the network
+Data-shaped, with five exceptions: the suite's own database, set before any
+project import (see below); the network guard, installed right after it
+(TEST-NET, see ``no_network``); the import-time redirection of the track record
+and the alert store to ``:memory:``; an autouse fixture that zeroes the network
 retry backoff (see ``no_retry_backoff``); and another that keeps the committee
 off the yfinance news feed (see ``no_committee_news``).
 """
@@ -42,6 +43,19 @@ from pathlib import Path
 _test_db_dir = Path(tempfile.mkdtemp(prefix="ra-test-db-"))
 atexit.register(shutil.rmtree, _test_db_dir, ignore_errors=True)
 os.environ["RETIREMENT_ADVISOR_DB_PATH"] = str(_test_db_dir / "retirement_advisor.db")
+
+# ------------------------------------------------------------------ #
+#  The suite never reaches the network (TEST-NET)                      #
+# ------------------------------------------------------------------ #
+#
+# Installed here, at import, for the same reason as the block above: a fixture
+# would miss collection, session fixtures and threads outliving a teardown. It
+# imports no project module, so the ordering TEST-CACHE depends on holds. The
+# per-test half — failing the test that tried — is ``no_network`` below.
+# ``tests/_network_guard.py`` explains the three layers and the two modes.
+from tests import _network_guard  # noqa: E402
+
+_network_guard.install()
 
 # scripts/_bootstrap.py is importable only when scripts/ is on sys.path.
 # Tests that import scripts.* modules need this added before collection.
@@ -291,6 +305,58 @@ def sample_ticker_data():
             "company_name": "AT&T",
         },
     ]
+
+
+# ---- No network (TEST-NET) --------------------------------------- #
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "allow_network: the test may reach the real network (TEST-NET opt-out)",
+    )
+
+
+def pytest_sessionfinish(session, exitstatus):
+    out = os.environ.get("RA_NETGUARD_OUT")
+    if out:
+        _network_guard.dump(out)
+
+
+@pytest.fixture(autouse=True)
+def no_network(request):
+    """Fail the test that tried to reach the network, even if the product code
+    swallowed the ``NetworkBlockedInTest`` — which it does: ``_fetch_with_retry``
+    and the fetchers degrade to empty on any exception, so a blocked call alone
+    would leave the traffic invisible and the test green.
+
+    ``RA_NETGUARD=report`` blocks but does not fail (see ``_network_guard``).
+    """
+    allowed = request.node.get_closest_marker("allow_network") is not None
+    _network_guard.begin_test(request.node.nodeid, allowed=allowed)
+    yield
+    found = _network_guard.end_test()
+    if found and _network_guard.MODE == "strict":
+        pytest.fail(_network_guard.describe(found), pytrace=False)
+
+
+@pytest.fixture(autouse=True)
+def no_sec_edgar(monkeypatch):
+    """Every ``FundamentalAnalyzer.analyze`` attaches the cross-source check
+    (``MULTI_SOURCE.attach_in_pipeline``), which asks SEC EDGAR for the
+    ticker->CIK map. It was the bulk of TEST-NET: 83 of the 112 tests that tried
+    to reach the network, hidden behind ``SecEdgarSource._cik_map`` — the first
+    test to succeed filled the class-level cache and the rest looked offline.
+
+    ``None`` is what a failed request already returns, so the check degrades
+    exactly as it does without network. FMP only joins with a key, so the key
+    goes too: a developer's ``FMP_API_KEY`` must not decide what the suite does.
+    Tests of the reconciliation pass ``sources=`` explicitly and are unaffected.
+    """
+    from config import MULTI_SOURCE
+    from data.data_sources import SecEdgarSource
+
+    monkeypatch.setattr(SecEdgarSource, "_http_json", lambda self, url: None)
+    monkeypatch.setattr(MULTI_SOURCE, "fmp_api_key", "")
 
 
 # ---- Network retry backoff (N2) ---------------------------------- #

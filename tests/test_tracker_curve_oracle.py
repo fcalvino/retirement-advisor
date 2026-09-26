@@ -76,6 +76,14 @@ def _weekly(start: str, n: int, start_price: float, weekly_drift: float) -> pd.D
     return pd.DataFrame({"close": prices}, index=idx)
 
 
+@pytest.fixture(autouse=True)
+def _no_sector_lookup(monkeypatch):
+    """``add_position`` asks the feed for the sector and currency. ``{}`` is what
+    an outage returns — no currency does not block, the sector is "Unknown" — and
+    neither matters to the curve (TEST-NET: this was the file's network traffic)."""
+    monkeypatch.setattr("portfolio.tracker.get_info", lambda sym: {})
+
+
 class _Book:
     """A portfolio with injected prices and no disk or network."""
 
