@@ -914,6 +914,10 @@ class PiotroskiConfig:
     """
 
     strong_threshold: int = 7
+    #: "Piotroski aceptable" cut (pays ``bonus_good``). Was a literal ``5`` in
+    #: ``analysis/scoring.py``; the PIT-2 evidence report groups by the same cuts
+    #: the engine pays on, so both read it from here.
+    good_threshold: int = 5
     bonus_strong: float = 12.0
     bonus_good: float = 6.0
     #: F6 tolerance: share growth up to this % is not counted as dilution. Was a
@@ -2416,6 +2420,15 @@ class SyntheticBacktestConfig:
     outcome refuse the same stale closes.
     """
     horizon_days: int = 365
+    # PIT-2 — the volume run (``scripts/point_in_time_backtest.py`` without
+    # --symbols/--cutoffs). US filers only in practice: non-SEC tickers (local
+    # listings, 20-F ADRs, ETFs, crypto) exit through ``_NO_SEC_DATA``. The
+    # ticker→CIK map is today's, so the sample is survivors-only — the report
+    # says so. Grid: every ``pit2_step_months`` from ``pit2_first_cutoff`` up to
+    # the last cutoff whose horizon (plus the staleness guard) is already past.
+    pit2_universes: tuple = ("default", "global_quality")
+    pit2_first_cutoff: str = "2012-06-01"
+    pit2_step_months: int = 6
 
 
 @dataclass

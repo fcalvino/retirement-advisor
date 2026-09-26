@@ -120,7 +120,7 @@ class EnhancedScoring:
         if p_detail.score >= self.pc.strong_threshold:
             result.piotroski_bonus = self.pc.bonus_strong
             recs.append(f"Piotroski fuerte {p_detail.score}/9 (+{self.pc.bonus_strong:.0f} pts) — {p_detail.summary()}")
-        elif p_detail.score >= 5:
+        elif p_detail.score >= self.pc.good_threshold:
             result.piotroski_bonus = self.pc.bonus_good
             recs.append(f"Piotroski aceptable {p_detail.score}/9 (+{self.pc.bonus_good:.0f} pts) — {p_detail.summary()}")
         else:

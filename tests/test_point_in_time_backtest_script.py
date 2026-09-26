@@ -583,3 +583,72 @@ def test_fetch_companyfacts_does_not_retry_a_404(monkeypatch):
 
     assert result is backtest._NO_SEC_DATA, "a 404 is SEC-confirmed absence, not a failure"
     assert len(calls) == 1, "a 404 must not be retried"
+
+
+# --------------------------------------------------------------------------- #
+#  PIT-2 — universes and cutoff grid (no network)                             #
+# --------------------------------------------------------------------------- #
+
+def test_the_grid_stops_at_the_last_already_scorable_cutoff():
+    from datetime import timedelta
+
+    from config import SYNTHETIC_BACKTEST, TRACK_RECORD
+
+    today = date(2026, 9, 26)
+    grid = backtest.cutoff_grid(date(2012, 6, 1), 6, today=today)
+    last_allowed = today - timedelta(
+        days=SYNTHETIC_BACKTEST.horizon_days + TRACK_RECORD.max_price_staleness_days
+    )
+    assert grid[0] == date(2012, 6, 1)
+    assert grid[1] == date(2012, 12, 1)
+    assert grid[-1] <= last_allowed
+    assert backtest._add_months(grid[-1], 6) > last_allowed
+    assert grid[-1] == date(2025, 6, 1)
+    assert len(grid) == 27
+
+
+def test_the_grid_rejects_a_non_positive_step():
+    with pytest.raises(ValueError):
+        backtest.cutoff_grid(date(2012, 6, 1), 0, today=date(2026, 9, 26))
+
+
+def test_universes_are_unioned_and_deduplicated(monkeypatch):
+    import data.universe_loader as ul
+
+    fake = {"a": ["AAPL", "msft"], "b": ["MSFT", "KO"]}
+    monkeypatch.setattr(ul, "list_universes", lambda: list(fake))
+    monkeypatch.setattr(ul, "load_universe", lambda key: fake[key])
+
+    assert backtest.universe_symbols(["a", "b"]) == ["AAPL", "MSFT", "KO"]
+
+
+def test_an_unknown_universe_is_an_error_not_a_silent_default(monkeypatch):
+    import data.universe_loader as ul
+
+    monkeypatch.setattr(ul, "list_universes", lambda: ["default"])
+    with pytest.raises(ValueError, match="nope"):
+        backtest.universe_symbols(["nope"])
+
+
+def test_symbols_and_universes_are_mutually_exclusive():
+    with pytest.raises(SystemExit):
+        backtest._parse_args(["--symbols", "AAPL", "--universes", "default"])
+
+
+def test_no_arguments_falls_back_to_the_pit2_config(monkeypatch):
+    from config import SYNTHETIC_BACKTEST
+
+    seen = []
+    monkeypatch.setattr(backtest, "universe_symbols", lambda keys: seen.append(keys) or ["AAPL"])
+    symbols, cutoffs = backtest.resolve_inputs(backtest._parse_args([]))
+
+    assert seen == [list(SYNTHETIC_BACKTEST.pit2_universes)]
+    assert symbols == ["AAPL"]
+    assert cutoffs[0].isoformat() == SYNTHETIC_BACKTEST.pit2_first_cutoff
+
+
+def test_explicit_grid_overrides_the_config():
+    _, cutoffs = backtest.resolve_inputs(
+        backtest._parse_args(["--symbols", "AAPL", "--cutoff-grid", "2016-06-01:12"])
+    )
+    assert cutoffs[:2] == [date(2016, 6, 1), date(2017, 6, 1)]
