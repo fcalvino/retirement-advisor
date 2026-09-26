@@ -45,7 +45,7 @@ from config import SYNTHETIC_BACKTEST, TRACK_RECORD
 
 BENCH = TRACK_RECORD.benchmark
 HORIZON = timedelta(days=SYNTHETIC_BACKTEST.horizon_days)
-STALE = SYNTHETIC_BACKTEST.max_price_staleness_days
+STALE = TRACK_RECORD.max_price_staleness_days
 TODAY = date(2026, 9, 26)
 
 

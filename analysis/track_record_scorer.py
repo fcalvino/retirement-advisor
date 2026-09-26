@@ -22,6 +22,7 @@ from typing import Callable, Dict, List, Optional
 import pandas as pd
 from loguru import logger
 
+from analysis.price_lookup import price_near
 from analysis.track_record import track_record_store
 from config import TRACK_RECORD
 from data.clock import utc_now
@@ -35,26 +36,19 @@ PriceLookup = Callable[[str, datetime], Optional[float]]
 # --------------------------------------------------------------------------- #
 
 def _price_on_or_before(symbol: str, when: datetime) -> Optional[float]:
-    """Closing price for ``symbol`` on the last trading day at/just before ``when``.
+    """Closing price for ``symbol`` on the last trading day at/just before ``when``,
+    no older than ``TRACK_RECORD.max_price_staleness_days`` (TR-STALE-PRICE).
 
     Uses the daily-bar history from ``data.fetcher`` (cached). Returns None on
-    any failure — callers treat None as "cannot score yet / skip".
+    any failure or when the last close is stale — callers treat None as "cannot
+    score yet / skip", so a row priced only by an old close is retried, never
+    persisted with a made-up outcome.
     """
     try:
         from data.fetcher import get_history
 
         df = get_history(symbol, period="max", interval="1d")
-        if df is None or df.empty:
-            return None
-        # ``get_history`` returns a tz-naive index named after reset; normalize.
-        if "date" in df.columns:
-            df = df.set_index(pd.to_datetime(df["date"]))
-        df = df.sort_index()
-        upto = df.loc[df.index <= pd.Timestamp(when)]
-        if upto.empty:
-            return None
-        close = upto.iloc[-1].get("close")
-        return float(close) if close and float(close) > 0 else None
+        return price_near(df, pd.Timestamp(when).date(), int(TRACK_RECORD.max_price_staleness_days))
     except Exception as exc:
         logger.warning(f"track_record_scorer: price lookup failed for {symbol} — {exc}")
         return None

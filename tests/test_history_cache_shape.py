@@ -34,6 +34,8 @@ import pandas as pd
 import pytest
 
 import data.fetcher as fetcher
+from analysis.price_lookup import price_near
+from config import TRACK_RECORD
 from data.fetcher import _restore_date_index
 
 # --------------------------------------------------------------------------- #
@@ -98,23 +100,13 @@ class TestWarmAndColdAgree:
 # --------------------------------------------------------------------------- #
 
 def _price_on_or_before(df: pd.DataFrame, when: datetime):
-    """Verbatim body of analysis/track_record_scorer._price_on_or_before.
+    """What analysis/track_record_scorer._price_on_or_before does with a frame.
 
-    Copied rather than imported so the test exercises the caller's logic against the
-    shape ``get_history`` hands it, without a network fetch. If that function changes,
-    this copy going stale is itself a signal worth having.
+    Since TR-STALE-PRICE the scorer delegates to ``analysis.price_lookup.price_near``
+    with ``TRACK_RECORD.max_price_staleness_days``; calling that directly exercises
+    the caller's logic against the shape ``get_history`` hands it, without a fetch.
     """
-    try:
-        if "date" in df.columns:
-            df = df.set_index(pd.to_datetime(df["date"]))
-        df = df.sort_index()
-        upto = df.loc[df.index <= pd.Timestamp(when)]
-        if upto.empty:
-            return None
-        close = upto.iloc[-1].get("close")
-        return float(close) if close and float(close) > 0 else None
-    except Exception:
-        return None
+    return price_near(df, when.date(), TRACK_RECORD.max_price_staleness_days)
 
 
 class TestTrackRecordScorerCanReadPrices:
