@@ -29,6 +29,87 @@ no-USD. Queda **#154**: convertir para poder admitirlas.
 
 ---
 
+## LLM-2 — Una sola regla para escribir en el track record (2026-09-25, `fac8e27`, #171)
+
+El comité escribía en el track record con otra regla que el resto. Guardaba
+`total_score` donde los demás guardan el score de la matriz de decisión: sobre 25
+pares comité–motor del mismo día, la brecha mediana era de 25 puntos, en la columna
+que se usa para calibrar umbrales. Además no aplicaba los filtros del Screener:
+AIR.PA y NOVN.SW (EUR, CHF), ABVE con score 0 y una fila con el símbolo
+`BTC-USD — BITCOIN` quedaron registradas.
+
+El cierre tiene dos partes:
+- `CommitteeVerdict.to_decision` usa `effective_decision_score`, el mismo número que
+  `decide()`.
+- `admission_skip_reason` (forma de ticker, moneda del benchmark, feed vacío) corre
+  **dentro** de `log_recommendation`, así que vale para los cuatro escritores y uno
+  nuevo no puede olvidarla. Lo que el escritor no sabe no bloquea.
+
+La página del Comité valida el símbolo, no convoca al panel sobre un feed vacío y
+dice cuándo un dictamen no se registra. La QA en la app encontró que ese caption
+afirmaba «quedó registrado» aunque el dedup hubiera descartado la fila; se corrigió
+en el mismo PR con el `id` que devuelve el store y `logged_today`.
+
+Las 4 filas previas se marcan `source='inadmissible'` por id enumerado
+(`scripts/migrations/mark_inadmissible_rows.py`); el usuario corrió `--apply` sobre
+la base real el 2026-09-26. Oráculo en rojo antes del cambio:
+`tests/test_track_record_admission_oracle.py` (33 en rojo). Quedaron abiertos
+TR-DEDUP-SOURCE, SA-TR-CAPTION y UM-GDR (BACKLOG).
+
+---
+
+## UX-QA — La pantalla dice lo que dice el log (2026-09-25, `3ee45ae`, #169)
+
+La QA manual del dashboard encontró cinco lugares donde la pantalla decía menos que
+el log, o algo distinto:
+- Stock Analysis con la IA caída decía solo «(sin IA)»; ahora muestra
+  `AI_FALLBACK.message`.
+- El Chat con una key inválida pedía «probá de nuevo»; ahora nombra la causa con
+  `AI_FALLBACK.chat_message` y solo sugiere reintentar si el error es transitorio.
+- Una alerta de precio creada con los valores por defecto se disparaba al crearla;
+  ahora dispara al *cruzar* el objetivo.
+- El banner de la Watchlist se rompía por KaTeX; ahora escapa `\$`.
+- Alertas callaba cuando el email estaba habilitado pero incompleto; ahora lo avisa.
+
+Oráculo en rojo antes del cambio: `tests/test_ux_qa_fallbacks_oracle.py`. La prueba
+en vivo todavía no era obligatoria y no se hizo.
+
+---
+
+## SMTP-GUARD — Sin contraseña SMTP no se intenta el login (2026-09-25, `8c4cdff`, #168)
+
+Con `SMTP_PASSWORD` vacío, el notifier igual intentaba el login en Gmail (535),
+aunque `config_validator` ya marcaba el email como incompleto. Ahora
+`ALERTS.email_ready` exige remitente, destinatario y contraseña, y el envío se saltea
+con un warning. Oráculo: `tests/test_notifier_smtp_guard_oracle.py`.
+
+---
+
+## EMPTY-FEED-SA — Un ticker sin datos no es un SELL fuera del Screener (2026-09-25, `a2b6b10`, #167)
+
+Stock Analysis y la Watchlist publicaban como SELL un ticker sin datos (inexistente o
+sin red), y Stock Analysis además lo registraba en el track record. Ahora usan
+`is_empty_feed`, como el Screener (`ffe2b77`), y el símbolo manual se valida con
+`is_valid_ticker_symbol` antes de descargar. Oráculo:
+`tests/test_empty_feed_pages_oracle.py`.
+
+---
+
+## LLM-1 — El dictamen del comité pasa por el overlay de seguridad (2026-09-25, `e93e81a`, #166)
+
+`CommitteeVerdict.to_decision` registraba la acción del voto ponderado sin pasar por
+`apply_safety_overlay`, así que el comité podía ser más optimista que el motor: ADBE
+salió BUY dos veces (ids 1022 y 1179) contra HOLD de `require_technical_uptrend`. Se
+cerró con la opción híbrida:
+- se registra la acción limitada por el motor, en paridad con `source=ai`;
+- la página muestra el voto crudo, con un aviso cuando difieren.
+
+Las filas 1022 y 1179 quedan como están. Oráculo:
+`tests/test_committee_overlay_oracle.py`. Evidencia:
+[`AUDIT_LLM_2026-09.md`](AUDIT_LLM_2026-09.md).
+
+---
+
 ## TEST-CACHE — La suite no toca la base del usuario (2026-09-24)
 
 N6 aisló los stores, pero la caché de datos vive en la misma base y `DataCache.get`
