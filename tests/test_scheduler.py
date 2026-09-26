@@ -427,3 +427,70 @@ class TestScreenerAdapter:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestOnceScores:
+    """SCHED-ONCE: ``--once`` is the cron/launchd path, and it must score outcomes.
+
+    Before, only the long-running process scheduled ``job_score_track_record``;
+    the documented cron path never did, and the track record went a month with
+    170 recommendations past their horizon and no outcome.
+    """
+
+    def test_once_runs_both_scoring_jobs(self, monkeypatch):
+        calls = []
+        for name in ("job_ingest_macro", "job_alert_check",
+                     "job_score_track_record", "job_score_synthetic_outcomes"):
+            monkeypatch.setattr(sched, name, lambda n=name: calls.append(n))
+        monkeypatch.setattr(sys, "argv", ["run_scheduler.py", "--once"])
+
+        sched.main()
+
+        assert calls == ["job_ingest_macro", "job_alert_check",
+                         "job_score_track_record", "job_score_synthetic_outcomes"]
+
+    def test_synthetic_job_refuses_without_verified_columns(self, monkeypatch):
+        import analysis.synthetic_backtest as sb
+        import analysis.synthetic_outcome as so
+
+        store = types.SimpleNamespace(
+            outcome_columns_verified=False,
+            _engine=None,
+            _migrate_outcome_columns=lambda engine: False,
+        )
+        called = []
+        monkeypatch.setattr(sb, "synthetic_backtest_store", store)
+        monkeypatch.setattr(so, "score_due_outcomes", lambda s: called.append(s))
+
+        sched.job_score_synthetic_outcomes()
+
+        assert called == []
+
+    def test_synthetic_job_scores_with_verified_columns(self, monkeypatch):
+        import analysis.synthetic_backtest as sb
+        import analysis.synthetic_outcome as so
+
+        store = types.SimpleNamespace(outcome_columns_verified=True)
+        called = []
+        monkeypatch.setattr(sb, "synthetic_backtest_store", store)
+        monkeypatch.setattr(so, "score_due_outcomes", lambda s: called.append(s))
+
+        sched.job_score_synthetic_outcomes()
+
+        assert called == [store]
+
+    def test_track_record_job_logs_partial(self, monkeypatch):
+        from loguru import logger
+
+        import analysis.track_record_scorer as trs
+
+        monkeypatch.setattr(trs, "score_due_recommendations",
+                            lambda: {"scored": 1, "partial": 2, "skipped": 3})
+        lines = []
+        sink = logger.add(lambda m: lines.append(str(m)), level="INFO")
+        try:
+            sched.job_score_track_record()
+        finally:
+            logger.remove(sink)
+
+        assert any("scored=1 partial=2 skipped=3" in line for line in lines)
