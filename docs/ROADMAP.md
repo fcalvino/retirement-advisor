@@ -10,6 +10,39 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## PIT-1 — El backtesting point-in-time mide su outcome a 1 año (2026-09-26)
+
+`synthetic_recommendation` guardaba F-Scores de Piotroski reconstruidos a fechas
+pasadas con 8 columnas de outcome que no escribía nada (PR 5/N).
+`analysis/synthetic_outcome.score_due_outcomes` (y `scripts/score_synthetic_outcomes.py`)
+les pone precio al corte y un año después, al ticker y a `TRACK_RECORD.benchmark`
+sobre el cierre ajustado de `get_history`, que incluye dividendos. Escribe el
+retorno, el del benchmark y el exceso. Alcance decidido por el usuario:
+- un deslistado antes del horizonte queda `NULL` y marcado
+  (`outcome_status='delisted_before_horizon'`);
+- sin benchmark es desconocido, no cero (U2-4);
+- un corte cuyo horizonte no pasó queda pendiente.
+
+**El lookup no es el del track record.** `track_record_scorer._price_on_or_before`
+devuelve el último cierre ≤ fecha sin límite de antigüedad, así que a un ticker que
+dejó de cotizar en diciembre le «encontraba» precio en junio. `price_near` exige un
+cierre a ≤ `SYNTHETIC_BACKTEST.max_price_staleness_days` (7) y nunca uno posterior.
+El mismo agujero en el track record quedó como TR-STALE-PRICE (BACKLOG). Importar el
+scorer además arrastraba `analysis.track_record`, que el módulo sintético mantiene
+afuera por construcción (N6).
+
+`outcome_status` viaja por la misma migración y el mismo `outcome_columns_verified`.
+Oráculo en rojo antes del cambio: `tests/test_synthetic_outcome_oracle.py`. Encontró
+un bug antes del merge: una historia vacía rompía la comparación de fechas.
+
+En vivo, sobre una copia: AAPL, MSFT y JNJ × tres cortes; las 6 filas viejas quedaron
+medidas y las 3 de 2026-03-01 pendientes. AAPL, JNJ y SPY dieron a ≤ 0,2 pp del
+retorno recalculado con cierre sin ajustar + dividendos. El Track Record quedó
+byte-idéntico. La base real tiene 0 filas sintéticas: la evidencia llega con PIT-2.
+La misma sesión confirmó #149 como banda 1 (BACKLOG).
+
+---
+
 ## TEST-NET — La suite no sale a la red (2026-09-26)
 
 `tests/test_longevity_horizon_oracle.py` se declaraba «sin red» y corría Monte Carlo

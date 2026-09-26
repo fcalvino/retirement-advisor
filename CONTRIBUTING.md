@@ -8,7 +8,7 @@ Gracias por tu interés en mejorar el proyecto. Toda contribución — desde un 
 
 Retirement Advisor es una herramienta personal de análisis de inversiones. Antes de abrir un PR grande, abrí primero un **Issue** para discutir el cambio. Así evitamos trabajo duplicado y nos aseguramos de que la idea encaje con la dirección del proyecto.
 
-Si usás un AI coding assistant (Claude Code, Grok Build, Cursor, etc.), el path
+Si usás un AI coding assistant (Claude Code u otro), el path
 canónico es [`docs/PROMPT_INSTRUCTIONS.md`](docs/PROMPT_INSTRUCTIONS.md):
 **leé [`docs/CONTEXT.md`](docs/CONTEXT.md) primero.** El catálogo de docs por rol
 está en [`docs/INDEX.md`](docs/INDEX.md).

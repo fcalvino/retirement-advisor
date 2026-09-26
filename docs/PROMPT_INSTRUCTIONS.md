@@ -1,6 +1,6 @@
 # INSTRUCCIONES OBLIGATORIAS PARA CUALQUIER AI CODING ASSISTANT
 
-> Aplica a: **Claude Code**, **Grok Build**, **Cursor**, **Copilot**, o cualquier otro AI coding assistant.
+> Aplica a: **Claude Code** u otro AI coding assistant.
 
 ---
 

@@ -91,6 +91,9 @@ def test_outcome_columns_migrate_onto_a_pre_existing_database():
     assert {
         "price_at_cutoff", "price_at_horizon", "horizon_date", "return_pct",
         "benchmark_return_pct", "excess_return_pct", "benchmark_missing", "outcome_scored_at",
+        # PIT-1: la marca del outcome (deslistado, sin historia, parcial…)
+        # viaja por la misma migración y el mismo flag outcome_columns_verified.
+        "outcome_status",
     } <= cols
 
     row = conn.execute("SELECT symbol, piotroski_score FROM synthetic_recommendation").fetchone()

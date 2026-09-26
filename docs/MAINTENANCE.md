@@ -6,7 +6,7 @@
 
 ## 1. El archivo más importante: `docs/CONTEXT.md`
 
-`docs/CONTEXT.md` es el **contexto canónico del proyecto**. Cualquier AI coding assistant (Claude Code, Grok Build, etc.) debe leerlo antes de planear o codificar. Si este archivo está desactualizado, el AI trabajará con información incorrecta.
+`docs/CONTEXT.md` es el **contexto canónico del proyecto**. Cualquier AI coding assistant (Claude Code u otro) debe leerlo antes de planear o codificar. Si este archivo está desactualizado, el AI trabajará con información incorrecta.
 
 ### Cuándo actualizar CONTEXT.md
 
@@ -38,7 +38,7 @@ Los demás archivos de instrucciones son punteros a ese path:
 - `CLAUDE.md` → `@docs/PROMPT_INSTRUCTIONS.md` (no editar el bloque RTK)
 - `AI_CODING_GUIDELINES.md` → puntero corto al mismo archivo
 
-**Todo prompt a Claude Code o Grok Build debe comenzar así:**
+**Todo prompt a Claude Code u otro AI coding assistant debe comenzar así:**
 
 ```
 Antes de responder, lee docs/CONTEXT.md completo.

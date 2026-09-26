@@ -2352,6 +2352,35 @@ class TrackRecordConfig:
 
 
 @dataclass
+class SyntheticBacktestConfig:
+    """
+    Outcome of the point-in-time backtest (PIT-1, ``analysis/synthetic_outcome.py``).
+
+    Each ``synthetic_recommendation`` row is a Piotroski F-Score reconstructed
+    at a past cutoff; its outcome is the ticker's return over one year from
+    that cutoff, against ``TRACK_RECORD.benchmark`` (read from there, not
+    repeated here, so the synthetic sample and the live track record measure
+    against the same market).
+
+    Fields:
+      horizon_days             — CALENDAR days from the cutoff to the horizon,
+                                 the same unit as ``TRACK_RECORD.horizons_days``
+                                 (U5-15). One year: Piotroski is a 1-year signal.
+      max_price_staleness_days — how far back from a target date the last
+                                 available close may be and still stand for
+                                 that date. A guard, not a calibration: it
+                                 covers a weekend plus a long holiday (the
+                                 longest US market closure, September 2001,
+                                 was 6 calendar days). Without it a ticker
+                                 delisted in December would be "priced" in June
+                                 at its last close — a made-up outcome that
+                                 looks measured.
+    """
+    horizon_days: int = 365
+    max_price_staleness_days: int = 7
+
+
+@dataclass
 class PortfolioConfig:
     """
     The user's book (``portfolio.tracker.Portfolio``).
@@ -3188,6 +3217,7 @@ SENSITIVITY = SensitivityConfig()
 GOAL_CARD = GoalCardConfig()
 PERSONAL_BOOK = PersonalBookConfig()
 TRACK_RECORD = TrackRecordConfig()
+SYNTHETIC_BACKTEST = SyntheticBacktestConfig()
 PORTFOLIO = PortfolioConfig()
 EVAL = EvalConfig()
 COMMITTEE = CommitteeConfig()

@@ -31,12 +31,11 @@ not guessed at now". PR 5/N adds them — ``price_at_cutoff``,
 ``benchmark_return_pct``, ``excess_return_pct``, ``benchmark_missing``,
 ``outcome_scored_at`` — via the same ``ADD COLUMN``
 ``_migrate`` pattern ``analysis/track_record.py`` uses for its own
-"Calibration inputs" columns. **Schema only**: nothing in this PR measures
-an outcome or writes a value into any of these columns — every one stays
-``NULL``/unset (except ``benchmark_missing``, which defaults to ``False``
-like its ``RecommendationOutcome`` precedent — see that column's own
-comment below) until the PR that actually fetches prices via yfinance and
-computes a return does so (PR 6/N). A single horizon (1 year), not
+"Calibration inputs" columns. PR 5/N was schema only. PIT-1 (PR 6/N,
+``analysis/synthetic_outcome.py``) is what measures them, and adds one more
+column, ``outcome_status``, so a row that could not be scored says *why*
+(delisted before the horizon, no history, benchmark missing) instead of
+looking identical to one nobody tried yet. A single horizon (1 year), not
 ``RecommendationOutcome``'s multi-horizon 30/90/252-day table, because the
 diagnóstico names exactly one horizon and Piotroski is itself a 1-year
 signal (``config.PiotroskiConfig``) — a second table for horizons nothing
@@ -69,6 +68,28 @@ from data.clock import utc_now
 #: write must not be counted as a real failure — see ``log_piotroski``'s
 #: own docstring.
 ALREADY_LOGGED = object()
+
+# --- Outcome status (PIT-1) --------------------------------------------------
+# ``outcome_status`` is NULL until the scorer first looks at a row whose
+# horizon has passed. After that it says what happened, because "no outcome"
+# means three different things and only one of them is final:
+#: Fully measured: own return, benchmark return, excess.
+OUTCOME_SCORED = "scored"
+#: Own return measured, benchmark could not be priced (U2-4: unknown, not
+#: zero). Retried on the next run, like ``RecommendationOutcome``.
+OUTCOME_PARTIAL = "partial"
+#: The ticker's history ends before the horizon (delisted, acquired, merged).
+#: Final: kept in the sample with a NULL outcome rather than dropped, so the
+#: sample is not survivors-only, and never priced at its last close.
+OUTCOME_DELISTED = "delisted_before_horizon"
+#: History exists but has no close near the cutoff or the horizon (listed
+#: after the cutoff, or a gap). Retried.
+OUTCOME_NO_PRICE = "no_price"
+#: No price history at all — an unknown symbol or a network failure, which
+#: look the same from here. Retried.
+OUTCOME_NO_HISTORY = "no_history"
+#: Statuses the scorer never revisits.
+FINAL_OUTCOME_STATUSES = (OUTCOME_SCORED, OUTCOME_DELISTED)
 
 
 class _Base(DeclarativeBase):
@@ -124,9 +145,9 @@ class SyntheticRecommendation(_Base):
     # "not guessed at now"). Every column here is nullable, and every one
     # *stays unset* by default — except benchmark_missing, whose own
     # comment below explains why it defaults to False, not NULL.
-    # Nothing that writes a row today (PR 3/N's log_piotroski, below) sets any of
-    # these, and no PR yet *measures* them — that is PR 6/N. This PR is
-    # schema-only.
+    # log_piotroski (PR 3/N, below) never sets any of these; the only writer
+    # is the outcome scorer (PIT-1, analysis/synthetic_outcome.py), through
+    # save_outcome.
     #
     # Single horizon (1 year), unlike analysis/track_record.py's
     # RecommendationOutcome (a separate table for 30/90/252-day horizons):
@@ -155,6 +176,9 @@ class SyntheticRecommendation(_Base):
     # scored yet" state.
     benchmark_missing         = Column(Boolean, default=False, server_default=text("0"))
     outcome_scored_at         = Column(DateTime, nullable=True)
+    # PIT-1: why a row has (or lacks) an outcome — one of the OUTCOME_*
+    # constants above; NULL means "not looked at yet".
+    outcome_status            = Column(String, nullable=True)
 
 
 class SyntheticBacktestStore:
@@ -206,6 +230,7 @@ class SyntheticBacktestStore:
             ("excess_return_pct", "FLOAT"),
             ("benchmark_missing", "BOOLEAN DEFAULT 0"),
             ("outcome_scored_at", "DATETIME"),
+            ("outcome_status", "VARCHAR"),
         ]
         try:
             existing = self._migrated_columns(engine)
@@ -439,6 +464,58 @@ class SyntheticBacktestStore:
             if symbol is not None:
                 query = query.filter(SyntheticRecommendation.symbol == symbol.upper())
             return query.order_by(SyntheticRecommendation.as_of).all()
+
+    def get_unscored(self) -> List[SyntheticRecommendation]:
+        """Rows the outcome scorer still has to look at: never tried, or tried
+        with a retryable status. Whether each one's horizon has passed is the
+        scorer's call (``as_of`` is an ISO string; the date arithmetic lives in
+        Python, next to the rule it implements).
+
+        Defensive like ``existing_pairs``: a read failure returns ``[]`` —
+        nothing gets scored this run, nothing gets written wrong.
+        """
+        try:
+            with self._Session() as session:
+                return (
+                    session.query(SyntheticRecommendation)
+                    .filter(
+                        (SyntheticRecommendation.outcome_status.is_(None))
+                        | (SyntheticRecommendation.outcome_status.notin_(FINAL_OUTCOME_STATUSES))
+                    )
+                    .order_by(SyntheticRecommendation.as_of, SyntheticRecommendation.symbol)
+                    .all()
+                )
+        except Exception as exc:
+            logger.error(f"synthetic_backtest: failed to read unscored rows — {exc}")
+            return []
+
+    def save_outcome(self, row_id: int, **fields: Any) -> bool:
+        """Write outcome columns onto one row. Only the outcome columns are
+        accepted — the F-Score a row was logged with is never rewritten here.
+        Returns whether the write landed; never raises (one failed row must not
+        abort a scoring run over the whole table).
+        """
+        allowed = {
+            "price_at_cutoff", "price_at_horizon", "horizon_date", "return_pct",
+            "benchmark_return_pct", "excess_return_pct", "benchmark_missing",
+            "outcome_scored_at", "outcome_status",
+        }
+        unknown = set(fields) - allowed
+        if unknown:
+            raise ValueError(f"save_outcome: not outcome columns: {sorted(unknown)}")
+        try:
+            with self._Session() as session:
+                row = session.get(SyntheticRecommendation, row_id)
+                if row is None:
+                    logger.error(f"synthetic_backtest: save_outcome on missing row id={row_id}")
+                    return False
+                for key, value in fields.items():
+                    setattr(row, key, value)
+                session.commit()
+                return True
+        except Exception as exc:
+            logger.error(f"synthetic_backtest: failed to save outcome for id={row_id} — {exc}")
+            return False
 
     def existing_pairs(self, symbol: str, source: str = "point_in_time_piotroski") -> set:
         """The ``as_of`` dates already logged for *symbol* — what a batch run
