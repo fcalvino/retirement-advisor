@@ -309,3 +309,33 @@ def test_the_outcome_module_does_not_import_the_track_record():
     )
     out = subprocess.run([sys.executable, "-c", code], cwd=root, capture_output=True, text=True, check=True)
     assert out.stdout.strip() == "[]"
+
+
+# --------------------------------------------------------------------------- #
+#  Script: se niega sin columnas verificadas, igual que point_in_time_backtest #
+# --------------------------------------------------------------------------- #
+
+def test_script_refuses_when_outcome_columns_are_not_verified(monkeypatch):
+    import scripts.score_synthetic_outcomes as script
+
+    store = SyntheticBacktestStore(":memory:")
+    store.outcome_columns_verified = False
+    monkeypatch.setattr(store, "_migrate_outcome_columns", lambda engine: False)
+    monkeypatch.setattr(script, "synthetic_backtest_store", store)
+    called = []
+    monkeypatch.setattr(script, "score_due_outcomes", lambda s: called.append(s) or {})
+
+    assert script.main() == 1
+    assert called == []
+
+
+def test_script_scores_the_module_store_when_verified(monkeypatch):
+    import scripts.score_synthetic_outcomes as script
+
+    store = SyntheticBacktestStore(":memory:")
+    monkeypatch.setattr(script, "synthetic_backtest_store", store)
+    called = []
+    monkeypatch.setattr(script, "score_due_outcomes", lambda s: called.append(s) or {"scored": 0})
+
+    assert script.main() == 0
+    assert called == [store]
