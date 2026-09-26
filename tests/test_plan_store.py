@@ -175,11 +175,12 @@ def test_superseded_and_missing_engine_versions_are_stale():
     the hole that fix left: the guard compared currency labels, and PETR4.SA and
     VALE3.SA declare BRL with statements in USD, so their yield came out 5.1x low.
     UM-1 (tier11) stops scoring a priceToBook broken per share (ADRs, BRK-B),
-    and tier12 does the same for enterpriseToEbitda across currencies.
+    and tier12 does the same for enterpriseToEbitda across currencies. #149
+    (tier13) gives crypto its own action ladder: BTC's published signal moves.
     """
     from config import ENGINE_VERSION
 
-    assert ENGINE_VERSION == "2026.09-tier12"
+    assert ENGINE_VERSION == "2026.09-tier13"
 
     current = PlanSnapshot.from_session(name="actual", opt_result=_fake_opt_result())
     assert current.engine_version == ENGINE_VERSION
@@ -189,7 +190,7 @@ def test_superseded_and_missing_engine_versions_are_stale():
                        "2026.08-tier3", "2026.08-tier4", "2026.08-tier5",
                        "2026.08-tier6", "2026.08-tier7", "2026.08-tier8",
                        "2026.09-tier9", "2026.09-tier10",
-                       "2026.09-tier11"):
+                       "2026.09-tier11", "2026.09-tier12"):
         old = PlanSnapshot.from_session(name="viejo", opt_result=_fake_opt_result())
         old.engine_version = superseded
         assert old.is_engine_stale() is True

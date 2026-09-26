@@ -121,7 +121,15 @@ DB_PATH = Path(os.getenv("RETIREMENT_ADVISOR_DB_PATH") or DB_DIR / "retirement_a
 #                   no medible (nunca se reemplaza). Ningún adjusted_score cambia:
 #                   los otros tres ya pagaban 0 y TSM está en el tope de 100 (su
 #                   score sin tope baja de 110,5 a 105,5, sigue 2.º de 186).
-ENGINE_VERSION = "2026.09-tier12"
+#   2026.09-tier13 — #149: un cripto se leía con la escalera de equity (82/68/55/45)
+#                   sobre una escala que topea en 66, y BTC (−15 fijos de
+#                   drawdown) salía SELL en cualquier mercado. Escalera cripto
+#                   propia en CRYPTO_MOAT: techo HOLD, HOLD ≥ 28, REDUCE ≥ 12.
+#                   Cambia la señal publicada de BTC y ETH; el adjusted_score no
+#                   se toca, así que la μ del optimizer y las señales de equity
+#                   quedan idénticas. Las bandas de penalización pasan a config
+#                   byte-idénticas.
+ENGINE_VERSION = "2026.09-tier13"
 
 
 @dataclass(frozen=True)
@@ -965,6 +973,32 @@ class CryptoMoatConfig:
     tech_pts_bearish: float = 8.0
     tech_pts_bearish_strong: float = 4.0
     max_vol_for_buy: float = 70.0
+
+    # Penalizaciones de _compute_score. Vivían inline en CryptoAnalyzer
+    # (_vol_penalty / _drawdown_penalty) hasta #149; se movieron 1:1.
+    # vol_penalty_bands: (corte, pts) en orden; vol < corte → pts, salvo el
+    # último corte, que es inclusivo (vol ≤ 100 → 20). Por encima → vol_penalty_max.
+    vol_penalty_bands: tuple = ((40.0, 0.0), (60.0, 8.0), (80.0, 15.0), (100.0, 20.0))
+    vol_penalty_max: float = 25.0
+    vol_penalty_unknown: float = 15.0
+    # dd_penalty_bands: (corte, pts) en orden; dd > corte → pts. Por debajo → dd_penalty_max.
+    dd_penalty_bands: tuple = ((-30.0, 0.0), (-50.0, 5.0), (-70.0, 10.0))
+    dd_penalty_max: float = 15.0
+    dd_penalty_unknown: float = 10.0
+
+    # Escalera de acción cripto (#149). La de equity (STRATEGY 82/68/55/45) se
+    # re-ancló contra 149 acciones con bonus que un cripto no cobra, y la escala
+    # cripto topea en max_achievable_score() = 66: BTC, que paga siempre 15 de
+    # drawdown, salía SELL en cualquier mercado. Decisión del usuario (2026-09-26):
+    # techo HOLD — ningún cripto compra por score —, BTC en BULLISH fuerte sin IA
+    # (28) da HOLD. BTC con dd −83 % y vol 60–80 % (sin IA / moat Wide +8):
+    #   BULLISH fuerte 28/36 HOLD/HOLD · BULLISH 22/30 REDUCE/HOLD
+    #   NEUTRAL 14/22 REDUCE/REDUCE · BEARISH 6/14 SELL/REDUCE
+    #   BEARISH fuerte 2/10 SELL/SELL · bear + vol >100 % → 0 SELL
+    ladder_strong_buy_score: float = float("inf")
+    ladder_buy_score: float = float("inf")
+    ladder_hold_score: float = 28.0
+    ladder_reduce_score: float = 12.0
 
     def max_achievable_score(self) -> float:
         """El techo aritmético de ``adjusted_score`` en la escala cripto.

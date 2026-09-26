@@ -15,7 +15,7 @@ from analysis.strategy import (
     effective_decision_score,
     full_analysis,
 )
-from config import DATA_QUALITY, STRATEGY
+from config import CRYPTO_MOAT, DATA_QUALITY, STRATEGY
 
 
 def _fund(
@@ -314,7 +314,13 @@ class TestDataQualityAndCryptoVol:
             warnings=["⚠️ Volatilidad extrema (85% anualizada) — inadecuado"],
         )
         tech = _tech(signal="BULLISH", above_sma200=True)
-        with patch.object(STRATEGY, "require_technical_uptrend", True):
+        # #149: la escalera cripto real topea en HOLD, así que el cap ya no se
+        # alcanza por score. Se fija contra una escalera hipotética que compra
+        # para que el cap siga probado si el techo se levanta.
+        with patch.object(STRATEGY, "require_technical_uptrend", True), patch.multiple(
+            CRYPTO_MOAT, ladder_strong_buy_score=STRATEGY.strong_buy_score,
+            ladder_buy_score=STRATEGY.buy_score,
+        ):
             d = eng.decide(fund, tech)
         assert d.action == "HOLD"
         assert any("volatilidad" in r.lower() for r in d.rationale)

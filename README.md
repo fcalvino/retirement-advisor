@@ -409,10 +409,13 @@ Fórmula (lee `CRYPTO_MOAT` + `CryptoAnalyzer._compute_score`):
 | Penalidad drawdown | 0 a −15 | Max drawdown: >−30%→0, −30 a −50%→−5, −50 a −70%→−10, <−70%→−15 |
 | Bonus moat AI | 0 a +8 | `min(total × bonus_factor, max_bonus)` — Wide puede sumar el tope |
 
+**Escalera de acción cripto (#149)** — propia, no la de equity: la escala cripto topea en 66 (`CRYPTO_MOAT.max_achievable_score()`), y BTC paga siempre −15 de drawdown. Techo **HOLD**: ningún cripto llega a BUY por score. Score ≥ 28 → HOLD · ≥ 12 → REDUCE · < 12 → SELL (`CRYPTO_MOAT.ladder_*`).
+
 **Rango típico BTC:**
 - Bull + Wide Moat y vol/dd no extremos → **55–65** (HOLD — no STRONG BUY)
-- Perfil histórico BTC (vol ~65 %, max DD ~−77 %) → **~28–36** (HOLD / REDUCE); el momentum solo no llega a BUY
-- Bear + vol extrema → **0–10** (SELL / REDUCE)
+- Perfil histórico BTC (vol ~65 %, max DD ~−77 %) → **~28–36** (HOLD); el momentum solo no llega a BUY
+- BULLISH sin IA → **22** (REDUCE) · NEUTRAL → **14–22** (REDUCE)
+- Bear + vol extrema → **0–10** (SELL)
 
 #### Crypto Moat Framework (AI qualitative, 0–8 pts)
 

@@ -21,14 +21,14 @@ Conservative rules for retirement:
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, NamedTuple, Optional
 
 from loguru import logger
 
 from analysis.currency_metric_text import currency_metric_text
 from analysis.fundamental import FundamentalResult, effective_payout_pct, max_payout_for
 from analysis.technical import TechnicalResult
-from config import DATA_QUALITY
+from config import CRYPTO_MOAT, DATA_QUALITY
 from config import STRATEGY as CFG
 from config import TECHNICAL as TECH_CFG
 from data.product_ux import TREND_MA_LABEL_EN, with_currency
@@ -49,24 +49,58 @@ AI_MORE_PRUDENT_REASON = (
 )
 
 
+#: #149: los motivos de REDUCE y SELL de un cripto. Los de equity («Calidad
+#: fundamental en deterioro», «Fundamental deterioration») mienten para un activo
+#: sin estados contables: lo que lo baja es volatilidad y drawdown.
+CRYPTO_REDUCE_REASON = "Riesgo cripto (volatilidad/drawdown) domina: score {score:.0f}/{scale:.0f} — reducir"
+CRYPTO_SELL_REASON = "Riesgo cripto (volatilidad/drawdown) extremo: score {score:.0f}/{scale:.0f} — salir"
+
+
+class ScoreLadder(NamedTuple):
+    """Los cuatro peldaños de la escalera de acción, en el orden de ``decide()``."""
+
+    strong_buy: float
+    buy: float
+    hold: float
+    reduce: float
+
+
+def ladder_for(is_crypto: bool) -> ScoreLadder:
+    """La escalera según la clase de activo — un solo lugar donde vive el orden.
+
+    Equity lee ``STRATEGY``. Cripto lee ``CRYPTO_MOAT`` (#149): su escala topea en
+    ``max_achievable_score()`` = 66 y la de equity lo dejaba en SELL por
+    construcción. Los peldaños de compra cripto son ``inf``: techo HOLD.
+    """
+    if is_crypto:
+        return ScoreLadder(
+            CRYPTO_MOAT.ladder_strong_buy_score,
+            CRYPTO_MOAT.ladder_buy_score,
+            CRYPTO_MOAT.ladder_hold_score,
+            CRYPTO_MOAT.ladder_reduce_score,
+        )
+    return ScoreLadder(CFG.strong_buy_score, CFG.buy_score, CFG.hold_score, CFG.reduce_score)
+
+
 def _rank(action: str) -> int:
     """Posición de una acción en la escalera; lo desconocido se lee como HOLD."""
     return _ACTION_RANK.get(str(action or "").upper(), _ACTION_RANK["HOLD"])
 
 
-def max_action_for_score(effective_score: float) -> str:
+def max_action_for_score(effective_score: float, *, is_crypto: bool = False) -> str:
     """El peldaño más alto de la escalera que ese score alcanza.
 
     Es la escalera de ``decide()`` leída como techo en vez de como asignación:
-    misma fuente (``STRATEGY``), un solo lugar donde vive el orden.
+    misma fuente (``ladder_for``), un solo lugar donde vive el orden.
     """
-    if effective_score >= CFG.strong_buy_score:
+    ladder = ladder_for(is_crypto)
+    if effective_score >= ladder.strong_buy:
         return "STRONG BUY"
-    if effective_score >= CFG.buy_score:
+    if effective_score >= ladder.buy:
         return "BUY"
-    if effective_score >= CFG.hold_score:
+    if effective_score >= ladder.hold:
         return "HOLD"
-    if effective_score >= CFG.reduce_score:
+    if effective_score >= ladder.reduce:
         return "REDUCE"
     return "SELL"
 
@@ -117,6 +151,7 @@ def confidence_for(
     downgraded: bool,
     data_quality_level: str,
     negative_equity: bool,
+    is_crypto: bool = False,
 ) -> str:
     """Pure, deterministic confidence from first principles — no LLM input.
 
@@ -139,13 +174,14 @@ def confidence_for(
 
     score = effective_score
     sig = technical_signal
-    if score >= CFG.strong_buy_score:
+    ladder = ladder_for(is_crypto)
+    if score >= ladder.strong_buy:
         base = "HIGH" if sig == "BULLISH" else "MEDIUM"
-    elif score >= CFG.buy_score:
+    elif score >= ladder.buy:
         base = "HIGH" if sig == "BULLISH" else "MEDIUM"
-    elif score >= CFG.hold_score:
+    elif score >= ladder.hold:
         base = "MEDIUM"
-    elif score >= CFG.reduce_score:
+    elif score >= ladder.reduce:
         base = "MEDIUM"
     else:
         base = "HIGH"  # SELL: high certainty the position should be exited
@@ -160,7 +196,7 @@ def confidence_for(
         # un solo lugar donde viven los umbrales.
         "MEDIUM"
         if action in _BUY_ACTIONS
-        and _ACTION_RANK[action] > _ACTION_RANK[max_action_for_score(score)]
+        and _ACTION_RANK[action] > _ACTION_RANK[max_action_for_score(score, is_crypto=is_crypto)]
         else None,
         "MEDIUM" if downgraded else None,
         (getattr(DATA_QUALITY, "partial_max_confidence", "MEDIUM") or "MEDIUM")
@@ -214,6 +250,7 @@ def apply_safety_overlay(
     same (action, score, technical, dq) inputs.
     """
     _is_crypto = getattr(fundamental, "is_crypto", False)
+    decision.is_crypto = bool(_is_crypto)
 
     if _is_crypto:
         if (
@@ -297,6 +334,7 @@ def apply_safety_overlay(
         downgraded=bool(decision.decisive_reason),
         data_quality_level=(getattr(fundamental, "data_quality", {}) or {}).get("level", ""),
         negative_equity=getattr(fundamental, "negative_equity", False),
+        is_crypto=decision.is_crypto,
     )
     return decision
 
@@ -434,6 +472,10 @@ class Decision:
     # provider)`` so no surface can name a provider other than the configured one.
     ai_fallback_reason: str = ""
 
+    # #149: qué escalera leyó el score. La setean decide() y el overlay; la usan
+    # score_badge y decision_explanation para no citar la escala de equity.
+    is_crypto: bool = False
+
     @property
     def action_emoji(self) -> str:
         return {
@@ -457,11 +499,12 @@ class Decision:
         contradicting each other on the same screen.
         """
         s = self.fundamental_score
-        if s >= CFG.strong_buy_score:
+        ladder = ladder_for(self.is_crypto)
+        if s >= ladder.strong_buy:
             return "⭐ Excellent"
-        elif s >= CFG.buy_score:
+        elif s >= ladder.buy:
             return "✅ Good"
-        elif s >= CFG.hold_score:
+        elif s >= ladder.hold:
             return "🟡 Fair"
         else:
             return "⚠️ Weak"
@@ -493,6 +536,7 @@ class RetirementStrategy:
             fundamental_score=effective_score,
             technical_signal=technical.signal,
             has_margin_of_safety=fundamental.is_value_stock(),
+            is_crypto=bool(_is_crypto),
         )
 
         # --- Step 1: Hard safety blocks (most equity blocks don't apply to crypto) ---
@@ -519,8 +563,9 @@ class RetirementStrategy:
         # --- Step 2: Decision matrix (action + decisive_reason only; confidence set later) ---
         score = effective_score
         tech = technical.signal
+        ladder = ladder_for(_is_crypto)
 
-        if score >= CFG.strong_buy_score and technical_confirms_strong_buy(tech):
+        if score >= ladder.strong_buy and technical_confirms_strong_buy(tech):
             if fundamental.is_value_stock() or not CFG.require_margin_of_safety:
                 decision.action = "STRONG BUY"
             else:
@@ -530,13 +575,13 @@ class RetirementStrategy:
                 )
                 decision.rationale.append("Strong fundamentals but no margin of safety yet — wait for pullback")
 
-        elif score >= CFG.buy_score and tech != "BEARISH":
+        elif score >= ladder.buy and tech != "BEARISH":
             decision.action = "BUY"
             # Un score de banda STRONG BUY que cae acá es una degradación, no un BUY
             # de libro: la confirmación técnica que esa banda exige no existe. Sin
             # este motivo la celda «Motivo» decía "el técnico no lo contradice" —
             # que es justo lo que el estado no medible desmiente (SIGNAL-5).
-            if score >= CFG.strong_buy_score and tech == TECH_CFG.signal_not_measurable:
+            if score >= ladder.strong_buy and tech == TECH_CFG.signal_not_measurable:
                 decision.decisive_reason = (
                     "Técnico sin historia suficiente — BUY, no STRONG BUY"
                 )
@@ -545,21 +590,33 @@ class RetirementStrategy:
                     "(insufficient price history) — BUY, not STRONG BUY"
                 )
 
-        elif score >= CFG.hold_score:
+        elif score >= ladder.hold:
             decision.action = "HOLD"
             if tech == "BEARISH":
                 decision.decisive_reason = "Técnico débil — mantener, no agregar"
                 decision.rationale.append("Solid fundamentals but technical weakness — hold, do not add")
 
-        elif score >= CFG.reduce_score:
+        elif score >= ladder.reduce:
             decision.action = "REDUCE"
-            decision.decisive_reason = "Calidad fundamental en deterioro — reducir exposición"
-            decision.rationale.append("Fundamental quality declining — reduce exposure gradually")
+            if _is_crypto:
+                reason = CRYPTO_REDUCE_REASON.format(
+                    score=score, scale=CRYPTO_MOAT.max_achievable_score()
+                )
+                decision.decisive_reason = reason
+                decision.rationale.append(reason)
+            else:
+                decision.decisive_reason = "Calidad fundamental en deterioro — reducir exposición"
+                decision.rationale.append("Fundamental quality declining — reduce exposure gradually")
 
         else:
             decision.action = "SELL"
             # decisive_reason intentionally empty: action follows straight from the score.
-            decision.rationale.append("Fundamental deterioration — exit position")
+            if _is_crypto:
+                decision.rationale.append(
+                    CRYPTO_SELL_REASON.format(score=score, scale=CRYPTO_MOAT.max_achievable_score())
+                )
+            else:
+                decision.rationale.append("Fundamental deterioration — exit position")
 
         # Technical confirmation for BUY / STRONG BUY (config-first)
         if CFG.require_technical_uptrend and decision.action in ("BUY", "STRONG BUY"):

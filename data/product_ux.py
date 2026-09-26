@@ -17,7 +17,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 # Module-level: the copy constants below are built at import time, so they cannot
 # use the lazy `from config import X as config` the functions in this file do.
 # Safe in both directions — config.py imports nothing from data/.
-from config import CASH_BUFFER_PCT, MOAT, QUOTE_MINOR_MAJOR, TECHNICAL
+from config import CASH_BUFFER_PCT, CRYPTO_MOAT, MOAT, QUOTE_MINOR_MAJOR, TECHNICAL
 
 # --------------------------------------------------------------------------- #
 #  Señal técnica: el estado "no medible" nunca se muestra crudo (SIGNAL-5)     #
@@ -1641,7 +1641,9 @@ def decision_explanation(decision: Any, *, max_headline: int = 90) -> dict:
     # like "HOLD — ROE de 30,3 % y moat Wide sustentan rentabilidad", which is the
     # same contradiction this item exists to remove, just with more words.
     score = _safe_float(getattr(decision, "fundamental_score", None))
-    band = f"Score {score:.0f}/100" if score else "El score"
+    # #149: un cripto se lee contra su propia escala (topea en 66), no contra 100.
+    scale = CRYPTO_MOAT.max_achievable_score() if getattr(decision, "is_crypto", False) else 100
+    band = f"Score {score:.0f}/{scale:.0f}" if score else "El score"
     headline = decisive or {
         "STRONG BUY": f"{band} en zona de compra fuerte, sin objeciones técnicas",
         "BUY": f"{band} en zona de compra, el técnico no lo contradice",
@@ -2190,6 +2192,14 @@ ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
         "Equinor— el dato del proveedor salía distorsionado. Ahora, si no cierra "
         "con el resto de las cifras, no se usa. Ningún puntaje ni recomendación "
         "cambia y no afecta la proyección de tu retiro.",
+    ),
+    (
+        "2026.09-tier13",
+        "Bitcoin y las demás criptomonedas se juzgaban con la vara de las acciones, "
+        "sobre una escala que para ellas no pasa de 66: Bitcoin salía «vender» en "
+        "cualquier mercado. Ahora tienen su propia escala, que llega como mucho a "
+        "«mantener». Cambia la recomendación de Bitcoin y Ethereum; las acciones y "
+        "la proyección de tu retiro no cambian.",
     ),
 )
 

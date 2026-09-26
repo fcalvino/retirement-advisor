@@ -363,17 +363,17 @@ class CryptoAnalyzer:
             80–100% → 20
             > 100%  → 25
         """
+        from config import CRYPTO_MOAT as _CM
         if vol is None:
-            return 15.0   # conservative default if unknown
-        if vol < 40:
-            return 0.0
-        elif vol < 60:
-            return 8.0
-        elif vol < 80:
-            return 15.0
-        elif vol <= 100:
-            return 20.0
-        return 25.0
+            return float(_CM.vol_penalty_unknown)   # conservative default if unknown
+        bands = _CM.vol_penalty_bands
+        for cut, pts in bands[:-1]:
+            if vol < cut:
+                return float(pts)
+        last_cut, last_pts = bands[-1]
+        if vol <= last_cut:
+            return float(last_pts)
+        return float(_CM.vol_penalty_max)
 
     @staticmethod
     def _drawdown_penalty(dd: Optional[float]) -> float:
@@ -385,15 +385,13 @@ class CryptoAnalyzer:
             -50–70% → 10
             < -70%  → 15  (BTC: -77% 2022, -83% 2018)
         """
+        from config import CRYPTO_MOAT as _CM
         if dd is None:
-            return 10.0   # conservative default
-        if dd > -30:
-            return 0.0
-        elif dd > -50:
-            return 5.0
-        elif dd > -70:
-            return 10.0
-        return 15.0
+            return float(_CM.dd_penalty_unknown)   # conservative default
+        for cut, pts in _CM.dd_penalty_bands:
+            if dd > cut:
+                return float(pts)
+        return float(_CM.dd_penalty_max)
 
     # ------------------------------------------------------------------ #
     #  AI Crypto Moat                                                      #
