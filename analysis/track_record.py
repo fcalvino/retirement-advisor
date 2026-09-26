@@ -566,6 +566,13 @@ class TrackRecordStore:
             logger.error(f"track_record: failed to log recommendation — {exc}")
             return None
 
+    def logged_today(self, symbol: str, action: str) -> bool:
+        """Public face of the write-side dedup, so a page can say *why* nothing was
+        written without re-deriving the rule (QA LLM-2: the Comité claimed a row the
+        dedup had dropped). Same key as ``_exists_today`` — it *is* ``_exists_today``.
+        """
+        return self._exists_today(symbol, action)
+
     def _exists_today(self, symbol: str, action: str) -> bool:
         """¿Ya se logueó esta recomendación en el día **local** de hoy?
 
