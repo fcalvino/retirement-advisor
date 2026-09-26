@@ -11,7 +11,7 @@ BIN     = $(VENV)/bin
 
 help:
 	@echo "Targets disponibles:"
-	@echo "  make setup   - crear el venv e instalar dependencias"
+	@echo "  make setup   - crear el venv e instalar dependencias (+ requirements-dev.txt: ruff fijado)"
 	@echo "  make run     - lanzar el dashboard (setup automático si falta)"
 	@echo "  make test    - correr la suite de tests (pytest)"
 	@echo "  make lint    - correr ruff"
@@ -23,6 +23,7 @@ help:
 
 setup:
 	./run.sh --setup
+	$(BIN)/pip install -q -r requirements-dev.txt
 
 run:
 	./run.sh
