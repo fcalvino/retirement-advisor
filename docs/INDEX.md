@@ -52,7 +52,7 @@ Roles:
 | ai-context | `AI_CODING_GUIDELINES.md` | Puntero corto al path canónico |
 | ai-context | `CLAUDE.md` | Puntero Claude Code (`@docs/PROMPT_INSTRUCTIONS.md`) |
 | living-guide | `docs/BACKLOG.md` | **Lo que falta hacer** — repriorización unificada (auditoría + ideación + specs) |
-| historical-audit | `docs/FIX_FCF_YIELD_MONEDA.md` | Evidencia y cierre documental 2026-09-11 de `fcf_yield`/`p_ffo` entre monedas; PR 4 pendiente de merge |
+| historical-audit | `docs/FIX_FCF_YIELD_MONEDA.md` | Evidencia y cierre documental 2026-09-11 de `fcf_yield`/`p_ffo` entre monedas; la serie cerró con PR 4 (#117) |
 | historical-plan | `docs/ROADMAP.md` | Fases ya completadas (no es backlog abierto) |
 | historical-plan | `docs/IMPLEMENTATION_PLAN.md` | Plan 2026-06 del Gran Salto — las 5 fases ya están shipped |
 | ideation | `docs/VISION_GRAN_SALTO.md` | Visión de producto 2026-06; las 3 apuestas ya están en el código |
@@ -114,7 +114,7 @@ Un solo path canónico: **`docs/PROMPT_INSTRUCTIONS.md`** (regla: leer
 
 | Documento | Descripción |
 |-----------|-------------|
-| [`PROMPT_INSTRUCTIONS.md`](PROMPT_INSTRUCTIONS.md) | Instrucciones obligatorias (Claude Code, Grok Build, etc.) |
+| [`PROMPT_INSTRUCTIONS.md`](PROMPT_INSTRUCTIONS.md) | Instrucciones obligatorias (Claude Code u otro AI coding assistant) |
 | [`CONTEXT.md`](CONTEXT.md) | Contexto canónico — arquitectura, features, estándares, limitaciones |
 | [`../AI_CODING_GUIDELINES.md`](../AI_CODING_GUIDELINES.md) | Puntero a `PROMPT_INSTRUCTIONS.md` |
 | [`../CLAUDE.md`](../CLAUDE.md) | Puntero Claude Code (no editar el bloque RTK) |
@@ -148,7 +148,7 @@ descripción viva del sistema.
 
 | Documento | Contenido |
 |-----------|-----------|
-| [`FIX_FCF_YIELD_MONEDA.md`](FIX_FCF_YIELD_MONEDA.md) | Evidencia del cruce de monedas en `fcf_yield`/`p_ffo`; cierre documental 2026-09-11, PR 4 pendiente de merge |
+| [`FIX_FCF_YIELD_MONEDA.md`](FIX_FCF_YIELD_MONEDA.md) | Evidencia del cruce de monedas en `fcf_yield`/`p_ffo`; cierre documental 2026-09-11; PR 4 mergeado (#117) |
 | [`AUDITORIA_2026-08.md`](AUDITORIA_2026-08.md) | Motor: D1–D6 (retiros, ruina, μ, oráculos, lockfile, PII) |
 | [`auditoria_project_owner.md`](auditoria_project_owner.md) | Diagnóstico y priorización de producto |
 | [`AUDIT_DATA_QUALITY.md`](AUDIT_DATA_QUALITY.md) | Fuentes, badges, política partial/poor |
