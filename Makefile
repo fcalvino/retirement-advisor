@@ -7,7 +7,7 @@ PYTHON ?= python3
 VENV   ?= venv
 BIN     = $(VENV)/bin
 
-.PHONY: help setup run test lint check clean lock
+.PHONY: help setup run test lint check clean lock launchd-install launchd-uninstall
 
 help:
 	@echo "Targets disponibles:"
@@ -18,6 +18,8 @@ help:
 	@echo "  make check   - lint + test (lo que corre el CI)"
 	@echo "  make lock    - regenerar requirements.lock (hashes) desde requirements.txt"
 	@echo "  make clean   - borrar el venv y caches"
+	@echo "  make launchd-install   - (macOS) corrida diaria 07:30: alertas + scoring"
+	@echo "  make launchd-uninstall - (macOS) sacarla"
 
 setup:
 	./run.sh --setup
@@ -42,3 +44,11 @@ lock:
 
 clean:
 	rm -rf $(VENV) .pytest_cache .ruff_cache **/__pycache__
+
+# macOS: daily one-shot run (alerts + outcome scoring) under launchd. See README
+# "Alertas Diarias" — launchd runs a missed 07:30 on wake, a sleeping process does not.
+launchd-install:
+	bash scripts/install_launchd.sh
+
+launchd-uninstall:
+	bash scripts/install_launchd.sh --uninstall
