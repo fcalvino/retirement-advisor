@@ -46,8 +46,9 @@ def cmd_analyze(symbols: list[str]) -> None:
             # Crypto display: no equity sub-scores, show crypto metrics
             moat_detail = getattr(fund, "crypto_moat_detail", None)
             moat_str = f"{fund.moat_classification} ({fund.moat_score:.1f}/8)" if fund.moat_score > 0 else "N/A (AI disabled)"
-            print(f"\n  🪙 Crypto Score: {fund.adjusted_score:.1f}/100  |  Moat: {moat_str}")
-            print("    (base 35 + técnico + moat − volatilidad − drawdown)")
+            from config import CRYPTO_MOAT
+            print(f"\n  🪙 Crypto Score: {fund.adjusted_score:.1f}/{CRYPTO_MOAT.max_achievable_score():.0f}  |  Moat: {moat_str}")
+            print(f"    (base {CRYPTO_MOAT.base_score:.0f} + técnico + moat − volatilidad − drawdown)")
             for key in ("crypto_vol", "crypto_dd", "crypto_cagr", "crypto_supply", "crypto_halving"):
                 if key in fund.notes:
                     print(f"    {fund.notes[key]}")

@@ -8,7 +8,7 @@ from loguru import logger
 
 from analysis.currency_metric_text import currency_metric_note
 from analysis.fundamental import eps_growth_label
-from config import AI_FALLBACK, MOAT
+from config import AI_FALLBACK, CRYPTO_MOAT, MOAT
 from dashboard.shared import (
     _MOAT_DESCRIPTION,
     _MOAT_EMOJI,
@@ -296,8 +296,14 @@ if symbol:
         col1, col2, col3, col4 = st.columns(4)
         col1.metric(
             "Crypto Score",
-            f"{fund.adjusted_score:.1f}/100",
-            help="base(35) + técnico(0–45) − volatilidad(0–25) − drawdown(0–15) + moat(0–5)",
+            f"{fund.adjusted_score:.1f}/{CRYPTO_MOAT.max_achievable_score():.0f}",
+            help=(
+                f"base({CRYPTO_MOAT.base_score:.0f}) + técnico({CRYPTO_MOAT.tech_pts_bearish_strong:.0f}–"
+                f"{CRYPTO_MOAT.tech_pts_bullish_strong:.0f}) − volatilidad(0–{CRYPTO_MOAT.vol_penalty_max:.0f}) "
+                f"− drawdown(0–{CRYPTO_MOAT.dd_penalty_max:.0f}) + moat(0–{CRYPTO_MOAT.max_bonus:.0f}). "
+                f"Escala propia: HOLD desde {CRYPTO_MOAT.ladder_hold_score:.0f}, "
+                f"REDUCE desde {CRYPTO_MOAT.ladder_reduce_score:.0f}; un cripto no llega a BUY por score."
+            ),
         )
         _vol_str  = _crypto_notes.get("crypto_vol",  "—").replace("Volatilidad anualizada (52s): ", "")
         _dd_str   = _crypto_notes.get("crypto_dd",   "—").replace("Drawdown máximo histórico: ", "")

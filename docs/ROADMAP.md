@@ -10,6 +10,33 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## #149 — Cripto tiene su propia escalera de acción (2026-09-26)
+
+El motor le daba SELL a BTC en cualquier mercado, y no era un juicio sobre el
+activo: la escala cripto topea en `CRYPTO_MOAT.max_achievable_score()` = 66, BTC
+paga siempre 15 de drawdown (su −83 % es el mínimo de la serie) y la escalera de
+`decide()` era la de equity (82/68/55/45), re-anclada contra acciones con bonus
+que un cripto no cobra. La ficha decía «SELL · HIGH», «Crypto Score 35.0/100» y
+«Fundamental deterioration — exit position».
+
+Decisiones del usuario: una escalera propia en config, sin tocar `adjusted_score`;
+techo **HOLD** (ningún cripto compra por score); BTC en BULLISH fuerte sin IA (28)
+da HOLD. `CryptoMoatConfig.ladder_*` = ∞/∞/28/12, leída por
+`strategy.ladder_for(is_crypto)` desde `decide()`, `max_action_for_score`,
+`confidence_for` y `score_badge` (`Decision.is_crypto`). REDUCE y SELL cripto
+nombran el riesgo cripto y la escala. El piso SIGNAL-6 del overlay ahora limita a
+la IA y al comité a HOLD, no SELL. Las bandas de volatilidad y drawdown pasaron a
+config byte-idénticas (CONTEXT §5).
+
+`ENGINE_VERSION` → `2026.09-tier13`: cambia la señal publicada de BTC y ETH y la
+caché del Screener se indexa por versión. μ del optimizer no cambia. A/B offline
+sobre 186 tickers cacheados: 0 scores, 1 señal (BTC-USD SELL → HOLD). Oráculo en
+rojo antes del cambio: `tests/test_crypto_decision_ladder_oracle.py` (93 de 118).
+Cuatro tests viejos usaban un cripto con score 70/87 (> 66) para ejercitar
+políticas de compra; ahora corren contra una escalera cripto hipotética que compra.
+
+---
+
 ## PIT-1 — El backtesting point-in-time mide su outcome a 1 año (2026-09-26)
 
 `synthetic_recommendation` guardaba F-Scores de Piotroski reconstruidos a fechas

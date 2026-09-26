@@ -300,3 +300,14 @@ class TestReadmeQuotesLiveCryptoMoat:
         section = _readme_crypto_scoring_section()
         assert score < STRATEGY.buy_score
         assert str(int(score)) in section
+
+
+def test_readme_quotes_live_crypto_ladder():
+    """#149: los umbrales cripto que cita el README son los de config."""
+    from config import CRYPTO_MOAT as CM
+
+    section = _readme_crypto_scoring_section()
+    assert f"≥ {CM.ladder_hold_score:.0f} → HOLD" in section
+    assert f"≥ {CM.ladder_reduce_score:.0f} → REDUCE" in section
+    assert f"< {CM.ladder_reduce_score:.0f} → SELL" in section
+    assert f"topea en {CM.max_achievable_score():.0f}" in section

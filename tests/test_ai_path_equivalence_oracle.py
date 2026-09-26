@@ -29,6 +29,7 @@ from analysis.strategy import (
     apply_safety_overlay,
     effective_decision_score,
 )
+from config import CRYPTO_MOAT
 from config import STRATEGY as S
 
 _RANK = {"AVOID": -1, "SELL": 0, "REDUCE": 1, "HOLD": 2, "BUY": 3, "STRONG BUY": 4}
@@ -94,6 +95,17 @@ def _llm(action: str, score: float, signal: str = "BULLISH") -> Decision:
 STRONG = S.strong_buy_score + 5
 
 
+# #149: la escalera cripto real tiene techo HOLD, así que una compra cripto ya no
+# es alcanzable y estas políticas quedarían sin ejercitar. Se prueba contra una
+# escalera cripto hipotética que sí compra: lo que se fija es que el overlay aplica
+# las políticas a un cripto, no dónde están los umbrales.
+_CRYPTO_LADDER_QUE_COMPRA = {"ladder_strong_buy_score": S.strong_buy_score, "ladder_buy_score": S.buy_score}
+
+
+def _crypto_que_compra():
+    return patch.multiple(CRYPTO_MOAT, **_CRYPTO_LADDER_QUE_COMPRA)
+
+
 # --------------------------------------------------------------------------- #
 #  Defecto #2 — la rama crypto del overlay saltea las políticas blandas        #
 # --------------------------------------------------------------------------- #
@@ -138,14 +150,16 @@ class TestElOverlayCryptoAplicaLasMismasPoliticas:
         subir la confianza.
         """
         fund = _fund(STRONG, is_crypto=True, dq={"level": "poor", "missing_fields": ["roe"]})
-        ai = apply_safety_overlay(_llm("STRONG BUY", STRONG), fund, _tech())
+        with _crypto_que_compra():
+            ai = apply_safety_overlay(_llm("STRONG BUY", STRONG), fund, _tech())
         assert (ai.action, ai.confidence) == ("HOLD", "LOW")
         assert "data quality" in ai.decisive_reason
 
     def test_crypto_partial_capa_strong_buy_a_buy(self):
         """`partial` capa un rung, no dos: la política es la misma que en equity."""
         fund = _fund(STRONG, is_crypto=True, dq={"level": "partial", "missing_fields": ["roe"]})
-        ai = apply_safety_overlay(_llm("STRONG BUY", STRONG), fund, _tech())
+        with _crypto_que_compra():
+            ai = apply_safety_overlay(_llm("STRONG BUY", STRONG), fund, _tech())
         assert ai.action == "BUY"
 
     def test_el_block_parabolico_crypto_gana_sobre_la_politica_blanda(self):
@@ -409,7 +423,8 @@ class TestIdempotencia:
     def test_crypto_capado_por_data_quality(self):
         """SIGNAL-2: `partial` capa un rung. Dos pasadas no pueden capar dos."""
         fund = _fund(STRONG, is_crypto=True, dq={"level": "partial", "missing_fields": ["roe"]})
-        uno, dos = self._dos_pasadas(_llm("STRONG BUY", STRONG), fund, _tech())
+        with _crypto_que_compra():
+            uno, dos = self._dos_pasadas(_llm("STRONG BUY", STRONG), fund, _tech())
         assert uno == dos
         assert uno[0] == "BUY"
 
