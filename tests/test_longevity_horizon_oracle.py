@@ -13,7 +13,8 @@ y el selector de horizonte arranca en 20 mientras el widget de longevidad arranc
 en 30 y acepta hasta 60. **Sin que nadie toque nada**, el producto ya dice «tu
 ingreso dura los 30 años en X % de los escenarios» habiendo simulado 20.
 
-Medido con horizonte 20 y retiro fijo de 55 000 sobre un pozo de 1 000 000:
+Medido con horizonte 20 y retiro fijo de 55 000 sobre un pozo de 1 000 000, sobre
+la historia real de SPY/BND/KO/JNJ/PG (medición histórica; el oráculo ya no la usa):
 
     longevidad pedida    10      20      30      45      60
     sostiene           100,00  97,77   97,77   97,77   97,77
@@ -38,12 +39,18 @@ Lo que **no** puede pasar es que extender mueva los números de riqueza: el
 terminal, el fan chart y el CAGR siguen siendo los del horizonte de proyección.
 Sólo las métricas de decumulación miran la ventana larga.
 
-Sin red, sin Streamlit.
+Sin red, sin Streamlit. Hasta TEST-NET esta línea no era cierta: el simulador
+bajaba diez años de SPY/BND/KO/JNJ/PG, así que en el CI —caché vacía— el input
+del oráculo era el mercado del día. Ahora la historia es sintética y fija
+(``_history``): mismos números en cualquier máquina, zona horaria o día.
 """
 
 from __future__ import annotations
 
+import zlib
+
 import numpy as np
+import pandas as pd
 import pytest
 
 from config import MONTE_CARLO, WITHDRAWAL
@@ -51,6 +58,60 @@ from portfolio.decumulation import WithdrawalStrategy
 
 SYMS = ["SPY", "BND", "KO", "JNJ", "PG"]
 WEIGHTS = np.array([0.4, 0.3, 0.1, 0.1, 0.1])
+
+# --------------------------------------------------------------------------- #
+#  Historia sintética (TEST-NET)                                               #
+# --------------------------------------------------------------------------- #
+#
+# Diez años semanales por símbolo: un factor de mercado común más uno propio,
+# cada uno con su semilla ``zlib.crc32`` (nunca ``hash()``, CONTEXT §5), y la
+# mezcla re-estandarizada para que media y volatilidad sean exactas y no un
+# accidente de la semilla. Fechas fijas: nada depende del reloj.
+#
+# DISPERSA es la que usan casi todos los tests. (μ, σ) anuales y correlación con
+# el mercado, parecidas a las de los activos que nombra: cartera ≈ 9,0 % / 10,4 %.
+# Medido con el motor sobre esta historia (horizonte 20, 55 000, 2000 caminos):
+#
+#     longevidad   15     20     25     30     35     40     45
+#     sostiene    99,45  96,30  90,25  85,65  82,00  79,10  76,65
+#
+# Los escalones 25→35→45 bajan 8,3 y 5,4 pp. Entre dos longevidades la cola que
+# pasa del horizonte se sortea con otro largo, así que la diferencia tiene un
+# ruido de ~1 pp: el orden estricto no depende de un par de caminos.
+#
+# CALMA existe por un solo test. El año de agotamiento es la mediana *de los
+# caminos que se agotan*, y con DISPERSA a 80 000 esos son los malos y tempranos:
+# 20,33, un pelo sobre el horizonte. Con volatilidad baja casi todos se agotan
+# (sostiene 5,65 %) y lo hacen tarde: 27,83. La propiedad que defiende ese test
+# —la fecha puede caer después del horizonte— no depende de la historia.
+_WEEKS = 521
+DISPERSA = {
+    "SPY": (0.12, 0.17, 0.9),
+    "BND": (0.04, 0.06, 0.1),
+    "KO": (0.10, 0.17, 0.6),
+    "JNJ": (0.10, 0.17, 0.6),
+    "PG": (0.10, 0.17, 0.6),
+}
+CALMA = {sym: (0.085, 0.03, 0.5) for sym in SYMS}
+
+
+def _history(params):
+    def get_history(symbol, period="10y", interval="1wk"):
+        mu, sigma, rho = params[symbol]
+        market = np.random.default_rng(zlib.crc32(b"MARKET")).standard_normal(_WEEKS)
+        own = np.random.default_rng(zlib.crc32(symbol.encode())).standard_normal(_WEEKS)
+        z = rho * market + np.sqrt(1 - rho**2) * own
+        z = (z - z.mean()) / z.std()
+        weekly = mu / 52 + sigma / np.sqrt(52) * z
+        index = pd.date_range("2015-01-04", periods=_WEEKS + 1, freq="W")
+        return pd.DataFrame({"close": 100.0 * np.cumprod(np.r_[1.0, 1 + weekly])}, index=index)
+
+    return get_history
+
+
+@pytest.fixture(autouse=True)
+def _historia_sintetica(monkeypatch):
+    monkeypatch.setattr("portfolio.monte_carlo.get_history", _history(DISPERSA))
 
 
 def _run(*, horizon, longevity, n_sims=2000, annual=55_000.0, seed=42):
@@ -107,9 +168,10 @@ class TestPedirMasAniosCambiaLaRespuesta:
         r = _run(horizon=20, longevity=45)
         assert r.longevity_years == 45
 
-    def test_el_ano_de_agotamiento_puede_caer_despues_del_horizonte(self):
+    def test_el_ano_de_agotamiento_puede_caer_despues_del_horizonte(self, monkeypatch):
         """Si el pozo se agota en el año 28 de un retiro de 40, la fecha tiene
         que poder decirlo — antes el máximo expresable era el horizonte."""
+        monkeypatch.setattr("portfolio.monte_carlo.get_history", _history(CALMA))
         r = _run(horizon=20, longevity=40, annual=80_000.0)
         assert r.expected_depletion_year > 20, (
             f"el agotamiento salió en el año {r.expected_depletion_year}, que es "

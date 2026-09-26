@@ -23,6 +23,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import openai
+import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
@@ -54,6 +55,8 @@ def test_stock_analysis_names_the_ai_failure(monkeypatch):
     decision.ai_fallback_reason = AI_FALLBACK.KEY_INVALIDA
     monkeypatch.setattr(shared, "cached_full_analysis", lambda *a, **k: (case.fund, case.tech, decision))
     monkeypatch.setattr(track_record, "track_record_store", SimpleNamespace(log_recommendation=Mock()))
+    # The chart asks for the price history; an empty frame is what an outage gives (TEST-NET).
+    monkeypatch.setattr(shared, "get_price_history", lambda *a, **k: pd.DataFrame())
     app = AppTest.from_file(str(VIEWS / "2_Stock_Analysis.py"), default_timeout=60)
     for key, value in dict(ai_enabled=True, ai_provider="claude", ai_model="claude-sonnet-5",
                            ai_api_key="test-key", analysis_target=case.fund.symbol).items():
