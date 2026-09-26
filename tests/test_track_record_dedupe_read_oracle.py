@@ -492,6 +492,11 @@ LECTORES_DIRECTOS_PERMITIDOS = {
         "lado: acá el crudo no es la respuesta a una pregunta estadística, es el "
         "objeto que se edita."
     ),
+    ("scripts/migrations/mark_inadmissible_rows.py", "RecommendationLog"): (
+        "LLM-2: marca 4 filas del comité por id enumerado con "
+        "`source='inadmissible'`. Misma razón que `mark_test_fixture_rows.py`: "
+        "edita la fila, no lee la muestra."
+    ),
 }
 
 
