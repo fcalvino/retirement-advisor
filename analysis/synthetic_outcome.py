@@ -15,15 +15,12 @@ Scope decided by the user (2026-09-26):
   close (``auto_adjust=True``, so dividends are in: total return);
 - a cutoff less than a year old stays pending — nothing is estimated.
 
-Why this module has its own price lookup instead of reusing
-``track_record_scorer._price_on_or_before``: that one returns the last close at
-or before a date **however old it is**. Over a 30-day horizon on names that
-trade today that rarely matters; over a year, across cutoffs years back, a
-delisted ticker would be "priced" at the horizon with its last close from
-months before — an outcome that looks measured and isn't, on exactly the rows
-the user decided to keep. ``price_near`` refuses a close older than
-``SYNTHETIC_BACKTEST.max_price_staleness_days``. The same latent gap in the
-track record is BACKLOG ``TR-STALE-PRICE``.
+Prices come from ``analysis.price_lookup.price_near``, which refuses a close
+older than ``TRACK_RECORD.max_price_staleness_days``: over a year, across
+cutoffs years back, a delisted ticker would otherwise be "priced" at the
+horizon with its last close from months before — an outcome that looks
+measured and isn't, on exactly the rows the user decided to keep. The live
+track record scorer uses the same function since TR-STALE-PRICE.
 
 It also must not import ``analysis.track_record`` (directly or through the
 scorer): the synthetic table is kept out of the published hit rate
@@ -41,6 +38,7 @@ from typing import Callable, Dict, Optional
 import pandas as pd
 from loguru import logger
 
+from analysis.price_lookup import _closes, price_near
 from analysis.synthetic_backtest import (
     OUTCOME_DELISTED,
     OUTCOME_NO_HISTORY,
@@ -66,34 +64,6 @@ def _history(symbol: str) -> pd.DataFrame:
     except Exception as exc:
         logger.warning(f"synthetic_outcome: history failed for {symbol} — {exc}")
         return pd.DataFrame()
-
-
-def _closes(frame: pd.DataFrame) -> pd.Series:
-    """The close series indexed by day, whatever shape the cache returned."""
-    if frame is None or frame.empty or "close" not in frame.columns:
-        return pd.Series(dtype=float, index=pd.DatetimeIndex([]))
-    df = frame
-    if "date" in df.columns:  # same guard as track_record_scorer: cold vs warm cache shape
-        df = df.set_index(pd.to_datetime(df["date"]))
-    series = pd.to_numeric(df["close"], errors="coerce")
-    series.index = pd.to_datetime(series.index).normalize()
-    return series.dropna().sort_index()
-
-
-def price_near(frame: pd.DataFrame, when: date, max_stale_days: int) -> Optional[float]:
-    """Close on ``when``, or on the last trading day before it — but only if
-    that day is at most ``max_stale_days`` calendar days back. Never a close
-    from after ``when``. ``None`` when there is no such close.
-    """
-    closes = _closes(frame)
-    target = pd.Timestamp(when)
-    upto = closes[closes.index <= target]
-    if upto.empty:
-        return None
-    if (target - upto.index[-1]).days > max_stale_days:
-        return None
-    price = float(upto.iloc[-1])
-    return price if price > 0 else None
 
 
 def _ends_before(frame: pd.DataFrame, when: date, max_stale_days: int) -> bool:
@@ -126,7 +96,7 @@ def score_due_outcomes(
     today = today or utc_now().date()
     history = history or _history
     horizon = timedelta(days=int(SYNTHETIC_BACKTEST.horizon_days))
-    stale = int(SYNTHETIC_BACKTEST.max_price_staleness_days)
+    stale = int(TRACK_RECORD.max_price_staleness_days)
     benchmark = TRACK_RECORD.benchmark
 
     counts = {"scored": 0, "partial": 0, "delisted": 0, "no_price": 0, "no_history": 0, "pending": 0}

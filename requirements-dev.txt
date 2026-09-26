@@ -1,0 +1,8 @@
+# Dev/CI tooling on top of the app's dependencies (#150).
+# Not in requirements.txt on purpose: nothing imports ruff
+# (tests/test_reproducibility.py::TestNoDeadDependencies) and the Docker image
+# (requirements.lock) does not need a linter.
+-r requirements.txt
+# Pinned so a new ruff release cannot turn CI red without a change in the repo.
+# 0.16.8: the version that passes `ruff check .` on this tree (2026-09-26).
+ruff==0.16.8

@@ -145,6 +145,9 @@ El PDF se guarda en `REPORT_OUTPUT_DIR` (default `reports/`) y se puede adjuntar
 
 - **Alertas**: cada `ALERT_INTERVAL_HOURS` (default 24h), ejecuta el screener completo y corre `AlertEngine.run()`
 - **Reporte PDF**: el día `REPORT_DAY` de cada mes a las 08:00 AM, genera PDF y lo envía
+- **Scoring de outcomes**: diario a las 07:00 — `job_score_track_record` (track record en vivo) y `job_score_synthetic_outcomes` (backtesting point-in-time)
+
+`--once` corre macro + alertas + los dos scorings y sale: es el camino de `scripts/run_daily_alerts.sh` (cron) y de launchd. Antes de SCHED-ONCE (2026-09) `--once` no puntuaba y el track record pasó un mes sin outcomes.
 
 ```bash
 python scripts/run_scheduler.py
@@ -174,7 +177,7 @@ La página **Alertas** del dashboard permite:
 
 ## Limitaciones
 
-- El scheduler es un proceso Python simple (no un cron del sistema). Se detiene si el proceso muere.
-- Para producción, envolver con `systemd`, `supervisor` o equivalente.
+- El scheduler continuo es un proceso Python simple (no un cron del sistema). Se detiene si el proceso muere o la máquina duerme.
+- En macOS, `make launchd-install` agenda `--once` a diario (07:30) con launchd (`deploy/launchd/`, `scripts/install_launchd.sh`); en Linux, cron o `systemd` (README).
 - El historial se limita a 500 alertas para evitar crecimiento indefinido del SQLite.
 - Los cooldowns persisten entre reinicios del proceso (guardados en SQLite).

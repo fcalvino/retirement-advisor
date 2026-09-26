@@ -107,6 +107,17 @@ Para producción (cron diario):
 0 9 * * 1-5 /ruta/al/proyecto/scripts/run_daily_alerts.sh
 ```
 
+En macOS, `make launchd-install` (launchd corre el disparo perdido al despertar).
+`--once` también puntúa el track record y el backtesting point-in-time.
+
+### Evidencia point-in-time (PIT-2)
+
+```bash
+./venv/bin/python3 scripts/point_in_time_backtest.py       # volumen: SYNTHETIC_BACKTEST.pit2_*
+./venv/bin/python3 scripts/score_synthetic_outcomes.py     # outcome a 1 año
+./venv/bin/python3 scripts/pit_evidence_report.py --out docs/PIT2_EVIDENCIA_$(date +%Y-%m).md
+```
+
 ---
 
 ## 7. Convenciones generales

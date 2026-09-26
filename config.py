@@ -914,6 +914,10 @@ class PiotroskiConfig:
     """
 
     strong_threshold: int = 7
+    #: "Piotroski aceptable" cut (pays ``bonus_good``). Was a literal ``5`` in
+    #: ``analysis/scoring.py``; the PIT-2 evidence report groups by the same cuts
+    #: the engine pays on, so both read it from here.
+    good_threshold: int = 5
     bonus_strong: float = 12.0
     bonus_good: float = 6.0
     #: F6 tolerance: share growth up to this % is not counted as dilution. Was a
@@ -2351,6 +2355,15 @@ class TrackRecordConfig:
       enabled              — master switch for the capture hooks.
       dedupe_same_day      — collapse repeated (symbol, action) logs within the
                              same UTC day so a refresh loop doesn't inflate counts.
+      max_price_staleness_days — how far back from a target date the last
+                             available close may be and still stand for that
+                             date. A guard, not a calibration: it covers a
+                             weekend plus a long holiday (the longest US market
+                             closure, September 2001, was 6 calendar days).
+                             Without it a ticker delisted in December would be
+                             "priced" in June at its last close — a made-up
+                             outcome that looks measured (TR-STALE-PRICE). Also
+                             read by the point-in-time outcome (PIT-1).
     """
     horizons_days: tuple = (30, 90, 365)
     benchmark: str = "SPY"
@@ -2367,6 +2380,7 @@ class TrackRecordConfig:
     min_confidence_for_calibration: tuple = ("HIGH", "MEDIUM", "LOW")
     enabled: bool = True
     dedupe_same_day: bool = True
+    max_price_staleness_days: int = 7
 
     # Which actions count as bullish / bearish for directional hit scoring.
     bullish_actions: tuple = ("STRONG BUY", "BUY")
@@ -2400,18 +2414,21 @@ class SyntheticBacktestConfig:
       horizon_days             — CALENDAR days from the cutoff to the horizon,
                                  the same unit as ``TRACK_RECORD.horizons_days``
                                  (U5-15). One year: Piotroski is a 1-year signal.
-      max_price_staleness_days — how far back from a target date the last
-                                 available close may be and still stand for
-                                 that date. A guard, not a calibration: it
-                                 covers a weekend plus a long holiday (the
-                                 longest US market closure, September 2001,
-                                 was 6 calendar days). Without it a ticker
-                                 delisted in December would be "priced" in June
-                                 at its last close — a made-up outcome that
-                                 looks measured.
+
+    The price lookup's staleness guard is ``TRACK_RECORD.max_price_staleness_days``:
+    one guard for both samples (TR-STALE-PRICE), so the synthetic and the live
+    outcome refuse the same stale closes.
     """
     horizon_days: int = 365
-    max_price_staleness_days: int = 7
+    # PIT-2 — the volume run (``scripts/point_in_time_backtest.py`` without
+    # --symbols/--cutoffs). US filers only in practice: non-SEC tickers (local
+    # listings, 20-F ADRs, ETFs, crypto) exit through ``_NO_SEC_DATA``. The
+    # ticker→CIK map is today's, so the sample is survivors-only — the report
+    # says so. Grid: every ``pit2_step_months`` from ``pit2_first_cutoff`` up to
+    # the last cutoff whose horizon (plus the staleness guard) is already past.
+    pit2_universes: tuple = ("default", "global_quality")
+    pit2_first_cutoff: str = "2012-06-01"
+    pit2_step_months: int = 6
 
 
 @dataclass

@@ -17,6 +17,10 @@ The scheduler performs two jobs:
      and sends it via email/Telegram.
   3. Macro RAG (daily, and on startup / --once): ingests the latest FRED
      series so the committee's macro is anchored to dated facts.
+  4. Outcome scoring (daily at 07:00, and on --once): the live track record
+     and the point-in-time backtest. ``--once`` is the path cron and launchd
+     take, so it must score too — before SCHED-ONCE it did not, and the track
+     record went a month without an outcome.
 """
 
 from __future__ import annotations
@@ -142,10 +146,33 @@ def job_score_track_record() -> None:
         result = score_due_recommendations()
         logger.info(
             f"Track record: scored={result.get('scored', 0)} "
+            f"partial={result.get('partial', 0)} "
             f"skipped={result.get('skipped', 0)}"
         )
     except Exception as exc:
         logger.error(f"Track record scoring failed: {exc}")
+
+
+def job_score_synthetic_outcomes() -> None:
+    """Measure the one-year outcome of the point-in-time backtest (PIT-1).
+
+    Same refusal as ``scripts/score_synthetic_outcomes.py``: without the outcome
+    columns confirmed present nothing is written. Idempotent — a final row is
+    never re-scored, a pending one waits for its horizon.
+    """
+    logger.info("=== Synthetic outcome scoring started ===")
+    try:
+        from analysis.synthetic_backtest import synthetic_backtest_store as store
+        from analysis.synthetic_outcome import score_due_outcomes
+
+        if not store.outcome_columns_verified:
+            store.outcome_columns_verified = store._migrate_outcome_columns(store._engine)
+        if not store.outcome_columns_verified:
+            logger.error("synthetic_outcome: outcome columns not verified — refusing to score")
+            return
+        score_due_outcomes(store)
+    except Exception as exc:
+        logger.error(f"Synthetic outcome scoring failed: {exc}")
 
 
 def job_alert_check() -> None:
@@ -387,7 +414,10 @@ def job_monthly_report() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Retirement Advisor alert scheduler")
-    parser.add_argument("--once", action="store_true", help="Run one alert check and exit (for cron)")
+    parser.add_argument(
+        "--once", action="store_true",
+        help="Run one alert check and the outcome scoring, then exit (for cron/launchd)",
+    )
     parser.add_argument("--quiet", action="store_true", help="Suppress INFO logs (WARNING+ only)")
     args = parser.parse_args()
 
@@ -396,15 +426,17 @@ def main() -> None:
         logger.add(sys.stderr, level="WARNING")
 
     if args.once:
-        logger.info("=== One-shot alert check (--once) ===")
+        logger.info("=== One-shot run (--once) ===")
         job_ingest_macro()
         job_alert_check()
+        job_score_track_record()
+        job_score_synthetic_outcomes()
         return
 
     logger.info("Retirement Advisor Scheduler starting…")
     logger.info(f"  Alert interval : every {REPORT.alert_check_interval_hours}h")
     logger.info(f"  Monthly report : day {REPORT.report_day_of_month} of each month at 08:00")
-    logger.info("  Track record   : daily at 07:00")
+    logger.info("  Track record   : daily at 07:00 (live + point-in-time)")
     logger.info(f"  Macro RAG FRED : daily at {MACRO_RAG.fred_refresh_hour}")
     logger.info(f"  Email enabled  : {ALERTS.email_enabled}")
     logger.info(f"  Telegram enabled: {ALERTS.telegram_enabled}")
@@ -421,6 +453,7 @@ def main() -> None:
 
     # Score the track record daily — the horizons only fill in if this runs.
     schedule.every().day.at("07:00").do(job_score_track_record)
+    schedule.every().day.at("07:00").do(job_score_synthetic_outcomes)
 
     # Refresh the macro RAG before the day's analyses read it.
     schedule.every().day.at(MACRO_RAG.fred_refresh_hour).do(job_ingest_macro)

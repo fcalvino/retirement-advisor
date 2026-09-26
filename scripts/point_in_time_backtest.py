@@ -13,6 +13,10 @@ Usage:
         --symbols AAPL,MSFT,JNJ \\
         --cutoffs 2020-06-01,2021-06-01
 
+    # PIT-2 volume: universes and cutoff grid from config.SYNTHETIC_BACKTEST
+    ./venv/bin/python3 scripts/point_in_time_backtest.py
+    ./venv/bin/python3 scripts/point_in_time_backtest.py --universes default --cutoff-grid 2016-06-01:12
+
 Resumable: a (symbol, as_of, source) pair already in the store — enforced by
 its own unique index, migration-created so it applies to any pre-existing
 database file too (``analysis/synthetic_backtest.py``) — is skipped without
@@ -39,7 +43,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
 
@@ -52,7 +56,8 @@ from loguru import logger  # noqa: E402
 
 from analysis.point_in_time_piotroski import piotroski_as_of  # noqa: E402
 from analysis.synthetic_backtest import ALREADY_LOGGED, synthetic_backtest_store  # noqa: E402
-from config import MULTI_SOURCE  # noqa: E402
+from config import MULTI_SOURCE, SYNTHETIC_BACKTEST, TRACK_RECORD  # noqa: E402
+from data.clock import utc_now  # noqa: E402
 from data.data_sources import SecEdgarSource  # noqa: E402
 from data.fetcher import _fetch_with_retry  # noqa: E402
 
@@ -313,11 +318,100 @@ def run(symbols: List[str], cutoffs: List[date]) -> dict:
     return {"written": written, "skipped": skipped, "failed": failed}
 
 
-def _parse_args() -> argparse.Namespace:
+def _add_months(d: date, months: int) -> date:
+    """Same day-of-month ``months`` later (the grid starts on day 1, so no clamping)."""
+    total = d.month - 1 + months
+    return d.replace(year=d.year + total // 12, month=total % 12 + 1)
+
+
+def cutoff_grid(first: date, step_months: int, today: Optional[date] = None) -> List[date]:
+    """Every ``step_months`` from ``first`` up to the last cutoff already scorable.
+
+    The last one is ``today − horizon_days − max_price_staleness_days``: a later
+    cutoff would stay pending in PIT-1 (its horizon is not past) or land on a
+    horizon close the staleness guard could still move. Nothing pending is
+    generated, so the report reads a complete grid.
+    """
+    if step_months <= 0:
+        raise ValueError("step_months must be positive")
+    if first.day != 1:
+        raise ValueError("the grid starts on the 1st of a month")
+    today = today or utc_now().date()
+    last = today - timedelta(
+        days=int(SYNTHETIC_BACKTEST.horizon_days) + int(TRACK_RECORD.max_price_staleness_days)
+    )
+    grid: List[date] = []
+    d = first
+    while d <= last:
+        grid.append(d)
+        d = _add_months(d, step_months)
+    return grid
+
+
+def universe_symbols(keys: List[str]) -> List[str]:
+    """Union of the universes' tickers, first-seen order, de-duplicated.
+
+    An unknown key is an error here, not ``load_universe``'s silent fallback to
+    ``default``: a typo must not run the wrong universe for an hour.
+    """
+    from data.universe_loader import list_universes, load_universe
+
+    known = set(list_universes())
+    unknown = [k for k in keys if k not in known]
+    if unknown:
+        raise ValueError(f"unknown universe(s): {', '.join(unknown)} — known: {', '.join(sorted(known))}")
+    out: List[str] = []
+    for key in keys:
+        out.extend(load_universe(key))
+    return list(dict.fromkeys(s.upper() for s in out))
+
+
+def _parse_grid(spec: str) -> List[date]:
+    first, _, step = spec.partition(":")
+    return cutoff_grid(
+        datetime.strptime(first.strip(), "%Y-%m-%d").date(),
+        int(step) if step else int(SYNTHETIC_BACKTEST.pit2_step_months),
+    )
+
+
+def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--symbols", required=True, help="Comma-separated tickers, e.g. AAPL,MSFT,JNJ")
-    p.add_argument("--cutoffs", required=True, help="Comma-separated ISO dates, e.g. 2020-06-01,2021-06-01")
-    return p.parse_args()
+    who = p.add_mutually_exclusive_group()
+    who.add_argument("--symbols", help="Comma-separated tickers, e.g. AAPL,MSFT,JNJ")
+    who.add_argument(
+        "--universes",
+        help="Comma-separated universe keys (default: SYNTHETIC_BACKTEST.pit2_universes)",
+    )
+    when = p.add_mutually_exclusive_group()
+    when.add_argument("--cutoffs", help="Comma-separated ISO dates, e.g. 2020-06-01,2021-06-01")
+    when.add_argument(
+        "--cutoff-grid",
+        help="FIRST[:STEP_MONTHS], e.g. 2012-06-01:6 (default: SYNTHETIC_BACKTEST.pit2_*)",
+    )
+    return p.parse_args(argv)
+
+
+def resolve_inputs(args: argparse.Namespace) -> tuple:
+    """(symbols, cutoffs) from the CLI, falling back to the PIT-2 config."""
+    if args.symbols:
+        symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    else:
+        keys = (
+            [k.strip() for k in args.universes.split(",") if k.strip()]
+            if args.universes else list(SYNTHETIC_BACKTEST.pit2_universes)
+        )
+        symbols = universe_symbols(keys)
+    if args.cutoffs:
+        cutoffs = [
+            datetime.strptime(c.strip(), "%Y-%m-%d").date()
+            for c in args.cutoffs.split(",") if c.strip()
+        ]
+    else:
+        cutoffs = _parse_grid(
+            args.cutoff_grid
+            or f"{SYNTHETIC_BACKTEST.pit2_first_cutoff}:{SYNTHETIC_BACKTEST.pit2_step_months}"
+        )
+    return symbols, cutoffs
 
 
 def main() -> int:
@@ -326,12 +420,9 @@ def main() -> int:
     tell a 100%-failed run (SEC down, User-Agent blocked, resumability
     guarantee unverified — all checked inside ``run()``) from success.
     """
-    args = _parse_args()
-    symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
-    cutoffs = [
-        datetime.strptime(c.strip(), "%Y-%m-%d").date()
-        for c in args.cutoffs.split(",") if c.strip()
-    ]
+    symbols, cutoffs = resolve_inputs(_parse_args())
+    logger.info(f"{len(symbols)} symbols × {len(cutoffs)} cutoffs ({cutoffs[0] if cutoffs else '-'} → "
+                f"{cutoffs[-1] if cutoffs else '-'})")
     summary = run(symbols, cutoffs)
     return 1 if summary["failed"] > 0 else 0
 

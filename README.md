@@ -530,7 +530,7 @@ Los logs se escriben en `logs/retirement_advisor.log` (rotación 10 MB, retenci�
 
 ### Alertas Diarias (Cron — recomendado)
 
-Para ejecutar una sola verificación de alertas y salir (ideal para cron), usá el script dedicado:
+Para ejecutar una sola corrida y salir (ideal para cron o launchd), usá el script dedicado. `--once` refresca el macro, corre las alertas **y puntúa los outcomes** (track record y backtesting point-in-time): si no corre nada a diario, el track record deja de medir.
 
 ```bash
 # Ejecución manual (con logs completos)
@@ -548,6 +548,15 @@ crontab -e
 
 ```cron
 0 9 * * * /ruta/a/retirement_advisor/scripts/run_daily_alerts.sh --quiet >> /ruta/a/retirement_advisor/logs/daily_alerts.log 2>&1
+```
+
+**macOS (launchd — recomendado en Mac):** a diferencia de cron o de un proceso con `sleep`, launchd corre el disparo perdido cuando la Mac se despierta.
+
+```bash
+make launchd-install      # diario a las 07:30, con AI_ENABLED=false (nada pago desatendido)
+launchctl kickstart -k gui/$(id -u)/com.retirement-advisor.daily   # probarlo ya
+tail logs/launchd_daily.err.log                                     # loguru escribe a stderr
+make launchd-uninstall
 ```
 
 **Optimización de tokens AI:** por defecto solo las alertas WARNING y CRITICAL generan explicaciones con AI (Grok/Claude/xAI). Las alertas INFO usan mensaje estándar, reduciendo el consumo de tokens.
