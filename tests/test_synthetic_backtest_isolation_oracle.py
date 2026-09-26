@@ -30,7 +30,7 @@ PRODUCTION_DB = str(DB_PATH)
 
 #: Módulos de primera mano que sostienen (o podrían sostener) una referencia
 #: al store nuevo, hoy y en la iteración que lo conecte a una corrida real.
-_STORE_HOLDERS = ("analysis.synthetic_backtest",)
+_STORE_HOLDERS = ("analysis.synthetic_backtest", "analysis.synthetic_outcome")
 
 
 def _db_of(store: SyntheticBacktestStore) -> str:
