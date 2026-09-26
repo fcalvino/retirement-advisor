@@ -21,10 +21,31 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-from config import DB_PATH, RISK_FREE
+from config import DB_PATH, PORTFOLIO, RISK_FREE
 from data.fetcher import get_history, get_info
 
 PORTFOLIO_FILE = DB_PATH.parent / "portfolio.json"
+
+
+def position_currency_skip_reason(currency: Optional[str]) -> Optional[str]:
+    """Por qué una posición **no** entra al portfolio, o ``None`` si entra.
+
+    El tracker suma costo y valor de mercado de cada posición como si fueran
+    ``PORTFOLIO.base_currency``: 10 acciones de 7203.T a 3025 JPY pesaban como
+    30 250 dólares en el total, la concentración y la deriva (PORTFOLIO-CCY).
+    Hasta que exista la conversión (#154), solo entra la moneda de la cartera.
+    Una moneda desconocida no bloquea — mismo contrato que
+    ``analysis.track_record.admission_skip_reason``. Pura, así la página dice lo
+    mismo que el store.
+    """
+    ccy = str(currency or "").strip()
+    if not ccy or ccy == PORTFOLIO.base_currency:
+        return None
+    return (
+        f"cotiza en {ccy} y la cartera se lleva en {PORTFOLIO.base_currency}: "
+        f"su costo y su valor se sumarían como si fueran {PORTFOLIO.base_currency} "
+        f"(la conversión es #154)"
+    )
 
 #: What the annualised figure is, in the words a surface can show (U5-12).
 ANNUALIZED_RETURN_CAVEAT = (
@@ -91,9 +112,15 @@ class Portfolio:
         avg_cost: float,
         purchase_date: str,
         notes: str = "",
-    ) -> None:
+    ) -> Optional[str]:
+        """Add (or average into) a position. Returns ``None`` when it was added,
+        or the reason it was not — see ``position_currency_skip_reason``."""
         symbol = symbol.upper()
         info = get_info(symbol)
+        reason = position_currency_skip_reason(info.get("currency"))
+        if reason:
+            logger.warning(f"{symbol} not added to portfolio — {reason}")
+            return reason
         sector = info.get("sector", "Unknown")
 
         if symbol in self.positions:
@@ -115,6 +142,7 @@ class Portfolio:
             )
             logger.info(f"Added {symbol}: {shares:.2f} shares @ ${avg_cost:.2f}")
         self._save()
+        return None
 
     def update_position(
         self,

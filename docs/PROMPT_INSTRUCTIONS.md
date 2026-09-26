@@ -48,6 +48,12 @@ Nunca propongas cambios sin haber cargado primero este contexto.
       local deja de ser evidencia. Es el mismo defecto que el repo ya prohíbe
       con `hash()` (CONTEXT §5), pero más silencioso, porque el reloj parece
       parte del problema y no del setup. Costó una vuelta de CI en U5-18
+- [ ] **Obligatorio después de cualquier desarrollo:** ¿probé el cambio en la
+      **app en vivo**? → skill `probar-en-vivo` (`.claude/skills/probar-en-vivo/`):
+      Streamlit sobre una copia de la base, Playwright, capturas, y el hash de la
+      base real igual antes y después. `make check` y AppTest no la reemplazan:
+      EMPTY-FEED-SA y el caption de LLM-2 aparecieron recién en la QA en vivo. Si
+      no se pudo (sin red, sin key), el PR lo dice con nombre
 - [ ] ¿Actualicé `docs/CONTEXT.md` si el cambio es grande?
 - [ ] ¿Agregué o borré un `.md`? → actualizar la tabla canónica de `docs/INDEX.md`
 

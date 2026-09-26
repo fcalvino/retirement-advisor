@@ -2352,6 +2352,22 @@ class TrackRecordConfig:
 
 
 @dataclass
+class PortfolioConfig:
+    """
+    The user's book (``portfolio.tracker.Portfolio``).
+
+    Fields:
+      base_currency — the currency ``Position.avg_cost`` is kept in, and the one
+                      the tracker assumes when it adds values up. Nothing is
+                      converted: a position quoted in anything else (7203.T in
+                      JPY, AZN.L in GBp) is not admitted, because its cost and
+                      its market value would be summed as dollars (PORTFOLIO-CCY).
+                      Converting is #154.
+    """
+    base_currency: str = "USD"
+
+
+@dataclass
 class EvalConfig:
     """
     AI evaluation harness parameters (Gran Salto — Fase 2A).
@@ -3172,6 +3188,7 @@ SENSITIVITY = SensitivityConfig()
 GOAL_CARD = GoalCardConfig()
 PERSONAL_BOOK = PersonalBookConfig()
 TRACK_RECORD = TrackRecordConfig()
+PORTFOLIO = PortfolioConfig()
 EVAL = EvalConfig()
 COMMITTEE = CommitteeConfig()
 MULTI_SOURCE = MultiSourceConfig()
