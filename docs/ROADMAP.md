@@ -10,6 +10,46 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## PIT-2, TR-STALE-PRICE, SCHED-ONCE y RUFF-PIN — la evidencia a 1 año se corre y se lee (2026-09-26)
+
+Un solo PR con los pasos del análisis `/decidir-proyecto` sobre `5c20955`.
+
+**PIT-2.** `synthetic_recommendation` tenía 0 filas y nada la leía.
+`scripts/point_in_time_backtest.py` sin argumentos corre
+`SYNTHETIC_BACKTEST.pit2_universes` (`default` + `global_quality`, decisión del
+usuario) × una grilla semestral desde 2012-06-01 hasta el último corte cuyo
+horizonte ya pasó; los no-SEC salen solos por `_NO_SEC_DATA`. Sobre una copia de
+la base: **50 filers × 27 cortes = 1350 filas**, 1320 con outcome, 30 `no_price`
+(cortes previos al listado: CEPU, LOMA, GLOB, ABBV). `analysis/synthetic_evidence.py`
+(puro) agrupa por los cortes del motor —`PIOTROSKI.good_threshold` reemplaza el
+literal 5 de `scoring.py`, byte-idéntico— y compara fuerte − débil **por corte**,
+porque las filas de un día comparten el mercado. Resultado: **+2,89 ± 8,08 pp,
+inconcluso** (`docs/PIT2_EVIDENCIA_2026-09.md`), con el sesgo de supervivencia y el
+solapamiento de horizontes declarados. U5-1b queda para una persona con esa tabla.
+`mean_with_band` se mudó a `analysis/stats_bands.py` para que el reporte no importe
+`analysis.track_record` (N6).
+
+**TR-STALE-PRICE.** El scorer del track record devolvía el último cierre sin límite
+de antigüedad. Ahora usa `analysis/price_lookup.price_near`, la misma guarda que
+PIT-1, con el campo mudado a `TRACK_RECORD.max_price_staleness_days`. Medido con
+código viejo y nuevo sobre dos copias idénticas: **0 de 201** outcomes cambian —
+el agujero era latente.
+
+**SCHED-ONCE.** El scorer no corría desde el 22/08: `run_scheduler.py --once`, el
+camino de cron del README, nunca lo llamaba. Ahora `--once` corre también
+`job_score_track_record` y el nuevo `job_score_synthetic_outcomes`, y en macOS
+`make launchd-install` lo agenda a las 07:30 con `AI_ENABLED=false`
+(`deploy/launchd/`, `scripts/install_launchd.sh`). En la copia, la primera corrida
+puntuó 179 recomendaciones vencidas.
+
+**RUFF-PIN (#150).** `requirements-dev.txt` con `ruff==0.16.8` (la que pasa hoy;
+el venv real tenía 0.15.21); `make setup` y el CI lo instalan.
+
+Oráculos en rojo antes del cambio: `tests/test_track_record_stale_price_oracle.py`,
+`tests/test_synthetic_evidence_oracle.py`.
+
+---
+
 ## #149 — Cripto tiene su propia escalera de acción (2026-09-26)
 
 El motor le daba SELL a BTC en cualquier mercado, y no era un juicio sobre el
