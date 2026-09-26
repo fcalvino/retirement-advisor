@@ -39,7 +39,7 @@ from data.product_ux import (
     with_currency,
 )
 from data.screener_store import is_empty_feed
-from portfolio.tracker import Portfolio
+from portfolio.tracker import Portfolio, position_currency_skip_reason
 
 # Display labels make crypto searchable by full name (Bitcoin, Ethereum…)
 _TICKER_DISPLAY_NAMES: dict[str, str] = {
@@ -831,33 +831,42 @@ if symbol:
         st.divider()
         st.subheader("➕ Agregar al Portfolio")
 
-        _portfolio: Portfolio = st.session_state.portfolio
-        # Use cost basis as portfolio value proxy (no API calls needed)
-        _portfolio_cost = sum(
-            p.shares * p.avg_cost for p in _portfolio.positions.values()
-        ) if _portfolio.positions else 0.0
-        _ai_alloc_pct = getattr(decision, "recommended_max_allocation_pct", None)
-        _price = fund.current_price or 100.0
+        # PORTFOLIO-CCY: the book only admits its own currency until #154
+        # converts; same rule as the store, said before the form.
+        _ccy_skip = position_currency_skip_reason(fund.currency)
+        if _ccy_skip:
+            st.info(f"No se puede agregar {symbol} al Portfolio: {_ccy_skip}.")
+        else:
+            _portfolio: Portfolio = st.session_state.portfolio
+            # Use cost basis as portfolio value proxy (no API calls needed)
+            _portfolio_cost = sum(
+                p.shares * p.avg_cost for p in _portfolio.positions.values()
+            ) if _portfolio.positions else 0.0
+            _ai_alloc_pct = getattr(decision, "recommended_max_allocation_pct", None)
+            _price = fund.current_price or 100.0
 
-        _suggested_shares = 10.0
-        _shares_caption = None
-        if _ai_alloc_pct and _portfolio_cost > 0 and _price > 0:
-            _suggested_shares = max(0.01, (_portfolio_cost * _ai_alloc_pct / 100) / _price)
-            _shares_caption = (
-                f"💡 Sugerido por la IA: máximo {_ai_alloc_pct:.0f}% del portafolio "
-                f"(costo base ${_portfolio_cost:,.0f}) → {_suggested_shares:.2f} acciones @ ${_price:,.2f}"
-            )
+            _suggested_shares = 10.0
+            _shares_caption = None
+            if _ai_alloc_pct and _portfolio_cost > 0 and _price > 0:
+                _suggested_shares = max(0.01, (_portfolio_cost * _ai_alloc_pct / 100) / _price)
+                _shares_caption = (
+                    f"💡 Sugerido por la IA: máximo {_ai_alloc_pct:.0f}% del portafolio "
+                    f"(costo base ${_portfolio_cost:,.0f}) → {_suggested_shares:.2f} acciones @ ${_price:,.2f}"
+                )
 
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            shares = st.number_input("Acciones", min_value=0.01, value=float(_suggested_shares), step=1.0)
-            if _shares_caption:
-                st.caption(_shares_caption)
-        with col2:
-            cost = st.number_input("Costo promedio (USD)", min_value=0.01, value=_price)
-        with col3:
-            buy_date = st.date_input("Fecha de compra")
-        if st.button("Agregar posición", type="secondary"):
-            _portfolio.add_position(symbol, shares, cost, str(buy_date))
-            st.success(f"✅ {shares:.0f} × {symbol} agregado @ ${cost:.2f}")
-            st.session_state.portfolio = _portfolio
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                shares = st.number_input("Acciones", min_value=0.01, value=float(_suggested_shares), step=1.0)
+                if _shares_caption:
+                    st.caption(_shares_caption)
+            with col2:
+                cost = st.number_input("Costo promedio (USD)", min_value=0.01, value=_price)
+            with col3:
+                buy_date = st.date_input("Fecha de compra")
+            if st.button("Agregar posición", type="secondary"):
+                _skip = _portfolio.add_position(symbol, shares, cost, str(buy_date))
+                if _skip:
+                    st.warning(f"No se agregó {symbol}: {_skip}.")
+                else:
+                    st.success(f"✅ {shares:.0f} × {symbol} agregado @ ${cost:.2f}")
+                    st.session_state.portfolio = _portfolio

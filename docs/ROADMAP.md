@@ -10,6 +10,25 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## PORTFOLIO-CCY — Una posición en otra moneda no entra al Portfolio (2026-09-26)
+
+«➕ Agregar al Portfolio» en Stock Analysis precargaba `fund.current_price`, el precio
+en moneda local, en «Costo promedio (USD)», y `Portfolio.add_position` lo guardaba
+así: 7203.T quedaba como una posición de 3025 **dólares** por acción. La fila se
+quedaba corta: `get_current_values` también valúa cada posición en su propia moneda,
+y `compute_metrics`, `get_position_weights` y `get_sector_weights` suman esos valores
+como si fueran dólares. Con eso, el total, la concentración y la deriva leían yenes
+como dólares (10 Toyota pesaban más del 90 % contra 10 AAPL). Sin conversión (#154),
+la cartera solo admite su moneda (`PORTFOLIO.base_currency`):
+`position_currency_skip_reason` es la regla y `add_position` la aplica en el store,
+devuelve el motivo y no escribe. Stock Analysis muestra ese motivo en lugar del
+formulario. Una moneda desconocida no bloquea, igual que en
+`admission_skip_reason` (LLM-2). Oráculo en rojo antes del cambio:
+`tests/test_portfolio_currency_gate_oracle.py`. La cartera real no tenía posiciones
+no-USD. Queda **#154**: convertir para poder admitirlas.
+
+---
+
 ## TEST-CACHE — La suite no toca la base del usuario (2026-09-24)
 
 N6 aisló los stores, pero la caché de datos vive en la misma base y `DataCache.get`
