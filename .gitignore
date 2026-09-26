@@ -15,6 +15,9 @@ data/db/
 !.claude/skills/decidir-proyecto/
 .claude/skills/decidir-proyecto/*
 !.claude/skills/decidir-proyecto/SKILL.md
+!.claude/skills/probar-en-vivo/
+.claude/skills/probar-en-vivo/*
+!.claude/skills/probar-en-vivo/SKILL.md
 !.claude/agents/
 .claude/agents/*
 !.claude/agents/engine-reviewer.md

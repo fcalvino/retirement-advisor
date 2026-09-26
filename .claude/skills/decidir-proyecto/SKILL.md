@@ -47,7 +47,9 @@ pagas. Un OK aprueba la propuesta para otra tarea; no habilita su ejecución ac�
   revisá cuándo corresponde cambiar cada uno, sin usar el primero como comodín.
   No inventes umbrales ni congeles valores de configuración dentro de esta skill.
 - Proponé `make check` como verificación del cambio; si toca fechas, horas o
-  semántica diaria, también `TZ=UTC make test`. Esta skill no instala dependencias
+  semántica diaria, también `TZ=UTC make test`; y siempre la prueba en la app en
+  vivo con la skill `probar-en-vivo`, obligatoria después de cualquier desarrollo.
+  Esta skill no instala dependencias
   ni ejecuta el cambio para probarlo. Separá tests leídos, pruebas efectivamente
   ejecutadas y CI remoto; nunca presentes uno como evidencia del otro.
 
