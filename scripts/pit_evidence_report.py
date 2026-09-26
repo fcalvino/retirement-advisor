@@ -105,6 +105,11 @@ def render_markdown(summary: Dict[str, Any], *, generated_at: str, sha: str,
         f"Cortes con los dos grupos: **{cmp_['n_cutoffs']}**. "
         f"Diferencia media: **{_band(cmp_['mean'], cmp_['band'])}**.",
         "",
+        "Cortes a menos de un horizonte de distancia comparten parte del mismo año de "
+        "mercado (con la grilla por defecto, cada 6 meses sobre 1 año, medio año): tampoco son "
+        "del todo independientes, así que esta banda también es algo optimista. Un veredicto "
+        "«inconcluso» con esta banda lo sería con más razón con la honesta.",
+        "",
         f"**Veredicto: {summary['verdict']}.**",
         "",
     ]
