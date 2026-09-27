@@ -2512,7 +2512,11 @@ class CommitteeConfig:
                           the DA (0.7), above the Coach (0.3), so one income voice
                           cannot outweigh Fundamental/PM (1.0). With six voices the
                           total weight goes 3.8 → 4.4; its max share of the lean
-                          is 0.6/4.4 ≈ 14 %.
+                          is 0.6/4.4 ≈ 14 %. "Estratega Macro" (0.8) likewise
+                          abstains when the RAG has no fresh real macro doc (the
+                          example set does not count — MACRO-SEED): it would vote
+                          from training memory. Both are out of the quorum's
+                          denominator, not failed votes.
       dividend_voice_min_yield_pct — the dividend voice is convened only when
                           dividend_yield (%) is strictly above this; otherwise it
                           abstains (no opinion, lean untouched).
@@ -2575,7 +2579,9 @@ class CommitteeConfig:
     # 2026-09-24c: UM-1 — un P/B roto por unidad llega a la IA como «no medible».
     # 2026-09-24d: ídem para EV/EBITDA. 2026-09-24e: UM-3 — precio, market cap y
     # valor de Graham nombran su moneda en vez de anteponer «$».
-    prompt_version: str = "2026-09-24e"
+    # 2026-09-27a: MACRO-SEED — los docs de ejemplo del RAG ya no llegan a ningún
+    # prompt, y sin hechos macro reales el Estratega Macro no se convoca.
+    prompt_version: str = "2026-09-27a"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a

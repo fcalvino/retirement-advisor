@@ -10,6 +10,43 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## MACRO-SEED — los docs de ejemplo del RAG dejan de ser hechos, y sin hechos el Macro se abstiene (2026-09-27)
+
+Cierra la fila MACRO-SEED y la última decisión de #130.
+
+**El defecto.** La tabla `macro_docs` de la base real tenía sólo los 5 docs de
+`example_macro_docs` (texto de demo, doc_key `seed:*`), sembrados el 2026-06-16 y
+nunca reemplazados por ingestas de FRED (no hay `FRED_API_KEY`). `build_context`
+los inyectaba como «hechos fechados — usá ESTOS, no tu memoria» en tres caminos:
+el comité por ticker (Estratega Macro y, desde #130 paso 4, Analista
+Fundamental), la decisión IA de Stock Analysis y el Macro del comité de cartera.
+Los 5 dictámenes cacheados del 24/09 citaban «Fed 4.25‑4.50%», el texto del seed.
+El 2026-10-14 el seed vencía por `MACRO_RAG.max_age_days`, y desde ahí el Macro
+habría opinado de memoria.
+
+**Decisiones del usuario.** El seed no llega a ningún prompt (alcance raíz, no
+sólo el Macro), y sin docs frescos reales el Estratega Macro se **abstiene**.
+Antes de decidir se midió: recalculando esos 5 dictámenes con `aggregate` y el
+Macro fuera, **0 de 5 acciones cambian**.
+
+**El arreglo.** `MacroRagStore.retrieve` deja afuera los docs `is_seed_doc` salvo
+`include_seed=True`, así que ningún prompt los ve. Con el contexto macro vacío,
+`CommitteeAnalyzer.analyze` y `analyze_portfolio` no convocan al Macro (tampoco se
+paga su llamada) y lo anotan en `CommitteeVerdict.abstentions`, que viaja en la
+caché. Se abstiene como la voz de Dividendo, fuera del denominador del quórum, y
+**no como un voto fallido**: uno fallido deja `complete=False`, y un veredicto
+incompleto no se cachea ni se registra en el track record. Las dos vistas del
+comité lo dicen (`committee_abstention_caption`), y la página Macro RAG marca los
+docs de ejemplo como «no llegan al prompt». `COMMITTEE.prompt_version` pasa a
+`2026-09-27a`; `ENGINE_VERSION` no se toca.
+
+**Verificación.** Oráculo `tests/test_macro_seed_abstention_oracle.py`: 7 de 9 en
+rojo contra `origin/main`; los 2 del caption se agregaron con el arreglo. En vivo,
+sobre una copia de la base, con Groq `gpt-oss-120b` y MSFT: 5 voces en pantalla,
+el caption de abstención, `abstained=['Estratega Macro'] quorum=100%` en el log,
+la fila 1588 `source='committee'` en la copia y ningún «4.25» en el dictamen
+cacheado. La base real no cambió.
+
 ## PIT-2, TR-STALE-PRICE, SCHED-ONCE y RUFF-PIN — la evidencia a 1 año se corre y se lee (2026-09-26)
 
 Un solo PR con los pasos del análisis `/decidir-proyecto` sobre `5c20955`.

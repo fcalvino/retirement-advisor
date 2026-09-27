@@ -136,7 +136,11 @@ def test_build_context_with_stress_results():
 # --------------------------------------------------------------------------- #
 
 def _ctx():
-    return build_portfolio_committee_context(opt_result=_opt_result(), mc_result=_mc_result())
+    # A dated macro fact, so the Macro is convened: without one it abstains (MACRO-SEED).
+    return build_portfolio_committee_context(
+        opt_result=_opt_result(), mc_result=_mc_result(),
+        macro_context="[2026-09] FEDFUNDS 4.33%",
+    )
 
 
 def test_analyze_portfolio_runs_four_agents():

@@ -58,6 +58,10 @@ LLMCall = Callable[[str], str]
 
 #: Vote key of the dividend voice (its prompt title is the longer DIVIDEND_ROLE).
 DIVIDEND_VOTE_ROLE = "Analista de Dividendo"
+MACRO_VOTE_ROLE = "Estratega Macro"
+#: Why the Macro Strategist sits out (MACRO-SEED): its mandate is to reason from
+#: dated macro facts, and without any it would vote from training memory.
+MACRO_ABSTAIN_REASON = "sin hechos macro fechados en el RAG (los docs de ejemplo no cuentan)"
 
 _RETRY_IN_SECONDS = re.compile(r"try again in ([0-9.]+)\s*s", re.IGNORECASE)
 
@@ -114,6 +118,10 @@ class CommitteeVerdict:
     #: "quorum met" because ``_verdict_from_dict`` does not deserialise it: a
     #: cache hit must not come back looking like a failed panel.
     quorum_pct: float = 100.0
+    #: Roles that were deliberately NOT convened, with the reason (MACRO-SEED).
+    #: Not failures: an abstaining voice is out of the quorum's denominator, like
+    #: the dividend voice on a non-payer, so ``complete`` stays True.
+    abstentions: Dict[str, str] = field(default_factory=dict)
 
     @property
     def available(self) -> bool:
@@ -222,6 +230,8 @@ class CommitteeVerdict:
         for op in self.opinions:
             if op.ok:
                 parts.append(f"· {op.role}: {op.stance} ({op.confidence}).")
+        for role, reason in self.abstentions.items():
+            parts.append(f"· {role}: se abstuvo ({reason}).")
         if self.dissent:
             parts.append("Disenso (bear case): " + " ".join(f"– {d}" for d in self.dissent))
         return "\n".join(parts)
@@ -882,13 +892,24 @@ class CommitteeAnalyzer:
         else:
             fundamental_prompt = equity_decision_prompt(fund, tech, macro_ctx)
 
-        jobs = {
-            "Analista Fundamental": (fundamental_prompt, _parse_fundamental),
-            "Estratega Macro": (macro_strategist_prompt(fund, tech, macro_ctx), lambda r: _parse_agent("Estratega Macro", r)),
+        jobs = {"Analista Fundamental": (fundamental_prompt, _parse_fundamental)}
+        abstentions: Dict[str, str] = {}
+        # MACRO-SEED: with no dated macro facts the Macro would vote from memory,
+        # so it is not convened (and its call is not paid) — the same rule as the
+        # dividend voice on a non-payer. A failed vote would be worse: it leaves
+        # ``complete`` False, and an incomplete verdict is neither cached nor logged.
+        if macro_ctx:
+            jobs[MACRO_VOTE_ROLE] = (
+                macro_strategist_prompt(fund, tech, macro_ctx),
+                lambda r: _parse_agent(MACRO_VOTE_ROLE, r),
+            )
+        else:
+            abstentions[MACRO_VOTE_ROLE] = MACRO_ABSTAIN_REASON
+        jobs.update({
             "Abogado del Diablo": (devils_advocate_prompt(fund, tech, news, drawdowns), lambda r: _parse_agent("Abogado del Diablo", r)),
             "Portfolio Manager": (portfolio_manager_prompt(fund, tech, portfolio_ctx), lambda r: _parse_agent("Portfolio Manager", r)),
             "Behavioral Coach": (behavioral_coach_prompt(fund, tech), lambda r: _parse_agent("Behavioral Coach", r)),
-        }
+        })
         if _pays_dividend(fund):
             jobs[DIVIDEND_VOTE_ROLE] = (
                 dividend_capital_prompt(fund, tech),
@@ -897,10 +918,12 @@ class CommitteeAnalyzer:
 
         opinions = self._run_agents(jobs)
         verdict = aggregate(symbol, opinions, data_quality=dq)
+        verdict.abstentions = abstentions
         logger.info(
             f"committee[{symbol}]: {verdict.action} ({verdict.confidence}) lean={verdict.lean} "
             f"dissent={len(verdict.dissent)} complete={verdict.complete} "
-            f"quorum={verdict.quorum_pct:.0f}% failures={verdict.failure_causes}"
+            f"quorum={verdict.quorum_pct:.0f}% failures={verdict.failure_causes} "
+            f"abstained={list(abstentions)}"
         )
         if self._use_cache and verdict.complete:
             self._set_cached(symbol, verdict, variant)
@@ -925,16 +948,30 @@ class CommitteeAnalyzer:
         jobs = {
             "Estratega del Plan": (plan_strategist_prompt(ctx), lambda r: _parse_agent("Estratega del Plan", r)),
             "Gestor de Riesgo":   (risk_manager_portfolio_prompt(ctx), lambda r: _parse_agent("Gestor de Riesgo", r)),
-            "Estratega Macro":    (macro_strategist_portfolio_prompt(ctx), lambda r: _parse_agent("Estratega Macro", r)),
-            "Abogado del Diablo": (devils_advocate_portfolio_prompt(ctx), lambda r: _parse_agent("Abogado del Diablo", r)),
         }
+        abstentions: Dict[str, str] = {}
+        # MACRO-SEED: same rule as the per-ticker panel — its prompt asks for
+        # "EXCLUSIVAMENTE los hechos macro fechados provistos", so with none it sits out.
+        if ctx.get("macro_context"):
+            jobs[MACRO_VOTE_ROLE] = (
+                macro_strategist_portfolio_prompt(ctx),
+                lambda r: _parse_agent(MACRO_VOTE_ROLE, r),
+            )
+        else:
+            abstentions[MACRO_VOTE_ROLE] = MACRO_ABSTAIN_REASON
+        jobs["Abogado del Diablo"] = (
+            devils_advocate_portfolio_prompt(ctx),
+            lambda r: _parse_agent("Abogado del Diablo", r),
+        )
 
         opinions = self._run_agents(jobs)
         verdict = aggregate(plan_key, opinions, weights=COMMITTEE.portfolio_vote_weights)
+        verdict.abstentions = abstentions
         logger.info(
             f"committee[{cache_symbol}]: {verdict.action} ({verdict.confidence}) "
             f"lean={verdict.lean} dissent={len(verdict.dissent)} complete={verdict.complete} "
-            f"quorum={verdict.quorum_pct:.0f}% failures={verdict.failure_causes}"
+            f"quorum={verdict.quorum_pct:.0f}% failures={verdict.failure_causes} "
+            f"abstained={list(abstentions)}"
         )
         if self._use_cache and verdict.complete:
             self._set_cached(cache_symbol, verdict)
@@ -1017,6 +1054,7 @@ def _verdict_to_dict(v: CommitteeVerdict) -> dict:
              "error_cause": o.error_cause}
             for o in v.opinions
         ],
+        "abstentions": dict(v.abstentions),
     }
 
 
@@ -1035,6 +1073,7 @@ def _verdict_from_dict(d: dict) -> CommitteeVerdict:
         confidence=d.get("confidence", "MEDIUM"),
         consensus_points=d.get("consensus_points", []), dissent=d.get("dissent", []),
         opinions=opinions, lean=d.get("lean", 0.0),
+        abstentions=dict(d.get("abstentions") or {}),
     )
 
 
