@@ -2581,7 +2581,9 @@ class CommitteeConfig:
     # valor de Graham nombran su moneda en vez de anteponer «$».
     # 2026-09-27a: MACRO-SEED — los docs de ejemplo del RAG ya no llegan a ningún
     # prompt, y sin hechos macro reales el Estratega Macro no se convoca.
-    prompt_version: str = "2026-09-27a"
+    # 2026-09-27b: FRED-CPI-NIVEL — la inflación llega como tasa interanual, no
+    # como el nivel del índice; los veredictos que leyeron «IPC 334» no se sirven.
+    prompt_version: str = "2026-09-27b"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a
@@ -2751,6 +2753,11 @@ class MacroRagConfig:
                       pulls (#130 paso 6). GDP goes in as the real growth rate
                       (A191RL1Q225SBEA), not the level in billions, so the model
                       reads it without converting units.
+      fred_series_units — FRED API ``units`` per series (absent = ``lin``, the
+                      raw value). CPIAUCSL is the index LEVEL (334 in 2026-08,
+                      base 1982-84=100); raw, the Macro read it as "inflación
+                      alta (IPC 334.131)". ``pc1`` = % change from a year ago,
+                      i.e. the inflation rate (FRED-CPI-NIVEL).
       fred_refresh_hour — local hour (HH:MM) of the scheduler's daily FRED ingest.
     """
     enabled: bool = True
@@ -2760,9 +2767,12 @@ class MacroRagConfig:
     max_context_chars: int = 1200
     fred_series: dict = field(default_factory=lambda: {
         "FEDFUNDS": "Tasa de fondos federales (FRED)",
-        "CPIAUCSL": "Índice de precios al consumidor IPC (FRED)",
+        "CPIAUCSL": "Inflación IPC de EE. UU., variación interanual % (FRED)",
         "DGS10": "Rendimiento del bono del Tesoro a 10 años (FRED)",
         "A191RL1Q225SBEA": "Crecimiento del PBI real de EE. UU., % anualizado trimestral (FRED)",
+    })
+    fred_series_units: dict = field(default_factory=lambda: {
+        "CPIAUCSL": "pc1",
     })
     fred_refresh_hour: str = "06:30"
 
@@ -2773,6 +2783,7 @@ class MacroRagConfig:
             "max_age_days": self.max_age_days,
             "min_score": self.min_score,
             "max_context_chars": self.max_context_chars,
+            "fred_series_units": dict(self.fred_series_units),
         }
 
 

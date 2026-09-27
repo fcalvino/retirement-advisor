@@ -139,7 +139,7 @@ class _FakeFred:
     def __init__(self, values):
         self._values = values
 
-    def latest_series_value(self, series_id):
+    def latest_series_value(self, series_id, units="lin"):
         from data.data_sources import SourceValue
 
         v = self._values.get(series_id)

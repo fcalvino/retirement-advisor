@@ -10,6 +10,26 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## FRED-CPI-NIVEL — la inflación llega al RAG como tasa, no como nivel del índice (2026-09-27)
+
+Visto en la QA de #179, la primera con `FRED_API_KEY`: `MACRO_RAG.fred_series`
+ingería `CPIAUCSL`, que es el **nivel** del IPC de EE. UU. (334.131 en 2026-08, base
+1982-84 = 100), bajo el título «Índice de precios al consumidor IPC». El Estratega
+Macro lo leyó como «un entorno de inflación alta (IPC 334.131)».
+
+`MACRO_RAG.fred_series_units` pide a la API de FRED la transformación que
+corresponde (`CPIAUCSL` → `units=pc1`, variación contra el mismo mes del año
+anterior: **3.35302**, verificado en vivo), `FredSource.latest_series_value` la manda
+sólo si no es `lin` (el request de las series que ya son tasas no cambia), y el doc
+dice «3.35 % interanual» bajo «Inflación IPC de EE. UU., variación interanual %».
+El `doc_key` sigue siendo `fred:CPIAUCSL`, así que una ingesta nueva reemplaza un
+nivel escrito antes. `COMMITTEE.prompt_version` pasa a `2026-09-27b`.
+
+Oráculo `tests/test_fred_cpi_units_oracle.py` (4 de 5 en rojo contra `origin/main`;
+el quinto fija que el request de las otras series no cambia). En vivo, sobre una
+copia de la base: ingesta real 4/4 y el Macro de MSFT cita «moderada inflación del
+3.35%»; el dictamen cacheado no contiene «334». La base real no cambió.
+
 ## MACRO-SEED — los docs de ejemplo del RAG dejan de ser hechos, y sin hechos el Macro se abstiene (2026-09-27)
 
 Cierra la fila MACRO-SEED y la última decisión de #130.
