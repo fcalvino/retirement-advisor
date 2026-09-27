@@ -828,13 +828,24 @@ class CommitteeAnalyzer:
     ``call_fn`` is the injection seam: ``call_fn(prompt) -> raw_json_string``.
     When omitted, an ``ai_config`` must be supplied and the production
     multi-provider API call is used.
+
+    ``news_fn`` / ``drawdowns_fn`` / ``macro_fn`` replace the three live inputs
+    (headlines, drawdowns, macro RAG) for the eval bank (LLM-4): a golden case
+    has to reach the prompt with the same facts every run, live or replay.
+    ``None`` keeps the production source, resolved at call time.
     """
 
     def __init__(self, call_fn: Optional[LLMCall] = None, *, ai_config=None,
-                 max_workers: Optional[int] = None, use_cache: bool = True):
+                 max_workers: Optional[int] = None, use_cache: bool = True,
+                 news_fn: Optional[Callable[[str], list]] = None,
+                 drawdowns_fn: Optional[Callable[[str], dict]] = None,
+                 macro_fn: Optional[Callable[[object], str]] = None):
         if call_fn is None and ai_config is None:
             raise ValueError("CommitteeAnalyzer needs either call_fn or ai_config")
         self._call_fn = call_fn or self._make_api_call_fn(ai_config)
+        self._news_fn = news_fn
+        self._drawdowns_fn = drawdowns_fn
+        self._macro_fn = macro_fn
         self._ai_config = ai_config
         if max_workers is not None:
             self._max_workers = max_workers
@@ -878,15 +889,18 @@ class CommitteeAnalyzer:
         # Fase 3B — dated macro context (RAG) for the Macro Strategist and,
         # since #130 paso 4, the Fundamental Analyst too.
         try:
-            from analysis.macro_rag import macro_context_for
+            if self._macro_fn is not None:
+                macro_ctx = self._macro_fn(fund)
+            else:
+                from analysis.macro_rag import macro_context_for
 
-            macro_ctx = macro_context_for(fund)
+                macro_ctx = macro_context_for(fund)
         except Exception:
             macro_ctx = ""
 
         is_crypto = bool(getattr(fund, "is_crypto", False))
-        news = [] if is_crypto else _ticker_news(symbol)
-        drawdowns = _ticker_drawdowns(symbol)
+        news = [] if is_crypto else (self._news_fn or _ticker_news)(symbol)
+        drawdowns = (self._drawdowns_fn or _ticker_drawdowns)(symbol)
         if is_crypto:
             fundamental_prompt = crypto_decision_prompt(fund, tech)
         else:

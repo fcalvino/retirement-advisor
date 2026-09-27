@@ -2470,6 +2470,10 @@ class EvalConfig:
                                    suite to be considered green.
       require_risk_on_buy        — a BUY/STRONG BUY must still name ≥1 risk
                                    (anti-complacency: combats LLM sycophancy).
+      runs_dir                   — where each live run's ``EvalReport`` is saved
+                                   as JSON (LLM-4). Outside git: a run is evidence
+                                   about a model on a day, not source. Relative
+                                   paths hang off ``BASE_DIR``.
     """
     conservative_alloc_cap_pct: float = 15.0
     min_reasoning_chars: int = 80
@@ -2477,6 +2481,11 @@ class EvalConfig:
     case_pass_threshold: float = 1.0
     suite_pass_threshold: float = 0.8
     require_risk_on_buy: bool = True
+    runs_dir: str = "data/eval_runs"
+
+    def runs_path(self) -> Path:
+        p = Path(self.runs_dir)
+        return p if p.is_absolute() else BASE_DIR / p
 
     def as_dict(self) -> dict:
         return {
@@ -2486,6 +2495,7 @@ class EvalConfig:
             "case_pass_threshold": self.case_pass_threshold,
             "suite_pass_threshold": self.suite_pass_threshold,
             "require_risk_on_buy": self.require_risk_on_buy,
+            "runs_dir": self.runs_dir,
         }
 
 
