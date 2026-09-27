@@ -1145,11 +1145,9 @@ def run_holdings_committee(
 
     macro_context = ""
     try:
-        from analysis.macro_rag import macro_rag_store
+        from analysis.macro_rag import macro_rag_store, portfolio_macro_query
 
-        macro_context = macro_rag_store.build_context(
-            f"cartera de retiro {' '.join(sw.keys())} tasas inflación riesgo país"
-        )
+        macro_context = macro_rag_store.build_context(portfolio_macro_query(sw))
     except Exception:  # pragma: no cover - macro is best-effort
         macro_context = ""
 

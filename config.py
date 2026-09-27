@@ -2593,7 +2593,7 @@ class CommitteeConfig:
     # prompt, y sin hechos macro reales el Estratega Macro no se convoca.
     # 2026-09-27b: FRED-CPI-NIVEL — la inflación llega como tasa interanual, no
     # como el nivel del índice; los veredictos que leyeron «IPC 334» no se sirven.
-    prompt_version: str = "2026-09-27b"
+    prompt_version: str = "2026-09-27c"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a
@@ -2769,6 +2769,13 @@ class MacroRagConfig:
                       alta (IPC 334.131)". ``pc1`` = % change from a year ago,
                       i.e. the inflation rate (FRED-CPI-NIVEL).
       fred_refresh_hour — local hour (HH:MM) of the scheduler's daily FRED ingest.
+      pinned_doc_key_prefixes — ``doc_key`` prefixes whose fresh docs go into every
+                      context block first, whatever the query, and outside
+                      ``top_k`` (RAG-TOKENS). Retrieval matches exact words, so
+                      the portfolio committee's query ("tasas", no "macro") got
+                      only the inflation series: the Fed rate, the 10-year yield
+                      and GDP never reached its Macro Strategist. FRED is four
+                      short facts that are relevant to any retirement question.
     """
     enabled: bool = True
     top_k: int = 4
@@ -2785,6 +2792,7 @@ class MacroRagConfig:
         "CPIAUCSL": "pc1",
     })
     fred_refresh_hour: str = "06:30"
+    pinned_doc_key_prefixes: tuple = ("fred:",)
 
     def as_dict(self) -> dict:
         return {
@@ -2794,6 +2802,7 @@ class MacroRagConfig:
             "min_score": self.min_score,
             "max_context_chars": self.max_context_chars,
             "fred_series_units": dict(self.fred_series_units),
+            "pinned_doc_key_prefixes": list(self.pinned_doc_key_prefixes),
         }
 
 
