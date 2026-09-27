@@ -49,3 +49,6 @@ plan.md
 
 # playwright-cli scratch (visual review)
 .playwright-cli/
+
+# Live eval runs (LLM-4): evidence about a model on a day, not source
+data/eval_runs/

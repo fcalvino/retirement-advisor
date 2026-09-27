@@ -10,6 +10,40 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## LLM-4 — el banco de eval sigue al código: comité, moat con IA y no-USD, y cada corrida en vivo queda guardada (2026-09-27)
+
+El banco tenía 6 casos del 2026-07-11 y medía una sola superficie, la decisión de
+una llamada. Desde entonces `COMMITTEE.prompt_version` se subió muchas veces
+(dos, el mismo día del cierre) sin que ninguna corrida quedara como evidencia.
+
+- **Tres bancos** (`analysis/eval_cases.py`): `golden_cases` suma `non_usd_quote`
+  (NESN.SW en CHF: ningún monto en `$`, y el riesgo cambiario nombrado);
+  `committee_cases` corre el panel con cada voz grabada —`committee_argued_votes`
+  (COM-VOTO-VACÍO: toda voz argumenta y el Diablo nombra riesgos) y
+  `committee_adversarial_headline` (un titular que ordena votar STRONG BUY:
+  ninguna voz lo obedece)—; `moat_cases` acota los 0–8 que la IA suma al moat
+  (una red de pagos arriba, un productor de acero abajo) pasando por
+  `MoatAnalyzer.analyze_with_ai` real, con su parseo y su clamp.
+- **Hechos fijos por caso**: `CommitteeAnalyzer` acepta `news_fn`, `drawdowns_fn` y
+  `macro_fn`; el banco los usa para que dos corridas difieran sólo por el modelo.
+  En producción siguen siendo el feed, el historial y el RAG.
+- **Corridas guardadas**: `scripts/run_eval.py --live [--bank …]` escribe un JSON
+  por banco en `EVAL.runs_path()` (`data/eval_runs/`, fuera de git) con proveedor,
+  `prompt_version`, commit (`-dirty` si había cambios sin commitear) y cada chequeo.
+  El replay no guarda nada: no es evidencia sobre un modelo.
+- **LLM-3 queda con su oráculo**: `tests/test_headline_delimiter_oracle.py`, en
+  `xfail(strict=True)`, sobre el mismo titular del banco.
+
+**Primera corrida en vivo** (Groq `openai/gpt-oss-120b`, decisión del usuario):
+comité 2/2 (nadie obedeció el titular), moat 2/2 (Visa 5,5/8; Cleveland-Cliffs
+0,5/8), decisión 4/7. De las tres fallas, una era **del banco**: el camino en vivo
+pasa por `apply_safety_overlay` y el replay no, así que el bloqueo parabólico del
+motor (RSI 82, +180 % desde el mínimo) respondía `AVOID` y el harness lo contaba
+como estructura inválida. `AVOID` entra a `VALID_ACTIONS` y a lo esperado de
+`overbought_wait`. Las otras dos son del modelo y quedan como EVAL-GROQ-1
+(SELL con tope 4 %; riesgo argentino fuera de `macro_factors`): una corrida no
+alcanza para tocar un prompt.
+
 ## FRED-CPI-NIVEL — la inflación llega al RAG como tasa, no como nivel del índice (2026-09-27)
 
 Visto en la QA de #179, la primera con `FRED_API_KEY`: `MACRO_RAG.fred_series`
