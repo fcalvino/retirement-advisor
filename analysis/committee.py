@@ -629,6 +629,8 @@ def build_holdings_committee_context(
             "downside_vol_ratio": getattr(metrics, "downside_vol_ratio", None),
             "max_drawdown_pct": getattr(metrics, "max_drawdown_pct", None),
             "beta": getattr(metrics, "beta", None),
+            "risk_curve_points": getattr(metrics, "risk_curve_points", None),
+            "risk_measurable_from": getattr(metrics, "risk_measurable_from", None),
         }
 
     if stress_results:

@@ -684,6 +684,40 @@ DOWNSIDE_RATIO_HELP = (
 )
 
 
+#: What the Portfolio page shows for a risk metric that was not measured
+#: (PORTFOLIO-RISK-CERO): a dash, never the dataclass default.
+RISK_NOT_MEASURED = "—"
+
+
+def risk_metric_text(value: Optional[float], fmt: str) -> str:
+    """``fmt.format(value)``, or ``RISK_NOT_MEASURED`` when it was not measured."""
+    return RISK_NOT_MEASURED if value is None else fmt.format(value)
+
+
+def risk_unmeasured_caption(metrics: Any) -> str:
+    """Why the realized-risk cards are dashes, and until when; ``""`` if all measured.
+
+    The shared curve starts at the latest purchase (U5-12), so one recent buy
+    leaves the whole book without Sharpe, drawdown or beta for a few weeks.
+    """
+    from config import PORTFOLIO
+
+    fields = ("sharpe_ratio", "downside_vol_ratio", "max_drawdown_pct", "beta")
+    if all(getattr(metrics, f, None) is not None for f in fields):
+        return ""
+    points = getattr(metrics, "risk_curve_points", 0) or 0
+    need = PORTFOLIO.min_risk_curve_points
+    when = getattr(metrics, "risk_measurable_from", None)
+    if points < need:
+        tail = f"; medible desde ~{when}" if when else ""
+        return (
+            "Riesgo realizado no medible todavía: la curva común de la cartera empieza "
+            f"con la última compra y tiene {points} de {need} semanas{tail}. "
+            "No se estima con historia que la cartera no vivió."
+        )
+    return "Alguna métrica de riesgo no es medible con la historia disponible (sin variación o sin datos de SPY)."
+
+
 # --------------------------------------------------------------------------- #
 #  Future-value primitives (used by gap-to-goal)                              #
 # --------------------------------------------------------------------------- #

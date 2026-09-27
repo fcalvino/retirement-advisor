@@ -161,8 +161,11 @@ class TestTheCurveOnlyCoversWhatWasHeld:
                        purchase_date=(datetime.now() - timedelta(days=3)).date().isoformat())
 
         metrics = p.compute_metrics()
-        assert metrics.sharpe_ratio == 0
-        assert metrics.max_drawdown_pct == 0
+        # Nothing means None, not the 0 / beta 1.0 defaults (PORTFOLIO-RISK-CERO).
+        assert metrics.sharpe_ratio is None
+        assert metrics.max_drawdown_pct is None
+        assert metrics.downside_vol_ratio is None
+        assert metrics.beta is None
 
 
 class TestTheFixtureDoesNotExpire:

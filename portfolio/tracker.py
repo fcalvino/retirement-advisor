@@ -80,12 +80,19 @@ class PortfolioMetrics:
     #: the EARLIEST purchase. Not an IRR: it weights no cash flow by its own
     #: timing (U5-12). See ``ANNUALIZED_RETURN_CAVEAT``.
     annualized_return_pct: float = 0.0
-    sharpe_ratio: float = 0.0
+    #: The four risk metrics are ``None`` when they were not measured — too short
+    #: a shared curve, no spread, no SPY overlap — never 0 or beta 1.0: the page
+    #: and the portfolio committee read them as measured (PORTFOLIO-RISK-CERO).
+    sharpe_ratio: Optional[float] = None
     #: (retorno anualizado − Rf) / desvío de las semanas negativas. **Not a
     #: Sortino ratio** — see ``data.product_ux.DOWNSIDE_RATIO_HELP`` (U1-9).
-    downside_vol_ratio: float = 0.0
-    max_drawdown_pct: float = 0.0
-    beta: float = 1.0
+    downside_vol_ratio: Optional[float] = None
+    max_drawdown_pct: Optional[float] = None
+    beta: Optional[float] = None
+    #: Weekly points in the shared curve, and — when that is below
+    #: ``PORTFOLIO.min_risk_curve_points`` — the day it will have enough.
+    risk_curve_points: int = 0
+    risk_measurable_from: Optional[str] = None
     dividend_income_ytd: float = 0.0
     num_positions: int = 0
 
@@ -247,16 +254,26 @@ class Portfolio:
                     (metrics.total_value / metrics.total_cost) ** (1 / years) - 1
                 ) * 100
 
-        # Sharpe / downside-vol ratio / Drawdown from portfolio equity curve
+        # Sharpe / downside-vol ratio / Drawdown from portfolio equity curve.
+        # Below the minimum they stay None: not measured is not 0 (and beta is
+        # not 1.0) — PORTFOLIO-RISK-CERO.
+        min_points = PORTFOLIO.min_risk_curve_points
         equity_curve = self._build_equity_curve()
-        if equity_curve is not None and len(equity_curve) > 10:
+        metrics.risk_curve_points = 0 if equity_curve is None else len(equity_curve)
+        if metrics.risk_curve_points < min_points:
+            held_from = self._held_from()
+            if held_from is not None:
+                metrics.risk_measurable_from = (
+                    held_from + pd.Timedelta(weeks=min_points - 1)
+                ).date().isoformat()
+        if equity_curve is not None and len(equity_curve) >= min_points:
             returns = equity_curve.pct_change().dropna()
             annual_factor = 52  # weekly returns
             mean_ret = returns.mean() * annual_factor
             std_ret = returns.std() * np.sqrt(annual_factor)
             rf = RISK_FREE.annual_fraction  # unified 10Y Treasury proxy (U5-10)
 
-            metrics.sharpe_ratio = round((mean_ret - rf) / std_ret, 2) if std_ret > 0 else 0
+            metrics.sharpe_ratio = round((mean_ret - rf) / std_ret, 2) if std_ret > 0 else None
 
             # Not a Sortino ratio (U1-9): this is the spread of the losing
             # weeks around their own mean, where Sortino needs
@@ -266,7 +283,7 @@ class Portfolio:
             downside = returns[returns < 0]
             downside_std = downside.std() * np.sqrt(annual_factor) if len(downside) > 0 else 0
             metrics.downside_vol_ratio = (
-                round((mean_ret - rf) / downside_std, 2) if downside_std > 0 else 0
+                round((mean_ret - rf) / downside_std, 2) if downside_std > 0 else None
             )
 
             rolling_max = equity_curve.cummax()
@@ -279,9 +296,9 @@ class Portfolio:
                 spy_ret = spy["close"].pct_change().dropna()
                 port_ret = returns.reindex(spy_ret.index).dropna()
                 spy_ret = spy_ret.reindex(port_ret.index).dropna()
-                if len(port_ret) > 10:
+                if len(port_ret) >= min_points:
                     cov = np.cov(port_ret, spy_ret)
-                    metrics.beta = round(cov[0, 1] / cov[1, 1], 2) if cov[1, 1] != 0 else 1.0
+                    metrics.beta = round(cov[0, 1] / cov[1, 1], 2) if cov[1, 1] != 0 else None
 
         return metrics
 
@@ -317,8 +334,9 @@ class Portfolio:
         off this series, so the fabricated history reached four metrics at once.
 
         The window therefore starts at the **latest** purchase date. Shorter is
-        the honest answer, and ``compute_metrics`` already suppresses the metrics
-        when too little of it survives rather than estimating from it.
+        the honest answer, and ``compute_metrics`` leaves the metrics ``None`` when
+        too little of it survives rather than estimating from it — ``None``, not
+        the 0 / beta 1.0 defaults it used to leave (PORTFOLIO-RISK-CERO).
 
         Zeroing each position before its own purchase is the other way to keep the
         share counts honest, and it is worse: a purchase would enter the series as
