@@ -41,8 +41,10 @@ pasa por `apply_safety_overlay` y el replay no, así que el bloqueo parabólico 
 motor (RSI 82, +180 % desde el mínimo) respondía `AVOID` y el harness lo contaba
 como estructura inválida. `AVOID` entra a `VALID_ACTIONS` y a lo esperado de
 `overbought_wait`. Las otras dos son del modelo y quedan como EVAL-GROQ-1
-(SELL con tope 4 %; riesgo argentino fuera de `macro_factors`): una corrida no
-alcanza para tocar un prompt.
+(SELL con tope 4 %; riesgo argentino fuera de `macro_factors`). La segunda corrida,
+sobre el commit limpio `75128e1`, repitió esas dos, `overbought_wait` pasó con
+`AVOID` y `non_usd_quote` no nombró el riesgo cambiario: decisión 4/7 otra vez,
+comité y moat 2/2.
 
 ## FRED-CPI-NIVEL — la inflación llega al RAG como tasa, no como nivel del índice (2026-09-27)
 
