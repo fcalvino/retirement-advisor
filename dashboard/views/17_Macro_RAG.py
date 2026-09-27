@@ -9,6 +9,7 @@ from loguru import logger
 from analysis.macro_rag import (
     example_macro_docs,
     ingest_from_fred,
+    is_pinned_doc,
     is_seed_doc,
     macro_rag_store,
 )
@@ -50,6 +51,14 @@ if n:
 
 st.divider()
 
+def _reaches_prompt(d) -> str:
+    if is_seed_doc(d):
+        return "no — ejemplo"
+    if is_pinned_doc(d):
+        return "sí, siempre (si está fresco)"
+    return "si la consulta lo recupera (y está fresco)"
+
+
 # Indexed docs
 docs = macro_rag_store.all_docs()
 if docs:
@@ -58,7 +67,7 @@ if docs:
         pd.DataFrame([
             {"Fecha": d.as_of or "s/f", "Título": d.title, "Fuente": d.source,
              "Tags": ", ".join(d.tags),
-             "Llega al prompt": "no — ejemplo" if is_seed_doc(d) else "sí, si está fresco"}
+             "Llega al prompt": _reaches_prompt(d)}
             for d in docs
         ]),
         hide_index=True,

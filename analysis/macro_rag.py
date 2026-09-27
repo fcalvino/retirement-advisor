@@ -68,6 +68,16 @@ class MacroDoc:
 SEED_DOC_KEY_PREFIX = "seed:"
 
 
+#: ``doc_key`` prefix of the FRED series written by ``ingest_from_fred``. Listed in
+#: ``MACRO_RAG.pinned_doc_key_prefixes``, so they reach every prompt (RAG-TOKENS).
+FRED_DOC_KEY_PREFIX = "fred:"
+
+
+def is_pinned_doc(doc: "MacroDoc") -> bool:
+    """Whether ``doc`` goes into every context block regardless of the query."""
+    return (doc.doc_key or "").startswith(tuple(MACRO_RAG.pinned_doc_key_prefixes))
+
+
 def is_seed_doc(doc: "MacroDoc") -> bool:
     """Whether ``doc`` is one of the offline example docs rather than an ingested fact.
 
@@ -158,6 +168,26 @@ class MacroRagStore:
 
     # ----- retrieval (TF-IDF cosine) ----------------------------------- #
 
+    def _fresh_docs(self, *, max_age_days: Optional[int] = None,
+                    now: Optional[datetime] = None, include_seed: bool = False) -> List[MacroDoc]:
+        """The candidate set: no example docs (unless asked) and nothing stale."""
+        max_age = MACRO_RAG.max_age_days if max_age_days is None else max_age_days
+        docs = self.all_docs()
+        if not include_seed:
+            docs = [d for d in docs if not is_seed_doc(d)]
+        fresh = []
+        for d in docs:
+            age = _days_old(d.as_of, now)
+            if age is None or age <= max_age:
+                fresh.append(d)
+        return fresh
+
+    def pinned_docs(self, *, now: Optional[datetime] = None) -> List[MacroDoc]:
+        """Fresh pinned docs, in ``MACRO_RAG.fred_series`` order (RAG-TOKENS)."""
+        order = {f"{FRED_DOC_KEY_PREFIX}{sid}": i for i, sid in enumerate(MACRO_RAG.fred_series)}
+        pinned = [d for d in self._fresh_docs(now=now) if is_pinned_doc(d)]
+        return sorted(pinned, key=lambda d: (order.get(d.doc_key, len(order)), d.doc_key))
+
     def retrieve(self, query: str, *, k: Optional[int] = None,
                  max_age_days: Optional[int] = None,
                  now: Optional[datetime] = None,
@@ -170,19 +200,7 @@ class MacroRagStore:
         was quoting its Fed rate as today's).
         """
         k = k or MACRO_RAG.top_k
-        max_age = MACRO_RAG.max_age_days if max_age_days is None else max_age_days
-        docs = self.all_docs()
-        if not include_seed:
-            docs = [d for d in docs if not is_seed_doc(d)]
-        if not docs:
-            return []
-
-        # Freshness gate: drop docs older than max_age (when dated).
-        fresh = []
-        for d in docs:
-            age = _days_old(d.as_of, now)
-            if age is None or age <= max_age:
-                fresh.append(d)
+        fresh = self._fresh_docs(max_age_days=max_age_days, now=now, include_seed=include_seed)
         if not fresh:
             return []
 
@@ -216,14 +234,26 @@ class MacroRagStore:
 
     def build_context(self, query: str, *, k: Optional[int] = None,
                       now: Optional[datetime] = None) -> str:
-        """Dated macro context block for prompt injection (empty string if none)."""
+        """Dated macro context block for prompt injection (empty string if none).
+
+        Pinned docs (FRED) go first and always; then up to ``k`` docs the query
+        retrieves among the rest (RAG-TOKENS). First, so the ``max_context_chars``
+        cut trims what was retrieved and never the pinned facts.
+        """
         if not MACRO_RAG.enabled:
             return ""
-        hits = self.retrieve(query, k=k, now=now)
-        if not hits:
+        k = k or MACRO_RAG.top_k
+        pinned = self.pinned_docs(now=now)
+        pinned_keys = {d.doc_key for d in pinned}
+        retrieved = [
+            d for d, _score in self.retrieve(query, k=k + len(pinned), now=now)
+            if d.doc_key not in pinned_keys
+        ][:k]
+        docs = pinned + retrieved
+        if not docs:
             return ""
         lines = ["=== CONTEXTO MACRO RECIENTE (hechos fechados — usá ESTOS, no tu memoria) ==="]
-        for doc, _score in hits:
+        for doc in docs:
             stamp = f"[{doc.as_of}]" if doc.as_of else "[s/f]"
             src = f" ({doc.source})" if doc.source else ""
             lines.append(f"- {stamp}{src} {doc.title}: {doc.body}")
@@ -327,7 +357,7 @@ def ingest_from_fred(store: MacroRagStore, series: Optional[dict] = None,
             title=title,
             body=f"Dato macro de FRED. Último valor reportado: {value} (serie {series_id}{period}).",
             source="FRED", as_of=today, tags=("fred", "macro"),
-            doc_key=f"fred:{series_id}",
+            doc_key=f"{FRED_DOC_KEY_PREFIX}{series_id}",
         ))
     if docs:
         store.ingest_many(docs)
@@ -348,6 +378,12 @@ def macro_query_for(fund) -> str:
         parts.append("argentina riesgo país fx adr")
     parts.append("tasas inflación macro")
     return " ".join(p for p in parts if p)
+
+
+def portfolio_macro_query(sector_weights) -> str:
+    """Retrieval query of the portfolio committee (``run_holdings_committee``)."""
+    sectors = " ".join(dict(sector_weights or {}).keys())
+    return f"cartera de retiro {sectors} tasas inflación riesgo país"
 
 
 # Module-level singleton (mirrors track_record_store / alert_store).

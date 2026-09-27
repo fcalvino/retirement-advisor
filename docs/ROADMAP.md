@@ -10,6 +10,33 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## RAG-TOKENS — los hechos de FRED llegan a todo prompt, pregunte lo que pregunte la consulta (2026-09-27)
+
+Visto en la QA de FRED-CPI-NIVEL. `MacroRagStore.retrieve` puntúa por coincidencia
+exacta de palabras (TF-IDF sin stemming): «tasas» no encuentra «Tasa de fondos
+federales». El comité por ticker recibía las 4 series de FRED sólo porque su
+consulta trae «macro», palabra que está en todo body de FRED; la del **comité de
+cartera** («cartera de retiro {sectores} tasas inflación riesgo país») no la trae y
+recuperaba **sólo la inflación**. La consulta de ejemplo de la página Macro RAG
+(«tecnología tasas valuación») recuperaba 0.
+
+Decisión del usuario: que los docs de FRED frescos y no-seed entren siempre (se
+descartaron normalizar tokens e indexar `tags`). `build_context` pone primero los
+docs cuyo `doc_key` tiene un prefijo de `MACRO_RAG.pinned_doc_key_prefixes`
+(`fred:`, el `FRED_DOC_KEY_PREFIX` con que escribe `ingest_from_fred`), en el orden
+de `MACRO_RAG.fred_series`, y después hasta `top_k` recuperados entre el resto. Los
+fijos no cuentan contra `top_k` —un doc de otra fuente sigue teniendo sus lugares— y
+van antes del recorte de `max_context_chars`. `retrieve` no cambia: es la búsqueda
+con puntaje que muestra la página, que ahora dice qué doc llega siempre y cuál sólo
+si la consulta lo recupera. La consulta del comité de cartera sale a
+`macro_rag.portfolio_macro_query` para que el oráculo pruebe la real.
+`COMMITTEE.prompt_version` pasa a `2026-09-27c`.
+
+Oráculo `tests/test_rag_tokens_oracle.py`, con los docs escritos por el
+`ingest_from_fred` real sobre un `requests.get` falso: 8 de 10 en rojo contra
+`origin/main` (los dos verdes eran el control por ticker y el FRED vencido). En
+producción desde la primera ingesta real de FRED (2026-09-27, 4/4).
+
 ## LLM-4 — el banco de eval sigue al código: comité, moat con IA y no-USD, y cada corrida en vivo queda guardada (2026-09-27)
 
 El banco tenía 6 casos del 2026-07-11 y medía una sola superficie, la decisión de
