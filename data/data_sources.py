@@ -380,7 +380,14 @@ class FredSource(DataSource):
     def fetch_fundamentals(self, symbol: str) -> Dict[str, SourceValue]:
         return {}
 
-    def latest_series_value(self, series_id: str) -> Optional[SourceValue]:
+    def latest_series_value(self, series_id: str, units: str = "lin") -> Optional[SourceValue]:
+        """Latest observation of ``series_id``, in FRED's ``units`` (``lin`` = raw).
+
+        ``units`` is the API's own transformation (e.g. ``pc1`` = % change from a
+        year ago), so a price index comes back as an inflation rate without
+        fetching a year of observations. ``lin`` is left out of the request, which
+        stays byte-identical for the series that are already rates.
+        """
         if not MULTI_SOURCE.fred_api_key:
             logger.debug("FredSource: no FRED_API_KEY set — skipping.")
             return None
@@ -394,6 +401,8 @@ class FredSource(DataSource):
                 "sort_order": "desc",
                 "limit": 1,
             }
+            if units and units != "lin":
+                params["units"] = units
             resp = requests.get(self._SERIES_URL, params=params, timeout=MULTI_SOURCE.request_timeout_s)
             if resp.status_code != 200:
                 return None

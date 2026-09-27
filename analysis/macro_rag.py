@@ -285,6 +285,10 @@ def example_macro_docs(as_of: Optional[str] = None) -> List[MacroDoc]:
     ]
 
 
+#: How the doc body names a FRED ``units`` transformation (``MACRO_RAG.fred_series_units``).
+_FRED_UNITS_LABEL = {"pc1": "% interanual"}
+
+
 def ingest_from_fred(store: MacroRagStore, series: Optional[dict] = None,
                      *, now: Optional[datetime] = None) -> int:
     """Best-effort ingest of latest FRED series values as dated macro docs.
@@ -298,7 +302,8 @@ def ingest_from_fred(store: MacroRagStore, series: Optional[dict] = None,
     a quarterly GDP print is already ~120 days old the day it is released and
     would never pass the freshness gate. The period goes in the body instead.
     One doc per series (``doc_key`` without date): a new print replaces the old
-    one rather than piling up next to it.
+    one rather than piling up next to it — including a CPI level written before
+    ``MACRO_RAG.fred_series_units`` asked for the year-over-year rate.
     """
     series = series or MACRO_RAG.fred_series
     try:
@@ -311,13 +316,16 @@ def ingest_from_fred(store: MacroRagStore, series: Optional[dict] = None,
     today = (now or utc_now()).strftime("%Y-%m-%d")
     docs: List[MacroDoc] = []
     for series_id, title in series.items():
-        sv = fred.latest_series_value(series_id)
+        units = MACRO_RAG.fred_series_units.get(series_id, "lin")
+        sv = fred.latest_series_value(series_id, units=units)
         if sv is None:
             continue
         period = f", período {sv.as_of}" if sv.as_of else ""
+        label = _FRED_UNITS_LABEL.get(units)
+        value = f"{round(sv.value, 2)} {label}" if label else f"{sv.value}"
         docs.append(MacroDoc(
             title=title,
-            body=f"Dato macro de FRED. Último valor reportado: {sv.value} (serie {series_id}{period}).",
+            body=f"Dato macro de FRED. Último valor reportado: {value} (serie {series_id}{period}).",
             source="FRED", as_of=today, tags=("fred", "macro"),
             doc_key=f"fred:{series_id}",
         ))
