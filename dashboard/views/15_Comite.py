@@ -13,6 +13,7 @@ from dashboard.shared import (
     CALC_BADGE,
     _get_ai_config,
     cached_full_analysis,
+    committee_abstention_caption,
     concentration_hold_note,
     consensus_empty_caption,
     dissent_empty_caption,
@@ -213,6 +214,9 @@ if run and symbol:
 
     st.divider()
     st.subheader("🗣️ Opiniones por agente")
+    _abstained = committee_abstention_caption(verdict)
+    if _abstained:
+        st.caption(_abstained)
     for op in verdict.opinions:
         title = f"{op.role} — {op.stance} ({op.confidence})"
         if op.error:

@@ -1765,6 +1765,19 @@ def dissent_empty_caption(verdict) -> str:
     return "Sin disenso registrado."
 
 
+def committee_abstention_caption(verdict) -> str:
+    """Which voices sat out and why, or ``""`` (MACRO-SEED).
+
+    Pure, shared by both committee views. An abstaining voice is not a failure —
+    the verdict is complete and logged — but a panel with one voice fewer must not
+    read as the full panel.
+    """
+    abstentions = getattr(verdict, "abstentions", None) or {}
+    return " ".join(
+        f"🤐 {role} se abstuvo: {reason}." for role, reason in abstentions.items()
+    )
+
+
 def concentration_hold_note(verdict, portfolio_ctx) -> str | None:
     """Why a good business got a cautious verdict: the PM saw a concentrated book.
 
@@ -1862,6 +1875,9 @@ def render_committee_verdict(verdict, *, footer_facts: str = "") -> None:
             st.caption(dissent_empty_caption(verdict))
 
     with st.expander("👥 Ver cada agente"):
+        _abstained = committee_abstention_caption(verdict)
+        if _abstained:
+            st.caption(_abstained)
         for o in verdict.opinions:
             if o.error:
                 st.caption(f"⚠️ **{o.role}** — no disponible ({o.error})")

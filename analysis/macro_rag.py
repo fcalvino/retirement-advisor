@@ -63,6 +63,20 @@ class MacroDoc:
         return f"{self.title}. {self.body}"
 
 
+#: ``doc_key`` prefix of the offline example set (``example_macro_docs``). Those
+#: docs are demo text, not facts: they never reach a prompt (MACRO-SEED).
+SEED_DOC_KEY_PREFIX = "seed:"
+
+
+def is_seed_doc(doc: "MacroDoc") -> bool:
+    """Whether ``doc`` is one of the offline example docs rather than an ingested fact.
+
+    Keyed on ``doc_key`` and not on ``source``: the source is a free label, and the
+    example set is the one thing ``example_macro_docs`` stamps with a fixed prefix.
+    """
+    return (doc.doc_key or "").startswith(SEED_DOC_KEY_PREFIX)
+
+
 _TOKEN_RE = re.compile(r"[a-záéíóúñü0-9]+", re.IGNORECASE)
 _STOP = {
     "the", "a", "an", "of", "and", "to", "in", "on", "for", "is", "are", "el", "la",
@@ -146,10 +160,20 @@ class MacroRagStore:
 
     def retrieve(self, query: str, *, k: Optional[int] = None,
                  max_age_days: Optional[int] = None,
-                 now: Optional[datetime] = None) -> List[Tuple[MacroDoc, float]]:
+                 now: Optional[datetime] = None,
+                 include_seed: bool = False) -> List[Tuple[MacroDoc, float]]:
+        """Most relevant fresh docs for ``query``.
+
+        The example set is left out unless ``include_seed``: every prompt reads
+        this through ``build_context``, and the example set is demo text that the
+        prompts would present as dated facts (MACRO-SEED — the Macro Strategist
+        was quoting its Fed rate as today's).
+        """
         k = k or MACRO_RAG.top_k
         max_age = MACRO_RAG.max_age_days if max_age_days is None else max_age_days
         docs = self.all_docs()
+        if not include_seed:
+            docs = [d for d in docs if not is_seed_doc(d)]
         if not docs:
             return []
 
@@ -226,10 +250,12 @@ def _cosine(a: dict, b: dict) -> float:
 # --------------------------------------------------------------------------- #
 
 def example_macro_docs(as_of: Optional[str] = None) -> List[MacroDoc]:
-    """A small offline seed set so the RAG works with no network/keys (demo/test).
+    """A small offline example set to try the Macro RAG page with no network/keys.
 
-    Dates default to *today* so the freshness gate passes; in production these are
-    replaced by real FRED/Fed ingests.
+    These are demo text, not facts: ``retrieve`` leaves them out by default, so they
+    never reach a prompt (MACRO-SEED). Their ``doc_key`` carries
+    ``SEED_DOC_KEY_PREFIX``, which is how ``is_seed_doc`` tells them apart. Real
+    macro context comes from ``ingest_from_fred``.
     """
     today = as_of or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return [

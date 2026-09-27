@@ -12,6 +12,8 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from analysis.ai_analyzer import classify_ai_failure
 from analysis.committee import (
     AgentOpinion,
@@ -25,6 +27,18 @@ from analysis.committee import (
 from analysis.committee_prompts import DIVIDEND_ROLE
 from analysis.eval_cases import golden_cases
 from config import AI_FALLBACK, COMMITTEE, AIConfig
+
+
+@pytest.fixture(autouse=True)
+def _real_macro_context(monkeypatch):
+    """A dated macro fact, so the Macro Strategist is convened (MACRO-SEED).
+
+    With an empty RAG the Macro abstains; these tests are about the full panel.
+    The abstention itself is covered by ``test_macro_seed_abstention_oracle.py``.
+    """
+    import analysis.macro_rag as mr
+
+    monkeypatch.setattr(mr, "macro_context_for", lambda fund: "[2026-09] FEDFUNDS 4.33%")
 
 
 def _fund_tech():

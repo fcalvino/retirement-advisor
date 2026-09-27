@@ -9,6 +9,7 @@ from loguru import logger
 from analysis.macro_rag import (
     example_macro_docs,
     ingest_from_fred,
+    is_seed_doc,
     macro_rag_store,
 )
 from config import MACRO_RAG, MULTI_SOURCE
@@ -27,7 +28,10 @@ col1, col2 = st.columns(2)
 with col1:
     if st.button("🌱 Cargar set de ejemplo (offline)"):
         added = macro_rag_store.ingest_many(example_macro_docs())
-        st.success(f"Listo: {added} documentos de ejemplo cargados (fechados hoy).")
+        st.success(
+            f"Listo: {added} documentos de ejemplo cargados. Son texto de demo: sirven "
+            "para ver esta página, pero no llegan a ningún prompt."
+        )
         st.rerun()
 with col2:
     fred_label = "📡 Ingerir desde FRED" + ("" if MULTI_SOURCE.fred_api_key else " (requiere clave)")
@@ -53,7 +57,8 @@ if docs:
     st.dataframe(
         pd.DataFrame([
             {"Fecha": d.as_of or "s/f", "Título": d.title, "Fuente": d.source,
-             "Tags": ", ".join(d.tags)}
+             "Tags": ", ".join(d.tags),
+             "Llega al prompt": "no — ejemplo" if is_seed_doc(d) else "sí, si está fresco"}
             for d in docs
         ]),
         hide_index=True,
@@ -72,11 +77,18 @@ if st.button("Recuperar contexto") and query:
         st.error(f"Error al recuperar: {exc}")
         hits = []
     if not hits:
-        st.info("Sin resultados relevantes (¿cargaste documentos? ¿están dentro de la ventana de frescura?).")
+        st.info(
+            "Sin resultados relevantes: ¿hay documentos reales (los de ejemplo no cuentan) "
+            "dentro de la ventana de frescura?"
+        )
     for doc, score in hits:
         st.markdown(f"**{doc.as_of or 's/f'} · {doc.title}**  _(score {score:.3f})_")
         st.caption(f"{doc.source} — {doc.body}")
 
     st.divider()
-    st.markdown("**Bloque que se inyecta al prompt del Estratega Macro:**")
-    st.code(macro_rag_store.build_context(query) or "(vacío)", language="text")
+    st.markdown("**Bloque que se inyecta a los prompts (Estratega Macro y Analista Fundamental):**")
+    st.code(
+        macro_rag_store.build_context(query)
+        or "(vacío — sin hechos macro reales, el Estratega Macro se abstiene)",
+        language="text",
+    )
