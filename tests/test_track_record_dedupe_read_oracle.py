@@ -319,7 +319,7 @@ class TestLaClaveDeLecturaEsLaDelWriteSide:
         original = tr.utc_now
         tr.utc_now = lambda: t2
         try:
-            rechaza_el_write_side = store._exists_today("AAPL", "BUY")  # noqa: SLF001
+            rechaza_el_write_side = store._exists_today("AAPL", "BUY", "screener")  # noqa: SLF001
         finally:
             tr.utc_now = original
 

@@ -16,6 +16,14 @@ Tables (same DB as cache/alerts):
 —día UTC, pre-U5-18— alcanzó a dejar entrar. El log crudo no se toca: es el
 registro de lo que el motor efectivamente emitió.
 
+Esa regla responde dos preguntas, y cada una tiene su variante de la clave
+(TR-DEDUP-SOURCE). **¿Esta fuente ya lo dijo hoy?** — la escritura, el pendiente
+de puntuación y la lectura por fuente llevan ``source`` en la clave: un dictamen
+del comité que coincide con el Screener es una medición del comité, no una
+repetición. **¿Es el mismo movimiento de mercado?** — las métricas agregadas
+(``get_scored_rows`` por default) colapsan sin ``source``, porque contar dos
+veces el mismo AAPL BUY del mismo día es el doble conteo que U5-18b sacó.
+
 Y hay una segunda pregunta, distinta de aquélla y con su propio flag: **si la
 fila es una recomendación**. 53 filas del log las escribió la suite de tests
 (N6); están marcadas con ``source = FIXTURE_SOURCE`` y las tres lecturas las
@@ -50,6 +58,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     create_engine,
+    func,
     or_,
 )
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
@@ -155,7 +164,12 @@ class RecommendationOutcome(_Base):
 #  "Una recomendación por día" — la regla, en un solo lugar                    #
 # --------------------------------------------------------------------------- #
 
-def same_local_day_key(symbol: str, action: str, created_at: datetime) -> tuple:
+def same_local_day_key(
+    symbol: str,
+    action: str,
+    created_at: datetime,
+    source: Optional[str] = None,
+) -> tuple:
     """La identidad de «la misma recomendación, el mismo día».
 
     Existe para que la escritura y la lectura no puedan derivar. U5-18 arregló el
@@ -169,18 +183,32 @@ def same_local_day_key(symbol: str, action: str, created_at: datetime) -> tuple:
     mayúsculas porque es como lo guarda ``log_recommendation``; y la acción entra
     tal cual, porque un BUY y un HOLD del mismo ticker el mismo día son dos
     recomendaciones distintas, no una repetida.
+
+    ``source`` agrega un cuarto componente (TR-DEDUP-SOURCE): con él, la clave
+    pregunta «¿esta fuente ya lo dijo hoy?»; sin él, «¿es el mismo movimiento de
+    mercado?». La escritura, el pendiente y la lectura por fuente pasan la
+    fuente; las métricas agregadas no. Se compara en minúsculas, como la agrupa
+    ``hit_rate_by_source``.
     """
-    return (
+    key = (
         str(symbol or "").upper(),
         str(action or ""),
         local_day_start_utc(created_at),
     )
+    if source is None:
+        return key
+    return key + (str(source).lower(),)
 
 
-def collapse_same_local_day(rows: List[dict]) -> List[dict]:
+def collapse_same_local_day(rows: List[dict], *, per_source: bool = False) -> List[dict]:
     """Una fila por ``(símbolo, acción, día local)``: sobrevive la **primera**.
 
     Puro. ``rows`` son los dicts que produce ``TrackRecordStore.get_scored_rows``.
+
+    ``per_source=True`` colapsa por ``(símbolo, acción, día local, fuente)``: es
+    la lectura que compara fuentes (``hit_rate_by_source``). Como sobrevive la
+    primera en los dos casos, colapsar por fuente y después sin fuente da lo
+    mismo que colapsar directo sin fuente.
 
     **Por qué la primera y no la última.** Es la que el write-side ya elige:
     ``_exists_today`` rechaza la *posterior* ("already logged today"). Quedarse
@@ -208,7 +236,10 @@ def collapse_same_local_day(rows: List[dict]) -> List[dict]:
         created = row.get("created_at")
         if created is None:
             continue
-        key = same_local_day_key(row.get("symbol"), row.get("action"), created)
+        key = same_local_day_key(
+            row.get("symbol"), row.get("action"), created,
+            (row.get("source") or "") if per_source else None,
+        )
         # Desempate por ``rec_id`` para que dos filas con el mismo instante elijan
         # siempre la misma, y por índice para que el resultado no dependa de un
         # ``rec_id`` ausente.
@@ -534,8 +565,10 @@ class TrackRecordStore:
             tsignal = str(getattr(decision, "technical_signal", "") or "")
             rationale = getattr(decision, "rationale", []) or []
 
-            if TRACK_RECORD.dedupe_same_day and self._exists_today(symbol, action):
-                logger.debug(f"track_record: dedupe {symbol}/{action} (already logged today)")
+            if TRACK_RECORD.dedupe_same_day and self._exists_today(symbol, action, source):
+                logger.debug(
+                    f"track_record: dedupe {symbol}/{action} ({source}, already logged today)"
+                )
                 return None
 
             fields = calibration_fields(fundamental)
@@ -566,24 +599,35 @@ class TrackRecordStore:
             logger.error(f"track_record: failed to log recommendation — {exc}")
             return None
 
-    def logged_today(self, symbol: str, action: str) -> bool:
+    def logged_today(self, symbol: str, action: str, *, source: str) -> bool:
         """Public face of the write-side dedup, so a page can say *why* nothing was
         written without re-deriving the rule (QA LLM-2: the Comité claimed a row the
         dedup had dropped). Same key as ``_exists_today`` — it *is* ``_exists_today``.
+
+        ``source`` is required: since TR-DEDUP-SOURCE the dedup is per source, and
+        a caller asking without one would get the old, cross-source answer.
         """
-        return self._exists_today(symbol, action)
+        return self._exists_today(symbol, action, source)
 
-    def _exists_today(self, symbol: str, action: str) -> bool:
-        """¿Ya se logueó esta recomendación en el día **local** de hoy?
+    def _exists_today(self, symbol: str, action: str, source: str) -> bool:
+        """¿Esta fuente ya logueó esta recomendación en el día **local** de hoy?
 
-        Los tres términos del filtro salen de ``same_local_day_key``, no de un
+        Los términos del filtro salen de ``same_local_day_key``, no de un
         ``local_day_start_utc`` propio. Es deliberado: la lectura
         (``collapse_same_local_day``) aplica esa misma clave sobre lo ya escrito,
         y una sola definición es lo único que impide que las dos reglas deriven.
         ``tests/test_track_record_dedupe_read_oracle.py`` las ejercita con los
         mismos datos en cuatro zonas horarias y exige que decidan lo mismo.
+
+        La fuente es parte de la clave (TR-DEDUP-SOURCE): con la clave vieja, un
+        dictamen del comité que coincidía con lo que el Screener ya había
+        registrado ese día no se escribía, y ``hit_rate_by_source`` sólo veía al
+        comité cuando disentía. Que el mismo movimiento de mercado no cuente dos
+        veces lo resuelve la lectura agregada, no la escritura.
         """
-        symbol_key, action_key, day_start = same_local_day_key(symbol, action, utc_now())
+        symbol_key, action_key, day_start, source_key = same_local_day_key(
+            symbol, action, utc_now(), source or ""
+        )
         with self._Session() as s:
             return (
                 s.query(RecommendationLog.id)
@@ -591,6 +635,7 @@ class TrackRecordStore:
                     RecommendationLog.symbol == symbol_key,
                     RecommendationLog.action == action_key,
                     RecommendationLog.created_at >= day_start,
+                    func.lower(func.coalesce(RecommendationLog.source, "")) == source_key,
                 )
                 .first()
                 is not None
@@ -660,6 +705,12 @@ class TrackRecordStore:
         una tupla armada acá, que es lo único que garantiza que los tres sitios
         no puedan derivar.
 
+        La clave es **por fuente**, como la de la escritura (TR-DEDUP-SOURCE): si
+        colapsara entre fuentes, la fila del comité que coincide con la del
+        Screener nunca tendría outcome y ``hit_rate_by_source`` no la vería. Cada
+        fila escrita con la regla actual se puntúa; la lectura agregada decide
+        después cuántas cuentan.
+
         ``collapse_same_day=False`` devuelve el crudo, misma puerta de auditoría
         que ``get_scored_rows``.
         """
@@ -695,7 +746,9 @@ class TrackRecordStore:
                 if fila.created_at is None:
                     colapsadas.append(fila)
                     continue
-                clave = same_local_day_key(fila.symbol, fila.action, fila.created_at)
+                clave = same_local_day_key(
+                    fila.symbol, fila.action, fila.created_at, fila.source or ""
+                )
                 if clave in vistos:
                     continue
                 vistos.add(clave)
@@ -759,9 +812,17 @@ class TrackRecordStore:
         horizon_days: int,
         *,
         collapse_same_day: bool = True,
+        per_source: bool = False,
         include_fixtures: bool = False,
     ) -> List[dict]:
         """Recommendations joined with their outcome at ``horizon_days``.
+
+        ``per_source`` sólo cambia la clave del collapse (TR-DEDUP-SOURCE). El
+        default, sin fuente, es el de las métricas agregadas —``summary_stats``,
+        ``equity_curve``, calibración, por acción—: una misma recomendación del
+        mismo día cuenta una vez aunque la hayan emitido el Screener y el comité.
+        ``per_source=True`` es la lectura de ``hit_rate_by_source``, la única que
+        compara fuentes y necesita ver a cada una.
 
         ``include_fixtures`` gobierna una pregunta **distinta** de la de
         ``collapse_same_day`` y por eso son dos flags y no uno: aquélla es
@@ -835,7 +896,9 @@ class TrackRecordStore:
                         "benchmark_missing": bool(o.benchmark_missing),
                     }
                 )
-            return collapse_same_local_day(rows) if collapse_same_day else rows
+            if not collapse_same_day:
+                return rows
+            return collapse_same_local_day(rows, per_source=per_source)
 
 
 # Module-level singleton (mirrors alerts.store.alert_store)

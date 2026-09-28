@@ -6,7 +6,11 @@ import pandas as pd
 import streamlit as st
 from loguru import logger
 
-from analysis.track_record import filter_by_sources, track_record_store
+from analysis.track_record import (
+    collapse_same_local_day,
+    filter_by_sources,
+    track_record_store,
+)
 from analysis.track_record_scorer import (
     calibration_by_confidence,
     equity_curve,
@@ -66,13 +70,18 @@ with ctrl_r:
                 logger.error(f"track_record page: scoring failed — {exc}")
                 st.error(f"No se pudo puntuar: {exc}")
 
-rows = track_record_store.get_scored_rows(horizon)
+# TR-DEDUP-SOURCE: se lee una fila por día *y por fuente* —así elegir sólo
+# `committee` muestra al comité aunque el Screener haya registrado lo mismo antes—
+# y después se colapsa entre fuentes para todo lo que suma el mismo movimiento de
+# mercado (titular, calibración, curva, por acción, detalle). Sólo «Por fuente»
+# usa la lectura por fuente.
+rows_by_source = track_record_store.get_scored_rows(horizon, per_source=True)
 all_recs = track_record_store.get_recommendations()
 
 # Source filter. The Screener logs everything it analyses as `screener`, which is the
 # unbiased sample calibration needs — but those are recommendations nobody looked at,
 # so they must not silently become the headline of "how the model did".
-_sources = sorted({(r.get("source") or "").lower() for r in rows if r.get("source")})
+_sources = sorted({(r.get("source") or "").lower() for r in rows_by_source if r.get("source")})
 _picked = None
 if len(_sources) > 1:
     _picked = st.multiselect(
@@ -85,7 +94,8 @@ if len(_sources) > 1:
             "efectivamente viste."
         ),
     )
-rows = filter_by_sources(rows, _picked)
+rows_by_source = filter_by_sources(rows_by_source, _picked)
+rows = collapse_same_local_day(rows_by_source)
 
 # ------------------------------------------------------------------ #
 #  Headline                                                            #
@@ -266,8 +276,12 @@ with hc1:
     )
 with hc2:
     st.subheader("Por fuente")
-    st.caption("Comparar rule_based vs ai (y, en Fase 2, committee).")
-    src = hit_rate_by_source(rows)
+    st.caption(
+        "Cada fuente con todas sus recomendaciones: si el comité coincidió con el "
+        "Screener el mismo día, las dos cuentan acá. El resto de la página cuenta "
+        "esa recomendación una sola vez."
+    )
+    src = hit_rate_by_source(rows_by_source)
     st.dataframe(
         pd.DataFrame(
             [{"Fuente": k, "N": v["n"], "Acierto %": round(v["hit_rate"] * 100, 0)} for k, v in src.items()]

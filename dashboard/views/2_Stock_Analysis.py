@@ -23,6 +23,7 @@ from dashboard.shared import (
     get_price_history,
     render_ai_badge,
     render_calc_badge,
+    track_record_log_caption,
 )
 from data.preferences import UserPreferences, is_valid_ticker_symbol
 from data.product_ux import (
@@ -180,12 +181,18 @@ if symbol:
         st.stop()
 
     # Track record capture (Gran Salto, Fase 1) — dedupe protects against reruns.
+    # SA-TR-CAPTION: se guarda lo que devolvió el store para que el caption de
+    # abajo diga lo que pasó (registrado, no admitido o ya registrado hoy).
+    _track_source = "ai" if ai_cfg.enabled else "rule_based"
+    _track_rec_id = None
+    _track_skip = None
     try:
-        from analysis.track_record import track_record_store
+        from analysis.track_record import admission_skip_reason, track_record_store
 
-        track_record_store.log_recommendation(
+        _track_skip = admission_skip_reason(symbol, fund)
+        _track_rec_id = track_record_store.log_recommendation(
             decision,
-            source=("ai" if ai_cfg.enabled else "rule_based"),
+            source=_track_source,
             price_at_rec=getattr(fund, "current_price", None) or None,
             fundamental=fund,
         )
@@ -281,6 +288,12 @@ if symbol:
         unsafe_allow_html=True,
     )
     render_calc_badge("score fundamental y señal calculados con fórmulas (sin IA)")
+    st.caption(
+        track_record_log_caption(
+            symbol, decision.action, _track_source,
+            rec_id=_track_rec_id, skip_reason=_track_skip,
+        )
+    )
     # UX-QA: con la IA activada, un fallback no puede leerse como «sin IA» a secas.
     _fallback = getattr(decision, "ai_fallback_reason", "") or ""
     if ai_cfg.enabled and _fallback:
