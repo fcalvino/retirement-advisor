@@ -10,6 +10,31 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## EVAL-RUNS — las corridas en vivo del banco de eval sobreviven al worktree (2026-09-28)
+
+Visto en el quinto `/decidir-proyecto` (sobre `45e06b6`): LLM-4 prometía que cada
+corrida en vivo «queda guardada» en `data/eval_runs/`, pero `EVAL.runs_path()` es
+relativo a `BASE_DIR`, y las corridas se hicieron desde worktrees de Conductor. Las
+17 del 2026-09-27 —la evidencia de EVAL-GROQ-1 y del titular adversarial de LLM-3—
+existían sólo dentro de cinco worktrees, y `~/retirement_advisor/data/eval_runs` no
+existía: archivar el worktree borraba la evidencia.
+
+Decisión del usuario: el destino es el clon real. `EVAL.runs_dir` lee
+`RETIREMENT_ADVISOR_EVAL_RUNS_DIR` (con `~` expandido), igual que `DB_PATH` lee
+`RETIREMENT_ADVISOR_DB_PATH`; sin la variable, el default sigue siendo `data/eval_runs`
+del checkout, que en el clon real ya es el lugar correcto. `scripts/run_eval.py --live`
+imprime el destino antes de la primera llamada paga, y `tests/conftest.py` saca la
+variable del entorno de la suite. Las 17 corridas se copiaron al clon real (`cp -n`,
+mismo SHA-256 en los cinco worktrees y en el destino). Oráculo:
+`test_runs_dir_follows_the_env_var` en `tests/test_eval_harness.py`, en rojo contra
+`origin/main`.
+
+El mismo PR sincronizó los docs con lo que el análisis encontró desactualizado:
+U5-1b citaba una muestra de 11 outcomes y hoy son 270 a 30 días (0 a 1 año),
+CONTEXT §9 tenía `(pending)` en lugar de `45e06b6`, y `AUDIT_LLM_2026-09.md` marcaba
+cerrados LLM-1 y LLM-2 pero no LLM-3 ni LLM-4. Quedan registradas las decisiones de
+EVAL-GROQ-1 (guarda determinista) y de #151 (presupuesto en vivo) en `BACKLOG.md`.
+
 ## TR-DEDUP-SOURCE + SA-TR-CAPTION — una recomendación por día y por fuente (2026-09-28)
 
 Visto en la QA de LLM-2 (2026-09-25): la clave del dedup del track record,

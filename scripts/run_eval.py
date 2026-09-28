@@ -6,7 +6,11 @@ By default runs every bank in deterministic replay mode (no API key, no cost),
 which is what CI uses. Pass --live to evaluate the real AI provider configured
 in the environment; each live bank's report is saved as JSON under
 ``EVAL.runs_path()`` (``data/eval_runs/``, outside git), stamped with the
-``COMMITTEE.prompt_version`` and the commit it ran on.
+``COMMITTEE.prompt_version`` and the commit it ran on. From a Conductor
+worktree, set ``RETIREMENT_ADVISOR_EVAL_RUNS_DIR`` so the run outlives it:
+
+    export RETIREMENT_ADVISOR_EVAL_RUNS_DIR=~/retirement_advisor/data/eval_runs
+    ./venv/bin/python3 scripts/run_eval.py --live
 
 Usage:
     ./venv/bin/python3 scripts/run_eval.py                     # all banks, replay
@@ -80,6 +84,11 @@ def main(argv: list[str]) -> int:
 
     ai_config = _live_config() if args.live else None
     banks = BANKS if args.bank == "all" else (args.bank,)
+    if ai_config is not None:
+        from config import EVAL
+
+        # Said before the first paid call: a wrong destination is cheap to fix now.
+        print(f"Las corridas en vivo se guardan en: {EVAL.runs_path()}")
 
     green = True
     for bank in banks:

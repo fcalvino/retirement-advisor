@@ -406,6 +406,29 @@ def test_runs_dir_is_outside_git():
     assert "data/eval_runs/" in ignored
 
 
+def test_runs_dir_follows_the_env_var(tmp_path, monkeypatch):
+    """A live run from a worktree lands in the real clone, not in the worktree.
+
+    Conductor worktrees are archived; the LLM-4 runs lived only inside five of
+    them. ``RETIREMENT_ADVISOR_EVAL_RUNS_DIR`` points every run at one place.
+    """
+    from pathlib import Path
+
+    from config import BASE_DIR, EvalConfig
+
+    monkeypatch.delenv("RETIREMENT_ADVISOR_EVAL_RUNS_DIR", raising=False)
+    assert EvalConfig().runs_path() == BASE_DIR / "data" / "eval_runs"
+
+    monkeypatch.setenv("RETIREMENT_ADVISOR_EVAL_RUNS_DIR", str(tmp_path / "runs"))
+    assert EvalConfig().runs_path() == tmp_path / "runs"
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("RETIREMENT_ADVISOR_EVAL_RUNS_DIR", "~/retirement_advisor/data/eval_runs")
+    resolved = EvalConfig().runs_path()
+    assert resolved == Path(tmp_path) / "retirement_advisor" / "data" / "eval_runs"
+    assert resolved.is_absolute()
+
+
 def test_run_eval_script_replays_every_bank_and_saves_nothing(tmp_path, monkeypatch):
     import sys
     from pathlib import Path

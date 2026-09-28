@@ -43,6 +43,9 @@ from pathlib import Path
 _test_db_dir = Path(tempfile.mkdtemp(prefix="ra-test-db-"))
 atexit.register(shutil.rmtree, _test_db_dir, ignore_errors=True)
 os.environ["RETIREMENT_ADVISOR_DB_PATH"] = str(_test_db_dir / "retirement_advisor.db")
+# Same for where live eval runs are saved: a developer's own setting must not
+# leak into the suite (``test_runs_dir_is_outside_git`` checks the default).
+os.environ.pop("RETIREMENT_ADVISOR_EVAL_RUNS_DIR", None)
 
 # ------------------------------------------------------------------ #
 #  The suite never reaches the network (TEST-NET)                      #
