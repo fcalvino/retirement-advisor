@@ -28,6 +28,16 @@
 3. Pegar lo relevante en las secciones correspondientes de `docs/CONTEXT.md`
 4. Actualizar la fecha en el encabezado del archivo
 
+### La columna Commit de §9
+
+Un PR no conoce su SHA de merge, así que escribe su fila de §9 como `` `(pending)` ``.
+**El PR siguiente la resuelve** con el SHA que quedó en `main`
+(`git log origin/main --oneline`) antes de agregar la suya. Puede haber **una sola**
+fila `(pending)`, y tiene que ser la primera (la más nueva):
+`tests/test_context_changelog_pending.py` lo hace cumplir en `make check` y en el CI.
+El 2026-09-28 había 20; las de 2026-06/07 cayeron en commits de importación en bloque
+(`5fb471c`, `5eed792`), y ése es su SHA real.
+
 ---
 
 ## 2. Flujo de trabajo con AI assistants
