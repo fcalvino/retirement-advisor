@@ -28,6 +28,7 @@ from dashboard.shared import (
     _snap_sim_horizon,
     compute_plan_health,
     escape_dollars,
+    escape_html,
     export_plan_bundle,
     format_withdrawal_badge,
     get_economic_drags,
@@ -809,8 +810,8 @@ def _render_structural_tailwinds(snap: PlanSnapshot) -> None:
         color, emoji, label = _TAILWIND_PLAN_BADGE.get(cls, ("#888888", "⚪", cls))
         st.markdown(
             f'<div style="border-left:4px solid {color};padding:4px 10px;margin:4px 0;">'
-            f'{emoji} <b>{a.get("symbol", "?")}</b> ({float(a.get("weight_pct", 0.0) or 0.0):.1f}%) '
-            f'<span style="color:{color};font-size:0.85em;">· {label} '
+            f'{emoji} <b>{escape_html(a.get("symbol", "?"))}</b> ({float(a.get("weight_pct", 0.0) or 0.0):.1f}%) '
+            f'<span style="color:{color};font-size:0.85em;">· {escape_html(label)} '
             f'(score {float(a.get("tailwind_score", 0.0) or 0.0):+.1f})</span></div>',
             unsafe_allow_html=True,
         )
@@ -832,9 +833,9 @@ def _render_macro_risks(macro_risks: list) -> None:
         color, emoji = _SEVERITY_BADGE.get(str(m.get("severity", "media")).lower(), ("#ff8800", "🟠"))
         st.markdown(
             f'<div style="border-left:4px solid {color};padding:4px 10px;margin:4px 0;">'
-            f'{emoji} <b>{m.get("factor", "")}</b> '
-            f'<span style="color:{color};font-size:0.85em;">· {m.get("severity", "media")}</span><br>'
-            f'<span style="font-size:0.9em;">{m.get("why", "")}</span></div>',
+            f'{emoji} <b>{escape_html(m.get("factor", ""))}</b> '
+            f'<span style="color:{color};font-size:0.85em;">· {escape_html(m.get("severity", "media"))}</span><br>'
+            f'<span style="font-size:0.9em;">{escape_html(m.get("why", ""))}</span></div>',
             unsafe_allow_html=True,
         )
 

@@ -10,6 +10,45 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## LLM-5 + LLM-6 — el texto externo se escapa y cada llamada a un LLM se mide (2026-09-28)
+
+**LLM-5.** `_render_macro_risks` (`dashboard/views/12_Plan.py`) interpolaba
+`factor`/`why`/`severity` en `st.markdown(..., unsafe_allow_html=True)`. La auditoría
+los atribuía al modelo; el análisis de docs del 2026-09-28 encontró la segunda fuente:
+un **plan importado** (JSON → `import_plan_from_dict` → `PlanSnapshot`, sin sanear), que
+también alimenta los tailwinds. Lo que la auditoría dejaba «no verificado» se midió en
+vivo, importando el mismo plan en `origin/main` y en el branch:
+
+| | `origin/main` | branch |
+|---|---|---|
+| `<img src="https://example.invalid/x.png" onerror=…>` en el DOM | 1 | 0 |
+| request a `example.invalid` | **1** | 0 |
+| `onerror` ejecutado (cambia `document.title`) | no | no |
+| `<i>` / `<u>` inyectados en los tailwinds | 1 / 1 | 0 / 0 (se ven literales) |
+
+O sea: marcado y beacons de red, no ejecución —Streamlit 1.57 renderiza con
+react-markdown + `rehype-raw` sobre React 18, sin sanitizador—. `escape_html` en
+`dashboard/shared.py` se aplica donde se interpola: los dos bloques de Mi Plan, los dos
+nombres de meta de Simulaciones y el `company_name` del feed en Stock Analysis. Dentro de
+un `<div>` sólo `escape_html` (markdown y KaTeX no corren en un bloque HTML); en markdown
+inline, también `escape_dollars`. Oráculos `tests/test_escape_html_oracle.py` y
+`test_model_or_imported_text_is_escaped_in_the_plan_html`, en rojo contra `origin/main`.
+
+**LLM-6.** `AIAnalyzer._call_api` es el único embudo (comité, moat, tailwind, cripto,
+chat, narrativas) y tiraba la respuesta con su `usage`. Ahora las tres ramas llaman a
+`analysis/llm_usage.record` **antes** de extraer el texto —un `max_tokens`/`length` que
+levanta `AIUnavailable` se cobra igual— y queda una línea `llm_usage` con tokens y costo.
+El costo sale de `config.LLM_PRICES`, leído ese día en las páginas de precios de
+Anthropic y de Groq y guardado con `as_of` y fuente; un modelo sin precio o una respuesta
+sin `usage` dan `None`, no 0. `USAGE.capture()` junta las llamadas de todos los hilos y
+`scripts/run_eval.py --live` guarda el bloque `usage` en el JSON de la corrida. Sin tabla
+nueva, por decisión del usuario. Oráculo `tests/test_llm_usage_oracle.py`, 9 de 15 en
+rojo contra `origin/main`.
+
+Medido en vivo, un comité de KO con Groq `gpt-oss-120b` (sobre una copia de la base): 6
+llamadas, 6.498 tokens de entrada y 2.468 de salida, **US$ 0,0025**. Es la cifra que #151
+necesitaba medida: 30 dictámenes rondan US$ 0,08.
+
 ## CONTEXT-PENDING — una sola fila sin commit en CONTEXT §9 (2026-09-28)
 
 Visto en el análisis de docs posterior a #188: CONTEXT §9 tenía **20** filas con

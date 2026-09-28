@@ -20,6 +20,8 @@ from dashboard.shared import (
     cached_full_analysis,
     cross_source_check,
     ensure_session_defaults,
+    escape_dollars,
+    escape_html,
     get_price_history,
     render_ai_badge,
     render_calc_badge,
@@ -245,7 +247,8 @@ if symbol:
             if _is_crypto else ""
         )
         st.markdown(
-            f"## {decision.action_emoji} {fund.company_name} ({symbol}){_crypto_badge}",
+            f"## {decision.action_emoji} {escape_dollars(escape_html(fund.company_name))} "
+            f"({escape_html(symbol)}){_crypto_badge}",
             unsafe_allow_html=True,
         )
         # UM-GDR: sin marketCap en el feed (SMSN.IL) el resultado trae 0.0, y

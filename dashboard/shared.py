@@ -12,6 +12,7 @@ Import pattern in each page:
 from __future__ import annotations
 
 import dataclasses
+import html
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -160,6 +161,20 @@ def escape_dollars(text: str) -> str:
     here — an f-string cannot hold the backslash on Python 3.11.
     """
     return str(text).replace("$", "\\$")
+
+
+def escape_html(text) -> str:
+    """Escape text we do not control before it goes into raw HTML (LLM-5).
+
+    `st.markdown(..., unsafe_allow_html=True)` renders through react-markdown +
+    rehype-raw with no sanitiser, so model output, an imported plan JSON, a goal
+    name or a feed field interpolated verbatim is live markup (an ``<img>`` that
+    calls out, a fake block). Escape once, at the site that interpolates:
+
+    - inside a raw ``<div …>`` block markdown and KaTeX do not run → only this;
+    - in inline markdown (``**{x}**``, ``### {x}``) → ``escape_dollars(escape_html(x))``.
+    """
+    return html.escape(str(text), quote=True)
 
 
 def score_bar(score: float) -> str:

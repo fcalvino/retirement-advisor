@@ -16,6 +16,7 @@ from typing import Callable
 
 from loguru import logger
 
+from analysis import llm_usage
 from analysis.fundamental import FundamentalResult
 from analysis.strategy import (
     Decision,
@@ -198,6 +199,11 @@ def _openai_message_text(choice) -> str:
     if content is None or not str(content).strip():
         raise AIUnavailable(AI_FALLBACK.RESPUESTA_VACIA)
     return content
+
+
+def _finish_reason(response):
+    choices = getattr(response, "choices", None) or []
+    return getattr(choices[0], "finish_reason", None) if choices else None
 
 
 class AIAnalyzer:
@@ -590,6 +596,9 @@ class AIAnalyzer:
             max_tokens=CLAUDE_TRANSPORT.resolve_max_tokens(max_tokens),
             messages=[{"role": "user", "content": prompt}],
         )
+        # LLM-6: antes de leer el texto — un corte por techo se cobra igual.
+        llm_usage.record("claude", self.config.model, message,
+                         stop=getattr(message, "stop_reason", None))
         return _claude_message_text(message)
 
     def _call_openai(self, prompt: str, max_tokens: int | None = None) -> str:
@@ -602,6 +611,8 @@ class AIAnalyzer:
             max_tokens=mt,
             messages=[{"role": "user", "content": prompt}],
         )
+        llm_usage.record(self.config.provider, self.config.model, response,
+                         stop=_finish_reason(response))
         return response.choices[0].message.content
 
     def _call_openai_compatible(
@@ -644,6 +655,9 @@ class AIAnalyzer:
         if extra:
             create_kwargs["extra_body"] = extra
         response = client.chat.completions.create(**create_kwargs)
+        # LLM-6: antes de leer el texto — `finish_reason=length` se cobra igual.
+        llm_usage.record(self.config.provider, self.config.model, response,
+                         stop=_finish_reason(response))
         return _openai_message_text(response.choices[0])
 
     def _call_nous(self, prompt: str, max_tokens: int | None = None) -> str:

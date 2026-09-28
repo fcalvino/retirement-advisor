@@ -399,3 +399,38 @@ def test_loading_a_plan_with_a_target_still_carries_it_over(stores):
     assert at.session_state["target_value"] == 600_000
     assert at.session_state["horizon_years"] == 20
     assert at.session_state["_preset_profile_key"] == "moderate"
+
+
+# --------------------------------------------------------------------------- #
+#  LLM-5 — text we do not control is escaped before it reaches raw HTML        #
+# --------------------------------------------------------------------------- #
+
+def _raw_markdown(at) -> str:
+    return "\n".join(getattr(e, "value", "") or "" for e in at.markdown)
+
+
+def test_model_or_imported_text_is_escaped_in_the_plan_html(stores):
+    """LLM-5: `macro_risks` comes from the model or from an imported plan JSON
+    (`import_plan_from_dict` → `PlanSnapshot`, unsanitised), and so do the
+    tailwind rows. Both were interpolated into `unsafe_allow_html` markdown, so
+    a `<img …>` in either reached the page as markup."""
+    snap = _snap()
+    snap.macro_risks = [{
+        "factor": '<img src="https://example.invalid/x.png" onerror="alert(1)">',
+        "why": "<b>tasas</b> altas & US$ 5",
+        "severity": "alta",
+    }]
+    snap.allocation = [dict(snap.allocation[0], symbol="<i>X</i>",
+                            tailwind_classification="<u>raro</u>",
+                            tailwind_score=2.0)] + snap.allocation[1:]
+    stores.plans.upsert(snap)
+
+    at = _open_snapshot(_app(_FakePrefs()), "retiro-2045")
+    assert not at.exception, [str(e) for e in at.exception]
+    md = _raw_markdown(at)
+
+    assert "&lt;img src=&quot;https://example.invalid/x.png&quot;" in md
+    assert "<img" not in md
+    assert "&lt;b&gt;tasas&lt;/b&gt; altas &amp; US$ 5" in md
+    assert "&lt;i&gt;X&lt;/i&gt;" in md and "<i>X</i>" not in md
+    assert "&lt;u&gt;raro&lt;/u&gt;" in md and "<u>raro</u>" not in md

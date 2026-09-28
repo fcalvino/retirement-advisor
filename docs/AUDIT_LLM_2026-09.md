@@ -226,7 +226,7 @@ Abogado del Diablo pesa 0,7 sobre un panel de 3,8 (4,4 con la voz de dividendo;
   `COMMITTEE.prompt_version` va por `2026-09-24e` (`config.py:2456`) sin una corrida del banco
   asociada a ninguno de los dos cambios.
 
-### LLM-5 — La narrativa del plan se renderiza como HTML sin escapar (banda 5)
+### LLM-5 — La narrativa del plan se renderiza como HTML sin escapar (banda 5) — **cerrado 2026-09-28**
 
 `_render_macro_risks` (`dashboard/views/12_Plan.py:826-839`) interpola `factor`, `why` y
 `severity` —los tres escritos por el modelo— dentro de un `st.markdown(...,
@@ -235,13 +235,23 @@ unsafe_allow_html=True)`. Un `<` en la salida del modelo se interpreta como marc
 El mismo patrón, con texto del propio usuario y no del modelo, está en
 `dashboard/views/7_Simulaciones.py:1908-1914` (`goal.name`).
 
-### LLM-6 — Ninguna llamada registra tokens ni costo (banda 5)
+**Cierre (2026-09-28):** `dashboard.shared.escape_html` en los cinco sitios (también
+los tailwinds de un plan importado y el `company_name` del feed). Lo «no verificado» se
+verificó en vivo contra `origin/main`: el `<img>` inyectado entraba al DOM y salía el
+request a su host, pero el `onerror` no corría —marcado y beacons, no ejecución—.
+
+### LLM-6 — Ninguna llamada registra tokens ni costo (banda 5) — **cerrado 2026-09-28**
 
 Ni `analysis/ai_analyzer.py` ni `analysis/committee.py` leen el uso que devuelve el
 proveedor: sólo fijan `max_tokens` al pedir. El comité hace 5 o 6 llamadas por ticker y el
 techo del branch Anthropic es de ~13–15 K tokens por llamada (`config.py:664-699`). Es el
 riesgo de consumo sin medir de OWASP LLM10. Los límites de Groq están configurados
 (`config.py:1713-1718`, `:2425-2426`) pero lo que se gasta no se registra.
+
+**Cierre (2026-09-28):** `analysis/llm_usage.py` + `config.LLM_PRICES`: una línea
+`llm_usage` por llamada con tokens y costo (o `None` si no se midió), y el bloque
+`usage` en el JSON de cada corrida en vivo del banco. Un comité de KO con Groq
+`gpt-oss-120b`: 6 llamadas, US$ 0,0025.
 
 ---
 

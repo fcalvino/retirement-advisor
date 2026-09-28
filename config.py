@@ -651,6 +651,48 @@ GROQ_REASONING_MODELS: FrozenSet[str] = frozenset(GROQ_MODEL_CATALOG)
 
 
 @dataclass(frozen=True)
+class LlmPrice:
+    """USD per million tokens, with where and when the number was read."""
+    input_per_mtok: float
+    output_per_mtok: float
+    as_of: str
+    source: str
+
+
+@dataclass(frozen=True)
+class LlmPriceConfig:
+    """Precio por modelo para el costo de cada llamada (LLM-6).
+
+    Sólo los modelos que el producto puede llamar (los dos catálogos de arriba).
+    Un modelo que no está acá no tiene costo conocido y la llamada registra
+    ``cost_usd=None`` —«no medido»—, nunca 0: un cero diría que fue gratis.
+
+    Base input × ``input_tokens`` + base output × ``output_tokens``, sin los
+    descuentos de caché de prompt ni de batch: el producto no usa ninguno de
+    los dos del lado de Anthropic, y el descuento de Groq por input cacheado
+    hace que su cifra sea un **techo**, no una subestimación. Los tokens de
+    razonamiento de gpt-oss van dentro de ``completion_tokens`` y se cobran
+    como output, así que el techo los incluye. Al cambiar un precio, cambiar
+    su ``as_of``.
+    """
+    prices: Mapping[str, LlmPrice] = field(default_factory=lambda: {
+        # https://platform.claude.com/docs/en/about-claude/pricing (tabla «Model pricing»)
+        "claude-sonnet-5": LlmPrice(2.0, 10.0, "2026-09-28", "platform.claude.com/docs/en/about-claude/pricing"),
+        "claude-opus-5": LlmPrice(5.0, 25.0, "2026-09-28", "platform.claude.com/docs/en/about-claude/pricing"),
+        "claude-opus-4-8": LlmPrice(5.0, 25.0, "2026-09-28", "platform.claude.com/docs/en/about-claude/pricing"),
+        "claude-haiku-4-5": LlmPrice(1.0, 5.0, "2026-09-28", "platform.claude.com/docs/en/about-claude/pricing"),
+        "openai/gpt-oss-120b": LlmPrice(0.15, 0.60, "2026-09-28", "console.groq.com/docs/model/openai/gpt-oss-120b"),
+        "openai/gpt-oss-20b": LlmPrice(0.075, 0.30, "2026-09-28", "console.groq.com/docs/model/openai/gpt-oss-20b"),
+    })
+
+    def get(self, model: str) -> Optional[LlmPrice]:
+        return self.prices.get(model)
+
+
+LLM_PRICES = LlmPriceConfig()
+
+
+@dataclass(frozen=True)
 class GroqTransportConfig:
     """Transporte Groq/gpt-oss. No es un prompt: es el techo y el reasoning.
 

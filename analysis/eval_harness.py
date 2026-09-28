@@ -92,6 +92,8 @@ class CaseResult:
 @dataclass
 class EvalReport:
     results: List[CaseResult]
+    # LLM-6: tokens y costo de la corrida (`llm_usage.summarize`); None en replay.
+    usage: Optional[dict] = None
 
     @property
     def n_cases(self) -> int:
@@ -659,6 +661,7 @@ def report_to_dict(report: EvalReport, *, bank: str, provider_name: str,
             }
             for r in report.results
         ],
+        "usage": report.usage,
     }
 
 
