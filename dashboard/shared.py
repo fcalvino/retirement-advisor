@@ -1778,6 +1778,59 @@ def committee_abstention_caption(verdict) -> str:
     )
 
 
+#: Who wrote a track-record row, in the words of the caption (TR-DEDUP-SOURCE).
+_TRACK_SOURCE_LABEL = {
+    "committee": "el comité",
+    "screener": "el Screener",
+    "ai": "el análisis con IA",
+    "rule_based": "el análisis por reglas",
+}
+
+
+def track_record_log_caption(
+    symbol: str,
+    action: str,
+    source: str,
+    *,
+    rec_id: int | None,
+    skip_reason: str | None,
+) -> str:
+    """What happened in the track record after a page tried to log, in one line.
+
+    Shared by the Comité and Stock Analysis (SA-TR-CAPTION) so the two pages say
+    the same thing about the same store. It states what the store did, not what
+    was tried (QA LLM-2): ``rec_id`` is what ``log_recommendation`` returned and
+    ``skip_reason`` is ``admission_skip_reason``. When nothing was written and the
+    gate did not block, it asks the store why — the dedup is per source since
+    TR-DEDUP-SOURCE, so the question names the source.
+    """
+    if skip_reason:
+        return f"No se registra en el Track Record: {symbol} {skip_reason}."
+    if rec_id:
+        return f"{symbol} quedó registrado en el Track Record con fuente `{source}` como {action}."
+
+    from analysis.track_record import track_record_store
+    from config import TRACK_RECORD
+
+    if not TRACK_RECORD.enabled:
+        return "El registro en el Track Record está desactivado."
+    # Same contract as ``log_recommendation``: the track record never breaks the
+    # page it is attached to. If the store cannot answer, say so.
+    try:
+        already = track_record_store.logged_today(symbol, action, source=source)
+    except Exception as exc:
+        logger.warning(f"track_record: could not check today's log for {symbol} — {exc}")
+        already = False
+    if already:
+        who = _TRACK_SOURCE_LABEL.get(source, f"la fuente `{source}`")
+        return (
+            f"No se agregó una fila nueva al Track Record: ya hay un {action} de "
+            f"{symbol} registrado hoy por {who} (se guarda uno por ticker, acción, "
+            f"fuente y día)."
+        )
+    return "No se pudo registrar en el Track Record (ver el log)."
+
+
 def concentration_hold_note(verdict, portfolio_ctx) -> str | None:
     """Why a good business got a cautious verdict: the PM saw a concentrated book.
 

@@ -2353,8 +2353,12 @@ class TrackRecordConfig:
                              was the right call — no big move missed/avoided).
       min_confidence_for_calibration — confidence levels tracked for calibration.
       enabled              — master switch for the capture hooks.
-      dedupe_same_day      — collapse repeated (symbol, action) logs within the
-                             same UTC day so a refresh loop doesn't inflate counts.
+      dedupe_same_day      — write-side: skip a (symbol, action, source) already
+                             logged on the same *local* day (U5-18), so a refresh
+                             loop doesn't inflate counts. The source is part of
+                             the key (TR-DEDUP-SOURCE): a committee verdict that
+                             matches today's Screener row is still written. The
+                             reads collapse on their own, whatever this flag says.
       max_price_staleness_days — how far back from a target date the last
                              available close may be and still stand for that
                              date. A guard, not a calibration: it covers a

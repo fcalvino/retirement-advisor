@@ -227,10 +227,10 @@ def test_comite_page_logs_a_usd_verdict_on_the_engine_scale(monkeypatch, store):
     assert "quedó registrado en el Track Record" in _text(app)
 
 
-def test_comite_page_does_not_claim_a_row_the_store_deduped(monkeypatch, store):
-    """QA LLM-2: the dedup key has no ``source``, so a verdict matching what the
-    Screener already logged today writes nothing (INTU HOLD, 2026-09-22, hidden by
-    row 1364). The caption must say what happened in the store, not what was tried.
+def test_comite_matching_the_screener_still_writes_its_row(monkeypatch, store):
+    """TR-DEDUP-SOURCE: a verdict matching what the Screener already logged today
+    is a measurement of the committee, not a repeat. With the old key (no
+    ``source``) INTU HOLD of 2026-09-22 was hidden by Screener row 1364.
     """
     fund, tech = _base()
     fund = replace(fund, currency="USD")
@@ -240,10 +240,26 @@ def test_comite_page_does_not_claim_a_row_the_store_deduped(monkeypatch, store):
     assert store.log_recommendation(seeded, source="screener", fundamental=fund) is not None
 
     app, _ = _comite(monkeypatch, store, fund, tech)
-    assert [r.source for r in store.get_recommendations()] == ["screener"]
+    assert sorted(r.source for r in store.get_recommendations()) == ["committee", "screener"]
+    assert "quedó registrado en el Track Record" in _text(app)
+
+
+def test_comite_page_does_not_claim_a_row_the_store_deduped(monkeypatch, store):
+    """QA LLM-2: the caption says what happened in the store, not what was tried.
+    Since TR-DEDUP-SOURCE only an earlier *committee* row dedups the verdict.
+    """
+    fund, tech = _base()
+    fund = replace(fund, currency="USD")
+    action = _verdict(fund, tech).to_decision(fund, tech).action
+    seeded = RetirementStrategy().decide(fund, tech)
+    seeded.action = action
+    assert store.log_recommendation(seeded, source="committee", fundamental=fund) is not None
+
+    app, _ = _comite(monkeypatch, store, fund, tech)
+    assert [r.source for r in store.get_recommendations()] == ["committee"]
     text = _text(app)
     assert "quedó registrado" not in text
-    assert f"ya hay un {action} de MSFT registrado hoy" in text
+    assert f"ya hay un {action} de MSFT registrado hoy por el comité" in text
 
 
 def test_comite_page_does_not_claim_a_row_when_logging_fails(monkeypatch, store):

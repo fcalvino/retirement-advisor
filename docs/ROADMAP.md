@@ -10,6 +10,47 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## TR-DEDUP-SOURCE + SA-TR-CAPTION — una recomendación por día y por fuente (2026-09-28)
+
+Visto en la QA de LLM-2 (2026-09-25): la clave del dedup del track record,
+`same_local_day_key`, era `(símbolo, acción, día local)` sin `source`, y la
+usaban la escritura (`_exists_today`), el pendiente y la lectura. El dictamen del
+comité de INTU HOLD del 2026-09-22 (19:58 UTC, completo) no dejó fila porque el
+Screener había registrado INTU HOLD tres minutos antes (id 1364). Con esa clave,
+las filas `committee` sólo existían cuando el comité **disentía** del Screener del
+día, y `hit_rate_by_source` comparaba una muestra sesgada. Medido el 2026-09-26:
+1 de 28 dictámenes completos sin fila, un sesgo chico pero real.
+
+La clave responde ahora dos preguntas, con una sola función (decisión del
+usuario, 2026-09-28, sobre el diseño provisional del backlog):
+
+- **¿Esta fuente ya lo dijo hoy?** La escritura, el pendiente de puntuación y la
+  lectura por fuente (`get_scored_rows(per_source=True)`, la de «Por fuente»)
+  pasan `source` a `same_local_day_key`. El comité que coincide con el Screener
+  escribe su fila y se puntúa.
+- **¿Es el mismo movimiento de mercado?** Las métricas agregadas —titular,
+  calibración, curva de equity, por acción, detalle— colapsan sin `source`,
+  quedándose con la primera, así que no vuelve el doble conteo que U5-18b sacó.
+  La página de Track Record lee por fuente, aplica el filtro «Fuente» y colapsa
+  entre fuentes: elegir sólo `committee` muestra al comité aunque el Screener
+  haya registrado lo mismo antes.
+
+`logged_today` exige `source`, así ningún llamador se queda con la respuesta
+vieja. El caption del Comité pasa a decir «registrado hoy **por el comité**», y
+**SA-TR-CAPTION** cierra en el mismo PR: Stock Analysis dice qué hizo el store
+con el mismo helper (`dashboard.shared.track_record_log_caption`): quedó
+registrado, no se registra por el motivo de `admission_skip_reason` (7203.T:
+«cotiza en JPY…»), ya había uno hoy de esa fuente, registro apagado o falla. El
+helper es defensivo como `log_recommendation`: si el store no puede contestar,
+la página no se rompe.
+
+No hay migración ni cambio de esquema. La fila perdida de INTU no se puede
+reconstruir, y sobre la copia de la base ningún número publicado se mueve hoy
+(270 evaluadas a 30 días, `hit_rate_by_source` idéntico): el efecto es hacia
+adelante. Oráculo: `tests/test_track_record_dedup_source_oracle.py`, 43 en rojo
+contra `origin/main`; los 9 que pasaban son los controles (dedup dentro de una
+fuente, métricas agregadas sin doble conteo). Página: `tests/test_stock_analysis_track_caption_oracle.py`.
+
 ## LLM-3 — los titulares del feed son texto externo, no hechos (2026-09-28)
 
 Visto en la auditoría de la capa de IA (`AUDIT_LLM_2026-09.md`, 2026-09-25):

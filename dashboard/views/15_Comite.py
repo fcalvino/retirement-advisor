@@ -19,6 +19,7 @@ from dashboard.shared import (
     dissent_empty_caption,
     render_ai_badge,
     render_committee_status,
+    track_record_log_caption,
 )
 from data.preferences import is_valid_ticker_symbol
 from data.product_ux import guided_empty_state
@@ -237,30 +238,15 @@ if run and symbol:
     render_ai_badge("dictamen multi-agente; se apoya en cálculos, no los reemplaza")
     st.caption(f"{CALC_BADGE} base del análisis · {AI_BADGE} votación del panel")
     # QA LLM-2: el caption dice lo que pasó en la base, no lo que se intentó. El
-    # store devuelve None si deduplicó (la clave no mira la fuente: un BUY que el
-    # Screener ya registró hoy tapa al del comité), si el registro está apagado o
-    # si falló.
-    if verdict.complete and skip_reason:
-        st.caption(f"No se registra en el Track Record: {symbol} {skip_reason}.")
-    elif verdict.complete and rec_id:
+    # store devuelve None si el comité ya registró lo mismo hoy (el dedup es por
+    # fuente desde TR-DEDUP-SOURCE), si el registro está apagado o si falló.
+    if verdict.complete:
         st.caption(
-            f"Este dictamen quedó registrado en el Track Record con fuente `committee` "
-            f"como {logged_decision.action}."
-        )
-    elif verdict.complete:
-        from analysis.track_record import track_record_store
-        from config import TRACK_RECORD
-
-        if not TRACK_RECORD.enabled:
-            st.caption("El registro en el Track Record está desactivado.")
-        elif track_record_store.logged_today(symbol, logged_decision.action):
-            st.caption(
-                f"No se agregó una fila nueva al Track Record: ya hay un "
-                f"{logged_decision.action} de {symbol} registrado hoy (se guarda uno por "
-                f"ticker, acción y día)."
+            track_record_log_caption(
+                symbol, logged_decision.action, "committee",
+                rec_id=rec_id, skip_reason=skip_reason,
             )
-        else:
-            st.caption("No se pudo registrar este dictamen en el Track Record (ver el log).")
+        )
     if portfolio_ctx:
         st.caption(
             f"El Portfolio Manager dimensionó sobre tu cartera real: {symbol} pesa "
