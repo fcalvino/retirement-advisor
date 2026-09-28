@@ -49,6 +49,22 @@ _UNIT = {
     ),
 }
 
+#: UM-GDR: sin referencia (pérdidas, sin P/E, sin EBITDA) no hay con qué verificar el
+#: múltiplo, y entre monedas distintas un feed sin verificar no puntúa.
+_UNVERIFIED = {
+    "pb_ratio": re.compile(
+        r"P/B no medible: el del feed \((\S+)\) no se puede verificar contra P/E × ROE "
+        r"\(pérdidas o sin dato\) y los estados vienen en otra moneda que la cotización; "
+        r"un múltiplo sólo está definido si ambas patas comparten unidad\."
+    ),
+    "ev_ebitda": re.compile(
+        r"EV/EBITDA no medible: el del feed \((\S+)\) no se puede verificar contra el "
+        r"reconstruido desde P/E × ROE \(pérdidas o sin dato\) y los estados vienen en "
+        r"otra moneda que la cotización; un múltiplo sólo está definido si ambas patas "
+        r"comparten unidad\."
+    ),
+}
+
 _LABEL = {"fcf_yield": "FCF yield", "p_ffo": "P/FFO", "pb_ratio": "P/B", "ev_ebitda": "EV/EBITDA"}
 _NUMERATOR = {"fcf_yield": "FCF", "p_ffo": "FFO"}
 
@@ -68,6 +84,7 @@ def currency_metric_text(fund, metric: str, *, rationale: bool = False) -> str:
         _DECLARED[metric].fullmatch(note) if not match and metric in _DECLARED else None
     )
     unit = _UNIT[metric].fullmatch(note) if metric in _UNIT else None
+    unverified = _UNVERIFIED[metric].fullmatch(note) if metric in _UNVERIFIED else None
     if rationale:
         if match:
             reason = f"statements in {match[1]}, quote in {match[2]}"
@@ -75,6 +92,8 @@ def currency_metric_text(fund, metric: str, *, rationale: bool = False) -> str:
             reason = f"statements not in the declared {declared[1]}"
         elif unit:
             reason = "feed ratio inconsistent with P/E × ROE, statements in another currency"
+        elif unverified:
+            reason = "feed ratio unverifiable against P/E × ROE, statements in another currency"
         else:
             reason = note
         return f"{_LABEL[metric]} not measurable: {reason}"
@@ -84,6 +103,11 @@ def currency_metric_text(fund, metric: str, *, rationale: bool = False) -> str:
         reason = f"estados fuera de la moneda declarada, {declared[1]}"
     elif unit:
         reason = "el del feed no cierra con P/E × ROE y los estados vienen en otra moneda"
+    elif unverified:
+        reason = (
+            "el del feed no se puede verificar contra P/E × ROE y los estados vienen en "
+            "otra moneda"
+        )
     else:
         reason = note
     return f"no medible ({reason})"

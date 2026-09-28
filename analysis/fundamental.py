@@ -329,6 +329,23 @@ def normalize_dividend_yield_pct(
     return div_yield
 
 
+def _unit_check_gap(check, reference_name: str) -> str:
+    """Por qué un múltiplo con monedas distintas no se mide (UM-1, UM-GDR).
+
+    Con referencia, no cierra con ella; sin referencia (pérdidas, sin P/E, sin
+    EBITDA) no hay con qué verificarlo, y un feed que no se puede verificar entre
+    monedas no puntúa.
+    """
+    if check.reference is None:
+        why = f"no se puede verificar contra {reference_name} (pérdidas o sin dato)"
+    else:
+        why = f"no cierra con {reference_name} ({check.reference:.3g})"
+    return (
+        f"{why} y los estados vienen en otra moneda que la cotización; un múltiplo "
+        f"sólo está definido si ambas patas comparten unidad."
+    )
+
+
 def financial_currency_mismatch(info: Dict[str, Any]) -> Optional[tuple[str, str]]:
     """Devuelve ``(financialCurrency, currency)`` cuando AMBOS están presentes y difieren.
 
@@ -1490,7 +1507,8 @@ class FundamentalAnalyzer:
 
         # EV/EBITDA (5 pts). UM-1: con monedas distintas el feed puede mezclar
         # unidades (TSM, SQM-B.SN, CEMEXCPO.MX, EQNR.OL). Se contrasta con el EV de
-        # P/E × ROE × patrimonio; roto → no medible, nunca reemplazado.
+        # P/E × ROE × patrimonio; roto → no medible, nunca reemplazado. Sin esa
+        # referencia (pérdidas, sin EBITDA) tampoco se mide (UM-GDR).
         legs = legs or StatementLegs()
         relation = statements_currency_relation(info, legs)
         ev_check = check_ev_ebitda(info, legs, relation)
@@ -1498,10 +1516,8 @@ class FundamentalAnalyzer:
         result.ev_ebitda = ev_ebitda
         if ev_check.status == NOT_MEASURABLE:
             msg = (
-                f"EV/EBITDA no medible: el del feed ({ev_check.feed:.4g}) no cierra con "
-                f"el reconstruido desde P/E × ROE ({ev_check.reference:.3g}) y los "
-                f"estados vienen en otra moneda que la cotización; un múltiplo sólo "
-                f"está definido si ambas patas comparten unidad."
+                f"EV/EBITDA no medible: el del feed ({ev_check.feed:.4g}) "
+                + _unit_check_gap(ev_check, "el reconstruido desde P/E × ROE")
             )
             logger.warning(msg)
             result.warnings.append(msg)
@@ -1519,16 +1535,15 @@ class FundamentalAnalyzer:
         # P/B (5 pts). UM-1: el priceToBook del feed puede venir roto por unidad por
         # acción (ADR de un reportante extranjero, clase de acción). Se contrasta con
         # P/E × ROE, que no necesita tipo de cambio: misma moneda → se reconstruye
-        # exacto; monedas distintas → no se mide. Ver analysis/unit_consistency.py.
+        # exacto; monedas distintas → no se mide, tampoco sin referencia (UM-GDR,
+        # un GDR con pérdidas). Ver analysis/unit_consistency.py.
         pb_check = check_price_to_book(info, legs, relation)
         pb = pb_check.value
         result.pb_ratio = pb
         if pb_check.status == NOT_MEASURABLE:
             msg = (
-                f"P/B no medible: el del feed ({pb_check.feed:.4g}) no cierra con "
-                f"P/E × ROE ({pb_check.reference:.3g}) y los estados vienen en otra "
-                f"moneda que la cotización; un múltiplo sólo está definido si ambas "
-                f"patas comparten unidad."
+                f"P/B no medible: el del feed ({pb_check.feed:.4g}) "
+                + _unit_check_gap(pb_check, "P/E × ROE")
             )
             logger.warning(msg)
             result.warnings.append(msg)
