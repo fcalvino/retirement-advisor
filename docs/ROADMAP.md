@@ -10,6 +10,24 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## CONTEXT-PENDING — una sola fila sin commit en CONTEXT §9 (2026-09-28)
+
+Visto en el análisis de docs posterior a #188: CONTEXT §9 tenía **20** filas con
+`(pending)` en la columna Commit. #187 había resuelto la suya (`45e06b6`) y #188
+dejó la propia sin resolver en el PR siguiente, o sea que el defecto se repetía y nada
+lo detectaba. `tests/test_context_changelog_pending.py` admite una sola, y sólo como la
+fila más nueva: el PR que agrega la suya tiene que resolver la del anterior. Corre por
+pytest, así que entra en `make check` y en el CI sin tocar el workflow, igual que
+`tests/test_doc_catalog.py`. Estaba en rojo contra `origin/main` (19 violaciones).
+
+Las 20 se resolvieron con `git log -S` contra `origin/main`: UM-GDR `12645f8`,
+importar sin pisar `8411eac`, las U1 `ce59ded`, y las de 2026-06/07 cayeron en los
+commits de importación en bloque `5fb471c` y `5eed792`, que son su SHA real. De paso,
+en `BACKLOG.md`: PIT-TOOLS decía que `retrieve` no acepta fecha (sí acepta `now=`; el
+agujero es que un doc posterior a `now` cuenta como fresco), MSI-NET pasa a ser una
+fila, COM-QUORUM se re-contó (18, todas con quórum 100 %) y LLM-5 suma el plan
+importado como segunda fuente del HTML sin escapar.
+
 ## UM-GDR — un múltiplo que no se puede verificar entre monedas no puntúa (2026-09-28)
 
 Visto en la QA de LLM-2 (2026-09-25): SMSN.IL, un GDR que cotiza en USD y reporta
