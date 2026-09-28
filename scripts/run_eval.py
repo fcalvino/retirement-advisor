@@ -38,6 +38,7 @@ from analysis.eval_harness import (
     run_moat_eval,
     save_report,
 )
+from analysis.llm_usage import USAGE, summarize
 
 BANKS = ("decision", "committee", "moat")
 
@@ -92,9 +93,15 @@ def main(argv: list[str]) -> int:
 
     green = True
     for bank in banks:
-        name, report = _run_bank(bank, ai_config)
+        # LLM-6: la corrida en vivo guarda lo que costó, medido y no estimado.
+        with USAGE.capture() as calls:
+            name, report = _run_bank(bank, ai_config)
         _print(bank, name, report)
         if ai_config is not None:
+            report.usage = summarize(calls)
+            u = report.usage
+            print(f"\nUso: {u['n_calls']} llamadas, {u['input_tokens']} tokens de entrada, "
+                  f"{u['output_tokens']} de salida, costo USD {u['cost_usd']}")
             path = save_report(report, bank=bank, provider_name=name)
             print(f"\nReporte guardado: {path}")
         green = green and report.is_green

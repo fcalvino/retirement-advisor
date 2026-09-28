@@ -22,6 +22,7 @@ from dashboard.shared import (
     cached_stress_test,
     drags_to_tuple,
     escape_dollars,
+    escape_html,
     format_drags_badge,
     format_withdrawal_badge,
     get_economic_drags,
@@ -1619,7 +1620,7 @@ def _tab_goals_content():
                     )
                 with c_info:
                     st.markdown(
-                        f"**{g['name']}** &nbsp;"
+                        f"**{escape_dollars(escape_html(g['name']))}** &nbsp;"
                         f"<span style='background:{p_color}22;border:1px solid {p_color};color:{p_color};"
                         f"padding:2px 8px;border-radius:10px;font-size:0.75em;font-weight:700'>"
                         f"{p_emoji} {p_label}</span>",
@@ -1907,7 +1908,7 @@ def _tab_goals_content():
                     # Header: icon + name + priority badge + horizon
                     h1, h2 = st.columns([4, 1])
                     h1.markdown(
-                        f"### {g_icon} {goal.name} &nbsp;"
+                        f"### {g_icon} {escape_dollars(escape_html(goal.name))} &nbsp;"
                         f"<span style='background:{p_color}22;border:1px solid {p_color};color:{p_color};"
                         f"padding:2px 10px;border-radius:12px;font-size:0.75em;font-weight:700;'>"
                         f"{p_emoji} {p_label}</span>",
