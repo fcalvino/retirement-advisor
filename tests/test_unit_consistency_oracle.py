@@ -567,13 +567,18 @@ class TestPriceToBook:
         assert check.status == OK
         assert check.value == CASES[symbol].info["priceToBook"]
 
-    def test_sin_referencia_se_usa_el_feed(self):
-        """Con pérdidas no hay P/E: no se puede verificar, y no se inventa un veredicto."""
-        case = CASES["TSM"]
+    def test_sin_referencia_con_la_misma_moneda_se_usa_el_feed(self):
+        """Con pérdidas no hay P/E: no se puede verificar, y no se inventa un veredicto.
+
+        Solo con la misma moneda (o sin etiqueta): entre monedas distintas un feed
+        que no se puede verificar no puntúa (UM-GDR, ``test_unit_unverifiable_oracle``).
+        """
+        case = CASES["MRK"]
         info = dict(case.info, trailingPE=None)
-        check = check_price_to_book(info, case.legs, DIFFERENT)
-        assert check.status == UNVERIFIABLE
-        assert check.value == info["priceToBook"]
+        for relation in (SAME, UNKNOWN):
+            check = check_price_to_book(info, case.legs, relation)
+            assert check.status == UNVERIFIABLE
+            assert check.value == info["priceToBook"]
 
     @pytest.mark.parametrize("reported", [None, 0.0, -2.0])
     def test_sin_pb_positivo_no_hay_dato(self, reported):

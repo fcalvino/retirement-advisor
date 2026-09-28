@@ -42,7 +42,7 @@ UNKNOWN = "unknown"
 OK = "ok"                          # el feed es consistente: se usa tal cual
 REPLACED = "replaced"              # roto, misma moneda: reconstrucción exacta
 NOT_MEASURABLE = "not_measurable"  # roto, monedas distintas: None
-UNVERIFIABLE = "unverifiable"      # sin referencia (pérdidas, ROE ≤ 0): se usa el feed
+UNVERIFIABLE = "unverifiable"      # sin referencia, misma moneda o sin etiqueta: se usa el feed
 NOT_CHECKED = "not_checked"        # el chequeo no aplica a este caso
 MISSING = "missing"                # el feed no lo reporta
 
@@ -211,6 +211,11 @@ def check_price_to_book(
     ``marketCap / patrimonio`` (BRK-B: el feed divide por el valor libro de la
     acción A). Si no, no se mide: convertir exigiría un tipo de cambio que el
     motor no fabrica (``docs/FIX_FCF_YIELD_MONEDA.md`` §3).
+
+    Sin referencia (pérdidas, sin P/E, ROE ≤ 0) no hay con qué verificarlo: con
+    la misma moneda o sin etiqueta se usa el feed; con monedas distintas no se
+    mide (UM-GDR). Un GDR con pérdidas trae el ×1000 de PB-CURRENCY
+    (SMSN.IL: 0,0039) y cobraría la banda máxima.
     """
     cfg = config or UNIT_CONSISTENCY
     feed = _positive(info, "priceToBook")
@@ -220,6 +225,8 @@ def check_price_to_book(
         return UnitCheck(feed, NOT_CHECKED, feed=feed)
     reference = pb_reference(info)
     if reference is None:
+        if relation == DIFFERENT:
+            return UnitCheck(None, NOT_MEASURABLE, feed=feed)
         return UnitCheck(feed, UNVERIFIABLE, feed=feed)
     if _in_band(feed / reference, cfg.ratio_band):
         return UnitCheck(feed, OK, feed=feed, reference=reference)
@@ -248,6 +255,8 @@ def check_ev_ebitda(
     Solo se chequea cuando las monedas difieren: con la misma moneda, las
     diferencias contra la reconstrucción son de definición de EBITDA (NFLX, RWE.DE,
     8058.T — indeterminados en la auditoría), no de unidad. Nunca se reemplaza.
+    Sin referencia (pérdidas, sin EBITDA o deuda en los estados) tampoco se mide
+    (UM-GDR): entre monedas distintas, 8 de 27 feeds verificables estaban rotos.
     """
     cfg = config or UNIT_CONSISTENCY
     feed = _positive(info, "enterpriseToEbitda")
@@ -257,7 +266,7 @@ def check_ev_ebitda(
         return UnitCheck(feed, NOT_CHECKED, feed=feed)
     reference = ev_ebitda_reference(info, legs)
     if reference is None or reference <= 0:
-        return UnitCheck(feed, UNVERIFIABLE, feed=feed)
+        return UnitCheck(None, NOT_MEASURABLE, feed=feed)
     if _in_band(feed / reference, cfg.ratio_band):
         return UnitCheck(feed, OK, feed=feed, reference=reference)
     return UnitCheck(None, NOT_MEASURABLE, feed=feed, reference=reference)

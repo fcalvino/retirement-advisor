@@ -45,6 +45,7 @@ def render(monkeypatch):
         app.session_state["portfolio"] = SimpleNamespace(positions=[])
         app.run()
         assert not app.exception, [e.message for e in app.exception]
+        run.app = app
         return {m.label: m for m in app.metric}
 
     return run
@@ -80,3 +81,15 @@ def test_measurable_metrics_keep_formatting(render):
     metrics = render(fund)
     assert metrics["FCF Yield"].value == "4.50%"
     assert metrics["P/FFO"].value == "12.50x"
+
+
+@pytest.mark.parametrize("market_cap, expected", [(0.0, "Market Cap: n/d"),
+                                                  (2.5e12, "Market Cap: $2500.0B")])
+def test_market_cap_absent_is_not_zero(render, market_cap, expected):
+    """UM-GDR: SMSN.IL has no marketCap in the feed; «$0.0B» is a zero that is no datum."""
+    fund = fund_fixture()
+    fund.market_cap = market_cap
+    render(fund)
+    captions = [c.value for c in render.app.caption]
+    assert any(expected in c for c in captions), captions
+    assert not any("Market Cap: $0.0B" in c for c in captions)

@@ -72,6 +72,10 @@ El parche es sobre `analysis.fundamental.get_info` en memoria; ningún otro tick
 
 ### UM-1 — P/B y EV/EBITDA rotos por unidad por acción (banda 1: cambia una decisión)
 
+> **Adenda 2026-09-28 (UM-GDR).** La guarda de UM-1 dejaba puntuar el feed cuando no
+> había referencia `P/E × ROE` (pérdidas, sin EBITDA), también con monedas distintas.
+> Desde tier14 ese caso no se mide. Ver `ROADMAP.md`.
+
 | Ticker | Causa | P/B feed → oráculo | EV/EBITDA feed → oráculo | Score base → corregido | Señal |
 |---|---|---:|---:|---:|---|
 | SQM-B.SN | cotiza CLP, reporta USD | 3.037,6 → 3,56 (854×) | 6.339 → 20,3 (313×) | 73,7 → 74,7 | BUY = |

@@ -248,10 +248,13 @@ if symbol:
             f"## {decision.action_emoji} {fund.company_name} ({symbol}){_crypto_badge}",
             unsafe_allow_html=True,
         )
-        caption = (
-            f"{fund.sector} · {fund.industry} · Market Cap: "
-            f"{with_currency(f'{fund.market_cap/1e9:.1f}B', market_cap_currency(fund.currency))}"
+        # UM-GDR: sin marketCap en el feed (SMSN.IL) el resultado trae 0.0, y
+        # «$0.0B» es un cero que no es dato.
+        _mcap = (
+            with_currency(f"{fund.market_cap/1e9:.1f}B", market_cap_currency(fund.currency))
+            if fund.market_cap and fund.market_cap > 0 else "n/d"
         )
+        caption = f"{fund.sector} · {fund.industry} · Market Cap: {_mcap}"
         if decision.ai_reasoning:
             caption += f" · 🤖 {ai_cfg.model}"
         st.caption(caption)

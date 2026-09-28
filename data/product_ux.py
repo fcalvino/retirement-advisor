@@ -2235,6 +2235,13 @@ ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
         "«mantener». Cambia la recomendación de Bitcoin y Ethereum; las acciones y "
         "la proyección de tu retiro no cambian.",
     ),
+    (
+        "2026.09-tier14",
+        "El P/B y el EV/EBITDA de papeles que cotizan en una moneda y reportan en "
+        "otra ya no se usan cuando no hay con qué verificarlos, por ejemplo si la "
+        "empresa tiene pérdidas. Tres puntajes bajan entre 2 y 5 puntos; ninguna "
+        "recomendación cambia.",
+    ),
 )
 
 

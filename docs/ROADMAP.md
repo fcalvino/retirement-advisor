@@ -10,6 +10,50 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## UM-GDR — un múltiplo que no se puede verificar entre monedas no puntúa (2026-09-28)
+
+Visto en la QA de LLM-2 (2026-09-25): SMSN.IL, un GDR que cotiza en USD y reporta
+en KRW, traía `priceToBook = 0.0039` —el ×1000 de PB-CURRENCY— y `marketCap = None`,
+y la ficha decía «Market Cap: $0.0B». La fila preguntaba si la guarda de UM-1 lo
+cubría.
+
+**Medido antes de decidir** (copias de la base, `84815f5`):
+
+- **SMSN.IL, bajado con red: ya lo cubría.** Su P/B del feed (0,0038) no cierra con
+  `P/E × ROE` (5,44), así que UM-1 lo daba no medible, y su EV/EBITDA es negativo
+  (faltante). 62,2 ajustado y HOLD, igual que la fila 1590 del track record.
+- **El agujero era otro**: sin referencia `P/E × ROE` (pérdidas, sin P/E, ROE ≤ 0,
+  sin EBITDA o deuda en los estados), `check_price_to_book` y `check_ev_ebitda`
+  devolvían `UNVERIFIABLE` y puntuaban el feed **también con monedas distintas**.
+  Un test lo fijaba: TSM sin P/E seguía puntuando su P/B roto. Un GDR con pérdidas
+  habría cobrado la banda máxima.
+- **Caché** (194 tickers, 35 con monedas distintas): P/B 30 ok, 4 rotos, 1 sin
+  referencia (CSL.AX, ROE −15,8 %); EV/EBITDA 19 ok, **8 rotos**, 4 sin referencia
+  (CSL.AX; ZURN.SW y 1299.HK sin EBITDA; 0700.HK sin deuda).
+
+**Decisión del usuario** entre tres opciones —P/B y EV/EBITDA, sólo P/B, o no
+cambiar—: **los dos**. El argumento: entre monedas, 8 de 27 EV/EBITDA verificables
+estaban rotos (4 de 34 en P/B); un feed sin verificar tiene esa probabilidad previa
+de estarlo. El de la opción descartada: los tres EV que se pierden (6,2, 13,6,
+89,7) son plausibles y les falta la referencia por filas de los estados, no por
+pérdidas.
+
+**Cierre**: con `relation == DIFFERENT` y sin referencia, `NOT_MEASURABLE` (valor
+`None`, no cuenta como faltante); con la misma moneda o sin etiqueta sigue el feed
+—moneda desconocida no bloquea, como en LLM-2—. La nota dice «no se puede verificar
+contra P/E × ROE» (`fundamental._unit_check_gap`; con referencia el texto de UM-1
+queda byte a byte) y `currency_metric_text` la reconoce para la UI y el prompt.
+`measure_score_impact --compare`: ZURN.SW 90 → 85, 0700.HK 93 → 90, CSL.AX 44,5 →
+42,5; **ninguna señal cambia**. `ENGINE_VERSION = 2026.09-tier14`. La ficha de Stock
+Analysis dice «Market Cap: n/d» cuando el feed no lo trae. Oráculos:
+`tests/test_unit_unverifiable_oracle.py` (9 de 12 en rojo contra `origin/main`; los 3
+verdes son los controles) y `test_market_cap_absent_is_not_zero`.
+
+Visto de paso: `measure_score_impact.py` dice que nunca sale a la red, pero
+`get_financials` intenta bajar los estados de los 7 ETFs y cripto que no los tienen
+en caché. Fallan sin escribir nada («no financial statements available»), así que
+no mueve la medición; queda anotado.
+
 ## EVAL-RUNS — las corridas en vivo del banco de eval sobreviven al worktree (2026-09-28)
 
 Visto en el quinto `/decidir-proyecto` (sobre `45e06b6`): LLM-4 prometía que cada

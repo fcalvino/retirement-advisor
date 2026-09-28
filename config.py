@@ -129,7 +129,13 @@ DB_PATH = Path(os.getenv("RETIREMENT_ADVISOR_DB_PATH") or DB_DIR / "retirement_a
 #                   se toca, así que la μ del optimizer y las señales de equity
 #                   quedan idénticas. Las bandas de penalización pasan a config
 #                   byte-idénticas.
-ENGINE_VERSION = "2026.09-tier13"
+#   2026.09-tier14 — UM-GDR: sin referencia P/E × ROE (pérdidas, sin P/E, sin
+#                   EBITDA o deuda en los estados), P/B y EV/EBITDA se usaban
+#                   tal cual también con monedas distintas; ahora no se miden.
+#                   Un GDR con pérdidas (SMSN.IL, P/B 0,0039) habría cobrado la
+#                   banda máxima. En la caché (194): ZURN.SW −5, 0700.HK −3,
+#                   CSL.AX −2; ninguna señal cambia.
+ENGINE_VERSION = "2026.09-tier14"
 
 
 @dataclass(frozen=True)
