@@ -399,6 +399,17 @@ class StrategyConfig:
     # (el LLM elige la banda), documentado como defecto crítico.
     ai_action_capped_by_score_ladder: bool = True
 
+    # EVAL-GROQ-1: una acción de salida no admite un tope de posición > 0. El
+    # modelo daba SELL con «máximo 4 %» (2 de 2 corridas del banco en vivo), y el
+    # piso y los bloqueos del overlay también producen SELL/AVOID sobre un tope que
+    # el modelo había pensado para una compra. El overlay lo pone en 0; REDUCE queda
+    # afuera a propósito: reducir no es salir. `None` (sin sugerencia) no se toca.
+    ai_allocation_zero_actions: Tuple[str, ...] = ("SELL", "AVOID")
+    # Techo del `recommended_max_allocation_conservative` del modelo: el contrato
+    # del prompt pide «1–15» (`analysis/prompts.py`), igual que
+    # `EVAL.conservative_alloc_cap_pct` en el banco de eval.
+    ai_max_allocation_pct: float = 15.0
+
     # Margin of Safety: only buy when price < intrinsic value estimate
     require_margin_of_safety: bool = True
     min_margin_of_safety_pct: float = 10.0  # %

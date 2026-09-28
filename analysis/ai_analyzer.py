@@ -32,6 +32,7 @@ from config import (
     AI_OAUTH_PROVIDERS,
     GROQ_BASE_URL,
     GROQ_TRANSPORT,
+    STRATEGY,
 )
 
 
@@ -708,7 +709,7 @@ class AIAnalyzer:
         try:
             _alloc_raw = data.get("recommended_max_allocation_conservative")
             if _alloc_raw is not None:
-                _alloc = max(0.0, min(15.0, float(_alloc_raw)))
+                _alloc = max(0.0, min(STRATEGY.ai_max_allocation_pct, float(_alloc_raw)))
         except (TypeError, ValueError):
             pass
 

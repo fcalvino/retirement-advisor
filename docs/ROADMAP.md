@@ -10,6 +10,39 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## EVAL-GROQ-1 (guarda) — salir de una posición no admite un tope de asignación (2026-09-28)
+
+Las dos corridas en vivo del banco del 2026-09-27 (Groq `gpt-oss-120b`) dieron
+`high_leverage_caution` → SELL con `recommended_max_allocation_conservative` 4 %, y
+Stock Analysis lo pintaba en una caja verde como «🎯 La IA sugiere máximo 4 % de
+asignación». Decisión del usuario: una guarda determinista en el overlay, sin tocar el
+prompt ni `COMMITTEE.prompt_version`, para **SELL y AVOID**; REDUCE conserva su tope.
+
+La investigación encontró que la fila se quedaba corta: `apply_safety_overlay` nunca
+tocaba la asignación, y el overlay también **produce** salidas —el piso `min(LLM,
+motor)` baja una compra a SELL, y los bloqueos (apalancamiento, P/B negativo,
+parabólico cripto) la llevan a AVOID—. En los dos casos el tope que el modelo había
+pensado para una compra sobrevivía. La guarda va al final del overlay, con la acción ya
+final: si está en `STRATEGY.ai_allocation_zero_actions`, la asignación pasa a 0; `None`
+(«el modelo no sugirió») no se toca, y como sólo baja a 0 es idempotente —el overlay
+corre dos veces sobre el mismo objeto—. El techo del parser deja de ser el literal `15.0`
+y pasa a `STRATEGY.ai_max_allocation_pct`. En Stock Analysis, un 0 se muestra como «La
+IA no recomienda tomar posición en X (SELL)» en vez de «máximo 0 %» en verde, y el
+formulario de compra deja de presentar su cantidad como sugerida (antes un 0 caía en
+silencio al default de 10 acciones). El comité y `decide()` no ponen asignación y siguen
+en `None`. Oráculo `tests/test_sell_allocation_zero_oracle.py`, 8 de 13 en rojo contra
+`origin/main`; los 5 verdes son los controles.
+
+**En vivo.** Banco de decisión con Groq (7 llamadas, US$ 0,0048 medido por LLM-6, JSON
+en `~/retirement_advisor/data/eval_runs/`): `high_leverage_caution` pasa
+`allocation_sane` (fallaba 2 de 2); fallan sólo las dos sub-filas que quedan abiertas —
+`argentina_adr_macro` sin «Argentina» en `macro_factors` y `non_usd_quote` sin riesgo
+cambiario—. En la app, sobre una copia de la base: APD salió SELL con un razonamiento del
+modelo que dice «exposición conservadora máxima del 4 %» —el defecto, reproducido en la
+pantalla real— y la guarda lo muestra como «no recomienda tomar posición»; AMT (AVOID)
+igual; PFE (REDUCE) conserva su 4 %. La prosa del modelo sigue nombrando el 4 %: es del
+prompt, que se decidió no tocar.
+
 ## LLM-5 + LLM-6 — el texto externo se escapa y cada llamada a un LLM se mide (2026-09-28)
 
 **LLM-5.** `_render_macro_risks` (`dashboard/views/12_Plan.py`) interpolaba
