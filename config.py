@@ -2601,7 +2601,7 @@ class CommitteeConfig:
     # prompt, y sin hechos macro reales el Estratega Macro no se convoca.
     # 2026-09-27b: FRED-CPI-NIVEL — la inflación llega como tasa interanual, no
     # como el nivel del índice; los veredictos que leyeron «IPC 334» no se sirven.
-    prompt_version: str = "2026-09-27d"
+    prompt_version: str = "2026-09-27e"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a
