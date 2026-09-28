@@ -10,6 +10,34 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## PORTFOLIO-RISK-CERO — una métrica de riesgo no medida no es 0 ni beta 1.0 (2026-09-27)
+
+Visto en la prueba en vivo de RAG-TOKENS: la página Portfolio mostraba Sharpe
+0.00, Max Drawdown 0,0 %, ratio retorno/vol bajista 0.00 y beta 1.00 con +26,6 %
+de P&L. No eran mediciones. U5-12 hizo que la curva común de la cartera arranque
+en la **última** compra (acá ADBE, 2026-08-19), y con menos de 11 puntos semanales
+`compute_metrics` no calculaba nada pero dejaba los defaults del dataclass
+`PortfolioMetrics` —0, 0, 0 % y beta 1.0—. El docstring y el test de U5-12 lo
+llamaban «suprimir»; la página y el comité de cartera lo leían como medido, y en
+la misma prueba el consenso del comité escribió «beta 1.0 frente a SPY, lo que
+aumenta la vulnerabilidad…».
+
+Las cuatro métricas pasan a `Optional` y quedan `None` sin ventana suficiente
+(`PORTFOLIO.min_risk_curve_points = 11`, que reemplaza el literal `> 10` en los
+dos lugares donde estaba), sin variación (Sharpe y ratio bajista: indefinidos, no
+0) o sin varianza de SPY (beta). `PortfolioMetrics.risk_curve_points` y
+`risk_measurable_from` (la última compra + 10 semanas) dicen cuánto falta. La
+página muestra «—» (`data.product_ux.risk_metric_text`) y un caption con la fecha
+(`risk_unmeasured_caption`); el prompt del comité de cartera ya renderizaba
+`None` como «n/d» y ahora aclara que es riesgo realizado **no medible** y que no
+se reemplaza por valores típicos. `COMMITTEE.prompt_version` pasa a `2026-09-27d`
+(un dictamen cacheado con la beta falsa se servía 24 h). Un max drawdown de 0 %
+medido sobre una curva plana sigue siendo 0: ese sí es un dato.
+
+Oráculo `tests/test_portfolio_risk_unmeasured_oracle.py`: 8 de 8 en rojo contra
+`origin/main` (el control, por los campos nuevos). El test de U5-12 que fijaba
+`== 0` pasa a `is None`, y suma el ratio bajista y la beta.
+
 ## RAG-TOKENS — los hechos de FRED llegan a todo prompt, pregunte lo que pregunte la consulta (2026-09-27)
 
 Visto en la QA de FRED-CPI-NIVEL. `MacroRagStore.retrieve` puntúa por coincidencia

@@ -19,7 +19,12 @@ from dashboard.shared import (
 )
 from data.personal_book_convictions import get_convictions, remove_conviction, set_all
 from data.plan_context import compute_alignment_trades, drift_breakdown, get_active_plan
-from data.product_ux import DOWNSIDE_RATIO_HELP, DOWNSIDE_RATIO_LABEL
+from data.product_ux import (
+    DOWNSIDE_RATIO_HELP,
+    DOWNSIDE_RATIO_LABEL,
+    risk_metric_text,
+    risk_unmeasured_caption,
+)
 from portfolio.tracker import ANNUALIZED_RETURN_CAVEAT, Portfolio
 
 # ------------------------------------------------------------------ #
@@ -56,14 +61,17 @@ col1.metric("Valor total",     f"${metrics.total_value:,.0f}")
 col2.metric("P&L total",       f"${metrics.total_pnl:,.0f}", f"{metrics.total_pnl_pct:.1f}%")
 col3.metric("Retorno anual",   f"{metrics.annualized_return_pct:.1f}%",
             help=ANNUALIZED_RETURN_CAVEAT)
-col4.metric("Sharpe Ratio",    f"{metrics.sharpe_ratio:.2f}")
-col5.metric("Max Drawdown",    f"{metrics.max_drawdown_pct:.1f}%")
+col4.metric("Sharpe Ratio",    risk_metric_text(metrics.sharpe_ratio, "{:.2f}"))
+col5.metric("Max Drawdown",    risk_metric_text(metrics.max_drawdown_pct, "{:.1f}%"))
 
 col1, col2, col3 = st.columns(3)
-col1.metric(DOWNSIDE_RATIO_LABEL, f"{metrics.downside_vol_ratio:.2f}",
+col1.metric(DOWNSIDE_RATIO_LABEL, risk_metric_text(metrics.downside_vol_ratio, "{:.2f}"),
             help=DOWNSIDE_RATIO_HELP)
-col2.metric("Beta del portfolio", f"{metrics.beta:.2f}")
+col2.metric("Beta del portfolio", risk_metric_text(metrics.beta, "{:.2f}"))
 col3.metric("Posiciones",      metrics.num_positions)
+_risk_caption = risk_unmeasured_caption(metrics)
+if _risk_caption:
+    st.caption(_risk_caption)
 
 st.divider()
 
@@ -265,8 +273,10 @@ else:
         if _verdict is not None:
             _max_w = max(_pos_w.values()) if _pos_w else 0.0
             _footer = (
-                f"Sharpe {metrics.sharpe_ratio} · beta {metrics.beta} · "
-                f"max DD {metrics.max_drawdown_pct:.0f}% · posición máx {_max_w:.0f}%"
+                f"Sharpe {risk_metric_text(metrics.sharpe_ratio, '{:.2f}')} · "
+                f"beta {risk_metric_text(metrics.beta, '{:.2f}')} · "
+                f"max DD {risk_metric_text(metrics.max_drawdown_pct, '{:.0f}%')} · "
+                f"posición máx {_max_w:.0f}%"
             )
             render_committee_verdict(_verdict, footer_facts=_footer)
 

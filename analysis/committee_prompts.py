@@ -570,6 +570,24 @@ def portfolio_committee_context_block(ctx: dict) -> str:
             f"{_num(rz.get('downside_vol_ratio'))} · "
             f"Beta vs SPY: {_num(rz.get('beta'))} · Max drawdown: {_fmt_pct(rz.get('max_drawdown_pct'))}",
         ]
+        # PORTFOLIO-RISK-CERO: «n/d» here is "not measurable yet", not a gap in
+        # the feed — and the model must not fill it with a market-like guess.
+        _risk_keys = ("sharpe_ratio", "downside_vol_ratio", "beta", "max_drawdown_pct")
+        if any(rz.get(k) is None for k in _risk_keys):
+            from config import PORTFOLIO
+
+            pts = rz.get("risk_curve_points")
+            since = rz.get("risk_measurable_from")
+            window = (
+                f" (la curva común de la cartera tiene {pts} de "
+                f"{PORTFOLIO.min_risk_curve_points} semanas"
+                + (f"; medible desde ~{since}" if since else "")
+                + ")"
+            ) if pts is not None else ""
+            lines.append(
+                f"Métricas en n/d: riesgo realizado no medible todavía{window}. No las "
+                "supongas ni las reemplaces por valores típicos de mercado."
+            )
 
     # Forward projection (only when present — e.g. a proposed/optimized plan).
     if g("expected_return_pct") is not None or g("prob_target_pct") is not None:

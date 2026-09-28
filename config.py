@@ -2443,8 +2443,16 @@ class PortfolioConfig:
                       JPY, AZN.L in GBp) is not admitted, because its cost and
                       its market value would be summed as dollars (PORTFOLIO-CCY).
                       Converting is #154.
+      min_risk_curve_points — weekly points the shared equity curve needs before
+                      Sharpe, the downside-vol ratio, max drawdown and beta are
+                      measured (also the overlap with SPY for beta). The curve
+                      starts at the LATEST purchase (U5-12), so a recent buy
+                      shortens it; below this the four metrics are ``None``, not
+                      0 and not beta 1.0 (PORTFOLIO-RISK-CERO). Was the literal
+                      ``> 10`` in ``compute_metrics``.
     """
     base_currency: str = "USD"
+    min_risk_curve_points: int = 11
 
 
 @dataclass
@@ -2593,7 +2601,7 @@ class CommitteeConfig:
     # prompt, y sin hechos macro reales el Estratega Macro no se convoca.
     # 2026-09-27b: FRED-CPI-NIVEL — la inflación llega como tasa interanual, no
     # como el nivel del índice; los veredictos que leyeron «IPC 334» no se sirven.
-    prompt_version: str = "2026-09-27c"
+    prompt_version: str = "2026-09-27d"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a
