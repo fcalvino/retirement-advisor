@@ -245,6 +245,10 @@ def apply_safety_overlay(
     ``rule_decision`` lets a caller hand in the rule-based decision it already
     computed, so the hot path doesn't run ``decide()`` twice per symbol.
 
+    EVAL-GROQ-1: when the final action is an exit (``CFG.ai_allocation_zero_actions``)
+    the model's position cap becomes 0 — whether the model chose SELL or the
+    floor/blocks produced it.
+
     Single point where confidence is finalised via confidence_for(), so both
     the rule-based and AI paths always emit the same deterministic label for the
     same (action, score, technical, dq) inputs.
@@ -325,6 +329,16 @@ def apply_safety_overlay(
             decision.decisive_reason = AI_MORE_PRUDENT_REASON
         # `>` sólo es alcanzable con `ai_action_capped_by_score_ladder` apagado: el
         # motivo del motor no describe esa acción, así que no se adopta ninguno.
+
+    # EVAL-GROQ-1: con la acción ya final —bloqueo, políticas blandas y piso—, una
+    # salida no conserva el tope de posición que el modelo pensó para otra acción.
+    # Va acá y no en el parser porque el overlay también *produce* SELL y AVOID.
+    # `None` es «el modelo no sugirió» y se deja así. Sólo baja a 0: idempotente.
+    if (
+        decision.action in CFG.ai_allocation_zero_actions
+        and decision.recommended_max_allocation_pct is not None
+    ):
+        decision.recommended_max_allocation_pct = 0.0
 
     decision.confidence = confidence_for(
         decision.action,

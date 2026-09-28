@@ -828,7 +828,13 @@ if symbol:
 
         # AI allocation recommendation banner
         _ai_alloc = getattr(decision, "recommended_max_allocation_pct", None)
-        if _ai_alloc is not None:
+        if _ai_alloc == 0:
+            # EVAL-GROQ-1: el overlay deja en 0 el tope de una salida (SELL/AVOID).
+            # «Máximo 0 %» en una caja verde se leía como una recomendación de compra.
+            st.info(
+                f"🤖 La IA no recomienda tomar posición en **{symbol}** ({decision.action}).",
+            )
+        elif _ai_alloc is not None:
             st.success(
                 f"🎯 **La IA sugiere máximo {_ai_alloc:.0f}% de asignación** para **{symbol}** "
                 f"en tu portfolio según su análisis de convicción y riesgo.",
@@ -872,7 +878,13 @@ if symbol:
 
             _suggested_shares = 10.0
             _shares_caption = None
-            if _ai_alloc_pct and _portfolio_cost > 0 and _price > 0:
+            if _ai_alloc_pct == 0:
+                # EVAL-GROQ-1: un 0 no es «sin sugerencia»; la cantidad del formulario
+                # queda como default manual, no como sugerencia de la IA.
+                _shares_caption = (
+                    f"💡 La IA no sugiere comprar ({decision.action}); la cantidad es manual."
+                )
+            elif _ai_alloc_pct and _portfolio_cost > 0 and _price > 0:
                 _suggested_shares = max(0.01, (_portfolio_cost * _ai_alloc_pct / 100) / _price)
                 _shares_caption = (
                     f"💡 Sugerido por la IA: máximo {_ai_alloc_pct:.0f}% del portafolio "
