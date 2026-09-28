@@ -2485,7 +2485,13 @@ class EvalConfig:
       runs_dir                   — where each live run's ``EvalReport`` is saved
                                    as JSON (LLM-4). Outside git: a run is evidence
                                    about a model on a day, not source. Relative
-                                   paths hang off ``BASE_DIR``.
+                                   paths hang off ``BASE_DIR``; ``~`` expands.
+                                   ``RETIREMENT_ADVISOR_EVAL_RUNS_DIR`` overrides
+                                   it: a run from a Conductor worktree would
+                                   otherwise stay in the worktree and go with
+                                   it when it is archived (the LLM-4 runs lived
+                                   only there). Point it at the real clone's
+                                   ``data/eval_runs``.
     """
     conservative_alloc_cap_pct: float = 15.0
     min_reasoning_chars: int = 80
@@ -2493,10 +2499,12 @@ class EvalConfig:
     case_pass_threshold: float = 1.0
     suite_pass_threshold: float = 0.8
     require_risk_on_buy: bool = True
-    runs_dir: str = "data/eval_runs"
+    runs_dir: str = field(
+        default_factory=lambda: os.getenv("RETIREMENT_ADVISOR_EVAL_RUNS_DIR") or "data/eval_runs"
+    )
 
     def runs_path(self) -> Path:
-        p = Path(self.runs_dir)
+        p = Path(self.runs_dir).expanduser()
         return p if p.is_absolute() else BASE_DIR / p
 
     def as_dict(self) -> dict:
