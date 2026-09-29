@@ -1780,6 +1780,47 @@ class UnitConsistencyConfig:
 
 
 @dataclass
+class FxConfig:
+    """
+    Conversión a la moneda de la cartera de un precio en su moneda de cotización
+    (``data/fx.py``, #154).
+
+    ``global_quality`` tiene 90 tickers de 126 en 14 monedas distintas del dólar y el
+    Optimizer, Backtesting y el Track Record leen precios crudos. El destino es
+    ``PORTFOLIO.base_currency``: el símbolo del par se arma con esa moneda, no con un
+    literal. La subunidad (GBp → GBP) sale de ``QUOTE_MINOR_UNITS``.
+
+    Las tres cifras se midieron el 2026-09-29 sobre los 14 pares ``XXXUSD=X`` de
+    yfinance, diario y semanal, 10 años. El histórico trae **cotizaciones basura de un
+    solo punto que revierten**: CLPUSD=X valía 0,2 el 2016-12-22 (vale ~0,0015), NOKUSD=X
+    subió 39 % el 2020-03-20, y CADUSD=X tiene tres semanas (2022-11, 2024-12, 2025-01)
+    que inflaban hasta 4,95 pp la volatilidad anual de un ticker canadiense.
+
+      spike_dev_pct           — un punto se descarta si se aparta al menos este % del
+                                punto medio geométrico de sus dos vecinos. Los ocho
+                                puntos confirmados se apartan entre 10,3 % y 13175 %;
+                                ningún movimiento real revisado (AUD semana del
+                                2020-03-16, NOK 2023-01, SEK, BRL, MXN) llega al corte.
+      spike_neighbor_agreement — y sus vecinos difieren entre sí, como mucho, esta
+                                fracción de ese desvío. Sin esta condición un escalón
+                                real (1,0 → 1,3 y se queda) se descartaría; con un corte
+                                fijo de «neto ≤ 2 %» el NOK del 2020-03-20 se escapaba,
+                                porque la semana cayó de verdad −8,3 %.
+      max_staleness_days      — cuántos días atrás vale una cotización de FX para la
+                                fecha de un precio (un fin de semana largo, o una semana
+                                cuyo punto se descartó). Más viejo que eso no hay
+                                conversión: la fecha se descarta, no se convierte a 1,0.
+
+    Residual declarado: una cotización basura de menos de ``spike_dev_pct`` no se
+    detecta (CADUSD=X del 2021-01-01, +3,2 %). El primer y el último punto de una serie
+    no se juzgan: no tienen los dos vecinos.
+    """
+    spike_dev_pct: float = 10.0
+    spike_neighbor_agreement: float = 0.5
+    max_staleness_days: int = 7
+
+
+@dataclass
 class ScreenerConfig:
     """
     The Opportunity Screener's shortlist funnel (audit item 06).
@@ -3402,6 +3443,7 @@ REPORT = ReportConfig()
 MONTE_CARLO = MonteCarloConfig()
 DATA_QUALITY = DataQualityConfig()
 UNIT_CONSISTENCY = UnitConsistencyConfig()
+FX = FxConfig()
 ASSET_CLASS = AssetClassConfig()
 SCREENER = ScreenerConfig()
 UNIVERSE = UniverseConfig()
