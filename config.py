@@ -2625,9 +2625,12 @@ class CommitteeConfig:
                           run-to-run lean σ up to ``lean_run_to_run_stdev``, with
                           MSFT and BTC ≤ 0.07 from a threshold: the risk lives at
                           the edges, so the warning goes only there.
-      lean_run_to_run_stdev — the largest lean σ that measurement saw, quoted in
-                          the warning. Re-measure (scripts/committee_stability.py)
-                          after changing the model or the committee prompts.
+      lean_run_to_run_stdev — the largest lean σ measured, quoted in the warning.
+                          0.12 at prompt 2026-09-27e; 0.21 at 2026-09-29c (XYZ,
+                          whose prompt did not change — at n=5 per case the σ
+                          itself is noisy, so the largest seen is kept).
+                          Re-measure (scripts/committee_stability.py) after
+                          changing the model or the committee prompts.
       downgrade_confidence_on_strong_dissent — when the bear case is strong, drop
                           the verdict confidence one notch (conservative bias).
       prompt_version     — part of the verdict cache key. Bump it whenever a
@@ -2676,7 +2679,7 @@ class CommitteeConfig:
     reduce_lean: float = -0.5
     sell_lean: float = -1.5
     lean_near_threshold_margin: float = 0.1
-    lean_run_to_run_stdev: float = 0.12
+    lean_run_to_run_stdev: float = 0.21
     downgrade_confidence_on_strong_dissent: bool = True
     # Sufijo de letra por la convención de versiones del mismo día (2026-09-19a,
     # 19b, …): el moat cripto no medido y el contexto/mandatos cripto fueron dos
@@ -2691,7 +2694,13 @@ class CommitteeConfig:
     # prompt, y sin hechos macro reales el Estratega Macro no se convoca.
     # 2026-09-27b: FRED-CPI-NIVEL — la inflación llega como tasa interanual, no
     # como el nivel del índice; los veredictos que leyeron «IPC 334» no se sirven.
-    prompt_version: str = "2026-09-27e"
+    # 2026-09-29a: EVAL-GROQ-1 — el CONTEXTO PAÍS curado es fuente válida de
+    # macro_factors, y un activo que no cotiza en la moneda del plan lo dice
+    # (decisión y bloque común del comité). 2026-09-29b: con sólo el dato, el
+    # riesgo cambiario salió en 1 de 3 corridas; el prompt de decisión lo pide.
+    # 2026-09-29c: el riesgo país del CONTEXTO PAÍS es obligatorio en
+    # macro_factors (con «si es material» quedó afuera 3 de 6 veces).
+    prompt_version: str = "2026-09-29c"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a

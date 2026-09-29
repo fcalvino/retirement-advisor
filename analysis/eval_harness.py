@@ -71,6 +71,10 @@ class CaseResult:
     description: str
     action: str
     checks: List[CheckResult] = field(default_factory=list)
+    # What the model wrote (EVAL-GROQ-1): a failed check says what was missing,
+    # not what was there instead — without these a live failure cannot be read.
+    risks: List[str] = field(default_factory=list)
+    macro_factors: List[dict] = field(default_factory=list)
 
     @property
     def score(self) -> float:
@@ -283,6 +287,13 @@ ALL_CHECKS: List[Callable] = [
 ]
 
 
+def _written(d: Decision) -> dict:
+    return {
+        "risks": [str(r) for r in (d.risks or [])],
+        "macro_factors": [f for f in (d.macro_factors or []) if isinstance(f, dict)],
+    }
+
+
 def run_checks(case: GoldenCase, d: Decision) -> List[CheckResult]:
     out: List[CheckResult] = []
     for fn in ALL_CHECKS:
@@ -310,9 +321,14 @@ class LiveProvider:
 
     def __init__(self, ai_config):
         self.name = f"live:{getattr(ai_config, 'provider', '?')}/{getattr(ai_config, 'model', '?')}"
-        self._analyzer = AIAnalyzer(ai_config)
+        self._case: Optional[GoldenCase] = None
+        # Same facts every run (EVAL-GROQ-1): the case's frozen macro, not the live RAG.
+        self._analyzer = AIAnalyzer(
+            ai_config, macro_fn=lambda _fund: self._case.macro_context if self._case else "",
+        )
 
     def get_decision(self, case: GoldenCase) -> Decision:
+        self._case = case
         return self._analyzer.analyze(case.fund, case.tech)
 
 
@@ -441,7 +457,8 @@ def run_eval(provider=None, cases: Optional[List[GoldenCase]] = None) -> EvalRep
             ))
             continue
         checks = run_checks(case, decision)
-        results.append(CaseResult(case.case_id, case.description, decision.action, checks))
+        results.append(CaseResult(case.case_id, case.description, decision.action, checks,
+                                  **_written(decision)))
 
     report = EvalReport(results)
     logger.info(
@@ -516,7 +533,8 @@ def run_committee_eval(provider=None, cases: Optional[List[GoldenCase]] = None) 
             res = fn(case, verdict)
             if res is not None:
                 checks.append(res)
-        results.append(CaseResult(case.case_id, case.description, decision.action, checks))
+        results.append(CaseResult(case.case_id, case.description, decision.action, checks,
+                                  **_written(decision)))
 
     report = EvalReport(results)
     logger.info(
@@ -658,6 +676,8 @@ def report_to_dict(report: EvalReport, *, bank: str, provider_name: str,
                 "score": round(r.score, 4),
                 "checks": [{"name": c.name, "passed": c.passed, "detail": c.detail}
                            for c in r.checks],
+                "risks": list(r.risks),
+                "macro_factors": list(r.macro_factors),
             }
             for r in report.results
         ],

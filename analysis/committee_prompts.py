@@ -34,6 +34,7 @@ from analysis.prompts import (
     MOAT_NOT_MEASURED_LABEL,
     _payout_block,
     _tailwind_context_block,
+    plan_currency_note,
 )
 from config import CRYPTO_COMMITTEE, CRYPTO_MOAT, STRESS_SCENARIOS
 from data.clock import utc_now
@@ -186,6 +187,9 @@ def committee_context_block(fund, tech) -> str:
     ccy_notes = [n for n in (currency_metric_note(fund, m) for m in ("fcf_yield", "p_ffo")) if n]
     if ccy_notes:
         lines.append("Moneda de estados ≠ cotización: " + " ".join(ccy_notes))
+    plan_ccy = plan_currency_note(fund)
+    if plan_ccy:
+        lines.append("Moneda del plan: " + plan_ccy)
     warnings = list(getattr(fund, "warnings", None) or [])
     if warnings:
         lines.append("Alertas del motor: " + "; ".join(str(w) for w in warnings))
