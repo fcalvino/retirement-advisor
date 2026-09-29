@@ -36,7 +36,9 @@ def test_argentine_adr_may_cite_country_context_in_macro_factors(macro):
     prompt = equity_decision_prompt(_fund("YPF"), _tech("YPF"), macro)
     assert "CONTEXTO PAÍS — Argentina" in prompt
     assert COUNTRY_SOURCE in prompt
-    assert "macro_factors" in prompt.split(COUNTRY_SOURCE, 1)[1][:400]
+    tail = prompt.split(COUNTRY_SOURCE, 1)[1][:400]
+    # mandatory: with «si es material» it lost to the generic «devolvé []» 3 of 6 times
+    assert "tiene que ser ese riesgo país" in tail and "macro_factors" in tail
 
 
 def test_without_rag_an_argentine_adr_is_not_told_to_return_empty_macro():

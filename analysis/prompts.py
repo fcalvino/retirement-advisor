@@ -139,11 +139,13 @@ def _portfolio_macro_factors() -> str:
 
 #: EVAL-GROQ-1: the curated country block is data handed to the model, not its
 #: memory — without this line «EXCLUSIVAMENTE hechos fechados» kept the
-#: Argentine risk out of ``macro_factors`` (6 of 6 live runs).
+#: Argentine risk out of ``macro_factors`` (6 of 6 live runs). Mandatory, not
+#: «si es material»: with the discretion it lost to the generic «devolvé []»
+#: rule in 3 of 6 runs (2026-09-29a/b) — the risk always went to ``risks``.
 COUNTRY_CONTEXT_AS_MACRO_SOURCE = (
-    "El CONTEXTO PAÍS de arriba es un dato provisto, no memoria: si es material para esta "
-    "empresa, uno de tus `macro_factors` debe nombrarlo (el país y su efecto en la asignación "
-    "o la convicción)."
+    "El CONTEXTO PAÍS de arriba es un dato provisto, no memoria, y para un inversor de retiro "
+    "siempre es material: uno de tus `macro_factors` tiene que ser ese riesgo país (el país y "
+    "su efecto en la asignación o la convicción)."
 )
 
 

@@ -2695,7 +2695,9 @@ class CommitteeConfig:
     # macro_factors, y un activo que no cotiza en la moneda del plan lo dice
     # (decisión y bloque común del comité). 2026-09-29b: con sólo el dato, el
     # riesgo cambiario salió en 1 de 3 corridas; el prompt de decisión lo pide.
-    prompt_version: str = "2026-09-29b"
+    # 2026-09-29c: el riesgo país del CONTEXTO PAÍS es obligatorio en
+    # macro_factors (con «si es material» quedó afuera 3 de 6 veces).
+    prompt_version: str = "2026-09-29c"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a
