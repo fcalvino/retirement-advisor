@@ -2691,7 +2691,10 @@ class CommitteeConfig:
     # prompt, y sin hechos macro reales el Estratega Macro no se convoca.
     # 2026-09-27b: FRED-CPI-NIVEL — la inflación llega como tasa interanual, no
     # como el nivel del índice; los veredictos que leyeron «IPC 334» no se sirven.
-    prompt_version: str = "2026-09-27e"
+    # 2026-09-29a: EVAL-GROQ-1 — el CONTEXTO PAÍS curado es fuente válida de
+    # macro_factors, y un activo que no cotiza en la moneda del plan lo dice
+    # (decisión y bloque común del comité).
+    prompt_version: str = "2026-09-29a"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a

@@ -137,14 +137,56 @@ def _portfolio_macro_factors() -> str:
     )
 
 
+#: EVAL-GROQ-1: the curated country block is data handed to the model, not its
+#: memory — without this line «EXCLUSIVAMENTE hechos fechados» kept the
+#: Argentine risk out of ``macro_factors`` (6 of 6 live runs).
+COUNTRY_CONTEXT_AS_MACRO_SOURCE = (
+    "El CONTEXTO PAÍS de arriba es un dato provisto, no memoria: si es material para esta "
+    "empresa, uno de tus `macro_factors` debe nombrarlo (el país y su efecto en la asignación "
+    "o la convicción)."
+)
+
+
+def plan_currency_note(fund) -> str:
+    """One factual line when the asset is quoted outside the plan's currency (EVAL-GROQ-1).
+
+    The model saw every amount in CHF and nothing said the plan is measured in
+    dollars, so the FX risk was not in its input (named 1 run of 6). Empty for
+    the plan's own currency or an unknown one: nothing to convert.
+    """
+    from config import PORTFOLIO
+
+    ccy = (getattr(fund, "currency", "") or "").strip()
+    base = PORTFOLIO.base_currency
+    if not ccy or ccy.upper() == base.upper():
+        return ""
+    return (
+        f"Cotiza en {ccy}; el plan del inversor se mide en {base}: la conversión es un "
+        "riesgo cambiario propio de esta posición."
+    )
+
+
+def _has_country_context(fund) -> bool:
+    return fund.symbol in ARGENTINA_ADRS
+
+
 def _equity_macro_block(fund, macro_context: str) -> str:
     """Macro section of ``equity_decision_prompt``, anchored to the RAG.
 
     With dated facts the model must use only those (same wording as the Macro
     Strategist, ``committee_prompts.macro_strategist_prompt``); without them it
-    must not recall macro from memory and returns ``macro_factors: []``.
+    must not recall macro from memory and returns ``macro_factors: []``. The
+    curated ``CONTEXTO PAÍS`` block is the one other source (EVAL-GROQ-1).
     """
+    country_line = f"\n{COUNTRY_CONTEXT_AS_MACRO_SOURCE}" if _has_country_context(fund) else ""
     if not macro_context:
+        if country_line:
+            return (
+                "--- CONTEXTO MACRO ---\n"
+                "No tenés hechos macro fechados para este activo: no cites datos macro de "
+                "memoria. Basá la decisión en los fundamentales y el técnico."
+                f"{country_line}"
+            )
         return (
             "--- CONTEXTO MACRO ---\n"
             "No tenés hechos macro fechados para este activo: devolvé `macro_factors: []` y no "
@@ -158,6 +200,7 @@ def _equity_macro_block(fund, macro_context: str) -> str:
         "Temas a buscar en esos hechos, solo si aparecen: "
         f"{_equity_world_macro_factors()}; "
         f"{_equity_national_macro_factors(fund.symbol in ARGENTINA_ADRS)}"
+        f"{country_line}"
     )
 
 
@@ -493,8 +536,12 @@ def equity_decision_prompt(fund, tech, macro_context: str = "") -> str:
     if is_reit(fund) or p_ffo_text:
         p_ffo_context = f" | P/FFO={p_ffo_text or fmt(getattr(fund, 'p_ffo', None), 'x')}"
 
+    ccy_note = plan_currency_note(fund)
+    if ccy_note:
+        ccy_note = f"MONEDA: {ccy_note}\n"
+
     country_context = ""
-    if fund.symbol in ARGENTINA_ADRS:
+    if _has_country_context(fund):
         country_context = (
             "\n⚠️ CONTEXTO PAÍS — Argentina (mercado emergente):\n"
             "Considerar controles de capital, inflación estructural alta y volátil, riesgo regulatorio estatal y de tarifas, subsidios energéticos, brecha cambiaria y prima de riesgo país elevada. La moneda de los estados puede diferir de la de cotización; respetá las notas de moneda provistas y no interpretes «no medible» como cero. El negocio real opera en ARS (o mixto). Márgenes bajos o volátiles pueden reflejar regulación tarifaria o distorsiones macro, no solo ineficiencia. Aplicar prima de riesgo país explícita en la recomendación de asignación y en la convicción. Mencioná el impacto en el reasoning cuando sea material.\n"
@@ -524,7 +571,7 @@ IDIOMA OBLIGATORIO: Responde SIEMPRE en español. Todos los campos de texto (rat
 EMPRESA: {fund.company_name} ({fund.symbol})
 SECTOR: {fund.sector} | INDUSTRIA: {fund.industry}
 PRECIO: {price_text} | MARKET CAP: {market_cap_text}
-{country_context}
+{ccy_note}{country_context}
 --- ANÁLISIS FUNDAMENTAL ---
 Profitabilidad ({fund.profitability_score:.0f}/25):
   ROE={fmt(fund.roe, "%")} | ROIC={fmt(fund.roic, "%")} | Margen Neto={fmt(fund.net_margin, "%")} | Margen Bruto={fmt(fund.gross_margin, "%")}

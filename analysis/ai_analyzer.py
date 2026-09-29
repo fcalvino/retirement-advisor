@@ -208,8 +208,11 @@ def _finish_reason(response):
 
 
 class AIAnalyzer:
-    def __init__(self, config):
+    def __init__(self, config, *, macro_fn=None):
         self.config = config
+        # The eval bank freezes the macro facts per case (EVAL-GROQ-1); ``None``
+        # keeps the production source, the dated RAG.
+        self._macro_fn = macro_fn
 
     # ------------------------------------------------------------------ #
     #  Failure plumbing — one classification, one log line, one message   #
@@ -275,9 +278,12 @@ class AIAnalyzer:
         from analysis.prompts import equity_decision_prompt
         # #130 paso 4: the macro section is anchored to the dated RAG facts.
         try:
-            from analysis.macro_rag import macro_context_for
+            if self._macro_fn is not None:
+                macro_ctx = self._macro_fn(fund)
+            else:
+                from analysis.macro_rag import macro_context_for
 
-            macro_ctx = macro_context_for(fund)
+                macro_ctx = macro_context_for(fund)
         except Exception:
             macro_ctx = ""
         return equity_decision_prompt(fund, tech, macro_ctx)

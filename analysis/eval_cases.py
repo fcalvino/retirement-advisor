@@ -335,6 +335,11 @@ def golden_cases() -> List[GoldenCase]:
         ),
     ))
 
+    # Same dated facts every live run (EVAL-GROQ-1): the decision prompt no
+    # longer reads the RAG of the day it runs.
+    macro = _macro_block()
+    for c in cases:
+        c.macro_context = macro
     return cases
 
 
