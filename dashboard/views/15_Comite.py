@@ -17,6 +17,7 @@ from dashboard.shared import (
     concentration_hold_note,
     consensus_empty_caption,
     dissent_empty_caption,
+    lean_near_threshold_note,
     render_ai_badge,
     render_committee_status,
     track_record_log_caption,
@@ -193,6 +194,9 @@ if run and symbol:
             f"Se registra {logged_decision.action}.",
             icon="🛡️",
         )
+    _near = lean_near_threshold_note(verdict, logged_decision.action)
+    if _near:
+        st.info(_near, icon="🎚️")
     _concentration = concentration_hold_note(verdict, portfolio_ctx)
     if _concentration:
         st.info(_concentration, icon="⚖️")
