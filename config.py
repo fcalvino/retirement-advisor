@@ -2693,8 +2693,9 @@ class CommitteeConfig:
     # como el nivel del índice; los veredictos que leyeron «IPC 334» no se sirven.
     # 2026-09-29a: EVAL-GROQ-1 — el CONTEXTO PAÍS curado es fuente válida de
     # macro_factors, y un activo que no cotiza en la moneda del plan lo dice
-    # (decisión y bloque común del comité).
-    prompt_version: str = "2026-09-29a"
+    # (decisión y bloque común del comité). 2026-09-29b: con sólo el dato, el
+    # riesgo cambiario salió en 1 de 3 corridas; el prompt de decisión lo pide.
+    prompt_version: str = "2026-09-29b"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a

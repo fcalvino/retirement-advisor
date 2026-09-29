@@ -166,6 +166,9 @@ def plan_currency_note(fund) -> str:
     )
 
 
+FX_RISK_INSTRUCTION = "Uno de tus `risks` tiene que ser ese riesgo cambiario."
+
+
 def _has_country_context(fund) -> bool:
     return fund.symbol in ARGENTINA_ADRS
 
@@ -538,7 +541,9 @@ def equity_decision_prompt(fund, tech, macro_context: str = "") -> str:
 
     ccy_note = plan_currency_note(fund)
     if ccy_note:
-        ccy_note = f"MONEDA: {ccy_note}\n"
+        # The fact alone was not enough: with it in the prompt the model listed
+        # FX as a risk in 1 of 3 live runs (EVAL-GROQ-1, 2026-09-29).
+        ccy_note = f"MONEDA: {ccy_note} {FX_RISK_INSTRUCTION}\n"
 
     country_context = ""
     if _has_country_context(fund):

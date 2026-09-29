@@ -12,7 +12,7 @@ Dos fallas estables del banco en vivo (6/6 y 5/6) no eran del modelo:
 import pytest
 
 from analysis.committee_prompts import committee_context_block
-from analysis.prompts import equity_decision_prompt, plan_currency_note
+from analysis.prompts import FX_RISK_INSTRUCTION, equity_decision_prompt, plan_currency_note
 from config import PORTFOLIO
 from tests.test_prompts import _equity_fund, _tech
 
@@ -74,8 +74,10 @@ def test_no_note_in_the_plan_currency_or_unknown(ccy):
 def test_decision_prompt_carries_the_note_and_usd_is_unchanged():
     chf = equity_decision_prompt(_fund("NESN.SW", "CHF"), _tech("NESN.SW"), RAG)
     assert plan_currency_note(_fund("NESN.SW", "CHF")) in chf
+    assert FX_RISK_INSTRUCTION in chf
     usd = equity_decision_prompt(_fund("AAPL", "USD"), _tech("AAPL"), RAG)
     assert "riesgo cambiario propio" not in usd
+    assert FX_RISK_INSTRUCTION not in usd
 
 
 def test_committee_block_carries_the_note_and_usd_is_unchanged():
