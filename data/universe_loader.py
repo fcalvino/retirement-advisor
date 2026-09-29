@@ -55,17 +55,6 @@ def _load_raw(key: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def optimizer_universes() -> List[str]:
-    """``list_universes()`` minus the Screener-only ones (``UNIVERSE.screener_only``).
-
-    The Optimizer combines and compares universes over raw price series with no
-    FX conversion, so a multi-currency universe must not join those lists by
-    merely existing on disk.
-    """
-    excluded = set(UNIVERSE.screener_only)
-    return [k for k in list_universes() if k not in excluded]
-
-
 def _entry_symbol(entry: object) -> object:
     """A universe entry is a bare symbol or ``{"ticker", "country", "industry"}``."""
     if isinstance(entry, dict):

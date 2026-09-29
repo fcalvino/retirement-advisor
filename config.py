@@ -135,7 +135,13 @@ DB_PATH = Path(os.getenv("RETIREMENT_ADVISOR_DB_PATH") or DB_DIR / "retirement_a
 #                   Un GDR con pérdidas (SMSN.IL, P/B 0,0039) habría cobrado la
 #                   banda máxima. En la caché (194): ZURN.SW −5, 0700.HK −3,
 #                   CSL.AX −2; ninguna señal cambia.
-ENGINE_VERSION = "2026.09-tier14"
+#   2026.09-tier15 — #154 PR C: el Optimizer y el Monte Carlo leían precios crudos,
+#                   así que un listado de Tokio entraba a la covarianza y a la
+#                   proyección del retiro con su retorno en yenes. Ahora cada serie
+#                   se convierte a PORTFOLIO.base_currency (data/fx.py); un listado
+#                   extranjero sin tipo de cambio o de moneda no confirmada queda
+#                   afuera y se nombra. Una cartera sólo en dólares no se mueve.
+ENGINE_VERSION = "2026.09-tier15"
 
 
 @dataclass(frozen=True)
@@ -1928,12 +1934,13 @@ class UniverseConfig:
                            coincidan en el filtro.
       industries         — taxonomía de sectores de yfinance.
       unknown_country    — etiqueta para una fila sin país conocido.
-      screener_only      — universos que el Optimizer NO suma solo ("Combinar
-                           universos", "Comparar todos"). El optimizer y el
-                           backtest trabajan sobre series de precio sin
-                           convertir moneda; mezclar JPY, GBp y USD ahí no es un
-                           resultado sino un artefacto. Elegirlo como universo
-                           activo sigue siendo posible, con un aviso.
+      multi_currency     — universos cuyos precios vienen en varias monedas. El
+                           Optimizer, el Monte Carlo y el Backtesting convierten
+                           cada serie a ``PORTFOLIO.base_currency`` (#154,
+                           ``data/fx.py``); esto sólo decide en qué páginas se
+                           dice. Hasta #154 PR C se llamaba ``screener_only`` y
+                           dejaba al universo afuera de "Combinar" y "Comparar
+                           todos" del Optimizer, que sumaba precios sin convertir.
     """
 
     max_ticker_len: int = 12
@@ -1959,7 +1966,7 @@ class UniverseConfig:
         "Communication Services", "Utilities", "Real Estate",
     )
     unknown_country: str = "—"
-    screener_only: Tuple[str, ...] = ("global_quality",)
+    multi_currency: Tuple[str, ...] = ("global_quality",)
 
 
 @dataclass

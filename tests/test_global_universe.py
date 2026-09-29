@@ -25,7 +25,6 @@ from data.universe_loader import (
     list_universes,
     load_universe,
     load_universe_metadata,
-    optimizer_universes,
 )
 
 _KEY = "global_quality"
@@ -138,12 +137,11 @@ def test_legacy_display_order_is_preserved_and_global_is_appended():
     assert _KEY in keys
 
 
-def test_optimizer_lists_do_not_grow_with_the_screener_universe():
-    # "Combinar universos" and "Comparar todos" read this list; they work on
-    # raw price series with no FX conversion.
-    assert _KEY in UNIVERSE.screener_only
-    assert optimizer_universes() == [k for k in list_universes() if k != _KEY]
-    assert set(optimizer_universes()) == set(_LEGACY_COUNTS)
+def test_the_global_universe_is_marked_multi_currency():
+    # #154 PR C: the Optimizer and the Monte Carlo convert every series, so the
+    # universe joins "Combinar" / "Comparar todos"; the flag only drives the caption.
+    assert _KEY in UNIVERSE.multi_currency
+    assert not hasattr(UNIVERSE, "screener_only")
 
 
 def test_customs_on_a_dict_universe_still_dedupe():

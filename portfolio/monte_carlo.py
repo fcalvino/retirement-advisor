@@ -30,6 +30,7 @@ from loguru import logger
 
 from config import MONTE_CARLO
 from data.fetcher import get_history
+from data.fx import fx_pair_symbol, to_base_or_reason
 from portfolio.decumulation import (
     WithdrawalStrategy,
     apply_cash_flow_schedule,
@@ -185,8 +186,14 @@ class MonteCarloSimulator:
         seed: int = 42,
         vol_scale: float = 1.0,
         return_scale: float = 1.0,
+        currencies: Optional[Dict[str, str]] = None,
     ) -> None:
         self.symbols = symbols
+        # #154: quote currency per symbol. Whatever is not given is resolved by
+        # ``data.fx.quote_currency`` — none of the six places that build a simulator
+        # knows it, and a Tokyo listing projected in yen is the defect.
+        self._currencies: Dict[str, str] = dict(currencies or {})
+        self.converted_currencies: Dict[str, str] = {}
         self._weights_input = weights
         self._seed = seed
         self._rng = np.random.default_rng(seed)
@@ -577,6 +584,7 @@ class MonteCarloSimulator:
         """
         warnings: List[str] = []
         frames: Dict[str, pd.Series] = {}
+        fx_excluded: List[str] = []
 
         for sym in self.symbols:
             try:
@@ -592,14 +600,36 @@ class MonteCarloSimulator:
                     continue
                 s = hist[close_col].dropna()
                 s.index = pd.to_datetime(s.index)
+                s, ccy, reason = to_base_or_reason(
+                    sym, s, self._currencies.get(sym),
+                    period=self.HISTORY_PERIOD, interval="1wk",
+                )
+                if s is None:
+                    fx_excluded.append(f"{sym} ({reason})" if ccy is None
+                                       else f"{sym} ({ccy}: {reason})")
+                    continue
+                if fx_pair_symbol(ccy) is not None:
+                    self.converted_currencies[sym] = ccy
                 if len(s) >= 52:
                     frames[sym] = s
             except Exception as exc:
                 logger.warning(f"MC: price fetch failed for {sym}: {exc}")
 
+        if self.converted_currencies:
+            logger.info(
+                f"MC: {len(self.converted_currencies)} serie(s) convertidas a la moneda de "
+                f"la cartera: {', '.join(f'{k} ({v})' for k, v in sorted(self.converted_currencies.items()))}"
+            )
+        if fx_excluded:
+            warnings.append(
+                "Fuera de la proyección por su moneda, para no proyectarlos como "
+                f"dólares: {', '.join(fx_excluded)}."
+            )
+
         if not frames:
             warnings.append("No se pudieron obtener datos de precio. Usando SPY como proxy.")
-            return self._spy_fallback()
+            rets, n, used, fallback_warnings = self._spy_fallback()
+            return rets, n, used, warnings + fallback_warnings
 
         # Align all series to common dates
         price_df = pd.DataFrame(frames).sort_index().ffill().dropna()
@@ -620,8 +650,8 @@ class MonteCarloSimulator:
         else:
             weights = np.ones(len(symbols_used)) / len(symbols_used)
 
-        if len(symbols_used) < len(self.symbols):
-            missing = len(self.symbols) - len(symbols_used)
+        if len(symbols_used) + len(fx_excluded) < len(self.symbols):
+            missing = len(self.symbols) - len(symbols_used) - len(fx_excluded)
             warnings.append(f"{missing} ticker(s) sin datos históricos — rebalanceando entre los disponibles.")
 
         weekly_returns = price_df.pct_change().dropna().values

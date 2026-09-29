@@ -44,6 +44,7 @@ from config import (
     ProfileConfig,
 )
 from data.fetcher import get_history
+from data.fx import fx_pair_symbol, to_base_or_reason
 
 # ETF tickers — excluded from optimization (no fundamentals)
 _ETF_TICKERS = {"SPY", "QQQ", "VTI", "BND", "GLD", "SLV", "TLT", "IEF"}
@@ -240,6 +241,9 @@ class OptimizationResult:
     # Excluded tickers with reason
     excluded: List[Tuple[str, str]] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    #: symbol → quote currency of every price series converted to
+    #: ``PORTFOLIO.base_currency`` before the covariance (#154).
+    converted_currencies: Dict[str, str] = field(default_factory=dict)
 
     # Rebalancing recommendation
     rebalance_frequency: str = ""       # e.g. "Anual", "Semestral", "Trimestral"
@@ -308,6 +312,8 @@ class PortfolioOptimizer:
         self.profile_key = profile
         self.cfg: ProfileConfig = OPTIMIZER_PROFILES.get(profile, OPTIMIZER_PROFILES["conservative"])
         self.opt = OPTIMIZER
+        self._converted: Dict[str, str] = {}
+        self._fx_excluded: Dict[str, str] = {}
 
     def optimize(
         self,
@@ -354,10 +360,19 @@ class PortfolioOptimizer:
             )
 
         symbols = [t["symbol"] for t in eligible]
+        # #154: the page puts the quote currency in each dict; what is missing is
+        # resolved by ``data.fx.quote_currency`` inside the price fetch.
+        currencies = {t["symbol"]: str(t.get("currency") or "") for t in eligible}
 
         # 3 — Price matrix (parallelized)
         t0 = time.monotonic()
-        price_matrix = self._build_price_matrix(symbols)
+        price_matrix = self._build_price_matrix(symbols, currencies)
+        result.converted_currencies = dict(self._converted)
+        if self._fx_excluded:
+            result.warnings.append(
+                "Fuera de la optimización por su moneda, para no tratarlos como "
+                f"dólares: {', '.join(self._fx_excluded[s] for s in sorted(self._fx_excluded))}."
+            )
         result.build_matrix_ms = round((time.monotonic() - t0) * 1000, 1)
         usable_symbols = list(price_matrix.columns)
 
@@ -633,8 +648,13 @@ class PortfolioOptimizer:
     #  Price data (parallelized)                                           #
     # ------------------------------------------------------------------ #
 
-    def _fetch_single_price(self, sym: str, period: str, min_obs: int):
-        """Fetch price history for one symbol. Returns (sym, series) or (sym, None)."""
+    def _fetch_single_price(self, sym: str, period: str, min_obs: int, currency: str = ""):
+        """Weekly closes of one symbol in ``PORTFOLIO.base_currency``: (sym, series|None).
+
+        #154: converted with ``data.fx.to_base_or_reason``. A series that cannot be
+        converted (no rate, or a foreign listing whose currency cannot be confirmed)
+        is ``None`` and recorded in ``self._fx_excluded`` — never used as dollars.
+        """
         try:
             hist = get_history(sym, period=period, interval="1wk")
             if hist.empty:
@@ -647,21 +667,44 @@ class PortfolioOptimizer:
             if close_col not in hist.columns:
                 return sym, None
             series = hist[close_col].dropna()
+            series.index = pd.to_datetime(series.index)
+            series, ccy, reason = to_base_or_reason(
+                sym, series, currency, period=period, interval="1wk",
+            )
+            if series is None:
+                self._fx_excluded[sym] = (f"{sym} ({reason})" if ccy is None
+                                          else f"{sym} ({ccy}: {reason})")
+                return sym, None
+            if fx_pair_symbol(ccy) is not None:
+                self._converted[sym] = ccy
             if len(series) >= min_obs:
                 return sym, series
         except Exception as exc:
             logger.warning(f"Price data failed for {sym}: {exc}")
         return sym, None
 
-    def _build_price_matrix(self, symbols: List[str]) -> pd.DataFrame:
-        """Weekly close prices for price_history_years. Parallel fetch with ThreadPoolExecutor."""
+    def _build_price_matrix(
+        self, symbols: List[str], currencies: Optional[Dict[str, str]] = None
+    ) -> pd.DataFrame:
+        """Weekly closes in ``PORTFOLIO.base_currency`` for price_history_years.
+
+        Parallel fetch with ThreadPoolExecutor. ``currencies`` maps symbol → quote
+        currency; a symbol it does not cover is resolved by ``data.fx.quote_currency``.
+        """
         period = f"{self.opt.price_history_years}y"
         min_obs = self.opt.price_history_years * 40
+        currencies = currencies or {}
+        self._converted: Dict[str, str] = {}
+        self._fx_excluded: Dict[str, str] = {}
 
         frames = {}
         workers = min(self.opt.price_fetch_max_workers, len(symbols)) if symbols else 1
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {pool.submit(self._fetch_single_price, sym, period, min_obs): sym for sym in symbols}
+            futures = {
+                pool.submit(self._fetch_single_price, sym, period, min_obs,
+                            currencies.get(sym, "")): sym
+                for sym in symbols
+            }
             for fut in as_completed(futures):
                 sym, series = fut.result()
                 if series is not None:

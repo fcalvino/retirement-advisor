@@ -179,10 +179,13 @@ def test_superseded_and_missing_engine_versions_are_stale():
     (tier13) gives crypto its own action ladder: BTC's published signal moves.
     UM-GDR (tier14) stops scoring P/B and EV/EBITDA that cannot be verified
     across currencies (losses, no EBITDA): three cached scores move, no signal.
+    #154 PR C (tier15) converts every price series to the portfolio currency before
+    the Optimizer's covariance and the Monte Carlo: a plan with a non-USD listing
+    moves; a dollar-only plan does not.
     """
     from config import ENGINE_VERSION
 
-    assert ENGINE_VERSION == "2026.09-tier14"
+    assert ENGINE_VERSION == "2026.09-tier15"
 
     current = PlanSnapshot.from_session(name="actual", opt_result=_fake_opt_result())
     assert current.engine_version == ENGINE_VERSION
@@ -192,7 +195,8 @@ def test_superseded_and_missing_engine_versions_are_stale():
                        "2026.08-tier3", "2026.08-tier4", "2026.08-tier5",
                        "2026.08-tier6", "2026.08-tier7", "2026.08-tier8",
                        "2026.09-tier9", "2026.09-tier10",
-                       "2026.09-tier11", "2026.09-tier12", "2026.09-tier13"):
+                       "2026.09-tier11", "2026.09-tier12", "2026.09-tier13",
+                       "2026.09-tier14"):
         old = PlanSnapshot.from_session(name="viejo", opt_result=_fake_opt_result())
         old.engine_version = superseded
         assert old.is_engine_stale() is True
