@@ -84,7 +84,7 @@ elif universe_choice == "Solo Argentina ADRs":
     backtest_universe = _ARGENTINA_ADR
 else:
     backtest_universe = [t for t in st.session_state.universe if t not in (benchmark,)]
-    if st.session_state.get("active_universe_key") in UNIVERSE.screener_only:
+    if st.session_state.get("active_universe_key") in UNIVERSE.multi_currency:
         st.caption(
             f"🌍 El universo activo mezcla monedas (JPY, GBp, EUR…): cada precio se "
             f"convierte a {PORTFOLIO.base_currency} con el tipo de cambio semanal antes "

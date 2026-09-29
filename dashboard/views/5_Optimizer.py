@@ -12,7 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from config import AI_FALLBACK, OPTIMIZER, OPTIMIZER_PROFILES, UNIVERSE
+from config import AI_FALLBACK, OPTIMIZER, OPTIMIZER_PROFILES, PORTFOLIO, UNIVERSE
 from dashboard.shared import (
     _fetch_universe_parallel,
     _get_ai_config,
@@ -30,7 +30,7 @@ from data.product_ux import (
     fmt_attractiveness_index,
     max_dd_estimate_help,
 )
-from data.universe_loader import UNIVERSE_META, load_universe, optimizer_universes
+from data.universe_loader import UNIVERSE_META, list_universes, load_universe
 from portfolio.optimizer import PortfolioOptimizer
 from portfolio.tracker import Portfolio
 
@@ -119,6 +119,8 @@ def _to_scored_dict(sym, fund, _tech, _dec) -> dict:
         "sector":              fund.sector or "Unknown",
         # U5-16: the ARS discount keys off this, not off a hardcoded list.
         "country":             getattr(fund, "country", "") or "",
+        # #154: the Optimizer converts each price series from this currency.
+        "currency":            getattr(fund, "currency", "") or "",
         "company_name":        fund.company_name,
         "data_quality_level":  (
             (getattr(fund, "data_quality", None) or {}).get("level")
@@ -236,13 +238,13 @@ st.sidebar.divider()
 # ------------------------------------------------------------------ #
 
 _active_key  = st.session_state.get("active_universe_key", getattr(_prefs, "active_universe", "default") or "default")
-_other_keys  = [k for k in optimizer_universes() if k != _active_key]
-if _active_key in UNIVERSE.screener_only:
-    st.warning(
-        "🌍 El universo activo mezcla monedas (JPY, GBp, EUR…) y el optimizador usa "
-        "precios sin convertir a una moneda común: tomá los pesos como orientativos. "
-        "Para optimizar, preferí un universo en USD en **Inicio**.",
-        icon="🌍",
+_other_keys  = [k for k in list_universes() if k != _active_key]
+if _active_key in UNIVERSE.multi_currency:
+    st.caption(
+        f"🌍 El universo activo mezcla monedas (JPY, GBp, EUR…): cada precio se "
+        f"convierte a {PORTFOLIO.base_currency} con el tipo de cambio semanal antes de "
+        f"calcular volatilidades y correlaciones. Un ticker sin tipo de cambio queda "
+        f"afuera y se nombra en los avisos."
     )
 
 st.sidebar.subheader("🔗 Combinar universos")
@@ -602,6 +604,14 @@ else:
     )
 for w in result.warnings:
     st.warning(w, icon="⚠️")
+_converted = getattr(result, "converted_currencies", {}) or {}
+if _converted:
+    st.caption(
+        f"🌍 {len(_converted)} ticker(s) convertidos a {PORTFOLIO.base_currency} "
+        f"({', '.join(sorted(set(_converted.values())))}) antes de calcular volatilidades "
+        f"y correlaciones: el riesgo incluye el del tipo de cambio, como lo vería un "
+        f"inversor en {PORTFOLIO.base_currency}."
+    )
 
 # Plain-language conclusion up top, before the detailed stats below.
 st.markdown(
@@ -1304,7 +1314,7 @@ with tab_compare:
     _COMPARE_CAP = 25
 
     run_compare = st.button(
-        f"🔄 Comparar todos los universos ({len(optimizer_universes())} disponibles)",
+        f"🔄 Comparar todos los universos ({len(list_universes())} disponibles)",
         type="secondary",
         key="run_compare_btn",
     )
@@ -1317,7 +1327,7 @@ with tab_compare:
         st.warning("Los resultados de comparación son del perfil anterior. Presioná el botón para actualizar.")
 
     if run_compare:
-        _comp_universes = optimizer_universes()
+        _comp_universes = list_universes()
         _comp_results: dict = {}
         _comp_prog   = st.progress(0.0)
         _comp_status = st.empty()

@@ -2242,6 +2242,14 @@ ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
         "empresa tiene pérdidas. Tres puntajes bajan entre 2 y 5 puntos; ninguna "
         "recomendación cambia.",
     ),
+    (
+        "2026.09-tier15",
+        "Las acciones que cotizan en otra moneda (yenes, euros, libras…) ahora se "
+        "convierten a dólares antes de optimizar la cartera y de proyectar tu "
+        "retiro. Antes su retorno entraba en su moneda local, sin el tipo de "
+        "cambio. Si tu plan sólo tenía papeles que cotizan en dólares, no cambia "
+        "nada.",
+    ),
 )
 
 

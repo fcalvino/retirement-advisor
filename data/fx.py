@@ -26,19 +26,27 @@ semanas). ``drop_fx_spikes`` las descarta con el criterio y la calibración docu
 en ``config.FxConfig``: el punto se aparta del punto medio de sus vecinos y los vecinos
 coinciden entre sí. Un escalón real y el rebote real de una crisis quedan intactos.
 
-Sin Streamlit; la única red es ``get_history``, con su caché y sus reintentos.
+**La moneda de un símbolo se resuelve acá cuando el llamador no la sabe**
+(``quote_currency``). El Monte Carlo se construye desde seis lugares y ninguno la
+conoce. Un símbolo sin sufijo de bolsa (AAPL, un ADR, BTC-USD) es un listado de EE. UU.
+y Yahoo lo cotiza en dólares: no se consulta nada. Uno con sufijo (7203.T, SHEL.L) se lee
+de ``get_info``. Si no se puede confirmar, la moneda es desconocida — y en el Optimizer y
+el Monte Carlo un listado extranjero de moneda desconocida **queda afuera y se nombra**
+(``to_base_or_reason``): proyectarlo como si fueran dólares es el defecto que #154 cierra.
+
+Sin Streamlit; la red es ``get_history`` y ``get_info``, con su caché y sus reintentos.
 """
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
 from loguru import logger
 
 from config import FX, PORTFOLIO, QUOTE_MINOR_MAJOR, QUOTE_MINOR_UNITS
-from data.fetcher import get_history
+from data.fetcher import get_history, get_info
 
 #: (par, fecha) ya avisados en este proceso. La guarda corre en cada conversión y un
 #: backtest convierte ocho tickers canadienses dos veces: sin esto la misma cotización
@@ -190,3 +198,47 @@ def convert_history(
         return to_base_currency(prices, currency, None)
     rate = get_fx_history(currency, period=period, interval=interval)
     return to_base_currency(prices, currency, rate)
+
+
+def quote_currency(symbol: Optional[str]) -> Optional[str]:
+    """Moneda de cotización de ``symbol``, o ``None`` si no se puede confirmar.
+
+    Sin sufijo de bolsa es un listado de EE. UU.: Yahoo lo cotiza en dólares (la
+    convención del proveedor, no una suposición sobre la empresa: un ADR de Toyota cotiza
+    en dólares aunque la empresa reporte en yenes). Con sufijo, la dice ``get_info``.
+    """
+    sym = str(symbol or "").strip()
+    if not sym:
+        return None
+    if "." not in sym:
+        return PORTFOLIO.base_currency
+    try:
+        info = get_info(sym) or {}
+    except Exception as exc:
+        logger.warning(f"fx: no se pudo leer la moneda de {sym} — {exc}")
+        return None
+    ccy = str(info.get("currency") or "").strip()
+    return ccy or None
+
+
+def to_base_or_reason(
+    symbol: str,
+    prices: pd.Series,
+    currency: Optional[str],
+    *,
+    period: str,
+    interval: str,
+) -> Tuple[Optional[pd.Series], Optional[str], Optional[str]]:
+    """``(serie en la moneda de la cartera, moneda, None)`` o ``(None, moneda, motivo)``.
+
+    Para el Optimizer y el Monte Carlo, que no pueden dejar pasar una serie sin
+    convertir. ``currency`` vacío se resuelve con ``quote_currency``. El motivo es una
+    frase corta para un aviso que nombra al ticker.
+    """
+    ccy = str(currency or "").strip() or quote_currency(symbol)
+    if not ccy:
+        return None, None, "no se pudo confirmar en qué moneda cotiza"
+    converted = convert_history(prices, ccy, period=period, interval=interval)
+    if converted is None or converted.empty:
+        return None, ccy, f"sin tipo de cambio {ccy}→{PORTFOLIO.base_currency}"
+    return converted, ccy, None
