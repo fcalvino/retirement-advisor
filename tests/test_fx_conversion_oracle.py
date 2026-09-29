@@ -149,6 +149,20 @@ class TestSpikeGuard:
         assert _kept([1.0, 1.0, 1.0, 5.0]) == [0, 1, 2, 3]
         assert _kept([5.0, 1.0, 1.0, 1.0]) == [0, 1, 2, 3]
 
+    def test_each_dropped_print_is_logged_once_per_process(self, monkeypatch):
+        from loguru import logger
+        monkeypatch.setattr(fxmod, "_WARNED", set())
+        seen: list[str] = []
+        sink = logger.add(lambda m: seen.append(str(m)), level="WARNING")
+        try:
+            cad = pd.Series([0.7397, 0.742, 0.8732, 0.7455, 0.7463],
+                            index=pd.date_range("2022-10-24", periods=5, freq="W-MON"))
+            for _ in range(3):
+                assert len(fxmod.drop_fx_spikes(cad, label="CADUSD=X")) == 4
+        finally:
+            logger.remove(sink)
+        assert len([m for m in seen if "CADUSD=X 2022-11-07" in m]) == 1
+
     def test_short_or_empty_series_are_returned_as_they_are(self):
         assert list(fxmod.drop_fx_spikes(pd.Series(dtype=float)).index) == []
         assert _kept([1.0, 50.0]) == [0, 1]

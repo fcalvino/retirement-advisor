@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from analysis.backtesting import BacktestEngine, BacktestResult
-from config import BACKTEST, UNIVERSE
+from config import BACKTEST, PORTFOLIO, UNIVERSE
 from dashboard.shared import _fetch_universe_parallel, _get_ai_config
 from data.product_ux import (
     DOWNSIDE_RATIO_HELP,
@@ -85,12 +85,11 @@ elif universe_choice == "Solo Argentina ADRs":
 else:
     backtest_universe = [t for t in st.session_state.universe if t not in (benchmark,)]
     if st.session_state.get("active_universe_key") in UNIVERSE.screener_only:
-        st.warning(
-            "🌍 El universo activo mezcla monedas (JPY, GBp, EUR…) y el backtest usa "
-            "precios sin convertir a una moneda común, contra un benchmark en USD: el "
-            "retorno y el alfa incluyen el tipo de cambio. Para backtestear, preferí un "
-            "universo en USD en **Inicio** o una de las opciones «Solo …».",
-            icon="🌍",
+        st.caption(
+            f"🌍 El universo activo mezcla monedas (JPY, GBp, EUR…): cada precio se "
+            f"convierte a {PORTFOLIO.base_currency} con el tipo de cambio semanal antes "
+            f"de compararlo con el benchmark. Un ticker sin tipo de cambio queda afuera "
+            f"y se nombra en las notas."
         )
 
 st.caption(
@@ -166,6 +165,15 @@ st.caption(
     f"Rebalanceo: **{rebal_label}** · Top-{bt_result.top_n} "
     f"· {bt_result.period_years}Y · vs {bt_result.benchmark}"
 )
+
+_converted = getattr(bt_result, "converted_currencies", {}) or {}
+if _converted:
+    _ccys = ", ".join(sorted(set(_converted.values())))
+    st.caption(
+        f"🌍 {len(_converted)} ticker(s) convertidos a {PORTFOLIO.base_currency} "
+        f"({_ccys}): el retorno incluye el tipo de cambio, como lo vería un inversor "
+        f"en {PORTFOLIO.base_currency}. Detalle en «📝 Notas del backtest»."
+    )
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric(

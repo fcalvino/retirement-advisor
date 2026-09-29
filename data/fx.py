@@ -40,6 +40,11 @@ from loguru import logger
 from config import FX, PORTFOLIO, QUOTE_MINOR_MAJOR, QUOTE_MINOR_UNITS
 from data.fetcher import get_history
 
+#: (par, fecha) ya avisados en este proceso. La guarda corre en cada conversión y un
+#: backtest convierte ocho tickers canadienses dos veces: sin esto la misma cotización
+#: basura de CADUSD=X quedaba 16 veces en el log de una sola corrida.
+_WARNED: set[tuple[str, str]] = set()
+
 
 def fx_pair_symbol(currency: Optional[str]) -> Optional[str]:
     """Símbolo de yfinance del par ``<moneda><base>=X``, o ``None`` si no hace falta.
@@ -89,6 +94,10 @@ def drop_fx_spikes(series: pd.Series, *, label: str = "") -> pd.Series:
     keep = np.ones(len(v), dtype=bool)
     keep[1:-1] = ~bad
     for pos in np.flatnonzero(bad) + 1:
+        key = (label, str(values.index[pos])[:10])
+        if key in _WARNED:
+            continue
+        _WARNED.add(key)
         logger.warning(
             f"fx: {label or 'FX'} {str(values.index[pos])[:10]} = {v[pos]:.6g} se aparta "
             f"{dev[pos - 1]:+.1%} de sus vecinos — cotización descartada"
