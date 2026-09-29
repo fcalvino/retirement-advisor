@@ -2551,6 +2551,11 @@ class EvalConfig:
                                    it when it is archived (the LLM-4 runs lived
                                    only there). Point it at the real clone's
                                    ``data/eval_runs``.
+      stability_runs             — how many times ``scripts/committee_stability.py``
+                                   repeats each frozen panel (#151). Five per case
+                                   was the budget approved on 2026-09-28; no
+                                   "material" threshold lives here on purpose —
+                                   that is the decision the measurement enables.
     """
     conservative_alloc_cap_pct: float = 15.0
     min_reasoning_chars: int = 80
@@ -2558,6 +2563,7 @@ class EvalConfig:
     case_pass_threshold: float = 1.0
     suite_pass_threshold: float = 0.8
     require_risk_on_buy: bool = True
+    stability_runs: int = 5
     runs_dir: str = field(
         default_factory=lambda: os.getenv("RETIREMENT_ADVISOR_EVAL_RUNS_DIR") or "data/eval_runs"
     )
@@ -2574,6 +2580,7 @@ class EvalConfig:
             "case_pass_threshold": self.case_pass_threshold,
             "suite_pass_threshold": self.suite_pass_threshold,
             "require_risk_on_buy": self.require_risk_on_buy,
+            "stability_runs": self.stability_runs,
             "runs_dir": self.runs_dir,
         }
 
