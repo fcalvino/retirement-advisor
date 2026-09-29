@@ -2625,9 +2625,12 @@ class CommitteeConfig:
                           run-to-run lean σ up to ``lean_run_to_run_stdev``, with
                           MSFT and BTC ≤ 0.07 from a threshold: the risk lives at
                           the edges, so the warning goes only there.
-      lean_run_to_run_stdev — the largest lean σ that measurement saw, quoted in
-                          the warning. Re-measure (scripts/committee_stability.py)
-                          after changing the model or the committee prompts.
+      lean_run_to_run_stdev — the largest lean σ measured, quoted in the warning.
+                          0.12 at prompt 2026-09-27e; 0.21 at 2026-09-29c (XYZ,
+                          whose prompt did not change — at n=5 per case the σ
+                          itself is noisy, so the largest seen is kept).
+                          Re-measure (scripts/committee_stability.py) after
+                          changing the model or the committee prompts.
       downgrade_confidence_on_strong_dissent — when the bear case is strong, drop
                           the verdict confidence one notch (conservative bias).
       prompt_version     — part of the verdict cache key. Bump it whenever a
@@ -2676,7 +2679,7 @@ class CommitteeConfig:
     reduce_lean: float = -0.5
     sell_lean: float = -1.5
     lean_near_threshold_margin: float = 0.1
-    lean_run_to_run_stdev: float = 0.12
+    lean_run_to_run_stdev: float = 0.21
     downgrade_confidence_on_strong_dissent: bool = True
     # Sufijo de letra por la convención de versiones del mismo día (2026-09-19a,
     # 19b, …): el moat cripto no medido y el contexto/mandatos cripto fueron dos
