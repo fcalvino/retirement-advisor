@@ -12,6 +12,12 @@ KNOWN LIMITATION — Lookahead bias in fundamental signals:
   true walk-forward simulation. Price-derived metrics (CAGR, Sharpe, Drawdown)
   are clean and free of lookahead bias.
 
+Currency (#154): every price series is taken to ``PORTFOLIO.base_currency`` with
+``data.fx.convert_history`` before it meets the benchmark. A Tokyo listing used to
+contribute its yen return, with the exchange rate — part of what a dollar investor
+actually got — missing. A ticker whose rate cannot be fetched is excluded and named in
+the notes, never graded as if it were dollars; an unknown currency passes as it came.
+
 What the backtest answers:
   "If I had bought the top-N scoring stocks N years ago and held equal-weight,
    how would I have done vs SPY?"
@@ -29,8 +35,9 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-from config import DB_PATH
+from config import DB_PATH, PORTFOLIO
 from data.fetcher import get_history
+from data.fx import convert_history, fx_pair_symbol
 
 RESULTS_DIR = DB_PATH.parent / "backtests"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -99,6 +106,9 @@ class BacktestResult:
     score_vs_return: List[Dict] = field(default_factory=list)
 
     notes: List[str] = field(default_factory=list)
+    #: symbol → quote currency of every series converted to ``PORTFOLIO.base_currency``
+    #: (#154). Empty in a backtest saved before the conversion existed.
+    converted_currencies: Dict[str, str] = field(default_factory=dict)
 
 
 #: Fields renamed by U1-8 (``alpha_pct`` was never an alpha) and U1-9 (the
@@ -187,6 +197,11 @@ class BacktestEngine:
 
         # Rank by adjusted_score
         valid = [r for r in scored_results if r.adjusted_score > 0 and r.symbol]
+        # #154: the quote currency travels on the FundamentalResult; what it does not
+        # say (a stub, a payload from before the field) is unknown and not converted.
+        self._currency = {r.symbol: str(getattr(r, "currency", "") or "") for r in valid}
+        self._converted: Dict[str, str] = {}
+        self._fx_missing: Dict[str, str] = {}
         sorted_all = sorted(valid, key=lambda r: r.adjusted_score, reverse=True)
         top_results = sorted_all[:top_n]
         top_tickers = [r.symbol for r in top_results]
@@ -208,6 +223,11 @@ class BacktestEngine:
             s = self._fetch_prices(sym, period_str, start_dt)
             if s is not None:
                 top_prices[sym] = s
+            elif sym in self._fx_missing:
+                result.notes.append(
+                    f"Sin tipo de cambio {self._fx_missing[sym]}→{PORTFOLIO.base_currency} "
+                    f"para {sym} — excluido: su precio no se puede comparar con el benchmark."
+                )
             else:
                 result.notes.append(f"No price history for {sym} — excluded from portfolio.")
 
@@ -293,6 +313,19 @@ class BacktestEngine:
                 "total_return_pct": tm["total_return"],
             })
 
+        result.converted_currencies = dict(self._converted)
+        if self._converted:
+            listed = ", ".join(f"{sym} ({ccy})" for sym, ccy in sorted(self._converted.items()))
+            result.notes.append(
+                f"Precios convertidos a {PORTFOLIO.base_currency} con el tipo de cambio "
+                f"semanal antes de compararlos con {benchmark}: {listed}."
+            )
+        skipped = sorted(set(self._fx_missing) - set(top_tickers))
+        if skipped:
+            result.notes.append(
+                "Sin tipo de cambio, fuera de la tabla por ticker: "
+                + ", ".join(f"{sym} ({self._fx_missing[sym]})" for sym in skipped) + "."
+            )
         return result
 
     # ---------------------------------------------------------------- #
@@ -350,6 +383,15 @@ class BacktestEngine:
         if hist.empty:
             return None
         s = self._prices_from_hist(hist)
+        currency = getattr(self, "_currency", {}).get(symbol, "")
+        if currency:
+            converted = convert_history(s, currency, period=period_str, interval="1wk")
+            if converted is None:
+                self._fx_missing[symbol] = currency
+                return None
+            if fx_pair_symbol(currency) is not None:
+                self._converted[symbol] = currency
+            s = converted
         cutoff = pd.Timestamp(start_dt)
         s = s[s.index >= cutoff]
         return s if len(s) >= 10 else None
