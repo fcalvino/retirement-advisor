@@ -10,6 +10,17 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## #154 — Optimizer, Monte Carlo, Backtesting y Track Record en USD (2026-09-29)
+
+`global_quality` tiene 90 de 126 tickers en 14 monedas y las cuatro superficies que suman precios entre tickers los leían crudos. Medido primero en una copia de la base (comentario en #154): las 14 series `XXXUSD=X` existen desde 2003 y traen cotizaciones basura de un solo punto que revierten (CLP 2016-12-22 = 0,2, NOK 2020-03-20 +39 %, CAD semanal 2022-11/2024-12/2025-01); las fechas semanales coinciden 100 % con SPY; el signo del exceso a 30 días contra SPY cambia según la moneda en ~10,6 % de las ventanas. Decisión del usuario: **convertir a USD** (se descartó el benchmark local por mercado: 19 índices, 2 sin serie en Yahoo, y Optimizer y Backtesting necesitaban la conversión igual).
+
+- **A — primitiva** (#196, `1d7c9e7`): `data/fx.py` + `config.FX`. `drop_fx_spikes` descarta el punto que se aparta ≥ 10 % del punto medio de sus vecinos y cuyos vecinos coinciden; sobre 28 series (14 pares × diario/semanal, 10 años) saca exactamente los 8 puntos conocidos. El primer criterio probado (salto y neto ≤ 2 %) dejaba pasar el NOK del 2020-03-20.
+- **B — Backtesting** (#197, `bb5bd9e`): un ticker plano en yenes con el yen +10 %/año pasaba de 0 % a +10 %. La QA en vivo encontró el log repetido por ticker; se avisa una vez por proceso.
+- **C — Optimizer y Monte Carlo** (#198, `75ee736`, tier15): el alcance se amplió al MC porque recibe los tickers del Optimizer y abrir el universo global iba a volver normal proyectar el retiro en yenes. La moneda se resuelve sola (`quote_currency`: sin sufijo de bolsa, dólares; con sufijo, `get_info`), así los seis constructores del simulador convierten sin cambiar su firma. Medido: 20 listados no-USD a 20 años, P10 −19,6 %, vol 13,9 → 16,9 %.
+- **D — Track Record** (este cierre): la compuerta de moneda de LLM-2 se fue, `recommendation_log.currency` guarda la moneda y el scorer puntúa en dólares con `rate_on`. En vivo, 7203.T −1,34 % en yenes es +0,02 % en dólares, igual que una cuenta independiente.
+
+Fuera de #154: el Portfolio sigue admitiendo sólo la moneda de la cartera (fila PORTFOLIO-FX en `BACKLOG.md`).
+
 ## EVAL-GROQ-1 (prompt) — el riesgo país y el cambiario llegan como dato (2026-09-29)
 
 Las dos sub-filas que fallaban en todas las corridas en vivo no eran del modelo. `argentina_adr_macro` pedía Argentina en `macro_factors` y el prompt reservaba ese campo a los hechos fechados del RAG (FRED de EE.UU.); `non_usd_quote` pedía el riesgo cambiario y nada decía que el plan se mide en USD. Decisión del usuario: el `CONTEXTO PAÍS` curado es fuente (obligatoria) de `macro_factors`, y `plan_currency_note` dice la moneda del plan en el prompt de decisión y en el bloque común del comité. Iterado en vivo (29a → 29b → 29c) porque el dato solo no alcanzaba: banco de decisión en vivo con `2026-09-29c` (`ed2062d`, 3 corridas, macro congelado): `argentina_adr_macro` **2/3** (antes 0/6), `non_usd_quote` **3/3** (antes 1/6), el resto 5/5; estabilidad del comité re-medida: 0/6 casos cambian de acción, 30/30 completos, σ del lean hasta 0,21 (XYZ) contra 0,12 el 29/09 en casos cuyo prompt no cambió — ruido de n=5. El banco de decisión congela el macro por caso y guarda lo que escribió el modelo, que fue lo que permitió leer cada falla.

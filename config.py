@@ -2478,9 +2478,10 @@ class TrackRecordConfig:
     """
     horizons_days: tuple = (30, 90, 365)
     benchmark: str = "SPY"
-    # Currency the benchmark is priced in. A screener row quoted in anything else
-    # (7203.T in JPY, SHEL.L in GBp) is not logged: its excess return over SPY
-    # would be mostly the exchange rate, not the call.
+    # Currency the benchmark is priced in. Until #154 PR D a row quoted in anything
+    # else (7203.T in JPY, SHEL.L in GBp) was not logged: its excess over SPY would
+    # have been mostly the exchange rate. Now the scorer converts both ends to
+    # ``PORTFOLIO.base_currency``, so this must equal it — a test pins that.
     benchmark_currency: str = "USD"
     hold_band_pct: float = 5.0
     hold_band_pct_by_horizon: dict = field(default_factory=lambda: {

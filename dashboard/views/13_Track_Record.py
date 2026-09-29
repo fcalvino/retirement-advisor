@@ -19,7 +19,7 @@ from analysis.track_record_scorer import (
     score_due_recommendations,
     summary_stats,
 )
-from config import TRACK_RECORD
+from config import PORTFOLIO, TRACK_RECORD
 from data.product_ux import EXCESS_MEAN_HELP, EXCESS_MEAN_LABEL
 
 st.title("📒 Track Record")
@@ -297,10 +297,21 @@ with hc2:
 st.subheader("🧾 Detalle de recomendaciones evaluadas")
 detail = pd.DataFrame(rows)
 if not detail.empty:
+    if "currency" not in detail.columns:
+        detail["currency"] = ""
+    _foreign = detail["currency"].fillna("").map(
+        lambda c: bool(c) and c not in (PORTFOLIO.base_currency,)
+    )
+    if _foreign.any():
+        st.caption(
+            f"🌍 {int(_foreign.sum())} recomendación(es) en otra moneda: el precio inicial "
+            f"está en su moneda de cotización y el retorno, el benchmark y el exceso en "
+            f"{PORTFOLIO.base_currency}, con el tipo de cambio de cada punta."
+        )
     detail = detail[
         [
             "created_at", "symbol", "action", "confidence", "source",
-            "price_at_rec", "return_pct", "benchmark_return_pct", "excess_return_pct", "hit",
+            "currency", "price_at_rec", "return_pct", "benchmark_return_pct", "excess_return_pct", "hit",
             "benchmark_missing",
         ]
     ].rename(
@@ -310,6 +321,7 @@ if not detail.empty:
             "action": "Acción",
             "confidence": "Confianza",
             "source": "Fuente",
+            "currency": "Moneda",
             "price_at_rec": "Precio inicial",
             "return_pct": "Retorno %",
             "benchmark_return_pct": "Benchmark %",

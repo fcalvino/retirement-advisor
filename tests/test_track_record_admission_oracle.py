@@ -122,13 +122,16 @@ def test_committee_row_lands_on_the_engine_scale(store):
 
 @pytest.mark.parametrize("source", WRITERS)
 @pytest.mark.parametrize("symbol,ccy", [("AIR.PA", "EUR"), ("NOVN.SW", "CHF"), ("7203.T", "JPY")])
-def test_non_benchmark_currency_is_not_written(store, source, symbol, ccy):
+def test_a_foreign_quote_is_written_with_its_currency_by_every_writer(store, source, symbol, ccy):
+    """#154 PR D: the scorer grades both ends in the portfolio currency, so the gate on
+    currency went away — for every writer at once, which is what LLM-2 is about."""
     fund, tech = _base()
     fund = replace(fund, symbol=symbol, currency=ccy)
     decision = RetirementStrategy().decide(fund, tech)
     assert ccy != TRACK_RECORD.benchmark_currency
-    assert store.log_recommendation(decision, source=source, fundamental=fund) is None
-    assert store.get_recommendations() == []
+    assert store.log_recommendation(decision, source=source, fundamental=fund) is not None
+    [row] = store.get_recommendations()
+    assert (row.symbol, row.currency) == (symbol, ccy)
 
 
 @pytest.mark.parametrize("source", WRITERS)
@@ -170,7 +173,7 @@ def test_a_writer_without_a_fundamental_is_still_written(store):
     ) is not None
 
 
-@pytest.mark.parametrize("ccy,written", [("EUR", 0), ("USD", 1), ("", 1)])
+@pytest.mark.parametrize("ccy,written", [("EUR", 1), ("USD", 1), ("", 1)])
 def test_the_alert_engine_passes_the_quote_currency_to_the_gate(monkeypatch, store, tmp_path,
                                                                 ccy, written):
     from alerts.engine import AlertEngine
@@ -180,7 +183,9 @@ def test_the_alert_engine_passes_the_quote_currency_to_the_gate(monkeypatch, sto
     monkeypatch.setattr(track_record, "track_record_store", store)
     engine = AlertEngine(store=AlertStore(db_path=str(tmp_path / "alerts.db")))
     engine._log_track_record("AIR.PA", "BUY", 70.0, "Industrials", ccy)
-    assert len(store.get_recommendations()) == written
+    rows = store.get_recommendations()
+    assert len(rows) == written
+    assert rows[0].currency == ccy     # the currency reaches the row the scorer reads
 
 
 # --------------------------------------------------------------------------- #
@@ -272,16 +277,17 @@ def test_comite_page_does_not_claim_a_row_when_logging_fails(monkeypatch, store)
     assert "No se pudo registrar" in text
 
 
-def test_comite_page_does_not_log_a_foreign_quote_and_says_so(monkeypatch, store):
+def test_comite_page_logs_a_foreign_quote_with_its_currency(monkeypatch, store):
     fund, tech = _base()
     fund = replace(fund, symbol="AIR.PA", currency="EUR")
     app, convened = _comite(monkeypatch, store, fund, tech)
-    assert convened  # the panel still deliberates — only the evidence is gated
-    assert store.get_recommendations() == []
+    assert convened
+    [row] = store.get_recommendations()
+    assert (row.symbol, row.currency) == ("AIR.PA", "EUR")
     text = _text(app)
     assert "Dictamen AIR.PA" in text
-    assert "quedó registrado" not in text
-    assert "No se registra en el Track Record" in text and "EUR" in text
+    assert "quedó registrado" in text
+    assert "No se registra en el Track Record" not in text
 
 
 def test_comite_page_does_not_convene_on_an_empty_feed(monkeypatch, store):

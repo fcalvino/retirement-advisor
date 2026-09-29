@@ -180,29 +180,32 @@ class TestLogScreenerRun:
 #  Currency — graded against SPY only in SPY's currency                       #
 # --------------------------------------------------------------------------- #
 
-class TestOnlyTheBenchmarkCurrencyIsLogged:
-    """A JPY or pence return graded against SPY measures the exchange rate.
-
-    Until the track record converts currencies, a screener row quoted in
-    anything other than ``TRACK_RECORD.benchmark_currency`` is not evidence.
+class TestEveryCurrencyIsLoggedWithItsCurrency:
+    """A JPY or pence return graded against SPY measured the exchange rate, so until
+    #154 PR D a screener row quoted outside ``TRACK_RECORD.benchmark_currency`` was
+    skipped. The scorer now converts both ends to the portfolio currency, so the row
+    is logged and carries the currency the scorer needs.
     """
 
     def test_usd_quote_is_logged(self, store):
         assert log_screener_run([_row(_fund(symbol="AAPL", currency="USD"))]) == 1
 
     @pytest.mark.parametrize("sym,ccy", [("7203.T", "JPY"), ("SHEL.L", "GBp"), ("SAP.DE", "EUR")])
-    def test_foreign_quote_is_skipped(self, store, sym, ccy):
-        assert log_screener_run([_row(_fund(symbol=sym, currency=ccy))]) == 0
-        assert store.get_recommendations(limit=10) == []
+    def test_foreign_quote_is_logged_with_its_currency(self, store, sym, ccy):
+        assert log_screener_run([_row(_fund(symbol=sym, currency=ccy))]) == 1
+        [row] = store.get_recommendations(limit=10)
+        assert (row.symbol, row.currency) == (sym, ccy)
 
-    def test_a_mixed_run_logs_only_the_usd_rows(self, store):
+    def test_a_mixed_run_logs_every_row(self, store):
         rows = [
             _row(_fund(symbol="AAPL", currency="USD")),
             _row(_fund(symbol="7203.T", currency="JPY")),
             _row(_fund(symbol="MELI", currency="USD")),
         ]
-        assert log_screener_run(rows) == 2
-        assert {r.symbol for r in store.get_recommendations(limit=10)} == {"AAPL", "MELI"}
+        assert log_screener_run(rows) == 3
+        assert {(r.symbol, r.currency) for r in store.get_recommendations(limit=10)} == {
+            ("AAPL", "USD"), ("7203.T", "JPY"), ("MELI", "USD"),
+        }
 
     def test_rows_stored_before_the_field_existed_are_still_logged(self, store):
         row = _row(_fund(symbol="O"))       # _fund carries no currency attribute

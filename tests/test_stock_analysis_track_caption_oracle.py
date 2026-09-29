@@ -68,12 +68,14 @@ def test_a_logged_recommendation_says_so(monkeypatch, tmp_path, store):
     )
 
 
-def test_a_foreign_quote_is_not_logged_and_the_page_says_why(monkeypatch, tmp_path, store):
+def test_a_foreign_quote_is_logged_and_the_page_says_so(monkeypatch, tmp_path, store):
+    """Until #154 PR D the page said «No se registra… cotiza en JPY»."""
     app, _ = _stock_page(monkeypatch, tmp_path, store, "7203.T", "JPY", 3025.0)
-    assert store.get_recommendations() == []
+    [row] = store.get_recommendations()
+    assert (row.symbol, row.currency) == ("7203.T", "JPY")
     text = _captions(app)
-    assert "No se registra en el Track Record: 7203.T" in text and "JPY" in text
-    assert "quedó registrado" not in text
+    assert "quedó registrado" in text
+    assert "No se registra en el Track Record" not in text
 
 
 def test_a_second_run_the_same_day_names_the_dedup(monkeypatch, tmp_path, store):

@@ -26,9 +26,12 @@ from analysis.stats_bands import _t_critical, mean_with_band  # noqa: F401 — r
 from analysis.track_record import track_record_store
 from config import TRACK_RECORD
 from data.clock import utc_now
+from data.fx import fx_pair_symbol, quote_currency, rate_on
 
 # A price lookup: (symbol, date) -> price at or just before that date, or None.
 PriceLookup = Callable[[str, datetime], Optional[float]]
+#: (currency, date) -> units of ``PORTFOLIO.base_currency`` per unit, or None (#154 PR D).
+FxLookup = Callable[[str, datetime], Optional[float]]
 
 
 # --------------------------------------------------------------------------- #
@@ -52,6 +55,11 @@ def _price_on_or_before(symbol: str, when: datetime) -> Optional[float]:
     except Exception as exc:
         logger.warning(f"track_record_scorer: price lookup failed for {symbol} — {exc}")
         return None
+
+
+def _fx_on_or_before(currency: str, when: datetime) -> Optional[float]:
+    """The rate of ``currency`` at ``when``, with the same staleness guard as prices."""
+    return rate_on(currency, when, int(TRACK_RECORD.max_price_staleness_days))
 
 
 # --------------------------------------------------------------------------- #
@@ -112,6 +120,7 @@ def score_due_recommendations(
     *,
     now: Optional[datetime] = None,
     price_lookup: Optional[PriceLookup] = None,
+    fx_lookup: Optional[FxLookup] = None,
 ) -> Dict[str, int]:
     """Score every recommendation whose horizon elapsed and has no outcome yet.
 
@@ -127,6 +136,7 @@ def score_due_recommendations(
     store = store or track_record_store
     now = now or utc_now()
     price_lookup = price_lookup or _price_on_or_before
+    fx_lookup = fx_lookup or _fx_on_or_before
     benchmark = TRACK_RECORD.benchmark
 
     scored = 0
@@ -144,7 +154,30 @@ def score_due_recommendations(
                 skipped += 1
                 continue
 
-            return_pct = (price_now / price_then - 1.0) * 100.0
+            # #154 PR D: both ends in the portfolio currency. The row carries its
+            # quote currency; one written before the column is resolved (a US listing
+            # needs no lookup). Unknown, or no rate at either end: skipped and retried,
+            # never graded as if it were dollars. The stored price stays local.
+            currency = getattr(rec, "currency", "") or quote_currency(rec.symbol)
+            if not currency:
+                logger.warning(
+                    f"track_record_scorer: no se pudo confirmar la moneda de {rec.symbol} — salteado"
+                )
+                skipped += 1
+                continue
+            if fx_pair_symbol(currency) is not None:
+                fx_then = fx_lookup(currency, rec.created_at)
+                fx_now = fx_lookup(currency, horizon_date)
+                if not fx_then or not fx_now:
+                    logger.warning(
+                        f"track_record_scorer: sin tipo de cambio {currency} para {rec.symbol} "
+                        f"@{horizon}d — salteado, se reintenta"
+                    )
+                    skipped += 1
+                    continue
+                return_pct = ((price_now * fx_now) / (price_then * fx_then) - 1.0) * 100.0
+            else:
+                return_pct = (price_now / price_then - 1.0) * 100.0
 
             bench_then = price_lookup(benchmark, rec.created_at)
             bench_now = price_lookup(benchmark, horizon_date)

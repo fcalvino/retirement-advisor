@@ -126,6 +126,13 @@ class RecommendationLog(_Base):
     ai_provider       = Column(String, nullable=True)
     ai_model          = Column(String, nullable=True)
 
+    # Quote currency of ``price_at_rec`` (#154 PR D). The scorer converts both ends
+    # of the horizon to ``PORTFOLIO.base_currency`` with it. Every writer already
+    # handed it to the store (it fed the LLM-2 gate) and nothing kept it. ``''`` on
+    # rows written before the column: the scorer resolves those with
+    # ``data.fx.quote_currency`` — all of them are US listings, so no lookup.
+    currency          = Column(String, default="")
+
 
 class RecommendationOutcome(_Base):
     """Deferred scoring of a recommendation at a fixed horizon."""
@@ -326,13 +333,15 @@ def admission_skip_reason(symbol: str, fundamental: Any = None) -> Optional[str]
 
     Una sola regla para todos los escritores (LLM-2). El comité escribía con la
     suya y registró lo que el Screener rechaza: AIR.PA y NOVN.SW en EUR/CHF, ABVE
-    sin datos y el símbolo ``BTC-USD — BITCOIN``. Tres condiciones, cada una con
-    su dueño:
+    sin datos y el símbolo ``BTC-USD — BITCOIN``. Dos condiciones, cada una con
+    su dueño. Eran tres: la moneda de cotización también rechazaba, porque un exceso
+    sobre ``TRACK_RECORD.benchmark`` medido en otra moneda calificaba el tipo de
+    cambio y no la decisión. Desde #154 PR D el scorer lleva las dos puntas a
+    ``PORTFOLIO.base_currency`` (``data.fx.rate_on``) y la moneda viaja en la fila, así
+    que una cotización en yenes se registra y se puntúa en dólares. Quedan dos:
 
     - la forma del símbolo — ``is_valid_ticker_symbol``, la misma que valida el
       input de Stock Analysis;
-    - la moneda de cotización — un exceso sobre ``TRACK_RECORD.benchmark`` medido
-      en otra moneda califica el tipo de cambio, no la decisión;
     - el feed vacío — ``is_empty_feed``: la ausencia de datos no es un veredicto.
 
     Lo que el escritor no sabe no bloquea: una moneda vacía (payloads previos al
@@ -349,15 +358,6 @@ def admission_skip_reason(symbol: str, fundamental: Any = None) -> Optional[str]
         return None
     # Mismo contrato que ``calibration_fields``: un objeto hostil o a medio
     # construir cuesta la verificación, nunca la fila.
-    try:
-        ccy = str(getattr(fundamental, "currency", "") or "")
-    except Exception:
-        ccy = ""
-    if ccy and ccy != TRACK_RECORD.benchmark_currency:
-        return (
-            f"cotiza en {ccy} y el benchmark ({TRACK_RECORD.benchmark}) en "
-            f"{TRACK_RECORD.benchmark_currency}: el exceso mediría el tipo de cambio"
-        )
     try:
         empty = is_empty_feed(fundamental)
     except Exception:
@@ -509,6 +509,7 @@ class TrackRecordStore:
             ("recommendation_outcome", "benchmark_missing", "BOOLEAN DEFAULT 0"),
             ("recommendation_log", "ai_provider",         "VARCHAR"),
             ("recommendation_log", "ai_model",            "VARCHAR"),
+            ("recommendation_log", "currency",            "VARCHAR DEFAULT ''"),
         ]
         with engine.connect() as conn:
             from sqlalchemy import text
@@ -572,6 +573,10 @@ class TrackRecordStore:
                 return None
 
             fields = calibration_fields(fundamental)
+            try:
+                currency = str(getattr(fundamental, "currency", "") or "").strip()
+            except Exception:
+                currency = ""
             ai_provider = getattr(decision, "ai_provider", None) or None
             ai_model = getattr(decision, "ai_model", None) or None
 
@@ -589,6 +594,7 @@ class TrackRecordStore:
                     created_at=utc_now(),
                     ai_provider=ai_provider,
                     ai_model=ai_model,
+                    currency=currency,
                     **fields,
                 )
                 s.add(row)
@@ -886,6 +892,7 @@ class TrackRecordStore:
                         "source": r.source,
                         "created_at": r.created_at,
                         "price_at_rec": r.price_at_rec,
+                        "currency": r.currency or "",
                         "horizon_days": o.horizon_days,
                         "return_pct": o.return_pct,
                         "benchmark_return_pct": o.benchmark_return_pct,
