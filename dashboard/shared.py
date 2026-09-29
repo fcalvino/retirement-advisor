@@ -1895,6 +1895,35 @@ def concentration_hold_note(verdict, portfolio_ctx) -> str | None:
     )
 
 
+def lean_near_threshold_note(verdict, final_action: str | None = None) -> str | None:
+    """The action is one noisy run away from the next one: say so, only then (#151).
+
+    Pure. None unless the lean sits within ``COMMITTEE.lean_near_threshold_margin``
+    of a threshold. Also None when crossing it upward could not change what the
+    user gets: the engine already capped the vote (``final_action`` below it), so
+    a more bullish vote would be capped too. Downward crossings always matter —
+    the overlay only ever lowers.
+    """
+    from analysis.committee import _STANCE_SCORE, nearest_lean_threshold
+    from config import COMMITTEE
+
+    if not getattr(verdict, "available", False) or verdict.action not in _STANCE_SCORE:
+        return None
+    threshold, across, distance = nearest_lean_threshold(verdict.lean)
+    if distance >= COMMITTEE.lean_near_threshold_margin:
+        return None
+    upward = _STANCE_SCORE[across] > _STANCE_SCORE[verdict.action]
+    if upward and final_action and final_action != verdict.action:
+        return None
+    return (
+        f"El lean ({verdict.lean:+.2f}) está a {distance:.2f} del umbral de {across} "
+        f"({threshold:+.2f}). Con los mismos datos, el lean del comité varió entre corridas "
+        f"(σ hasta {COMMITTEE.lean_run_to_run_stdev:.2f} en la medición de estabilidad), así "
+        f"que otra corrida podría dar {across}: tomalo como un {verdict.action} con {across} "
+        "cerca, no como un dictamen firme."
+    )
+
+
 def render_committee_verdict(verdict, *, footer_facts: str = "") -> None:
     """Render a portfolio committee verdict: plan-health banner + consensus/dissent.
 

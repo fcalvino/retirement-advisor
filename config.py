@@ -2618,6 +2618,16 @@ class CommitteeConfig:
                           abstains (no opinion, lean untouched).
       strong_buy_lean / buy_lean / reduce_lean / sell_lean — thresholds mapping the
                           weighted lean score back to an action.
+      lean_near_threshold_margin — the Comité page warns that the action is
+                          fragile when the lean sits within this distance of a
+                          threshold. #151 (2026-09-29, Groq gpt-oss-120b, 6 frozen
+                          panels × 5 runs) measured 0/30 action changes but a
+                          run-to-run lean σ up to ``lean_run_to_run_stdev``, with
+                          MSFT and BTC ≤ 0.07 from a threshold: the risk lives at
+                          the edges, so the warning goes only there.
+      lean_run_to_run_stdev — the largest lean σ that measurement saw, quoted in
+                          the warning. Re-measure (scripts/committee_stability.py)
+                          after changing the model or the committee prompts.
       downgrade_confidence_on_strong_dissent — when the bear case is strong, drop
                           the verdict confidence one notch (conservative bias).
       prompt_version     — part of the verdict cache key. Bump it whenever a
@@ -2665,6 +2675,8 @@ class CommitteeConfig:
     buy_lean: float = 0.5
     reduce_lean: float = -0.5
     sell_lean: float = -1.5
+    lean_near_threshold_margin: float = 0.1
+    lean_run_to_run_stdev: float = 0.12
     downgrade_confidence_on_strong_dissent: bool = True
     # Sufijo de letra por la convención de versiones del mismo día (2026-09-19a,
     # 19b, …): el moat cripto no medido y el contexto/mandatos cripto fueron dos
@@ -2737,6 +2749,8 @@ class CommitteeConfig:
             "buy_lean": self.buy_lean,
             "reduce_lean": self.reduce_lean,
             "sell_lean": self.sell_lean,
+            "lean_near_threshold_margin": self.lean_near_threshold_margin,
+            "lean_run_to_run_stdev": self.lean_run_to_run_stdev,
             "downgrade_confidence_on_strong_dissent": self.downgrade_confidence_on_strong_dissent,
             "prompt_version": self.prompt_version,
             "min_quorum_weight_pct": self.min_quorum_weight_pct,

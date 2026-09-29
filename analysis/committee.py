@@ -336,6 +336,34 @@ def _lean_to_action(lean: float) -> str:
     return "HOLD"
 
 
+def nearest_lean_threshold(lean: float) -> tuple:
+    """``(threshold, action_across, distance)`` for the closest action boundary.
+
+    ``action_across`` is what ``_lean_to_action`` gives on the other side of that
+    boundary. Pure: it reads the same thresholds as ``_lean_to_action``, so a
+    change there moves this too (#151).
+    """
+    c = COMMITTEE
+    # (threshold, action just above, action just below) — boundaries are inclusive
+    # the way ``_lean_to_action`` draws them.
+    bounds = [
+        (c.strong_buy_lean, "STRONG BUY", "BUY"),
+        (c.buy_lean, "BUY", "HOLD"),
+        (c.reduce_lean, "HOLD", "REDUCE"),
+        (c.sell_lean, "REDUCE", "SELL"),
+    ]
+    current = _lean_to_action(lean)
+    best = None
+    for threshold, above, below in bounds:
+        across = below if current == above else above if current == below else None
+        if across is None:
+            continue
+        distance = abs(lean - threshold)
+        if best is None or distance < best[2]:
+            best = (threshold, across, distance)
+    return best
+
+
 def aggregate(
     symbol: str,
     opinions: List[AgentOpinion],

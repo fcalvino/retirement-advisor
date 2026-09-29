@@ -10,6 +10,10 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## #151 — el dictamen del comité es estable salvo al borde de un umbral (2026-09-29)
+
+La caché de 24 h hacía que el dictamen *pareciera* estable; nadie lo había medido. `scripts/committee_stability.py` (PR #192, `cc5d323`) corrió seis paneles congelados —MSFT, KO, XYZ, YPF, BTC, ETH— cinco veces sin caché. Medido 2026-09-29 (`cc5d323`, Groq `gpt-oss-120b`, 6 paneles congelados × 5 corridas, 170 llamadas, US$ 0,0596): **0/6 casos cambian de acción** —ni el voto ni la final—, 30/30 paneles completos, σ del lean ≤ 0,12; MSFT (+0,43) y BTC (−0,45) quedaron a ≤ 0,07 de un umbral. Con 0/30 la cota superior de cambio es ~12 % por corrida. Decisión del usuario: sin votación por mayoría ni más peso a la agregación; la página del Comité avisa (🎚️) sólo cuando el lean está a menos de `COMMITTEE.lean_near_threshold_margin` (0,1) de un umbral, y no avisa un cruce hacia arriba que el motor ya habría limitado. Oráculo `tests/test_lean_near_threshold_oracle.py`. Re-medir al cambiar de modelo o de prompts.
+
 ## EVAL-GROQ-1 (guarda) — salir de una posición no admite un tope de asignación (2026-09-28)
 
 Las dos corridas en vivo del banco del 2026-09-27 (Groq `gpt-oss-120b`) dieron
