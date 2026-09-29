@@ -435,6 +435,88 @@ def committee_cases(now: Optional[datetime] = None) -> List[GoldenCase]:
 
 
 # --------------------------------------------------------------------------- #
+#  Committee stability bank (#151)                                            #
+# --------------------------------------------------------------------------- #
+
+def _macro_block(now: Optional[datetime] = None) -> str:
+    """The shape ``MacroRagStore.build_context`` gives the FRED facts, frozen.
+
+    With an empty block the Macro Strategist abstains (MACRO-SEED); production
+    has FRED facts, so the panel measured here convenes it too.
+    """
+    day = ((now or utc_now()) - timedelta(days=3)).strftime("%Y-%m-%d")
+    facts = [
+        ("Tasa de fondos federales", "4.33 %", "FEDFUNDS"),
+        ("Inflación CPI (variación interanual)", "2.9 %", "CPIAUCSL"),
+        ("Tasa de desempleo", "4.2 %", "UNRATE"),
+        ("Crecimiento del PBI real (anualizado)", "2.1 %", "A191RL1Q225SBEA"),
+    ]
+    lines = ["=== CONTEXTO MACRO RECIENTE (hechos fechados — usá ESTOS, no tu memoria) ==="]
+    lines += [f"- [{day}] (FRED) {title}: Dato macro de FRED. Último valor reportado: "
+              f"{value} (serie {series})." for title, value, series in facts]
+    return "\n".join(lines)
+
+
+def stability_cases(now: Optional[datetime] = None) -> List[GoldenCase]:
+    """Six frozen panels for #151: the same facts every run, so a changed verdict is the model.
+
+    Four equities that span the ladder —a clear buy, a HOLD/BUY border, a
+    leveraged exit, an Argentine ADR— and two cryptos. Every case carries the
+    same dated macro block and fixed headlines (none for crypto: the panel does
+    not read news there). No ``committee_replay``: the bank only runs live, and
+    the tests inject the model.
+    """
+    macro = _macro_block(now)
+    by_id = {c.case_id: c for c in golden_cases()}
+
+    def _from(case_id: str, headlines: List[dict]) -> GoldenCase:
+        g = by_id[case_id]
+        return GoldenCase(
+            case_id=f"stability_{g.fund.symbol.lower().replace('-usd', '')}",
+            description=g.description, fund=g.fund, tech=g.tech,
+            expected_actions=set(g.expected_actions), replay_response="",
+            forbidden_actions=set(g.forbidden_actions),
+            headlines=headlines, macro_context=macro,
+        )
+
+    cases = [
+        _from("quality_compounder_buy", [
+            _headline("Microsoft (MSFT) eleva su inversión en centros de datos", days_ago=4, now=now,
+                      summary="La compañía anunció un aumento del capex para capacidad de IA."),
+        ]),
+        _from("fair_value_hold", [
+            _headline("Coca-Cola (KO) mantiene su guía anual de ventas", days_ago=6, now=now,
+                      summary="Los volúmenes crecieron 1 % con subas de precio moderadas."),
+        ]),
+        _from("high_leverage_caution", [
+            _headline("LeveredCo (XYZ) refinancia deuda a tasa más alta", days_ago=2, now=now,
+                      summary="La compañía extendió vencimientos pagando 180 puntos básicos más."),
+        ]),
+        _from("argentina_adr_macro", [
+            _headline("YPF amplía su producción en Vaca Muerta", days_ago=5, now=now,
+                      summary="La producción de shale subió 12 % interanual en el trimestre."),
+        ]),
+        _from("crypto_conservative_cap", []),
+    ]
+
+    f = _fund("ETH-USD", company="Ethereum", sector="Crypto / Digital Asset", total_score=0.0,
+              current_price=3500.0, roe=0.0, net_margin=0.0, debt_equity=0.0,
+              pe_ratio=0.0, margin_of_safety_pct=0.0, moat="Narrow",
+              is_crypto=True, adjusted_score=48.0)
+    t = _tech("ETH-USD", signal="BEARISH", rsi=41.0, price=3500.0)
+    cases.append(GoldenCase(
+        case_id="stability_eth",
+        description="Cripto con tendencia bajista — satélite, sin compra agresiva.",
+        fund=f, tech=t,
+        expected_actions={"HOLD", "REDUCE", "SELL", "AVOID"},
+        forbidden_actions={"STRONG BUY"},
+        replay_response="",
+        macro_context=macro,
+    ))
+    return cases
+
+
+# --------------------------------------------------------------------------- #
 #  AI-moat bank                                                               #
 # --------------------------------------------------------------------------- #
 
