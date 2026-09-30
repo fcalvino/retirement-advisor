@@ -278,7 +278,10 @@ def downside_deviation(
     ``√mean(mín(r − MAR, 0)²) · √periods_per_year`` over **every** return: the
     periods above the MAR enter as zeros, and the shortfalls are measured from
     the MAR, not from the mean of the losses. ``mar_annual`` is converted to the
-    return's period as ``(1 + mar)^(1/periods) − 1``.
+    return's period as ``(1 + mar)^(1/periods) − 1`` — the geometric convention,
+    which pairs exactly with Backtesting's CAGR numerator; against the tracker's
+    arithmetic ``mean·52`` it differs from ``rf/52`` by ~2 % relative, below the
+    ratio's two-decimal rounding for any realistic rf.
 
     ``None`` when no period falls below the MAR (or there are no returns): the
     ratio is undefined, not infinite and not zero. Backtesting and the portfolio

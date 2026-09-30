@@ -84,7 +84,7 @@ class BacktestResult:
     # Portfolio-level metrics
     portfolio_cagr_pct: float = 0.0
     portfolio_sharpe: float = 0.0
-    portfolio_downside_vol_ratio: Optional[float] = 0.0   # Sortino, MAR = Rf (U1-9b)
+    portfolio_downside_vol_ratio: Optional[float] = None   # Sortino, MAR = Rf (U1-9b)
     portfolio_max_drawdown_pct: float = 0.0
     portfolio_volatility_pct: float = 0.0
     portfolio_total_return_pct: float = 0.0
