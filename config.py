@@ -7,7 +7,10 @@ from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Set, Tuple
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# The suite sets this before importing anything (TEST-ENV-KEY): it runs with the
+# environment CI has, not with the user's API keys, alerts and data sources.
+if not os.getenv("RETIREMENT_ADVISOR_NO_DOTENV"):
+    load_dotenv()
 
 BASE_DIR = Path(__file__).parent
 DB_DIR = BASE_DIR / "data" / "db"
