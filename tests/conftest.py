@@ -48,6 +48,27 @@ os.environ["RETIREMENT_ADVISOR_DB_PATH"] = str(_test_db_dir / "retirement_adviso
 os.environ.pop("RETIREMENT_ADVISOR_EVAL_RUNS_DIR", None)
 
 # ------------------------------------------------------------------ #
+#  The suite runs with CI's configuration, not the user's (TEST-ENV-KEY)
+# ------------------------------------------------------------------ #
+#
+# ``config`` loads ``.env`` at import. With the user's (a provider key and
+# ``AI_ENABLED=true``) 13 tests of ``test_alert_engine.py`` asked the AI to explain
+# the alert and the network guard cut them: 30 passed / 13 errors locally, green
+# in CI, which has no ``.env`` — so a local ``make check`` stopped being evidence.
+# The switch skips the whole file (AI, Telegram, SMTP, FRED), and the keys that
+# turn the AI on are cleared in case the shell exports them. Children inherit
+# both. The list is local because ``config`` cannot be imported yet;
+# ``tests/test_env_isolation_oracle.py`` checks it covers
+# ``config.AI_PROVIDER_KEY_ENV``.
+os.environ["RETIREMENT_ADVISOR_NO_DOTENV"] = "1"
+AI_ENV_CLEARED = (
+    "AI_ENABLED", "AI_API_KEY",
+    "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GROQ_API_KEY", "XAI_API_KEY", "NOUS_API_KEY",
+)
+for _var in AI_ENV_CLEARED:
+    os.environ.pop(_var, None)
+
+# ------------------------------------------------------------------ #
 #  The suite never reaches the network (TEST-NET)                      #
 # ------------------------------------------------------------------ #
 #

@@ -48,9 +48,16 @@ from data.screener_store import EMPTY_FEED_TYPE, format_eta, is_empty_feed
 _ENV_PATH = Path(__file__).parent.parent / ".env"
 
 
+def _dotenv_disabled() -> bool:
+    """The suite runs without the user's ``.env`` (TEST-ENV-KEY), like ``config``."""
+    return bool(os.getenv("RETIREMENT_ADVISOR_NO_DOTENV"))
+
+
 def _load_env_vars() -> dict:
     """Read key=value pairs from .env file."""
     env: dict[str, str] = {}
+    if _dotenv_disabled():
+        return env
     if _ENV_PATH.exists():
         for line in _ENV_PATH.read_text().splitlines():
             line = line.strip()
@@ -68,6 +75,10 @@ def _save_ai_config_to_env(
     use_in_screener: bool = False,
 ) -> None:
     """Persist AI settings into .env without touching other keys."""
+    if _dotenv_disabled():
+        # The read above returns {} here, so writing would drop every other key.
+        logger.warning("RETIREMENT_ADVISOR_NO_DOTENV is set: AI settings not saved to .env")
+        return
     env = _load_env_vars()
     env["AI_PROVIDER"] = provider
     env["AI_MODEL"] = model

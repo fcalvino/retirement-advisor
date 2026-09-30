@@ -27,6 +27,10 @@ data/db/
 .pytest_cache/
 logs/
 
+# Scratch space of the decidir-proyecto and probar-en-vivo skills: DB copies,
+# measurement and Playwright scripts, screenshots (CONTEXT-DIR-IGNORE).
+.context/
+
 # Local / generated QA artifacts (keep scripts + package.json)
 qa/node_modules/
 qa/shots/

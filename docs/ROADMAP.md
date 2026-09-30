@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## TEST-ENV-KEY + CONTEXT-DIR-IGNORE — la suite corre con la configuración del CI (2026-09-30)
+
+Cuarto paso del orden de la octava `/decidir-proyecto`, antes de IDEA-3 porque los dos devuelven evidencia a lo local. **TEST-ENV-KEY** apareció al verificar U1-9b: `config.py` carga el `.env` al importarse, y con el del usuario —una clave de Groq y `AI_ENABLED=true`— 13 tests de `tests/test_alert_engine.py` pedían la explicación de la alerta a la IA y el guard de red (TEST-NET) los cortaba: 30 passed / 13 errors en el clon, verde en el CI, que no tiene `.env`. Es la misma familia que TEST-NET y TEST-CACHE: el conftest aislaba la base y la red, pero no la configuración. `config.py` no carga el `.env` si existe `RETIREMENT_ADVISOR_NO_DOTENV`; el conftest la fija antes del primer import y además saca del entorno las claves que encienden la IA, por si vienen exportadas de la shell. El dashboard tiene su propio lector del `.env` (`dashboard.shared._load_env_vars`, que `app.py` usa para sembrar la IA de la sesión, y con el que los subprocesos de `test_direct_page_entry` seguían viendo la configuración del usuario) y un escritor que lo reescribe entero desde Settings: bajo el interruptor, la lectura da vacío y el guardado no toca el archivo. Se salteó el `.env` entero y no sólo las claves de IA porque el CI no tiene ninguna de sus variables (proveedor, modelo, Telegram, SMTP, FRED). Oráculo `tests/test_env_isolation_oracle.py`, 4 de 4 en rojo contra `origin/main`.
+
+**CONTEXT-DIR-IGNORE**: `.context/` entra a `.gitignore`. Las skills `decidir-proyecto` y `probar-en-vivo` escriben ahí sus copias de la base y sus scripts; ruff respeta `.gitignore`, así que `ruff check .` deja de fallar sobre ellos.
+
 ## WD-PLAN-PDF — el aviso del ahorro que no entra viaja con la cifra (2026-09-30)
 
 Tercer paso del orden de la octava `/decidir-proyecto` (sobre `2f51824`), anotado en la revisión de WD-STRATEGY-CONTRIB. Desde #203 Simulaciones dice que, con una estrategia de retiro activa, la proyección no incluye el ahorro; pero la cifra sale de esa pantalla y en ningún otro lado lo decía: Mi Plan la mostraba en vivo y al guardarla, el PDF la imprimía (resumen ejecutivo y riesgo, desde Plan, Optimizer y Simulaciones) y la narrativa del plan se la pasaba al modelo junto a «ahorro mensual $X». Banda 2: la cifra ya se avisaba donde se calcula.
