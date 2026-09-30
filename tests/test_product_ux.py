@@ -503,6 +503,16 @@ class TestPlanLoadSessionUpdates:
         assert out["initial_value"] == 250_000
         assert out["horizon_years"] == 20
 
+    def test_the_savings_raise_reloads_with_the_plan(self):
+        """N8b: a plan saved with a 3 % raise must not reload at the 0 default."""
+        from data.product_ux import plan_load_session_updates
+
+        out = plan_load_session_updates(
+            self._snap(mc_summary={"contribution_growth_pct": 3.0}), horizon_years=20)
+        assert out["contribution_growth_pct"] == 3.0
+        older = plan_load_session_updates(self._snap(mc_summary={}), horizon_years=20)
+        assert "contribution_growth_pct" not in older
+
     def test_plan_with_a_target_carries_it_over(self):
         from data.product_ux import plan_load_session_updates
 

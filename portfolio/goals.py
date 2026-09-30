@@ -411,7 +411,7 @@ class GoalPlanner:
             initial_value=allocated_capital,
             annual_contribution=goal.annual_contribution,
             target_value=goal.target_nominal,
-            withdrawal_growth_rate=0.0,  # contributions are fixed in nominal terms
+            contribution_growth_rate=0.0,  # contributions are fixed in nominal terms (N8b)
         )
 
 

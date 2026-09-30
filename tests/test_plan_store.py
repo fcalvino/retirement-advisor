@@ -181,11 +181,12 @@ def test_superseded_and_missing_engine_versions_are_stale():
     across currencies (losses, no EBITDA): three cached scores move, no signal.
     #154 PR C (tier15) converts every price series to the portfolio currency before
     the Optimizer's covariance and the Monte Carlo: a plan with a non-USD listing
-    moves; a dollar-only plan does not.
+    moves; a dollar-only plan does not. N8b (tier16) grows the savings with their own
+    rate, default 0, instead of Simulaciones' inflation: a plan with savings moves.
     """
     from config import ENGINE_VERSION
 
-    assert ENGINE_VERSION == "2026.09-tier15"
+    assert ENGINE_VERSION == "2026.09-tier16"
 
     current = PlanSnapshot.from_session(name="actual", opt_result=_fake_opt_result())
     assert current.engine_version == ENGINE_VERSION
@@ -196,7 +197,7 @@ def test_superseded_and_missing_engine_versions_are_stale():
                        "2026.08-tier6", "2026.08-tier7", "2026.08-tier8",
                        "2026.09-tier9", "2026.09-tier10",
                        "2026.09-tier11", "2026.09-tier12", "2026.09-tier13",
-                       "2026.09-tier14"):
+                       "2026.09-tier14", "2026.09-tier15"):
         old = PlanSnapshot.from_session(name="viejo", opt_result=_fake_opt_result())
         old.engine_version = superseded
         assert old.is_engine_stale() is True

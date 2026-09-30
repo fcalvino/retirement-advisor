@@ -5,8 +5,9 @@ A "what-if" workbench on top of the existing Monte Carlo engine. It answers
 questions like *"if spending is indexed 1pp hotter, how much lower is my
 pessimistic P10?"* or *"what if I live 5 years longer?"* using the user's OWN
 plan numbers. The lever that used to be labelled "Inflación" moves
-``withdrawal_growth_rate`` (N8): it is indexation of spending or deposits, not
-a real-return inflation shock.
+``withdrawal_growth_rate`` (N8): it is indexation of spending, not a real-return
+inflation shock — and since N8b it no longer reaches the deposits, which grow
+with their own ``contribution_growth_rate``.
 
 Design (mirrors the rest of the project):
   - Pure + injectable: the simulation is provided as a ``run_fn(params) ->

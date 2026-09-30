@@ -258,6 +258,8 @@ class PlanSnapshot:
                 "horizon_years":    mc_params.get("horizon_years"),
                 "initial_value":    mc_params.get("initial_value"),
                 "inflation_rate":   mc_params.get("inflation_rate"),
+                # N8b: the savings' own growth assumption; absent in older plans (= 0).
+                "contribution_growth_pct": mc_params.get("contribution_growth_pct"),
                 "target_value":     mc_params.get("target_value"),
                 "median_terminal":  round(float(getattr(mc_result, "median_terminal", 0.0)), 0),
                 "p10_terminal":     round(float(getattr(mc_result, "p10_terminal", 0.0)), 0),

@@ -36,6 +36,7 @@ from dashboard.shared import (
     withdrawal_to_tuple,
 )
 from data.product_ux import (
+    CONTRIBUTION_GROWTH_HELP,
     PROXY_INDEX_LABEL,
     PROXY_RATIO_HELP,
     PROXY_RATIO_LABEL,
@@ -253,6 +254,19 @@ if annual_contribution > 0:
         f"≈ \\${annual_contribution:,.0f}/año, en doce depósitos"
         + (" · viene de tu perfil" if _contrib["source"] == "perfil" else "")
     )
+# N8b: el ahorro crece con su propio supuesto. Hasta N8b lo indexaba la inflación
+# de abajo, así que esta pantalla proyectaba un ahorro creciente mientras Metas
+# y el consejo de «cuánto ahorrar» lo dejaban fijo (P10 +25–30 % para el mismo
+# ahorrista). Default 0, como en Metas; subirlo es una decisión explícita.
+contribution_growth_pct = st.sidebar.number_input(
+    "Suba anual del ahorro (%)",
+    min_value=0.0,
+    max_value=10.0,
+    value=float(MONTE_CARLO.default_contribution_growth_pct),
+    step=0.5,
+    help=CONTRIBUTION_GROWTH_HELP,
+    key="contribution_growth_pct",
+)
 target_value = st.sidebar.number_input(
     "Meta de retiro (USD)",
     min_value=0,
@@ -270,7 +284,7 @@ inflation_rate = st.sidebar.slider(
     value=3.0,
     step=0.5,
     help="Ajusta tanto la línea de 'valor real' en el gráfico como el crecimiento anual del retiro "
-         "(si tenés retiro > 0). Esto es clave para simulaciones realistas de largo plazo.",
+         "(si tenés retiro > 0). No mueve tu ahorro: eso es la «Suba anual del ahorro».",
     key="inflation_rate",
 )
 n_sims = st.sidebar.select_slider(
@@ -365,6 +379,7 @@ def _tab_mc_content():
                 annual_contribution=float(annual_contribution),   # U4-5
                 target_value=float(target_value),
                 withdrawal_growth_rate=float(inflation_rate) / 100.0,   # Phase 0: growing withdrawals
+                contribution_growth_rate=float(contribution_growth_pct) / 100.0,  # N8b
                 drags_tuple=drags_to_tuple(drags),                      # Item 1
                 withdrawal_tuple=withdrawal_to_tuple(wd_strategy),      # Fase H.1
                 longevity_years=longevity,                              # Fase H.1
@@ -374,6 +389,7 @@ def _tab_mc_content():
             "horizon_years": horizon_years,
             "initial_value": initial_value,
             "inflation_rate": inflation_rate,
+            "contribution_growth_pct": contribution_growth_pct,   # N8b: saved with the plan
             "n_sims": n_sims,
             "drags": drags,   # Item 1: remember the assumptions used
             "withdrawal_strategy": wd_strategy,   # Fase H.1: remember the strategy used
@@ -972,6 +988,7 @@ def _render_sensitivity_lab():
         "annual_contribution": float(annual_contribution),
         "target_value": float(target_value),
         "withdrawal_growth_rate": float(inflation_rate) / 100.0,
+        "contribution_growth_rate": float(contribution_growth_pct) / 100.0,  # N8b
         "vol_scale": 1.0,
         "return_scale": 1.0,
         "drags_total_pct": float(get_economic_drags().get("total_annual_drag_pct", 0.0)),
