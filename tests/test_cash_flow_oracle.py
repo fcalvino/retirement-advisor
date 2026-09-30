@@ -445,7 +445,13 @@ class TestContributionUnitsContract:
             m for m in re.finditer(r"cached_monte_carlo\((.*?)\n\s*\)", page, re.S)
         ]
         assert llamadas, "no se encontró la llamada al motor"
-        assert any("annual_contribution" in m.group(1) for m in llamadas), (
+        # COMPARE-NO-SAVINGS: la corrida principal y la de perfiles toman sus
+        # argumentos de `_plan_mc_kwargs()`; ahí es donde tiene que estar el aporte.
+        helper = re.search(r"def _plan_mc_kwargs\(\).*?\n    \)\n", page, re.S)
+        cuerpos = [m.group(1) for m in llamadas]
+        if helper:
+            cuerpos = [helper.group(0) if "**_plan_mc_kwargs()" in c else c for c in cuerpos]
+        assert any("annual_contribution" in c for c in cuerpos), (
             "ninguna llamada a cached_monte_carlo pasa annual_contribution: la "
             "palanca sería decorativa"
         )
