@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## U1-9b — el ratio bajista es un Sortino (2026-09-30)
+
+Primer paso del orden de la séptima `/decidir-proyecto` (sobre `fe89117`). U1-9 (2026-08-25) le había sacado el nombre «Sortino» a un número que no lo era —los dos motores dividían por el desvío de las semanas perdedoras alrededor de su propia media, que baja cuando la cartera pierde parejo— y dejó la fórmula para después. Ahora el denominador es la desviación bajista √E[mín(r − MAR, 0)²] sobre todas las semanas, en una sola función (`analysis.utils.downside_deviation`) que usan Backtesting y el tracker, con MAR = tasa libre de riesgo, y la etiqueta vuelve a ser «Sortino» (las dos cosas, decisión del usuario). Sin semanas bajo el MAR el ratio es `None`.
+
+Medido antes, offline sobre una copia de la base, en las 194 series semanales de la caché: a 5 años la mediana pasa de 0,38 a 0,34, el cambio queda entre −0,10 y +0,09 (p10–p90), Spearman 0,997 y ningún ratio cambia de signo; a 10 años, 0,46 → 0,47 y Spearman 0,996. El caso que la fila describía —pérdidas parejas— es el que se mueve: en el oráculo, −90,9 con la fórmula vieja y −4,9 con la nueva. Los backtests guardados conservan su número y se marcan `pre_u1_9b`. `COMMITTEE.prompt_version` `2026-09-30a` (el prompt del Gestor de Riesgo decía «no es un Sortino»); `ENGINE_VERSION` no cambia. Oráculo `tests/test_sortino_oracle.py` (6 de 6 en rojo contra `origin/main`, 2 mutaciones detectadas); el contrato de etiquetas cambió de sentido y `test_the_formula_was_left_alone` se borró a propósito.
+
 ## MSI-NET y SCR-DIVYIELD-NONE — cierre del orden de la sexta repriorización (2026-09-29)
 
 **MSI-NET.** `scripts/measure_score_impact.py` prometía no salir a la red y salía: `get_financials` y `get_dividends` no cachean una respuesta vacía, así que cada corrida volvía a pedir los estados de los ETFs y cripto (fallaban sin escribir, sin mover mediciones). Offline, `_fetch_with_retry` —por donde pasa todo fetch de yfinance desde N2— se reemplaza por una falta de caché que no llama al fetch y la anota. A/B sobre dos copias idénticas de la base: 18 llamadas en `main` (6 ETFs × 3 reintentos), 0 en la rama, 194 filas idénticas.
