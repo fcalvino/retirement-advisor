@@ -233,6 +233,7 @@ class MonteCarloSimulator:
         withdrawal_strategy=None,              # Fase H.1: WithdrawalStrategy | dict | None
         longevity_years: Optional[int] = None, # Fase H.1: horizon for "outliving money" metric
         include_realistic_reference: bool = False,  # show realistic (no-haircut) next to conservative
+        contribution_growth_rate: float = 0.0, # N8b: yearly raise of the savings, its own assumption
     ) -> MonteCarloResult:
         """
         Run the full Monte Carlo simulation.
@@ -452,6 +453,7 @@ class MonteCarloSimulator:
             return self._apply_cash_flows(
                 market, initial_value, basis, withdrawal, contribution,
                 n_sim_weeks, withdrawal_growth_rate=withdrawal_growth_rate,
+                contribution_growth_rate=contribution_growth_rate,
             ) * basis
 
         paths_usd = _wealth_usd(paths)
@@ -795,6 +797,7 @@ class MonteCarloSimulator:
         annual_contribution: float,
         n_horizon_weeks: int,
         withdrawal_growth_rate: float = 0.0,
+        contribution_growth_rate: float = 0.0,
     ) -> np.ndarray:
         """Turn a market curve plus a savings/spending plan into a wealth curve.
 
@@ -808,8 +811,13 @@ class MonteCarloSimulator:
         matching the monthly figure the profile asks for — while withdrawals stay
         annual. Setting the config to 1 reproduces the tier1 engine exactly.
 
-        The inflation rate steps once a year for both, so the twelve deposits of
-        a year still sum to that year's nominal total. Only the timing changes,
+        Each direction grows with its own rate (N8b): withdrawals with
+        ``withdrawal_growth_rate`` — the spending indexation Simulaciones feeds
+        with inflation — and deposits with ``contribution_growth_rate``, default
+        0. Until N8b one rate grew both, so indexing the spending also indexed
+        the savings and the lab's lever moved an accumulation plan the wrong way.
+        Either rate steps once a year, so the twelve deposits of a year still
+        sum to that year's nominal total. Only the timing changes,
         which is what makes the direction of the fix provable rather than merely
         different.
 
@@ -825,20 +833,24 @@ class MonteCarloSimulator:
         horizon_years = n_horizon_weeks // 52
         events: List[Tuple[int, object]] = []
 
-        def _schedule(annual_amount: float, periods_per_year: int, sign: float) -> None:
+        def _schedule(
+            annual_amount: float, periods_per_year: int, sign: float, growth_rate: float,
+        ) -> None:
             periods = max(1, int(periods_per_year))
             per_period = annual_amount / periods / basis
             for i, week in enumerate(cash_flow_weeks(periods, horizon_years, n_cols)):
                 year = i // periods + 1
-                grown = per_period * ((1 + withdrawal_growth_rate) ** (year - 1))
+                grown = per_period * ((1 + growth_rate) ** (year - 1))
                 events.append((week, _constant_amount(sign * grown)))
 
         # Contributions are queued first, and the sort below is stable, so a
         # deposit and a withdrawal on the same week keep that order.
         if annual_contribution:
-            _schedule(annual_contribution, MONTE_CARLO.contribution_periods_per_year, -1.0)
+            _schedule(annual_contribution, MONTE_CARLO.contribution_periods_per_year, -1.0,
+                      contribution_growth_rate)
         if annual_withdrawal:
-            _schedule(annual_withdrawal, MONTE_CARLO.withdrawal_periods_per_year, +1.0)
+            _schedule(annual_withdrawal, MONTE_CARLO.withdrawal_periods_per_year, +1.0,
+                      withdrawal_growth_rate)
 
         events.sort(key=lambda ev: ev[0])
         return apply_cash_flow_schedule(market, initial_value / basis, events)
@@ -857,7 +869,9 @@ class MonteCarloSimulator:
         tests written before the two directions were separated keep working;
         new code should call :meth:`_apply_cash_flows`. Requires capital, since
         a signed fraction of ``initial_value`` is the very representation that
-        cannot express a plan starting from zero (U4-2).
+        cannot express a plan starting from zero (U4-2). Its one rate grows
+        whichever direction the sign names — the contract it was written with,
+        kept byte-identical across N8b.
         """
         withdrawal = max(annual_withdrawal, 0.0)
         contribution = max(-annual_withdrawal, 0.0)
@@ -865,6 +879,7 @@ class MonteCarloSimulator:
             paths, initial_value, wealth_basis(initial_value, contribution),
             withdrawal, contribution, n_horizon_weeks,
             withdrawal_growth_rate=withdrawal_growth_rate,
+            contribution_growth_rate=withdrawal_growth_rate,
         )
 
     @staticmethod

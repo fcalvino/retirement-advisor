@@ -1,9 +1,10 @@
 """Contract of the spending-indexation vocabulary shown to a person (N8).
 
-The tornado lever bumps ``withdrawal_growth_rate`` — how much spending or
-deposits grow each year. Calling it "Inflación" promised a real-return shock
-the Monte Carlo does not compute. For an accumulator the sign is inverted:
-more "inflation" grows deposits and P10 rises.
+The tornado lever bumps ``withdrawal_growth_rate`` — how much spending grows
+each year. Calling it "Inflación" promised a real-return shock the Monte Carlo
+does not compute. Until N8b the same rate grew the deposits, so for an
+accumulator the sign was inverted; since N8b the savings have their own
+``contribution_growth_rate`` and in accumulation the lever does not apply.
 
 U4-3 already marked a lever that does not reach the plan as «no aplica». N8
 is the name of the lever that *does* reach it. Identifiers
@@ -100,7 +101,9 @@ class TestIndexationLabel:
         assert acc == INDEXATION_HELP_ACCUMULATION
         assert wd == INDEXATION_HELP_WITHDRAWAL
         assert acc != wd
-        assert "depósitos" in acc
+        # N8b: in accumulation the lever does not reach the savings any more.
+        assert "no aplica" in acc
+        assert "Suba anual del ahorro" in acc
         assert "gasto" in wd
 
     def test_user_facing_copy_does_not_relabel_the_lever_inflacion(self):

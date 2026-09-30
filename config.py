@@ -141,7 +141,14 @@ DB_PATH = Path(os.getenv("RETIREMENT_ADVISOR_DB_PATH") or DB_DIR / "retirement_a
 #                   se convierte a PORTFOLIO.base_currency (data/fx.py); un listado
 #                   extranjero sin tipo de cambio o de moneda no confirmada queda
 #                   afuera y se nombra. Una cartera sólo en dólares no se mueve.
-ENGINE_VERSION = "2026.09-tier15"
+#   2026.09-tier16 — N8b: los aportes crecían con la misma tasa que indexa el
+#                   gasto, y Simulaciones le pasa la inflación: su proyección
+#                   indexaba el ahorro mientras Metas lo dejaba nominal (P10
+#                   +25–30 % en los planes del usuario). Ahora el ahorro crece con
+#                   su propia tasa, MONTE_CARLO.default_contribution_growth_pct = 0
+#                   (decisión del usuario). Sin aportes, o con la inflación en 0,
+#                   la proyección es byte-idéntica.
+ENGINE_VERSION = "2026.09-tier16"
 
 
 @dataclass(frozen=True)
@@ -2046,11 +2053,19 @@ class MonteCarloConfig:
         porque los guardrails SON una revisión anual y recalcularlos en cada
         cuota sería otro método. Poniéndolo en 1 se reproduce el motor
         tier2-tier5 exactamente.
+
+    default_contribution_growth_pct — cuánto sube el ahorro cada año (%), un
+      supuesto propio (N8b). En 0 el aporte es nominal: el mismo monto todos los
+      años, como en Metas. La inflación de Simulaciones indexa sólo el gasto;
+      hasta N8b indexaba también el ahorro y el P10 de un plan con aportes salía
+      25–30 % más alto que en Metas para el mismo ahorrista. Decisión del
+      usuario (2026-09-30): parámetro aparte, default 0.
     """
     vol_adjustment: float = 1.10         # +10% volatility (conservative)
     mean_haircut: float = 0.80           # -20% expected return (conservative)
     contribution_periods_per_year: int = 12
     withdrawal_periods_per_year: int = 12
+    default_contribution_growth_pct: float = 0.0   # N8b: el ahorro no sigue a la inflación
     min_history_weeks: int = 104         # 2 years minimum
     default_n_sims: int = 10_000
     default_horizon_years: int = 20

@@ -269,8 +269,9 @@ class TestMonthlyCadenceOracle:
         )
         assert with_raise == pytest.approx(expected_nominal, rel=1e-12)
 
+        # N8b: the savings grow with their own rate, not with the spending's.
         result = self._run(
-            rate, initial=0.0, contribution=self.CONTRIB, withdrawal_growth_rate=growth
+            rate, initial=0.0, contribution=self.CONTRIB, contribution_growth_rate=growth
         )
         assert result.median_terminal == pytest.approx(with_raise, rel=1e-9)
 

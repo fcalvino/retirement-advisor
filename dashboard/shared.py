@@ -490,6 +490,7 @@ def _sensitivity_run_fn(params: dict):
         annual_contribution=float(params.get("annual_contribution", 0.0)),
         target_value=float(params.get("target_value", 0.0)),
         withdrawal_growth_rate=float(params.get("withdrawal_growth_rate", 0.0)),
+        contribution_growth_rate=float(params.get("contribution_growth_rate", 0.0)),
         vol_scale=float(params.get("vol_scale", 1.0)),
         return_scale=float(params.get("return_scale", 1.0)),
         drags_tuple=drags_tuple,
@@ -1520,6 +1521,7 @@ def cached_monte_carlo(
     withdrawal_tuple: tuple | None = None, # Fase H.1: hashable withdrawal strategy (None = base)
     longevity_years: int | None = None,    # Fase H.1: horizon for "income lasts" metric
     include_realistic_reference: bool = True,  # show realistic (no-haircut) next to conservative
+    contribution_growth_rate: float = 0.0, # N8b: yearly raise of the savings, not inflation
 ):
     """Cache Monte Carlo runs for 30 min — same params = instant re-render.
 
@@ -1552,6 +1554,7 @@ def cached_monte_carlo(
         withdrawal_strategy=withdrawal_strategy,
         longevity_years=longevity_years,
         include_realistic_reference=include_realistic_reference,
+        contribution_growth_rate=contribution_growth_rate,
     )
 
 
