@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## MSI-NET y SCR-DIVYIELD-NONE — cierre del orden de la sexta repriorización (2026-09-29)
+
+**MSI-NET.** `scripts/measure_score_impact.py` prometía no salir a la red y salía: `get_financials` y `get_dividends` no cachean una respuesta vacía, así que cada corrida volvía a pedir los estados de los ETFs y cripto (fallaban sin escribir, sin mover mediciones). Offline, `_fetch_with_retry` —por donde pasa todo fetch de yfinance desde N2— se reemplaza por una falta de caché que no llama al fetch y la anota. A/B sobre dos copias idénticas de la base: 18 llamadas en `main` (6 ETFs × 3 reintentos), 0 en la rama, 194 filas idénticas.
+
+**SCR-DIVYIELD-NONE**, cerrada sin cambio de código. La fila suponía que una columna toda-`None` quedaba `object` y por eso Streamlit imprimía «None». El arreglo por dtype se implementó con su oráculo, y la prueba en vivo lo desmintió: la tabla seguía diciendo «None». Una mini-app aislada mostró que Streamlit 1.57 dibuja así todo nulo, también `float64`/NaN y con el `na_rep` de un Styler. Se revirtió el cambio y el usuario eligió no pasar columnas numéricas a texto.
+
 ## #154 — Optimizer, Monte Carlo, Backtesting y Track Record en USD (2026-09-29)
 
 `global_quality` tiene 90 de 126 tickers en 14 monedas y las cuatro superficies que suman precios entre tickers los leían crudos. Medido primero en una copia de la base (comentario en #154): las 14 series `XXXUSD=X` existen desde 2003 y traen cotizaciones basura de un solo punto que revierten (CLP 2016-12-22 = 0,2, NOK 2020-03-20 +39 %, CAD semanal 2022-11/2024-12/2025-01); las fechas semanales coinciden 100 % con SPY; el signo del exceso a 30 días contra SPY cambia según la moneda en ~10,6 % de las ventanas. Decisión del usuario: **convertir a USD** (se descartó el benchmark local por mercado: 19 índices, 2 sin serie en Yahoo, y Optimizer y Backtesting necesitaban la conversión igual).
