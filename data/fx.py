@@ -242,3 +242,35 @@ def to_base_or_reason(
     if converted is None or converted.empty:
         return None, ccy, f"sin tipo de cambio {ccy}→{PORTFOLIO.base_currency}"
     return converted, ccy, None
+
+
+def rate_on(currency: Optional[str], when, max_stale_days: int) -> Optional[float]:
+    """Unidades de la moneda de la cartera por unidad de ``currency`` en ``when``.
+
+    Para el Track Record (#154 PR D), que puntúa en dos fechas y no una serie. La
+    cotización diaria del par, sin basura (``drop_fx_spikes``), con la misma guarda de
+    frescura que el precio del ticker (``analysis.price_lookup.price_near``): el cierre
+    de ese día o del último hábil anterior, a lo sumo ``max_stale_days`` días antes. Una
+    subunidad divide (GBp: la centésima parte de la libra). ``1.0`` sólo para la moneda
+    de la cartera; una moneda vacía o sin cotización es ``None``, nunca 1,0.
+    """
+    from analysis.price_lookup import price_near
+
+    ccy = str(currency or "").strip()
+    if not ccy:
+        return None
+    divisor = QUOTE_MINOR_UNITS.get(ccy, 1)
+    symbol = fx_pair_symbol(ccy)
+    if symbol is None:
+        return 1.0 / divisor
+    try:
+        frame = get_history(symbol, period="max", interval="1d")
+    except Exception as exc:
+        logger.warning(f"fx: {symbol} no se pudo bajar — {exc}")
+        return None
+    close = _close_series(frame)
+    if close is None:
+        return None
+    clean = drop_fx_spikes(close, label=symbol)
+    rate = price_near(clean.to_frame("close"), pd.Timestamp(when).date(), int(max_stale_days))
+    return None if rate is None else rate / divisor

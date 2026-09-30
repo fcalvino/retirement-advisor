@@ -2007,7 +2007,8 @@ def _track_payload(fund, decision) -> dict:
         "technical_signal": getattr(decision, "technical_signal", "") or "",
         "rationale": list(getattr(decision, "rationale", []) or [])[:4],
         "price_at_rec": getattr(fund, "current_price", None) or None,
-        # Quote currency of price_at_rec — see TRACK_RECORD.benchmark_currency.
+        # Quote currency of price_at_rec: stored with the row, the scorer converts both
+        # ends of the horizon to PORTFOLIO.base_currency with it (#154 PR D).
         "currency": getattr(fund, "currency", "") or "",
         "asset_class": getattr(fund, "asset_class", "equity") or "equity",
         "inputs": snapshot_calibration_inputs(fund),
@@ -2031,8 +2032,9 @@ def log_screener_run(rows: list) -> int:
 
     Non-scorable assets are skipped: an ETF's "SELL" is an artifact of scoring it with
     machinery built for companies, which is exactly what ``asset_class.py`` settled.
-    Quotes outside ``TRACK_RECORD.benchmark_currency`` are refused by the store's
-    admission gate (``admission_skip_reason``), the same rule for every writer.
+    Every quote currency is logged, with the currency (#154 PR D): the scorer grades
+    both ends in ``PORTFOLIO.base_currency``. The store's admission gate
+    (``admission_skip_reason``) is still the same rule for every writer.
 
     Best-effort throughout: the store already guarantees a logging failure cannot
     break its caller, and same-day duplicates are deduped there by symbol and action.
