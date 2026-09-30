@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## N8b — el ahorro crece con su propia tasa (2026-09-30)
+
+Segundo paso del orden de la séptima `/decidir-proyecto`. `_apply_cash_flows` hacía crecer depósitos y retiros con el mismo `withdrawal_growth_rate`, y Simulaciones le pasa la inflación: la pantalla proyectaba un ahorro que sube con la inflación mientras Metas —y el consejo de «cuánto ahorrar para el 80 %», que sale de Metas— lo dejaban fijo. En acumulación, además, la palanca «Indexación del gasto» sólo movía el ahorro, así que subirla subía el P10. Decisión del usuario, medida primero: el ahorro tiene su propio supuesto, **default 0**, y la inflación indexa sólo el gasto.
+
+`contribution_growth_rate` entra por `MonteCarloSimulator.run` y `_apply_cash_flows`; Simulaciones tiene «Suba anual del ahorro (%)». Medido 2026-09-30 sobre una copia de la base (10.000 simulaciones, inflación 3 %, acumulación): con los defaults nuevos la proyección de Simulaciones reproduce exactamente la variante «aportes nominales» medida antes del cambio (P10 del perfil real 1.806.370) y con la suba del ahorro en 3 % la vieja «indexada» (2.281.361); en los planes del usuario el P10 baja entre 20 % y 23 % (+25–30 % visto desde el nominal); la palanca de indexación queda «no aplica» en 5 de 5. `ENGINE_VERSION` tier16. Queda anotado lo que apareció al cerrarla: con una estrategia de retiro activa el motor no recibe los aportes (**WD-STRATEGY-CONTRIB**, sin verificar si la UI lo excluye).
+
 ## U1-9b — el ratio bajista es un Sortino (2026-09-30)
 
 Primer paso del orden de la séptima `/decidir-proyecto` (sobre `fe89117`). U1-9 (2026-08-25) le había sacado el nombre «Sortino» a un número que no lo era —los dos motores dividían por el desvío de las semanas perdedoras alrededor de su propia media, que baja cuando la cartera pierde parejo— y dejó la fórmula para después. Ahora el denominador es la desviación bajista √E[mín(r − MAR, 0)²] sobre todas las semanas, en una sola función (`analysis.utils.downside_deviation`) que usan Backtesting y el tracker, con MAR = tasa libre de riesgo, y la etiqueta vuelve a ser «Sortino» (las dos cosas, decisión del usuario). Sin semanas bajo el MAR el ratio es `None`.
