@@ -18,7 +18,7 @@ comes from the AI layer — by scoring the same universe twice, with AI off and 
 
     ./venv/bin/python3 scripts/measure_score_impact.py --matrix matriz.md
 
-**It never goes to the network.** Three guards make that true:
+**It never goes to the network.** Four guards make that true:
 
   * only tickers whose ``info`` *and* 10y weekly ``history`` are already cached
     are scored — everything else is skipped and counted;
@@ -31,7 +31,15 @@ comes from the AI layer — by scoring the same universe twice, with AI off and 
     *decision* layer — the one AI call with no cache behind it — never fires.
     Without that the leg would be neither offline nor honest, because
     ``AIAnalyzer.analyze`` swallows every failure and degrades to rule-based, so
-    an unreachable API would look like "the AI changed nothing".
+    an unreachable API would look like "the AI changed nothing";
+  * every yfinance fetch is a **cache miss** (MSI-NET): ``data.fetcher`` sends all
+    of them through ``_fetch_with_retry`` (N2), and offline that function is
+    replaced by one that never calls the fetch, records ``(symbol, what)`` in
+    ``OFFLINE_MISSES`` and returns what a permanent failure returns. Without it
+    the first two guards were not enough: ``get_financials`` and
+    ``get_dividends`` do not cache an empty answer, so every run asked Yahoo again
+    for the statements of the ETFs and crypto that have none. Those calls failed
+    without writing, so no measurement moved — but the promise above was false.
 
 The TTL guard has to reach the AI caches too. ``MoatAnalyzer`` and
 ``TailwindAnalyzer`` each build their **own** ``DataCache`` from their config's
@@ -62,6 +70,32 @@ import _bootstrap  # noqa: F401
 
 _OFFLINE_TTL_HOURS = 24 * 3650
 
+#: What the offline harness asked for and the cache did not have: ``(symbol, what)``.
+OFFLINE_MISSES: List[tuple] = []
+
+
+def _cache_miss(fn, symbol: str, label: str):
+    """Offline stand-in for ``data.fetcher._fetch_with_retry``: never calls ``fn``.
+
+    Returns ``None``, the value of a permanent failure, so ``get_financials`` gives
+    ``{}`` and ``get_dividends`` an empty series — what the network gave the assets
+    that miss (ETFs and crypto have no statements).
+    """
+    OFFLINE_MISSES.append((symbol, label))
+    return None
+
+
+def misses_summary(misses) -> str:
+    """One line for the report: how many reads were not in the cache, by kind."""
+    if not misses:
+        return ""
+    from collections import Counter
+
+    by_kind = Counter(label for _, label in misses)
+    detail = ", ".join(f"{k} {n}" for k, n in sorted(by_kind.items()))
+    return (f"{len(misses)} lecturas fuera de caché ({detail}): contadas como "
+            "faltantes, sin salir a la red.")
+
 
 def _make_offline() -> None:
     """Serve everything from the existing cache; disable networked side-trips."""
@@ -78,6 +112,10 @@ def _make_offline() -> None:
     TAILWINDS.ai_cache_ttl_hours = _OFFLINE_TTL_HOURS
     MOAT.ai_cache_only = True
     TAILWINDS.ai_cache_only = True
+
+    import data.fetcher as fetcher
+
+    fetcher._fetch_with_retry = _cache_miss
 
 
 def cached_symbols() -> List[str]:
@@ -426,6 +464,8 @@ def main() -> int:
         print("  pata 2/2: IA prendida (solo caché)…", file=sys.stderr)
         on = measure_all(symbols, ai_config=offline_ai_config())
         report = render_matrix(off, on)
+        if OFFLINE_MISSES:
+            report += "\n> " + misses_summary(OFFLINE_MISSES) + "\n"
         if args.matrix != "-":
             Path(args.matrix).write_text(report)
             print(f"Matriz escrita: {args.matrix}")
@@ -443,12 +483,16 @@ def main() -> int:
     if args.compare:
         before = json.loads(Path(args.compare).read_text())
         report = render_comparison(before, current)
+        if OFFLINE_MISSES:
+            report += "\n> " + misses_summary(OFFLINE_MISSES) + "\n"
         if args.out:
             Path(args.out).write_text(report)
             print(f"Reporte escrito: {args.out}")
         else:
             print(report)
 
+    if OFFLINE_MISSES:
+        print(misses_summary(OFFLINE_MISSES), file=sys.stderr)
     return 0
 
 
