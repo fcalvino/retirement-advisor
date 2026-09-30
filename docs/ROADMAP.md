@@ -10,6 +10,10 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## WD-STRATEGY-CONTRIB — con estrategia de retiro, el ahorro no entra y se dice (2026-09-30)
+
+Apareció en la revisión de N8b. Con una estrategia de retiro activa, `MonteCarloSimulator.run` pasa por `apply_withdrawal_strategy`, que no recibe aportes: un plan con ahorro y estrategia proyectaba sin el ahorro. Medido 2026-09-30 sobre una copia de la base (10.000 simulaciones, guardrails 4 % del plan de ejemplo): con y sin ahorro la proyección con estrategia es idéntica en 5 de 5 planes; en la app, 2.000/mes y un retiro fijo del 4 % daban P10 $364.801 contra $2.127.991 en acumulación, con el sidebar mostrando el ahorro y sin ningún aviso, y el consejo «Considerá ajustar aportes» sobre un ahorro que no entraba. Banda 1. El usuario eligió no cambiar el modelo —la estrategia significa «ya estás retirado»— y decirlo: el resultado registra el ahorro ignorado (`contribution_ignored_by_strategy`) y lo explica en `warnings`, el sidebar lo marca junto al ahorro y los consejos de «más ahorro» aclaran que acá no mueve el número. Ningún número cambia. Oráculo `tests/test_strategy_ignores_savings_oracle.py`.
+
 ## N8b — el ahorro crece con su propia tasa (2026-09-30)
 
 Segundo paso del orden de la séptima `/decidir-proyecto`. `_apply_cash_flows` hacía crecer depósitos y retiros con el mismo `withdrawal_growth_rate`, y Simulaciones le pasa la inflación: la pantalla proyectaba un ahorro que sube con la inflación mientras Metas —y el consejo de «cuánto ahorrar para el 80 %», que sale de Metas— lo dejaban fijo. En acumulación, además, la palanca «Indexación del gasto» sólo movía el ahorro, así que subirla subía el P10. Decisión del usuario, medida primero: el ahorro tiene su propio supuesto, **default 0**, y la inflación indexa sólo el gasto.
