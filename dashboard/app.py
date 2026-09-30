@@ -364,13 +364,22 @@ _pages_dir = Path(__file__).parent / "views"
 # Menu grouped by user intention (not by technical module). Developer/admin
 # tools (Eval IA, Calidad de Datos, Macro RAG) only appear when dev mode is on,
 # keeping the everyday menu clean — see is_dev_mode().
-# Lean everyday menu (backlog 6): Allocation lives inside Optimizer; Comité is
-# reachable from Stock Analysis / Chat and listed under Ajustes (not Investigar).
+# IDEA-3 MENÚ: 11 entries. The pages that left the menu stay registered hidden, so
+# their URLs, deep-links and switch_page targets keep working: Allocation lives
+# inside Optimizer, Comité opens from Stock Analysis / Chat, About from Settings,
+# and Watchlist / Alertas / Track Record run as tabs of a merged page.
+_hidden_pages = [
+    st.Page(str(_pages_dir / "1_Screener.py"),      title="Screener (solo)", icon="🏠",
+            url_path="Screener_solo", visibility="hidden"),
+    st.Page(str(_pages_dir / "11_Watchlist.py"),    title="Watchlist",    icon="📋", visibility="hidden"),
+    st.Page(str(_pages_dir / "8_Alertas.py"),       title="Alertas",      icon="🔔", visibility="hidden"),
+    st.Page(str(_pages_dir / "13_Track_Record.py"), title="Track Record", icon="📒", visibility="hidden"),
+    st.Page(str(_pages_dir / "10_About.py"),        title="About",        icon="ℹ️", visibility="hidden"),
+    st.Page(str(_pages_dir / "15_Comite.py"),       title="Comité",       icon="🏛️", visibility="hidden"),
+    st.Page(str(_pages_dir / "4_Allocation.py"),    title="Allocation (detalle)", icon="📊", visibility="hidden"),
+]
 _ajustes_pages = [
     st.Page(str(_pages_dir / "9_Settings.py"), title="Settings", icon="⚙️"),
-    st.Page(str(_pages_dir / "10_About.py"),   title="About",    icon="ℹ️"),
-    st.Page(str(_pages_dir / "15_Comite.py"),  title="Comité",   icon="🏛️"),
-    st.Page(str(_pages_dir / "4_Allocation.py"), title="Allocation (detalle)", icon="📊"),
 ]
 if is_dev_mode():
     _ajustes_pages += [
@@ -391,19 +400,19 @@ pg = st.navigation(
             st.Page(str(_pages_dir / "5_Optimizer.py"),  title="Optimizer",  icon="📈"),
         ],
         "Investigar": [
-            st.Page(str(_pages_dir / "1_Screener.py"),       title="Screener",       icon="🏠"),
+            st.Page(str(_pages_dir / "19_Screener_Watchlist.py"), title="Screener",
+                    icon="🏠", url_path="Screener"),
             st.Page(str(_pages_dir / "2_Stock_Analysis.py"), title="Stock Analysis", icon="🔍"),
-            st.Page(str(_pages_dir / "11_Watchlist.py"),     title="Watchlist",      icon="📋"),
         ],
         "Proyectar": [
             st.Page(str(_pages_dir / "7_Simulaciones.py"), title="Simulaciones", icon="🎲"),
             st.Page(str(_pages_dir / "6_Backtesting.py"),  title="Backtesting",  icon="📉"),
         ],
         "Seguimiento": [
-            st.Page(str(_pages_dir / "8_Alertas.py"),        title="Alertas",      icon="🔔"),
-            st.Page(str(_pages_dir / "13_Track_Record.py"),  title="Track Record", icon="📒"),
+            st.Page(str(_pages_dir / "20_Seguimiento.py"), title="Alertas y Track Record",
+                    icon="🔔", url_path="Seguimiento"),
         ],
-        "Ajustes": _ajustes_pages,
+        "Ajustes": _ajustes_pages + _hidden_pages,
     }
 )
 
@@ -502,7 +511,7 @@ try:
             type="primary",
             width="stretch",
         ):
-            st.switch_page(str(_pages_dir / "8_Alertas.py"))
+            st.switch_page(str(_pages_dir / "20_Seguimiento.py"))
     else:
         st.sidebar.caption("🔔 Sin alertas pendientes")
 except Exception:

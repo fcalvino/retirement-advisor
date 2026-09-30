@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
 import streamlit as st
 
@@ -479,6 +480,11 @@ if _dev_on != bool(st.session_state.get("dev_mode", False)):
     st.rerun()
 
 st.divider()
+# IDEA-3 MENÚ: About left the menu; it is still a registered (hidden) page.
+# A button, not st.page_link: page_link needs the page registered at render
+# time, which a standalone run of this page (AppTest) does not have.
+if st.button("ℹ️ Acerca de Retirement Advisor: qué modela y qué no", key="settings_about"):
+    st.switch_page(str(Path(__file__).parent / "10_About.py"))
 st.caption(
     "Retirement Advisor v1.1.0 — datos de Yahoo Finance (yfinance). "
     "No constituye asesoramiento financiero."

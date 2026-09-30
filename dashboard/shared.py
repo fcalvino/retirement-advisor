@@ -15,6 +15,7 @@ import dataclasses
 import html
 import os
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -163,6 +164,49 @@ _MOAT_DESCRIPTION: dict[str, str] = {
 # ------------------------------------------------------------------ #
 #  Formatting helpers                                                  #
 # ------------------------------------------------------------------ #
+
+# ------------------------------------------------------------------ #
+#  Pages inside a tab (IDEA-3 MENÚ)                                    #
+# ------------------------------------------------------------------ #
+
+_VIEWS_DIR = Path(__file__).parent / "views"
+_embedded = threading.local()
+
+
+class _EmbeddedViewStop(Exception):
+    """Ends one embedded view; caught by :func:`run_view`, never by the page."""
+
+
+def stop_view() -> None:
+    """``st.stop()`` for a page that can also run inside another page's tab.
+
+    ``st.stop()`` asks the runner to end the *whole* script and cannot be caught,
+    so a page embedded with :func:`run_view` that stopped would blank every tab
+    after it. Inside :func:`run_view` this ends only that view; standalone it is
+    ``st.stop()``. One script run is one thread, hence the thread-local.
+    """
+    if getattr(_embedded, "depth", 0):
+        raise _EmbeddedViewStop
+    st.stop()
+
+
+def run_view(filename: str) -> None:
+    """Run ``dashboard/views/<filename>`` in the current container (a tab).
+
+    The page keeps its own file, URL and tests; this only lets a merged menu
+    entry show it next to another one. ``__file__`` is the page's, so the paths
+    it builds for ``switch_page`` still resolve.
+    """
+    path = _VIEWS_DIR / filename
+    code = compile(path.read_text(encoding="utf-8"), str(path), "exec")
+    _embedded.depth = getattr(_embedded, "depth", 0) + 1
+    try:
+        exec(code, {"__name__": "__main__", "__file__": str(path)})
+    except _EmbeddedViewStop:
+        pass
+    finally:
+        _embedded.depth -= 1
+
 
 def escape_dollars(text: str) -> str:
     """Escape ``$`` so Streamlit's markdown does not read amounts as LaTeX.
@@ -722,7 +766,7 @@ def next_priority_action(prefs) -> dict:
         return {
             "icon": "🔔", "label": f"Revisá {n_unread} alerta(s) sin leer",
             "hint": "Cambios de señal o de salud del plan que esperan tu atención.",
-            "page": "8_Alertas.py", "tone": "warning",
+            "page": "20_Seguimiento.py", "tone": "warning",
         }
 
     try:
