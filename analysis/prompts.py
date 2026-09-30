@@ -42,6 +42,7 @@ from data.product_ux import (
     market_cap_currency,
     max_dd_estimate_help,
     proxy_attractiveness_index,
+    strategy_ignored_savings_note,
     technical_signal_label,
     with_currency,
 )
@@ -1315,6 +1316,16 @@ def plan_level_narrative_prompt(
             mc_str += (
                 " SUPUESTOS: números BASE sin drags (0% fees, 0% impuestos a dividendos, "
                 "0% costo de rebalanceo). Aclará que son optimistas frente a costos reales."
+            )
+        # WD-PLAN-PDF: the personal line above says "ahorro mensual $X"; with a
+        # withdrawal strategy those savings are not in these numbers.
+        _savings_note = strategy_ignored_savings_note(
+            mc_summary, monthly_savings=float((personal or {}).get("monthly_savings") or 0.0)
+        )
+        if _savings_note:
+            mc_str += (
+                f" AHORRO FUERA DE LA PROYECCIÓN: {_savings_note} "
+                "No digas que estos números incluyen el ahorro mensual."
             )
     else:
         mc_str = "Sin simulación Monte Carlo guardada para este plan."

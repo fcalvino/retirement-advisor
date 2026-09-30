@@ -56,6 +56,7 @@ from data.product_ux import (
     PROXY_RATIO_LABEL,
     mc_has_cash_flows,
     proxy_attractiveness_index,
+    strategy_ignored_savings_note,
 )
 from reports.pdf_utils import chart_to_image as _chart_to_image
 from reports.pdf_utils import make_header_footer
@@ -100,6 +101,18 @@ class ReportOptions:
 # ------------------------------------------------------------------ #
 #  Helpers                                                             #
 # ------------------------------------------------------------------ #
+
+def _ignored_savings_note(st, mc_result) -> list:
+    """WD-PLAN-PDF: the Simulaciones note, next to the numbers it qualifies.
+
+    Empty when nothing was left out, so a report without a strategy (or without
+    savings) keeps its exact flowables.
+    """
+    note = strategy_ignored_savings_note(mc_result)
+    if not note:
+        return []
+    return [Spacer(1, 0.2 * cm), Paragraph(f"<b>Atención:</b> {note}", st["small"])]
+
 
 def _styles() -> dict:
     base = getSampleStyleSheet()
@@ -489,6 +502,7 @@ class InvestmentPlanReport:
         ]
         tbl.setStyle(TableStyle(style_cmds))
         elements.append(tbl)
+        elements += _ignored_savings_note(st, mc_result)
         elements.append(Spacer(1, 0.5 * cm))
 
         # AI Narrative
@@ -810,6 +824,7 @@ class InvestmentPlanReport:
             ("LEFTPADDING",   (0, 0), (-1, -1), 8),
         ]))
         elements.append(risk_tbl)
+        elements += _ignored_savings_note(st, mc_result)
         elements.append(Spacer(1, 0.5 * cm))
 
         # Fan chart

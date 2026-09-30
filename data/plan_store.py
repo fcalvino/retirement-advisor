@@ -31,7 +31,7 @@ from loguru import logger
 
 from config import ENGINE_VERSION
 from data.env_provenance import env_drift, numeric_env
-from data.product_ux import mc_has_cash_flows
+from data.product_ux import IGNORED_SAVINGS_KEY, mc_has_cash_flows
 
 _PLANS_PATH = Path(__file__).parent / "retirement_plans.json"
 
@@ -295,6 +295,11 @@ class PlanSnapshot:
                 mc_summary["median_legacy"]           = round(float(getattr(mc_result, "median_legacy", 0.0)), 0)
                 mc_summary["expected_depletion_year"] = round(float(getattr(mc_result, "expected_depletion_year", 0.0)), 2)
                 mc_summary["longevity_years"]         = int(getattr(mc_result, "longevity_years", 0))
+                # WD-PLAN-PDF: the strategy run leaves the savings out (WD-STRATEGY-CONTRIB);
+                # always written, so a plan without the key is one saved before it.
+                mc_summary[IGNORED_SAVINGS_KEY] = round(
+                    float(getattr(mc_result, IGNORED_SAVINGS_KEY, 0.0) or 0.0), 0
+                )
 
         personal = None
         if prefs is not None and getattr(prefs, "is_onboarded", False):

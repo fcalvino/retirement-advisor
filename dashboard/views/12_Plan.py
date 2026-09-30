@@ -52,6 +52,7 @@ from data.product_ux import (
     PROXY_RETURN_HELP,
     max_dd_estimate_help,
     proxy_attractiveness_index,
+    strategy_ignored_savings_note,
 )
 from data.universe_loader import UNIVERSE_META
 
@@ -284,6 +285,10 @@ else:
                     f"📊 Conservador (piso prudente) vs realista: mediana realista "
                     f"\\${getattr(mc_result, 'realistic_median_terminal', 0):,.0f}."
                 )
+            # WD-PLAN-PDF: the note Simulaciones shows travels with the figure.
+            _savings_note = strategy_ignored_savings_note(mc_result)
+            if _savings_note:
+                st.warning(escape_dollars(_savings_note), icon="⚠️")
         else:
             st.caption("🎲 Sin simulación Monte Carlo en esta sesión (corré una en 🎲 Simulaciones).")
 
@@ -502,6 +507,13 @@ def _render_snapshot(snap: PlanSnapshot) -> None:
             f"P10 \\${m.get('p10_terminal', 0):,.0f} · P90 \\${m.get('p90_terminal', 0):,.0f}"
             + (f" · Prob. meta {m.get('prob_target_pct', 0):.0f}%" if m.get("target_value") else "")
         )
+        # WD-PLAN-PDF: gated on the saved run, not on snap.withdrawal_strategy —
+        # that one is the sidebar at save time and can differ from the run.
+        _savings_note = strategy_ignored_savings_note(
+            m, monthly_savings=float((snap.personal or {}).get("monthly_savings") or 0.0)
+        )
+        if _savings_note:
+            st.warning(escape_dollars(_savings_note), icon="⚠️")
         # Item 1 — show the assumptions this plan was generated under.
         _drag_total = float(m.get("total_annual_drag_pct", 0.0) or 0.0)
         if _drag_total > 0:
