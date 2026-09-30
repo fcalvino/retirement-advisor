@@ -7,16 +7,18 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from analysis.backtesting import BacktestEngine, BacktestResult
+from analysis.backtesting import DOWNSIDE_RATIO_FORMULA_LEGACY, BacktestEngine, BacktestResult
 from config import BACKTEST, PORTFOLIO, UNIVERSE
 from dashboard.shared import _fetch_universe_parallel, _get_ai_config
 from data.product_ux import (
     DOWNSIDE_RATIO_HELP,
     DOWNSIDE_RATIO_LABEL,
+    DOWNSIDE_RATIO_LEGACY_CAPTION,
     DOWNSIDE_RATIO_SHORT,
     EXCESS_RETURN_HELP,
     EXCESS_RETURN_LABEL,
     excess_return_column_label,
+    risk_metric_text,
 )
 
 # ------------------------------------------------------------------ #
@@ -191,12 +193,14 @@ col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Sharpe Ratio",    f"{bt_result.portfolio_sharpe:.2f}",
             help="(CAGR − Rf) / Vol total")
 col2.metric(DOWNSIDE_RATIO_LABEL,
-            f"{getattr(bt_result, 'portfolio_downside_vol_ratio', 0):.2f}",
+            risk_metric_text(getattr(bt_result, "portfolio_downside_vol_ratio", None), "{:.2f}"),
             help=DOWNSIDE_RATIO_HELP)
 col3.metric("Max Drawdown",    f"{bt_result.portfolio_max_drawdown_pct:.1f}%")
 col4.metric("Win Rate vs Bench", f"{bt_result.portfolio_win_rate_pct:.0f}%")
 col5.metric("Calmar Ratio",    f"{bt_result.calmar_ratio:.2f}",
             help="CAGR / |Max Drawdown|")
+if getattr(bt_result, "downside_ratio_formula", "") == DOWNSIDE_RATIO_FORMULA_LEGACY:
+    st.caption(DOWNSIDE_RATIO_LEGACY_CAPTION)
 
 # ------------------------------------------------------------------ #
 #  Charts                                                             #
@@ -297,7 +301,7 @@ with tab_tickers:
                 "CAGR %":        t.cagr_pct,
                 _EXCESS_COL:     t.excess_return_pct,
                 "Sharpe":        t.sharpe,
-                DOWNSIDE_RATIO_SHORT: getattr(t, "downside_vol_ratio", 0),
+                DOWNSIDE_RATIO_SHORT: getattr(t, "downside_vol_ratio", None),
                 "Max DD %":      t.max_drawdown_pct,
                 "Volatilidad %": t.volatility_pct,
                 "Win Rate %":    t.win_rate_pct,

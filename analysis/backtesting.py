@@ -35,6 +35,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
+from analysis.utils import downside_deviation
 from config import DB_PATH, PORTFOLIO
 from data.fetcher import get_history
 from data.fx import convert_history, fx_pair_symbol
@@ -55,9 +56,10 @@ class TickerPerformance:
     score: float            # adjusted_score used for ranking
     cagr_pct: float
     sharpe: float
-    #: (CAGR − Rf) / std of the losing weeks. NOT a Sortino ratio — U1-9; the
-    #: canonical wording lives in ``data.product_ux.DOWNSIDE_RATIO_HELP``.
-    downside_vol_ratio: float
+    #: Sortino: (CAGR − Rf) / downside deviation against MAR = Rf (U1-9b);
+    #: ``None`` when no week fell below the MAR. Canonical wording lives in
+    #: ``data.product_ux.DOWNSIDE_RATIO_HELP``.
+    downside_vol_ratio: Optional[float]
     max_drawdown_pct: float
     volatility_pct: float
     win_rate_pct: float     # % of weeks beating benchmark
@@ -82,7 +84,7 @@ class BacktestResult:
     # Portfolio-level metrics
     portfolio_cagr_pct: float = 0.0
     portfolio_sharpe: float = 0.0
-    portfolio_downside_vol_ratio: float = 0.0   # NOT a Sortino ratio — U1-9
+    portfolio_downside_vol_ratio: Optional[float] = None   # Sortino, MAR = Rf (U1-9b)
     portfolio_max_drawdown_pct: float = 0.0
     portfolio_volatility_pct: float = 0.0
     portfolio_total_return_pct: float = 0.0
@@ -109,10 +111,17 @@ class BacktestResult:
     #: symbol → quote currency of every series converted to ``PORTFOLIO.base_currency``
     #: (#154). Empty in a backtest saved before the conversion existed.
     converted_currencies: Dict[str, str] = field(default_factory=dict)
+    #: Which formula produced the downside ratios (U1-9b). A backtest saved
+    #: before U1-9b loads as ``DOWNSIDE_RATIO_FORMULA_LEGACY``: it keeps its own
+    #: numbers, and the page says they were measured the old way.
+    downside_ratio_formula: str = "sortino_mar_rf"
 
 
-#: Fields renamed by U1-8 (``alpha_pct`` was never an alpha) and U1-9 (the
-#: ratio was never a Sortino). Backtests saved before the rename are still on
+#: What ``downside_ratio_formula`` reads on a payload saved before U1-9b.
+DOWNSIDE_RATIO_FORMULA_LEGACY = "pre_u1_9b"
+
+#: Fields renamed by U1-8 (``alpha_pct`` was never an alpha) and U1-9 (the ratio
+#: of that time predates the Sortino formula). Backtests saved before the rename are still on
 #: disk and still loadable — ``BacktestEngine.load`` maps the old keys forward
 #: rather than rewriting the files, so a historical run keeps its own numbers.
 LEGACY_FIELD_NAMES = {
@@ -344,6 +353,7 @@ class BacktestEngine:
     @staticmethod
     def load(path: Path) -> BacktestResult:
         data = _migrate_legacy_names(json.loads(path.read_text()))
+        data.setdefault("downside_ratio_formula", DOWNSIDE_RATIO_FORMULA_LEGACY)
         tickers = [
             TickerPerformance(**_migrate_legacy_names(t))
             for t in data.pop("ticker_results", [])
@@ -493,7 +503,7 @@ class BacktestEngine:
     ) -> dict:
         """Compute standard performance metrics from a weekly price series."""
         empty = {
-            "cagr": 0.0, "sharpe": 0.0, "downside_vol_ratio": 0.0, "max_drawdown": 0.0,
+            "cagr": 0.0, "sharpe": 0.0, "downside_vol_ratio": None, "max_drawdown": 0.0,
             "volatility": 0.0, "total_return": 0.0, "win_rate": 0.0, "calmar": 0.0,
         }
         if prices is None or len(prices) < 4:
@@ -514,14 +524,13 @@ class BacktestEngine:
         excess = cagr / 100 - self.rf
         sharpe = round(excess / (vol / 100), 2) if vol > 0 else 0.0
 
-        # Return over downside volatility. **Not a Sortino ratio** (U1-9): the
-        # denominator is the spread of the losing weeks around their own mean,
-        # while Sortino uses √E[mín(r − MAR, 0)²] over every return, measured
-        # from the MAR. The formula is deliberately left alone here — relabel
-        # and recompute in the same pass is the U1-9 ``no_hacer``.
-        downside = returns[returns < 0]
-        downside_vol = downside.std() * np.sqrt(annual_factor) if len(downside) > 1 else 0.0
-        downside_vol_ratio = round(excess / downside_vol, 2) if downside_vol > 0 else 0.0
+        # Sortino (U1-9b): the same excess as the Sharpe over the downside
+        # deviation √E[mín(r − MAR, 0)²] of every week, with MAR = Rf. Until
+        # U1-9b the denominator was the spread of the losing weeks around their
+        # own mean, which shrank when the portfolio lost steadily. No week below
+        # the MAR leaves the ratio undefined: None, not 0.
+        downside_vol = downside_deviation(returns, self.rf, annual_factor)
+        downside_vol_ratio = round(excess / downside_vol, 2) if downside_vol else None
 
         rolling_max = prices.cummax()
         drawdown = (prices - rolling_max) / rolling_max

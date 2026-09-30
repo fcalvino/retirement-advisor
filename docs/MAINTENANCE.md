@@ -86,8 +86,12 @@ es `docs/INDEX.md`. Al agregar o borrar un `.md` de primera parte, actualizá la
 
 Antes de cualquier merge:
 ```bash
-./venv/bin/python3 -m pytest tests/ -v
+make check
 ```
+
+Es exactamente lo que corre el CI: `ruff check .` **antes** que los tests, así que un
+error de formato aborta el build sin correr un solo test (`docs/PROMPT_INSTRUCTIONS.md`).
+Si el cambio toca fechas u horas, además `TZ=UTC make test`.
 
 Los tests deben pasar sin regresiones. Si se agrega una feature nueva, agregar tests en `tests/`.
 

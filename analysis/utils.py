@@ -266,3 +266,34 @@ def aligned_latest(
     except (TypeError, ValueError):
         return None, None
     return values, str(period)
+
+
+def downside_deviation(
+    returns: "pd.Series",
+    mar_annual: float,
+    periods_per_year: int,
+) -> Optional[float]:
+    """Annualised downside deviation — the Sortino denominator (U1-9b).
+
+    ``√mean(mín(r − MAR, 0)²) · √periods_per_year`` over **every** return: the
+    periods above the MAR enter as zeros, and the shortfalls are measured from
+    the MAR, not from the mean of the losses. ``mar_annual`` is converted to the
+    return's period as ``(1 + mar)^(1/periods) − 1`` — the geometric convention,
+    which pairs exactly with Backtesting's CAGR numerator; against the tracker's
+    arithmetic ``mean·52`` it differs from ``rf/52`` by ~2 % relative, below the
+    ratio's two-decimal rounding for any realistic rf.
+
+    ``None`` when no period falls below the MAR (or there are no returns): the
+    ratio is undefined, not infinite and not zero. Backtesting and the portfolio
+    tracker both divide by this, so the two engines cannot drift apart again.
+    """
+    import numpy as np
+
+    values = np.asarray(returns, dtype=float)
+    values = values[~np.isnan(values)]
+    if values.size == 0:
+        return None
+    mar = (1.0 + mar_annual) ** (1.0 / periods_per_year) - 1.0
+    shortfall = np.minimum(values - mar, 0.0)
+    deviation = float(np.sqrt(np.mean(shortfall ** 2)) * np.sqrt(periods_per_year))
+    return deviation if deviation > 0 else None

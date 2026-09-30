@@ -364,6 +364,19 @@ class TestLegacyFieldNames:
         assert loaded.portfolio_downside_vol_ratio == 1.91
         assert loaded.ticker_results[0].excess_return_pct == 7.0
         assert loaded.ticker_results[0].downside_vol_ratio == 1.4
+        # U1-9b: the number stays, and the run says it predates the Sortino formula.
+        assert loaded.downside_ratio_formula == bt_mod.DOWNSIDE_RATIO_FORMULA_LEGACY
+
+    def test_a_run_saved_after_u1_9b_says_it_is_a_sortino(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(bt_mod, "RESULTS_DIR", tmp_path)
+        result = bt_mod.BacktestResult(
+            run_date="2026-09-30T10:00:00", period_years=5, start_date="2021-09-30",
+            end_date="2026-09-30", benchmark="SPY", top_n=10, universe_size=78,
+            portfolio_downside_vol_ratio=None,
+        )
+        loaded = BacktestEngine.load(BacktestEngine().save(result))
+        assert loaded.downside_ratio_formula != bt_mod.DOWNSIDE_RATIO_FORMULA_LEGACY
+        assert loaded.portfolio_downside_vol_ratio is None
 
     def test_migration_never_moves_a_number(self, tmp_path, monkeypatch):
         """Renaming a historical run must not restate what it reported."""

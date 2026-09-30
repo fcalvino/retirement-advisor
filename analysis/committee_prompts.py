@@ -597,7 +597,7 @@ def portfolio_committee_context_block(ctx: dict) -> str:
             f"Retorno anualizado: {_fmt_pct(rz.get('annualized_return_pct'))} · "
             f"P&L total: {_fmt_pct(rz.get('total_pnl_pct'))}",
             f"Sharpe: {_num(rz.get('sharpe_ratio'))} · "
-            f"{DOWNSIDE_RATIO_LABEL} (no es Sortino): "
+            f"{DOWNSIDE_RATIO_LABEL} (MAR = tasa libre de riesgo): "
             f"{_num(rz.get('downside_vol_ratio'))} · "
             f"Beta vs SPY: {_num(rz.get('beta'))} · Max drawdown: {_fmt_pct(rz.get('max_drawdown_pct'))}",
         ]
@@ -760,9 +760,8 @@ def risk_manager_portfolio_prompt(ctx: dict) -> str:
     return _portfolio_role_prompt(
         "Gestor de Riesgo",
         "Evaluá el RIESGO de la cartera tal como está hoy: concentración (posición máxima, top-3, "
-        "posiciones efectivas), riesgo REALIZADO (Sharpe, ratio retorno/vol bajista, beta vs "
-        "SPY, max drawdown histórico) y caída esperada en una crisis (stress test). El ratio "
-        "retorno/vol bajista no es un Sortino — no lo compares contra un Sortino publicado. "
+        "posiciones efectivas), riesgo REALIZADO (Sharpe, Sortino, beta vs "
+        "SPY, max drawdown histórico) y caída esperada en una crisis (stress test). "
         "Penalizá la concentración "
         "excesiva, un beta alto y la fragilidad ante crisis. Tu stance refleja qué tan resistente "
         "es la cartera a un mal escenario; tus concerns son los riesgos concretos.",
