@@ -1361,16 +1361,25 @@ def _tab_compare_content():
         _compare_prog.empty()
         st.session_state["mc_compare_results"] = _compare_mc
         st.session_state["mc_compare_horizon"]  = horizon_years
+        st.session_state["mc_compare_plan"] = _plan_mc_kwargs()
 
     compare_mc = st.session_state.get("mc_compare_results", {})
     if not compare_mc:
         return
 
+    # COMPARE-NO-SAVINGS: la comparación depende de todo el plan (ahorro, suba,
+    # drags, estrategia, inflación…), no sólo del horizonte. Si cambió cualquiera,
+    # la tabla de abajo es de otro plan y se dice.
     _stored_horizon = st.session_state.get("mc_compare_horizon", horizon_years)
     if _stored_horizon != horizon_years:
         st.warning(
             f"Los resultados de comparación son para {_stored_horizon} años. "
             "Presioná **Comparar** para actualizar."
+        )
+    elif st.session_state.get("mc_compare_plan", _plan_mc_kwargs()) != _plan_mc_kwargs():
+        st.warning(
+            "Cambiaste el plan (ahorro, supuestos o estrategia) después de comparar: "
+            "estos resultados son del plan anterior. Presioná **Comparar** para actualizar."
         )
 
     # ---- KPI comparison table ----

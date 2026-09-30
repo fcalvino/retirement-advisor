@@ -57,6 +57,10 @@ def _app():
     app.session_state["n_sims"] = 1_000
     app.session_state["monthly_savings"] = 2_000
     app.session_state["contribution_growth_pct"] = 2.0
+    # Supuestos no triviales, para que la comparación de llamadas no compare vacíos.
+    app.session_state["withdrawal_kind"] = "fixed_real"
+    app.session_state["withdrawal_amount"] = 4_000.0
+    app.session_state["withdrawal_longevity_years"] = 25
     app.run()
     assert not app.exception, [e.message for e in app.exception]
     return app
@@ -71,7 +75,12 @@ def test_every_profile_runs_the_plan_the_main_tab_runs(calls):
     app = _app()
     _click(app, "▶ Ejecutar simulación Monte Carlo")
     main = calls[-1]
+    # La llamada principal —la referencia— lleva el plan entero, con valores literales.
     assert main["annual_contribution"] == pytest.approx(24_000.0)
+    assert main["contribution_growth_rate"] == pytest.approx(0.02)
+    assert main["withdrawal_tuple"] is not None
+    assert main["longevity_years"] == 25
+    assert main["drags_tuple"]
 
     calls.clear()
     _click(app, "▶ Comparar los 3 perfiles")
@@ -86,3 +95,11 @@ def test_the_profiles_still_differ_only_by_their_scales(calls):
     _click(app, "▶ Comparar los 3 perfiles")
     scales = {(c.get("vol_scale"), c.get("return_scale")) for c in calls}
     assert len(scales) == 3
+
+
+def test_changing_the_plan_after_comparing_says_the_table_is_stale(calls):
+    app = _app()
+    _click(app, "▶ Comparar los 3 perfiles")
+    assert not any("plan anterior" in w.value for w in app.warning)
+    app.number_input(key="monthly_savings").set_value(3_000).run()
+    assert any("plan anterior" in w.value for w in app.warning)
