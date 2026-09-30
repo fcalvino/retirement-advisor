@@ -372,7 +372,7 @@ st.markdown("""
 | **💼 Mi Portfolio** | Posiciones abiertas, P&L, gráficos de pesos por sector |
 | **📊 Allocation** | Regla conservadora acciones/bonos/cash según edad |
 | **📈 Optimizer** | Mean-Variance SLSQP + 3 perfiles + 4 presets + combinación de universos |
-| **📉 Backtesting** | Curva de equity histórica, Sharpe, ratio retorno/vol bajista (no es un Sortino), Calmar, scatter Score↔CAGR |
+| **📉 Backtesting** | Curva de equity histórica, Sharpe, Sortino (MAR = tasa libre de riesgo), Calmar, scatter Score↔CAGR |
 | **🎲 Simulaciones** | Monte Carlo 10k sims (block-bootstrap) + Stress Test 6 crisis históricas |
 | **🔔 Alertas** | Motor inteligente con debounce SQLite + email/Telegram + PDF mensual |
 | **📋 Watchlist** | Tickers favoritos con alertas de precio en tiempo real |

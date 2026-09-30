@@ -4,7 +4,7 @@ Portfolio tracker — records positions and computes performance metrics.
 Metrics computed:
   - Total return, and an annualised growth of cost → value. **Not an IRR** — see
     ``ANNUALIZED_RETURN_CAVEAT`` (U5-12). A real money-weighted return is X-02.
-  - Sharpe Ratio, ratio retorno/vol bajista (no es Sortino — U1-9)
+  - Sharpe Ratio y Sortino (MAR = tasa libre de riesgo — U1-9b)
   - Max Drawdown
   - Portfolio Beta (vs SPY)
   - Sector weights
@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
+from analysis.utils import downside_deviation
 from config import DB_PATH, PORTFOLIO, RISK_FREE
 from data.fetcher import get_history, get_info
 
@@ -84,8 +85,8 @@ class PortfolioMetrics:
     #: a shared curve, no spread, no SPY overlap — never 0 or beta 1.0: the page
     #: and the portfolio committee read them as measured (PORTFOLIO-RISK-CERO).
     sharpe_ratio: Optional[float] = None
-    #: (retorno anualizado − Rf) / desvío de las semanas negativas. **Not a
-    #: Sortino ratio** — see ``data.product_ux.DOWNSIDE_RATIO_HELP`` (U1-9).
+    #: Sortino: (retorno anualizado − Rf) / desviación bajista contra MAR = Rf
+    #: — see ``data.product_ux.DOWNSIDE_RATIO_HELP`` (U1-9b).
     downside_vol_ratio: Optional[float] = None
     max_drawdown_pct: Optional[float] = None
     beta: Optional[float] = None
@@ -275,15 +276,12 @@ class Portfolio:
 
             metrics.sharpe_ratio = round((mean_ret - rf) / std_ret, 2) if std_ret > 0 else None
 
-            # Not a Sortino ratio (U1-9): this is the spread of the losing
-            # weeks around their own mean, where Sortino needs
-            # √E[mín(r − MAR, 0)²] over every return, measured from the MAR.
-            # The formula stays as it is on purpose — relabelling and
-            # recomputing in one pass is the U1-9 ``no_hacer``.
-            downside = returns[returns < 0]
-            downside_std = downside.std() * np.sqrt(annual_factor) if len(downside) > 0 else 0
+            # Sortino (U1-9b): the Sharpe's excess over the downside deviation
+            # of every week against MAR = Rf — the helper Backtesting uses too.
+            # No week below the MAR: undefined, so None.
+            downside_std = downside_deviation(returns, rf, annual_factor)
             metrics.downside_vol_ratio = (
-                round((mean_ret - rf) / downside_std, 2) if downside_std > 0 else None
+                round((mean_ret - rf) / downside_std, 2) if downside_std else None
             )
 
             rolling_max = equity_curve.cummax()

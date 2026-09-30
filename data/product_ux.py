@@ -648,39 +648,35 @@ def excess_return_column_label(benchmark: str = "") -> str:
 
 
 # --------------------------------------------------------------------------- #
-#  Canonical wording for the downside-volatility ratio (U1-9)                 #
+#  Canonical wording for the downside-risk ratio (U1-9 → U1-9b)             #
 # --------------------------------------------------------------------------- #
-#  Two engines publish a number called "Sortino" and neither one is a Sortino
-#  ratio. ``analysis/backtesting.py`` and ``portfolio/tracker.py`` both compute
-#  the denominator as ``returns[returns < 0].std()``: the standard deviation of
-#  the losing weeks **around their own mean**. The Sortino denominator is the
-#  downside deviation ``√E[mín(r − MAR, 0)²]``, taken over *every* return with
-#  the gains entering as zeros and the deviations measured from the MAR, not
-#  from the mean of the losses.
+#  U1-9 (2026-08-25) took the name «Sortino» away from a number that was not
+#  one: both engines divided by ``returns[returns < 0].std()``, the spread of
+#  the losing weeks around their own mean, which shrinks when the portfolio
+#  loses steadily and makes the ratio go up. U1-9b (2026-09-30) fixed the
+#  formula — ``analysis.utils.downside_deviation``, √E[mín(r − MAR, 0)²] over
+#  every week with MAR = the risk-free rate — so the name comes back (user's
+#  decision). The numerator is each engine's Sharpe excess.
 #
-#  They are not the same quantity and the difference is not a rounding
-#  artefact: dropping the winning weeks shrinks the sample, and centring on the
-#  mean of the losses instead of on the MAR removes the level of the losses
-#  entirely. A run of uniformly bad weeks has a small spread around its own
-#  mean, so the current denominator goes *down* exactly when the portfolio is
-#  losing steadily — and the published ratio goes up.
-#
-#  The U1-9 ``no_hacer`` is "relabel + recálculo juntos": moving the formula
-#  changes every ratio on two surfaces at once and belongs to its own wave
-#  (oleada 5). This pass only stops the number from claiming a name it has not
-#  earned — no value moves.
-#
-#  Locked by ``tests/test_downside_ratio_label_contract.py``.
+#  Locked by ``tests/test_downside_ratio_label_contract.py`` and
+#  ``tests/test_sortino_oracle.py``.
 
-DOWNSIDE_RATIO_LABEL = "Ratio retorno/vol bajista"
-DOWNSIDE_RATIO_SHORT = "Ret./vol bajista"
+DOWNSIDE_RATIO_LABEL = "Sortino"
+DOWNSIDE_RATIO_SHORT = "Sortino"
 DOWNSIDE_RATIO_HELP = (
-    "Retorno anualizado menos la tasa libre de riesgo, dividido por el desvío de "
-    "las semanas negativas. **No es el ratio de Sortino**: el denominador de "
-    "Sortino es √E[mín(r − MAR, 0)²] sobre *todos* los retornos, medido contra el "
-    "MAR; acá se mide el desvío de las semanas perdedoras alrededor de su propia "
-    "media. Sirve para ordenar activos entre sí dentro de esta pantalla, no para "
-    "compararlo contra un Sortino publicado afuera."
+    "Ratio de Sortino: el mismo exceso sobre la tasa libre de riesgo que el Sharpe, "
+    "dividido por la desviación bajista √E[mín(r − MAR, 0)²], calculada sobre "
+    "*todas* las semanas con el MAR igual a la tasa libre de riesgo. Sólo castiga "
+    "las semanas que rinden menos que un bono; las que rinden más entran como cero. "
+    "«—» si ninguna semana quedó por debajo del MAR."
+)
+#: A backtest saved before U1-9b keeps the ratio it was saved with — and that
+#: one predates the Sortino formula. Shown only on such a run.
+DOWNSIDE_RATIO_LEGACY_CAPTION = (
+    "Este backtest se guardó antes de U1-9b: su Sortino se calculó con la fórmula "
+    "anterior (desvío de las semanas negativas alrededor de su propia media), que no "
+    "era un Sortino, y no se compara con uno medido hoy. Corré el backtest de nuevo "
+    "para verlo con la fórmula actual."
 )
 
 

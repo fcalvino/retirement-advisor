@@ -2749,7 +2749,9 @@ class CommitteeConfig:
     # riesgo cambiario salió en 1 de 3 corridas; el prompt de decisión lo pide.
     # 2026-09-29c: el riesgo país del CONTEXTO PAÍS es obligatorio en
     # macro_factors (con «si es material» quedó afuera 3 de 6 veces).
-    prompt_version: str = "2026-09-29c"
+    # 2026-09-30a: U1-9b — el ratio bajista del comité de cartera es un Sortino
+    # (MAR = tasa libre de riesgo); sale la advertencia «no es un Sortino».
+    prompt_version: str = "2026-09-30a"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a

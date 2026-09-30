@@ -620,9 +620,10 @@ class TestBacktestMetricsOracle:
         assert m["volatility"] == pytest.approx(0.0, abs=1e-9)
 
     def test_too_short_a_series_returns_zeros_not_garbage(self):
+        # The Sortino is None, not 0: unmeasured is not a measurement (U1-9b).
         m = BacktestEngine()._metrics(self._series([100.0, 110.0]))
         assert m == {
-            "cagr": 0.0, "sharpe": 0.0, "downside_vol_ratio": 0.0, "max_drawdown": 0.0,
+            "cagr": 0.0, "sharpe": 0.0, "downside_vol_ratio": None, "max_drawdown": 0.0,
             "volatility": 0.0, "total_return": 0.0, "win_rate": 0.0, "calmar": 0.0,
         }
 

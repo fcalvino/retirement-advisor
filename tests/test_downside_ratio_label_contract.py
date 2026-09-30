@@ -1,26 +1,23 @@
-"""Contract of the downside-volatility ratio (U1-9).
+"""Contract of the downside-risk ratio (U1-9 → U1-9b).
 
-Two engines publish a number called "Sortino" and neither one is a Sortino
-ratio. ``analysis/backtesting.py`` and ``portfolio/tracker.py`` both build the
-denominator as ``returns[returns < 0].std()``: the standard deviation of the
-losing weeks **around their own mean**. Sortino's denominator is the downside
-deviation ``√E[mín(r − MAR, 0)²]``, taken over *every* return, with the gains
-entering as zeros and the deviations measured from the MAR.
+U1-9 (2026-08-25) found that the two engines published a number called
+"Sortino" that was not one: ``analysis/backtesting.py`` and
+``portfolio/tracker.py`` divided by ``returns[returns < 0].std()``, the spread of
+the losing weeks **around their own mean**, which shrinks when the portfolio
+loses steadily. It relabelled the number and left the formula alone on purpose
+(its ``no_hacer`` was "relabel + recálculo juntos"); the guard on that half was
+``test_the_formula_was_left_alone``, deleted here deliberately.
 
-The gap is not a rounding artefact. Dropping the winning weeks shrinks the
-sample, and centring on the mean of the losses instead of on the MAR discards
-the *level* of the losses entirely — a run of uniformly bad weeks has a small
-spread around its own mean, so this denominator falls exactly when the
-portfolio is losing steadily, and the published ratio rises.
-
-The U1-9 ``no_hacer`` is "Relabel + recalculo juntos", so **the formula is not
-touched here** — that is oleada 5. This wave only stops the number from
-claiming a name it has not earned. ``test_the_formula_was_left_alone`` is the
-guard on that half of the bargain: it fails if this pass quietly recomputed
-anything.
+U1-9b (2026-09-30) fixed the formula — ``analysis.utils.downside_deviation``,
+√E[mín(r − MAR, 0)²] over every week with MAR = the risk-free rate, checked
+against an independent loop in ``tests/test_sortino_oracle.py`` — and, by the
+user's decision, gave the name back. The contract flips with it: the label is
+«Sortino», the help states the definition, and a surface that still says the
+number *is not* a Sortino is now the one that lies.
 
 Sweep scope follows U1-1/U1-3/U1-4: the ``.py`` that render copy plus the
-living markdown from ``docs/INDEX.md``. Historical roles stay out on purpose.
+living markdown from ``docs/INDEX.md``. Historical roles stay out on purpose —
+they describe the old ratio in the past tense.
 """
 
 from __future__ import annotations
@@ -50,15 +47,13 @@ USER_FACING = [
     "data/product_ux.py",
 ]
 
-#: The two engines that compute the ratio. Not copy, but a field called
-#: ``sortino`` is how the label grows back.
+#: The two engines that compute the ratio.
 ENGINE_SOURCES = ["analysis/backtesting.py", "portfolio/tracker.py"]
 
 LIVING_DOC_ROLES = frozenset({"living-guide", "how-to", "methodology", "ai-context"})
 
-_SORTINO_RE = re.compile(r"sortino", re.IGNORECASE)
-#: Naming Sortino is fine — claiming to *be* one is not. A denial on the line,
-#: or in the few lines just above it, is what separates the two.
+#: The present-tense denial U1-9 wrote everywhere. After U1-9b it is false; the
+#: past tense («no era un Sortino») describes the old ratio and stays allowed.
 _DENIAL_RE = re.compile(
     r"no es (un |el )?(ratio de )?sortino"
     r"|no (es )?un sortino"
@@ -68,12 +63,6 @@ _DENIAL_RE = re.compile(
     r"|sin ser un sortino",
     re.IGNORECASE,
 )
-#: The honest name. A line that carries it alongside the old one is a migration
-#: entry (``"sortino": "downside_vol_ratio"``) or a field comment pointing at the
-#: canonical wording — either way it is not a label promising a Sortino.
-_HONEST_NAME = "downside_vol_ratio"
-#: A block header two or three lines up scopes the lines under it.
-_CONTEXT_LINES = 4
 #: Comment and docstring markers, so a denial split across two commented lines
 #: reads as one sentence instead of two half-sentences.
 _MARKER_RE = re.compile(r"^\s*(#:|#|\*)?\s*", re.MULTILINE)
@@ -94,19 +83,15 @@ def living_docs() -> list[str]:
     ]
 
 
-def _claims_to_be_sortino(line: str, context: str = "") -> bool:
-    if not _SORTINO_RE.search(line) or _HONEST_NAME in line:
-        return False
-    return not _DENIAL_RE.search(_normalise(f"{context}\n{line}"))
+def _denies_being_sortino(line: str) -> bool:
+    return bool(_DENIAL_RE.search(_normalise(line)))
 
 
-def _sortino_offenders(paths: list[str], context_lines: int = _CONTEXT_LINES) -> list[str]:
+def _denial_offenders(paths: list[str]) -> list[str]:
     offenders: list[str] = []
     for rel in paths:
-        lines = _src(rel).splitlines()
-        for n, line in enumerate(lines, start=1):
-            context = "\n".join(lines[max(0, n - 1 - context_lines):n - 1])
-            if _claims_to_be_sortino(line, context):
+        for n, line in enumerate(_src(rel).splitlines(), start=1):
+            if _denies_being_sortino(line):
                 offenders.append(f"{rel}:{n}: {line.strip()}")
     return offenders
 
@@ -116,88 +101,68 @@ def _sortino_offenders(paths: list[str], context_lines: int = _CONTEXT_LINES) ->
 # --------------------------------------------------------------------------- #
 
 
-def test_the_label_names_the_denominator_it_actually_uses():
-    assert "bajista" in DOWNSIDE_RATIO_LABEL.lower()
-    assert "bajista" in DOWNSIDE_RATIO_SHORT.lower()
-    assert "sortino" not in DOWNSIDE_RATIO_LABEL.lower()
-    assert "sortino" not in DOWNSIDE_RATIO_SHORT.lower()
+def test_the_label_is_sortino():
+    assert DOWNSIDE_RATIO_LABEL == "Sortino"
+    assert DOWNSIDE_RATIO_SHORT == "Sortino"
 
 
-def test_the_help_says_which_definition_is_missing():
-    """A denial is worth little without the definition it is denying."""
-    assert _DENIAL_RE.search(DOWNSIDE_RATIO_HELP)
-    assert "MAR" in DOWNSIDE_RATIO_HELP
-    # The distinguishing detail: this one centres on the mean of the losses.
-    assert "media" in DOWNSIDE_RATIO_HELP.lower()
+def test_the_help_states_the_definition_it_uses():
+    """The name is only worth something next to the formula and the MAR."""
+    assert "√E[mín(r − MAR, 0)²]" in DOWNSIDE_RATIO_HELP
+    assert "todas" in DOWNSIDE_RATIO_HELP
+    assert "MAR igual a la tasa libre de riesgo" in DOWNSIDE_RATIO_HELP
+    assert not _denies_being_sortino(DOWNSIDE_RATIO_HELP)
 
 
 # --------------------------------------------------------------------------- #
-#  The sweep                                                                   #
+#  The sweep: no surface keeps the old denial                                  #
 # --------------------------------------------------------------------------- #
 
 
-def test_no_user_facing_surface_claims_to_show_a_sortino():
-    offenders = _sortino_offenders(USER_FACING)
+def test_no_user_facing_surface_still_denies_the_sortino():
+    offenders = _denial_offenders(USER_FACING)
     assert not offenders, (
-        "«Sortino» sobre un número cuyo denominador es el desvío de las semanas "
-        "perdedoras alrededor de su propia media:\n" + "\n".join(offenders)
-    )
-
-
-def test_no_living_doc_claims_the_project_computes_a_sortino():
-    offenders = _sortino_offenders(living_docs(), context_lines=0)
-    assert not offenders, (
-        "markdown vivo prometiendo un Sortino que ningún motor calcula:\n"
+        "copy que sigue diciendo que el ratio no es un Sortino (U1-9b lo es):\n"
         + "\n".join(offenders)
     )
 
 
-def test_the_engines_do_not_carry_the_name_either():
-    offenders = _sortino_offenders(ENGINE_SOURCES)
+def test_no_living_doc_still_denies_the_sortino():
+    offenders = _denial_offenders(living_docs())
     assert not offenders, (
-        "el motor sigue llamando Sortino a su propio número:\n" + "\n".join(offenders)
+        "markdown vivo con la negación de U1-9, falsa desde U1-9b:\n" + "\n".join(offenders)
     )
 
 
-def test_the_sweep_still_catches_the_labels_that_were_there():
-    """Guard on the guard: the forms the product actually shipped."""
-    assert _claims_to_be_sortino('col2.metric("Sortino Ratio", f"{x:.2f}")')
-    assert _claims_to_be_sortino('    "Sortino": getattr(t, "sortino", 0),')
-    assert _claims_to_be_sortino("    sortino_ratio: float = 0.0")
-    assert _claims_to_be_sortino("| Backtesting | Sharpe, Sortino, Calmar |")
-    # A denial passes, on the line or from the block just above it.
-    assert not _claims_to_be_sortino('"Ratio retorno/vol bajista (no es Sortino)"')
-    assert not _claims_to_be_sortino(
-        '            help="El ratio que ves acá no es un Sortino.",'
-    )
-    # Even when the denial is split across two commented lines.
-    assert not _claims_to_be_sortino(
-        "    #: Sortino ratio** — see ``DOWNSIDE_RATIO_HELP``.",
-        context="    #: (CAGR − Rf) / std of the losing weeks. **NOT a",
-    )
-    # A migration entry names both the old key and the honest one.
-    assert not _claims_to_be_sortino('    "sortino": "downside_vol_ratio",')
+def test_the_engines_do_not_deny_it_either():
+    offenders = _denial_offenders(ENGINE_SOURCES)
+    assert not offenders, "\n".join(offenders)
+
+
+def test_the_sweep_still_catches_the_denials_that_were_there():
+    """Guard on the guard: the forms U1-9 shipped, which are now false."""
+    assert _denies_being_sortino('f"{DOWNSIDE_RATIO_LABEL} (no es Sortino): "')
+    assert _denies_being_sortino('"retorno/vol bajista no es un Sortino — no lo compares"')
+    assert _denies_being_sortino("    portfolio_downside_vol_ratio: float = 0.0   # NOT a Sortino ratio — U1-9")
+    assert _denies_being_sortino('"las semanas negativas. **No es el ratio de Sortino**: el "')
+    # The past tense describes the old ratio and is allowed.
+    assert not _denies_being_sortino("el ratio de antes no era un Sortino")
 
 
 # --------------------------------------------------------------------------- #
-#  The formula stays where it is (the other half of the U1-9 bargain)          #
+#  One formula, in one place                                                   #
 # --------------------------------------------------------------------------- #
 
 
-def test_the_formula_was_left_alone():
-    """U1-9 forbids relabelling and recomputing in one pass.
+def test_both_engines_divide_by_the_shared_downside_deviation():
+    """U1-9b: the denominator lives in ``analysis.utils.downside_deviation``.
 
-    Both engines must still divide by the std of the negative returns. When
-    oleada 5 replaces this with ``√E[mín(r − MAR, 0)²]``, this test is what it
-    has to come here and delete — deliberately, not by accident.
+    Replaces ``test_the_formula_was_left_alone`` (U1-9), deleted on purpose.
     """
     for rel in ENGINE_SOURCES:
         src = _src(rel)
-        assert "returns[returns < 0]" in src, rel
-        assert "downside.std()" in src, rel
-        # And nothing resembling the real downside deviation snuck in.
-        assert "clip(upper=0" not in src, rel
-        assert "minimum(" not in src, rel
+        assert "downside_deviation(" in src, rel
+        assert "returns[returns < 0]" not in src, rel
 
 
 def test_every_surface_reads_the_label_from_the_one_source():
@@ -207,7 +172,7 @@ def test_every_surface_reads_the_label_from_the_one_source():
 
 
 def test_the_persisted_field_name_migrates_instead_of_lying():
-    """Backtests saved as ``sortino`` still load — under the honest name."""
+    """Backtests saved as ``sortino`` still load — under the field name that stayed."""
     from analysis.backtesting import LEGACY_FIELD_NAMES
     assert LEGACY_FIELD_NAMES["sortino"] == "downside_vol_ratio"
     assert LEGACY_FIELD_NAMES["portfolio_sortino"] == "portfolio_downside_vol_ratio"
