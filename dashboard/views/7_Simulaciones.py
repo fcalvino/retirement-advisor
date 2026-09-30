@@ -41,6 +41,7 @@ from data.product_ux import (
     PROXY_RATIO_HELP,
     PROXY_RATIO_LABEL,
     PROXY_RETURN_HELP,
+    STRATEGY_IGNORES_SAVINGS_CAPTION,
     ar_dual_context,
     contribution_inputs,
     fmt_attractiveness_index,
@@ -254,6 +255,10 @@ if annual_contribution > 0:
         f"≈ \\${annual_contribution:,.0f}/año, en doce depósitos"
         + (" · viene de tu perfil" if _contrib["source"] == "perfil" else "")
     )
+# WD-STRATEGY-CONTRIB: el aviso va acá, junto al ahorro, pero se decide después de
+# `render_withdrawal_controls` (pestaña Monte Carlo), que es quien escribe la
+# estrategia de esta corrida: decidirlo ahora mostraría la elección anterior.
+_savings_strategy_slot = st.sidebar.empty()
 # N8b: el ahorro crece con su propio supuesto. Hasta N8b lo indexaba la inflación
 # de abajo, así que esta pantalla proyectaba un ahorro creciente mientras Metas
 # y el consejo de «cuánto ahorrar» lo dejaban fijo (P10 +25–30 % para el mismo
@@ -352,6 +357,9 @@ def _tab_mc_content():
     render_drags_controls(key_prefix="sim_")
     # Fase H.1 — decumulation / withdrawal strategy (persistent, opt-in).
     render_withdrawal_controls(key_prefix="sim_", initial_value=float(initial_value))
+    # Misma fuente que el motor: con monto 0 no hay estrategia y el ahorro sí entra.
+    if annual_contribution > 0 and get_withdrawal_strategy(float(initial_value)) is not None:
+        _savings_strategy_slot.caption(STRATEGY_IGNORES_SAVINGS_CAPTION)
     run_mc = st.button("▶ Ejecutar simulación Monte Carlo", type="primary")
 
     if not run_mc and "mc_result" not in st.session_state:
@@ -678,12 +686,18 @@ En resumen: el modelo no está diciendo "siempre vas a ganar mucho". Está dicie
 """)
 
         if target_value > 0:
+            # WD-STRATEGY-CONTRIB: con estrategia activa el ahorro no entra, así que
+            # un consejo de «más ahorro» tiene que decir que acá no mueve el número.
+            _savings_note = (
+                " (con la estrategia de retiro activa, el ahorro no entra en esta proyección)"
+                if getattr(mc, "contribution_ignored_by_strategy", 0.0) > 0 else ""
+            )
             if mc.prob_achieve_target_pct >= 85:
                 st.success(f"✅ Con este plan tenés **muy buena probabilidad ({mc.prob_achieve_target_pct:.0f}%)** de alcanzar tu meta de \\${target_value:,.0f}.")
             elif mc.prob_achieve_target_pct >= 60:
-                st.warning(f"⚠️ Tenés una probabilidad razonable ({mc.prob_achieve_target_pct:.0f}%), pero no es altísima. Considerá ajustar aportes, reducir la meta o asumir un poco más de riesgo.")
+                st.warning(f"⚠️ Tenés una probabilidad razonable ({mc.prob_achieve_target_pct:.0f}%), pero no es altísima. Considerá ajustar aportes, reducir la meta o asumir un poco más de riesgo{_savings_note}.")
             else:
-                st.error(f"❌ La probabilidad de alcanzar \\${target_value:,.0f} es baja ({mc.prob_achieve_target_pct:.0f}%). Este plan probablemente necesite cambios (más ahorro, más horizonte, o menos retiro).")
+                st.error(f"❌ La probabilidad de alcanzar \\${target_value:,.0f} es baja ({mc.prob_achieve_target_pct:.0f}%). Este plan probablemente necesite cambios (más ahorro, más horizonte, o menos retiro){_savings_note}.")
 
         if annual_withdrawal > 0 and inflation_rate > 0:
             st.info("ℹ️ Recordá que el retiro que estás simulando **crece cada año** con la inflación que elegiste. Esto hace que el escenario pesimista sea más exigente.")
@@ -974,6 +988,9 @@ def _render_sensitivity_lab():
         return
 
     _wd = get_withdrawal_strategy(float(initial_value))
+    if _wd and annual_contribution > 0:
+        # WD-STRATEGY-CONTRIB: el caso base y cada palanca corren sin el ahorro.
+        st.caption(STRATEGY_IGNORES_SAVINGS_CAPTION)
     base_params = {
         "symbols": tuple(symbols),
         "weights": tuple(weights) if weights else None,

@@ -154,6 +154,11 @@ class MonteCarloResult:
     #  stay at their defaults.                                              #
     # ------------------------------------------------------------------ #
     withdrawal_strategy_applied: Optional[dict] = None
+    #: Yearly savings the caller passed that the strategy path did NOT apply
+    #: (WD-STRATEGY-CONTRIB). A strategy means "already retired": the savings
+    #: are left out on purpose (user's decision, 2026-09-30) and said so in
+    #: ``warnings``. 0.0 when nothing was left out.
+    contribution_ignored_by_strategy: float = 0.0
     prob_sustain_real_pct: float = 0.0        # % paths income lasted the whole horizon
     prob_legacy_pct: float = 0.0              # % paths with money left at the end
     median_legacy: float = 0.0               # median terminal value (USD)
@@ -561,6 +566,18 @@ class MonteCarloSimulator:
                 longevity_years=longevity_years,
             )
             result.withdrawal_strategy_applied = strategy.to_dict()
+            # WD-STRATEGY-CONTRIB: apply_withdrawal_strategy takes no deposits, so a
+            # plan with savings and a strategy projects without the savings. That
+            # is the decided model — a strategy means you already retired — but the
+            # screen must not show it as a projection that includes them.
+            if contribution > 0:
+                result.contribution_ignored_by_strategy = contribution
+                result.warnings.append(
+                    f"Con una estrategia de retiro activa la proyección no incluye tu "
+                    f"ahorro (${contribution:,.0f}/año): la estrategia supone que ya "
+                    f"estás retirado y gastando. Para ver el plan con tu ahorro, volvé "
+                    f"a «Acumulación (sin retiros)»."
+                )
             result.prob_sustain_real_pct = dec["prob_sustain_real_pct"]
             result.prob_legacy_pct       = dec["prob_legacy_pct"]
             result.median_legacy         = dec["median_legacy"]
