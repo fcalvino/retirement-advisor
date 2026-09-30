@@ -343,6 +343,32 @@ if not (opt_result and opt_result.tickers):
 #  Tabs                                                                #
 # ------------------------------------------------------------------ #
 
+def _plan_mc_kwargs() -> dict:
+    """The user's plan as ``cached_monte_carlo`` arguments — one source for every tab.
+
+    COMPARE-NO-SAVINGS: «Comparar Perfiles» armaba su propia llamada y se olvidaba
+    del ahorro, los drags y la estrategia de retiro, así que comparaba otro plan
+    (probabilidad de meta 2,5 % contra 97,5 % sobre el perfil real). La pestaña
+    principal y la de perfiles leen de acá; un perfil sólo agrega sus escalas.
+    """
+    _wd = get_withdrawal_strategy(float(initial_value))   # Fase H.1
+    return dict(
+        symbols=tuple(symbols),
+        weights_tuple=tuple(weights) if weights else None,
+        horizon_years=horizon_years,
+        n_sims=n_sims,
+        initial_value=float(initial_value),
+        annual_withdrawal=float(annual_withdrawal),
+        annual_contribution=float(annual_contribution),   # U4-5
+        target_value=float(target_value),
+        withdrawal_growth_rate=float(inflation_rate) / 100.0,   # Phase 0: growing withdrawals
+        contribution_growth_rate=float(contribution_growth_pct) / 100.0,  # N8b
+        drags_tuple=drags_to_tuple(get_economic_drags()),      # Item 1
+        withdrawal_tuple=withdrawal_to_tuple(_wd),              # Fase H.1
+        longevity_years=get_longevity_years() if _wd else None,  # Fase H.1
+    )
+
+
 tab_mc, tab_stress, tab_custom, tab_compare, tab_goals = st.tabs(
     ["📈 Monte Carlo", "🌪️ Stress Test", "🎯 Escenario personalizado", "🔀 Comparar Perfiles", "🏆 Mis Metas"]
 )
@@ -375,23 +401,8 @@ def _tab_mc_content():
     if run_mc:
         drags = get_economic_drags()
         wd_strategy = get_withdrawal_strategy(float(initial_value))   # Fase H.1
-        longevity = get_longevity_years() if wd_strategy else None
         with st.spinner(f"Ejecutando {n_sims:,} simulaciones × {horizon_years} años…"):
-            mc = cached_monte_carlo(
-                symbols=tuple(symbols),
-                weights_tuple=tuple(weights) if weights else None,
-                horizon_years=horizon_years,
-                n_sims=n_sims,
-                initial_value=float(initial_value),
-                annual_withdrawal=float(annual_withdrawal),
-                annual_contribution=float(annual_contribution),   # U4-5
-                target_value=float(target_value),
-                withdrawal_growth_rate=float(inflation_rate) / 100.0,   # Phase 0: growing withdrawals
-                contribution_growth_rate=float(contribution_growth_pct) / 100.0,  # N8b
-                drags_tuple=drags_to_tuple(drags),                      # Item 1
-                withdrawal_tuple=withdrawal_to_tuple(wd_strategy),      # Fase H.1
-                longevity_years=longevity,                              # Fase H.1
-            )
+            mc = cached_monte_carlo(**_plan_mc_kwargs())
         st.session_state["mc_result"] = mc
         st.session_state["mc_params"] = {
             "horizon_years": horizon_years,
@@ -1320,7 +1331,8 @@ with tab_custom:
 def _tab_compare_content():
     st.subheader("🔀 Cómo afecta el perfil de riesgo a las proyecciones")
     st.caption(
-        "Compara Conservador / Moderado / Agresivo usando los **mismos activos** "
+        "Compara Conservador / Moderado / Agresivo con **tu mismo plan** —activos, "
+        "ahorro, drags y estrategia de retiro de la pestaña Monte Carlo— "
         "pero con distintos supuestos de retorno y volatilidad. "
         "Conservador = más haircut al retorno histórico y más volatilidad simulada; "
         "Agresivo = menos penalización."
@@ -1342,30 +1354,32 @@ def _tab_compare_content():
         for _ci, (_pk, _scales) in enumerate(_PROFILE_MC_SCALES.items()):
             _compare_prog.progress((_ci + 1) / 3, text=f"Simulando perfil {_pk}…")
             _compare_mc[_pk] = cached_monte_carlo(
-                symbols=tuple(symbols),
-                weights_tuple=tuple(weights) if weights else None,
-                horizon_years=horizon_years,
-                n_sims=n_sims,
-                initial_value=float(initial_value),
-                annual_withdrawal=float(annual_withdrawal),
-                target_value=float(target_value),
-                withdrawal_growth_rate=float(inflation_rate) / 100.0,
+                **_plan_mc_kwargs(),   # COMPARE-NO-SAVINGS: el mismo plan que la principal
                 vol_scale=_scales["vol_scale"],
                 return_scale=_scales["return_scale"],
             )
         _compare_prog.empty()
         st.session_state["mc_compare_results"] = _compare_mc
         st.session_state["mc_compare_horizon"]  = horizon_years
+        st.session_state["mc_compare_plan"] = _plan_mc_kwargs()
 
     compare_mc = st.session_state.get("mc_compare_results", {})
     if not compare_mc:
         return
 
+    # COMPARE-NO-SAVINGS: la comparación depende de todo el plan (ahorro, suba,
+    # drags, estrategia, inflación…), no sólo del horizonte. Si cambió cualquiera,
+    # la tabla de abajo es de otro plan y se dice.
     _stored_horizon = st.session_state.get("mc_compare_horizon", horizon_years)
     if _stored_horizon != horizon_years:
         st.warning(
             f"Los resultados de comparación son para {_stored_horizon} años. "
             "Presioná **Comparar** para actualizar."
+        )
+    elif st.session_state.get("mc_compare_plan", _plan_mc_kwargs()) != _plan_mc_kwargs():
+        st.warning(
+            "Cambiaste el plan (ahorro, supuestos o estrategia) después de comparar: "
+            "estos resultados son del plan anterior. Presioná **Comparar** para actualizar."
         )
 
     # ---- KPI comparison table ----
