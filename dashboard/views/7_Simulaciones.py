@@ -255,8 +255,10 @@ if annual_contribution > 0:
         f"≈ \\${annual_contribution:,.0f}/año, en doce depósitos"
         + (" · viene de tu perfil" if _contrib["source"] == "perfil" else "")
     )
-    if st.session_state.get("withdrawal_kind", "none") != "none":
-        st.sidebar.caption(STRATEGY_IGNORES_SAVINGS_CAPTION)
+# WD-STRATEGY-CONTRIB: el aviso va acá, junto al ahorro, pero se decide después de
+# `render_withdrawal_controls` (pestaña Monte Carlo), que es quien escribe la
+# estrategia de esta corrida: decidirlo ahora mostraría la elección anterior.
+_savings_strategy_slot = st.sidebar.empty()
 # N8b: el ahorro crece con su propio supuesto. Hasta N8b lo indexaba la inflación
 # de abajo, así que esta pantalla proyectaba un ahorro creciente mientras Metas
 # y el consejo de «cuánto ahorrar» lo dejaban fijo (P10 +25–30 % para el mismo
@@ -355,6 +357,9 @@ def _tab_mc_content():
     render_drags_controls(key_prefix="sim_")
     # Fase H.1 — decumulation / withdrawal strategy (persistent, opt-in).
     render_withdrawal_controls(key_prefix="sim_", initial_value=float(initial_value))
+    # Misma fuente que el motor: con monto 0 no hay estrategia y el ahorro sí entra.
+    if annual_contribution > 0 and get_withdrawal_strategy(float(initial_value)) is not None:
+        _savings_strategy_slot.caption(STRATEGY_IGNORES_SAVINGS_CAPTION)
     run_mc = st.button("▶ Ejecutar simulación Monte Carlo", type="primary")
 
     if not run_mc and "mc_result" not in st.session_state:
@@ -983,6 +988,9 @@ def _render_sensitivity_lab():
         return
 
     _wd = get_withdrawal_strategy(float(initial_value))
+    if _wd and annual_contribution > 0:
+        # WD-STRATEGY-CONTRIB: el caso base y cada palanca corren sin el ahorro.
+        st.caption(STRATEGY_IGNORES_SAVINGS_CAPTION)
     base_params = {
         "symbols": tuple(symbols),
         "weights": tuple(weights) if weights else None,

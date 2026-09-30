@@ -64,3 +64,57 @@ def test_control_a_strategy_without_savings_has_no_such_warning():
     result = _run(withdrawal_strategy=STRATEGY)
     assert not _mentions_ignored_savings(result)
     assert result.contribution_ignored_by_strategy == 0.0
+
+
+def test_a_legacy_negative_withdrawal_is_savings_too():
+    """``annual_withdrawal < 0`` se lee como aporte: con estrategia también queda afuera."""
+    result = _run(annual_withdrawal=-CONTRIB, withdrawal_strategy=STRATEGY)
+    assert result.contribution_ignored_by_strategy == pytest.approx(CONTRIB)
+
+
+# --------------------------------------------------------------------------- #
+#  La pantalla: el aviso del sidebar sale de la misma estrategia que el motor   #
+# --------------------------------------------------------------------------- #
+
+@pytest.fixture
+def page(monkeypatch):
+    from pathlib import Path
+
+    from streamlit.testing.v1 import AppTest
+
+    from dashboard import shared
+    from data.preferences import UserPreferences
+
+    monkeypatch.setattr(shared, "get_user_prefs", lambda: UserPreferences())
+    monkeypatch.setattr(shared, "seed_session_defaults_from_profile", lambda *a, **k: None)
+    path = Path(__file__).resolve().parents[1] / "dashboard/views/7_Simulaciones.py"
+
+    def open_page(**state):
+        app = AppTest.from_file(str(path), default_timeout=60)
+        app.session_state["universe"] = ["AAPL", "MSFT"]
+        app.session_state["monthly_savings"] = 2_000
+        for k, v in state.items():
+            app.session_state[k] = v
+        app.run()
+        assert not app.exception, [e.message for e in app.exception]
+        return app
+
+    return open_page
+
+
+def _sidebar_warns(app) -> bool:
+    return any("no entra" in c.value for c in app.sidebar.caption)
+
+
+def test_the_sidebar_warns_in_the_same_run_the_strategy_is_chosen(page):
+    app = page()
+    assert not _sidebar_warns(app)
+    app.selectbox(key="sim_wd_kind").select("fixed_real").run()
+    assert not app.exception, [e.message for e in app.exception]
+    assert _sidebar_warns(app)
+
+
+def test_a_strategy_with_nothing_to_withdraw_is_not_a_strategy(page):
+    """Monto 0: el builder no arma estrategia, el motor suma el ahorro y no hay aviso."""
+    app = page(withdrawal_kind="fixed_real", withdrawal_amount=0.0)
+    assert not _sidebar_warns(app)
