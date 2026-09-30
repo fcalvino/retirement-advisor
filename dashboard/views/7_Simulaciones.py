@@ -389,6 +389,7 @@ def _tab_mc_content():
             "horizon_years": horizon_years,
             "initial_value": initial_value,
             "inflation_rate": inflation_rate,
+            "contribution_growth_pct": contribution_growth_pct,   # N8b: saved with the plan
             "n_sims": n_sims,
             "drags": drags,   # Item 1: remember the assumptions used
             "withdrawal_strategy": wd_strategy,   # Fase H.1: remember the strategy used

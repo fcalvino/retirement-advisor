@@ -2555,6 +2555,13 @@ def plan_load_session_updates(
         if _inf is not None:
             updates["inflation_rate"] = _inf
 
+    # N8b: a plan saved with a non-zero savings raise must reload with it, or it
+    # shows another projection without saying so. Absent (older plans) → the
+    # user's current value survives, like the inflation above.
+    contribution_growth = _safe_float(mc.get("contribution_growth_pct"))
+    if contribution_growth is not None:
+        updates["contribution_growth_pct"] = contribution_growth
+
     goals = getattr(plan_snapshot, "goals", None) or []
     if goals:
         updates["goals_list"] = list(goals)

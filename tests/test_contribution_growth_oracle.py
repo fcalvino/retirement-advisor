@@ -82,6 +82,37 @@ def test_withdrawals_still_grow_with_the_spending_rate():
     assert result.median_terminal == pytest.approx(expected, rel=1e-9)
 
 
+def _oracle_mixed(index, initial, contribution, c_growth, withdrawal, w_growth, years):
+    """Reference: deposits and withdrawals on one calendar, each with its own raise.
+
+    Same weeks as the engine's documented cadence; a deposit and a withdrawal on
+    the same week — the deposit first (you get paid, then you spend).
+    """
+    events = []
+    for periods, amount, growth, sign, order in (
+        (MONTE_CARLO.contribution_periods_per_year, contribution, c_growth, +1.0, 0),
+        (MONTE_CARLO.withdrawal_periods_per_year, withdrawal, w_growth, -1.0, 1),
+    ):
+        for yr in range(1, years + 1):
+            for m in range(1, periods + 1):
+                week = round(m * 52 / periods) + (yr - 1) * 52
+                events.append((week, order, sign * amount / periods * (1.0 + growth) ** (yr - 1)))
+    wealth, previous = initial, 0
+    for week, _, cash in sorted(events):
+        wealth *= index[week] / index[previous]
+        wealth += cash
+        previous = week
+    return wealth * index[-1] / index[previous]
+
+
+def test_each_direction_grows_with_its_own_rate_in_the_same_plan():
+    result = _run(annual_contribution=CONTRIB, contribution_growth_rate=0.02,
+                  annual_withdrawal=3_000.0, withdrawal_growth_rate=0.04)
+    expected = _oracle_mixed(_index(RATE, HORIZON), INITIAL, CONTRIB, 0.02,
+                             3_000.0, 0.04, HORIZON)
+    assert result.median_terminal == pytest.approx(expected, rel=1e-9)
+
+
 def test_in_accumulation_the_spending_lever_moves_nothing():
     base = _run(annual_contribution=CONTRIB, withdrawal_growth_rate=0.0)
     hot = _run(annual_contribution=CONTRIB, withdrawal_growth_rate=0.05)
