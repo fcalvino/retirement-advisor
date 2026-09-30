@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## WD-PLAN-PDF — el aviso del ahorro que no entra viaja con la cifra (2026-09-30)
+
+Tercer paso del orden de la octava `/decidir-proyecto` (sobre `2f51824`), anotado en la revisión de WD-STRATEGY-CONTRIB. Desde #203 Simulaciones dice que, con una estrategia de retiro activa, la proyección no incluye el ahorro; pero la cifra sale de esa pantalla y en ningún otro lado lo decía: Mi Plan la mostraba en vivo y al guardarla, el PDF la imprimía (resumen ejecutivo y riesgo, desde Plan, Optimizer y Simulaciones) y la narrativa del plan se la pasaba al modelo junto a «ahorro mensual $X». Banda 2: la cifra ya se avisaba donde se calcula.
+
+`data.product_ux.strategy_ignored_savings_note` es el único texto para las cuatro superficies. `PlanSnapshot.from_session` guarda `mc_summary.contribution_ignored_by_strategy` en todo plan con estrategia —0 si nada quedó afuera—, así que un plan sin la clave es anterior a la fila. Esos existen: los 3 planes de ejemplo (`data/sample_plans/`) y el que el usuario cargó de uno de ellos combinan estrategia y ahorro; para ellos el aviso es condicional, porque no se sabe qué ahorro tenía la corrida, y nombra el ahorro del perfil del plan. Ningún número cambia. La opción que arreglaría el caso en lugar de avisarlo —ahorrar hasta el retiro y aplicar la estrategia después— queda como fila **WD-PHASED**, sin priorizar. Oráculo `tests/test_wd_plan_pdf_oracle.py`: 15 de 20 en rojo contra `origin/main` (los 5 verdes son los controles) y 5 mutaciones detectadas.
+
 ## COMPARE-NO-SAVINGS — «Comparar Perfiles» corre el mismo plan que la pestaña principal (2026-09-30)
 
 Apareció en la revisión de N8b. La pestaña armaba su propia llamada al Monte Carlo y dejaba afuera el ahorro, los drags y la estrategia de retiro: comparaba los tres perfiles sobre otro plan. Medido 2026-09-30 sobre el perfil real (2.000/mes, meta 500 K, copia de la base): probabilidad de meta 2,5 / 5,6 / 14,5 % por perfil contra 97,5 / 99,0 / 99,9 % con el ahorro. En la app, con los mismos inputs: antes Conservador 62,5 % y P10 $213.934, Agresivo P10 $610.009 (la principal daba $2.127.991); después 98,7 % / $907.283 y $1.882.526. Banda 1: es el número con el que se elige un perfil. Decisión del usuario: los perfiles usan exactamente los supuestos de la pestaña principal. `_plan_mc_kwargs()` es la única fuente de esos argumentos, y un perfil sólo agrega sus escalas. Oráculo `tests/test_compare_profiles_same_plan_oracle.py`, que ejercita la página real con `AppTest`.

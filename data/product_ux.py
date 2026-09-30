@@ -295,6 +295,51 @@ STRATEGY_IGNORES_SAVINGS_CAPTION = (
     "⚠️ Con una estrategia de retiro activa, este ahorro **no entra** en la "
     "proyección: la estrategia supone que ya estás retirado."
 )
+#: Field of ``MonteCarloResult`` and key of a saved ``mc_summary`` (WD-PLAN-PDF).
+#: A strategy plan saved since WD-PLAN-PDF always carries it (0.0 when nothing
+#: was left out), so its absence means the plan predates the key.
+IGNORED_SAVINGS_KEY = "contribution_ignored_by_strategy"
+
+
+def strategy_ignored_savings_note(mc, *, monthly_savings: float = 0.0) -> Optional[str]:
+    """What to say next to a projection that ran a withdrawal strategy without the savings.
+
+    One sentence for every surface the figure reaches after Simulaciones —
+    Mi Plan (live and saved), the PDF and the plan narrative (WD-PLAN-PDF).
+    Accepts a ``MonteCarloResult``, a saved ``mc_summary`` mapping or None, like
+    :func:`mc_has_cash_flows`. Plain text: Streamlit callers escape the ``$``.
+
+    A mapping without the key whose run did apply a strategy predates the key;
+    the amount that run left out is unknown, so the note is conditional and leans
+    on ``monthly_savings`` from the plan's profile. None when nothing was left out.
+    """
+    if mc is None:
+        return None
+    if isinstance(mc, Mapping):
+        if IGNORED_SAVINGS_KEY not in mc:
+            if "prob_sustain_real_pct" not in mc or float(monthly_savings or 0.0) <= 0:
+                return None
+            return (
+                "Esta proyección se generó con una estrategia de retiro activa, que "
+                "supone que ya estás retirado y no suma ahorro: si al simular ahorrabas "
+                f"(tu perfil dice ${float(monthly_savings) * 12:,.0f}/año), ese ahorro "
+                "no está en estos números."
+            )
+        amount = mc.get(IGNORED_SAVINGS_KEY)
+    else:
+        amount = getattr(mc, IGNORED_SAVINGS_KEY, 0.0)
+    try:
+        amount = float(amount or 0.0)
+    except (TypeError, ValueError):
+        return None
+    if amount <= 0:
+        return None
+    return (
+        f"Esta proyección no incluye tu ahorro (${amount:,.0f}/año): se generó con "
+        "una estrategia de retiro activa, que supone que ya estás retirado y gastando."
+    )
+
+
 #: The savings' own growth assumption (N8b). Separate from the spending
 #: indexation on purpose: it is the user's forecast of their raises, not inflation.
 CONTRIBUTION_GROWTH_HELP = (
