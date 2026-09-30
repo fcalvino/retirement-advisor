@@ -69,3 +69,23 @@ def test_config_does_not_load_the_dotenv_when_asked(tmp_path):
                             text=True, env=env)
     assert skipped.stdout.strip().splitlines()[-1] == "0", skipped.stderr[-1500:]
     assert loaded.stdout.strip().splitlines()[-1] == "1", loaded.stderr[-1500:]
+
+
+def test_the_dashboard_neither_reads_nor_writes_the_dotenv_under_the_switch(tmp_path, monkeypatch):
+    """``app.py`` siembra la IA de la sesión con ``_load_env_vars``, que lee el archivo
+    sin pasar por ``load_dotenv``; ``_save_ai_config_to_env`` lo reescribe entero a
+    partir de esa lectura. Bajo el interruptor, una lectura vacía seguida de un
+    guardado dejaría el ``.env`` del usuario sólo con las claves de IA."""
+    from dashboard import shared
+
+    dotenv = tmp_path / ".env"
+    original = "AI_ENABLED=true\nGROQ_API_KEY=real\nTELEGRAM_BOT_TOKEN=t\n"
+    dotenv.write_text(original)
+    monkeypatch.setattr(shared, "_ENV_PATH", dotenv)
+
+    assert shared._load_env_vars() == {}
+    shared._save_ai_config_to_env("claude", "m", "k", True)
+    assert dotenv.read_text() == original
+
+    monkeypatch.delenv("RETIREMENT_ADVISOR_NO_DOTENV")
+    assert shared._load_env_vars()["GROQ_API_KEY"] == "real"   # control: sin el interruptor, lee
