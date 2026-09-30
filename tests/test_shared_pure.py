@@ -195,7 +195,7 @@ class TestNextPriorityAction:
         monkeypatch.setattr("data.plan_context.get_active_plan", lambda _p: stale)
         action = shared.next_priority_action(_prefs(is_onboarded=True, active_plan_id="p1"))
         assert action["tone"] == "warning"
-        assert action["page"] == "8_Alertas.py"
+        assert action["page"] == "20_Seguimiento.py"   # IDEA-3: la página fusionada
         assert "3" in action["label"]
 
     def test_stale_active_plan_triggers_health_check(

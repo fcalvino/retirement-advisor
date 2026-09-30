@@ -36,6 +36,7 @@ from dashboard.shared import (
     render_calc_badge,
     render_row_actions,
     screener_column_config,
+    stop_view,
 )
 from data.preferences import UserPreferences
 from data.product_ux import second_source_quality_signal, universe_quality_summary
@@ -74,7 +75,7 @@ if "user_prefs" not in st.session_state or "universe" not in st.session_state:
         "Por favor volvé a la página **Inicio** (en el menú de la izquierda) y esperá a que cargue completamente. "
         "Luego navegá a Screener, Optimizer o Simulaciones."
     )
-    st.stop()
+    stop_view()
 
 _prefs: UserPreferences = st.session_state.user_prefs
 tickers = st.session_state.universe
@@ -434,7 +435,7 @@ if not rows:
         "**plan de ejemplo** en Mi Plan para ver el producto con datos.",
         icon="🧭",
     )
-    st.stop()
+    stop_view()
 
 # Curated country/industry of the active universe (empty for the legacy,
 # symbol-only universes — those keep what the feed reported).
@@ -525,7 +526,7 @@ if df_equity.empty:
         icon="🧺",
     )
     _render_non_scorable(df_other)
-    st.stop()
+    stop_view()
 
 # ------------------------------------------------------------------ #
 #  Audit items 06 + 11 — rank relative to the run, and break the ties #

@@ -20,6 +20,7 @@ from analysis.track_record_scorer import (
     summary_stats,
 )
 from config import PORTFOLIO, TRACK_RECORD
+from dashboard.shared import stop_view
 from data.product_ux import EXCESS_MEAN_HELP, EXCESS_MEAN_LABEL
 
 st.title("📒 Track Record")
@@ -188,7 +189,7 @@ if stats["n"] == 0:
             "Todavía no hay recomendaciones evaluadas a este horizonte. A medida que pase el "
             "tiempo y corras la puntuación, esta página se va a poblar."
         )
-    st.stop()
+    stop_view()
 
 # ------------------------------------------------------------------ #
 #  Calibración por confianza                                           #

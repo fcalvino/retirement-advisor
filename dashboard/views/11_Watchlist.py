@@ -10,6 +10,7 @@ from dashboard.shared import (
     ACTION_COLOR,
     _fetch_universe_parallel,
     _get_ai_config,
+    stop_view,
 )
 from data.preferences import UserPreferences
 from data.product_ux import technical_signal_label
@@ -45,7 +46,7 @@ if not _prefs.watched_tickers:
                 st.rerun()
             else:
                 st.warning(f"{new_sym} ya está en la watchlist.")
-    st.stop()
+    stop_view()
 
 # ------------------------------------------------------------------ #
 #  Fetch analysis for all watchlist tickers in parallel               #
