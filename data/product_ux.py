@@ -288,6 +288,13 @@ INDEXATION_SCENARIO_DESCRIPTION = (
     "El gasto crece más rápido cada año. No es un shock de inflación sobre el "
     "retorno real."
 )
+#: WD-STRATEGY-CONTRIB: with a withdrawal strategy on, the projection leaves the
+#: savings out (a strategy means "already retired"; user's decision). The sidebar
+#: still shows the savings, so it says next to them that they are not counted.
+STRATEGY_IGNORES_SAVINGS_CAPTION = (
+    "⚠️ Con una estrategia de retiro activa, este ahorro **no entra** en la "
+    "proyección: la estrategia supone que ya estás retirado."
+)
 #: The savings' own growth assumption (N8b). Separate from the spending
 #: indexation on purpose: it is the user's forecast of their raises, not inflation.
 CONTRIBUTION_GROWTH_HELP = (
