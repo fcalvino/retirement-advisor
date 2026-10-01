@@ -10,6 +10,20 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## PROFILE-SEED-WIDGETS — el perfil llega a la pantalla de Simulaciones (2026-10-01)
+
+Primer paso de la undécima `/decidir-proyecto`, banda 1 por decisión del usuario: la pantalla corría otra cifra que la que decía su caption. Visto en la QA en vivo de PLAN-LOAD-WIDGETS.
+
+`seed_session_defaults_from_profile` (`dashboard/shared.py`) corre una vez por sesión desde `app.py`, en la primera página que se abre —casi siempre Inicio—, y escribía `horizon_years` e `initial_value`, claves de los widgets de Simulaciones. Es el mecanismo de PLAN-LOAD-WIDGETS: al abrir Simulaciones después, el script tenía el perfil y el navegador dibujaba los defaults del widget (20 años, 100.000), que «Ejecutar» mandaba de vuelta. La llamada de `7_Simulaciones.py` («direct-nav safe») no hacía nada porque la marca `_profile_defaults_seeded` ya estaba puesta. Con el perfil real, el caption decía «horizonte ~24 años · capital $11,412» y la corrida usaba 20 años y 100.000 —8,8 veces el capital—, y desde PLAN-SAVE-PARAMS esa corrida es la que se guarda en el plan y va al PDF. Abrir Simulaciones como primera página andaba, porque la siembra caía en la misma corrida que los widgets.
+
+La siembra sigue escribiendo las dos claves —Mi Plan las lee sin corrida— y además deja las que escribió en `PROFILE_SEED_PENDING_KEY`. Simulaciones las vuelve a escribir con `apply_pending_profile_seed` (`data/product_ux.py`) antes de sus widgets y **antes** de `apply_pending_plan_load`, así que un plan cargado sigue ganando. Se aplica una vez, así que lo que el usuario cambie en la página se queda; el wizard (`force=True`) vuelve a dejarlas en espera. Se eligió esto y no mover la siembra a Simulaciones porque no cambia lo que ven los demás lectores de la sesión. El Optimizer no tenía el defecto: lee su capital con `value=` y no con `key=`. Ningún número del motor cambia; `ENGINE_VERSION` no se toca.
+
+Oráculo `tests/test_profile_seed_widgets_oracle.py`. Recorre la app real: Inicio → Simulaciones con un perfil onboardeado, el wizard de Inicio → Simulaciones, y Mi Plan → «Cargar plan» → Simulaciones; lee lo que dibuja el navegador con la regla de `_shown` del oráculo de PLAN-LOAD-WIDGETS. Resultado: 5 de 10 en rojo contra `origin/main`; los 5 verdes son los controles (Simulaciones abierta primero, un plan cargado le gana al perfil, una edición en la página no se pisa, sin perfil quedan los defaults). Mutaciones: «sin espera» rompe los 5, «el perfil después del plan» rompe el control del plan y «aplicar en cada corrida» rompe el de la edición.
+
+En vivo, con el perfil real (36 → 60 años, 11.412 de capital) sobre una copia de la base: Inicio → Simulaciones muestra en la rama 25 años y 11412 (el horizonte de 24 se ajusta a la opción más cercana) y corre `Monte Carlo: 10000 sims × 25y`; en `origin/main`, 20 años y 100000, y corre `× 20y`, con el mismo caption. Abierta como primera página, las dos muestran 25 años y 11412.
+
+---
+
 ## PLAN-LOAD-WIDGETS — «Cargar plan» llega a la pantalla de Simulaciones (2026-10-01)
 
 Segundo paso de la décima `/decidir-proyecto`, banda 1: «Cargar plan» devolvía otro plan sin avisar. Visto en la QA en vivo de PLAN-SAVE-PARAMS.

@@ -36,6 +36,7 @@ from config import COMMITTEE, ENGINE_VERSION, SCREENER, AIConfig
 from data.product_ux import (
     GUARDRAILS_LABEL,
     GUARDRAILS_OMISSIONS,
+    PROFILE_SEED_PENDING_KEY,
     decision_explanation,
     guardrails_help,
     technical_signal_label,
@@ -430,10 +431,17 @@ def seed_session_defaults_from_profile(prefs, *, force: bool = False) -> None:
 
     horizon = _snap_sim_horizon(getattr(prefs, "primary_horizon_years", 0))
     sim_capital = min(max(capital or 100_000, 1_000), 10_000_000)
+    # PROFILE-SEED-WIDGETS: written here for whoever reads the session (Mi Plan
+    # without a run), and left pending so Simulaciones writes them again in the
+    # run that draws its widgets — the only way the browser shows them.
+    pending = {}
     if force or "horizon_years" not in st.session_state:
-        st.session_state["horizon_years"] = horizon
+        pending["horizon_years"] = horizon
     if force or "initial_value" not in st.session_state:
-        st.session_state["initial_value"] = sim_capital
+        pending["initial_value"] = sim_capital
+    st.session_state.update(pending)
+    if pending:
+        st.session_state[PROFILE_SEED_PENDING_KEY] = pending
 
     if force:
         # Let Optimizer re-derive its profile radio from the updated default_profile.
