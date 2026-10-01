@@ -1064,38 +1064,34 @@ class InvestmentPlanReport:
         return _chart_to_image(fig, width_cm=16, height_cm=7)
 
     def _fan_chart(self, mc_result, mc_params):
-        horizon = mc_params.get("horizon_years", len(mc_result.fan_paths.get(50, {})))
-        years = list(range(0, horizon + 1))
-        initial = mc_params.get("initial_value", 0)
-
-        # fan_paths: {percentile: {year: value}}
+        # fan_paths: {year: {percentile: value}}, years 0..horizon of the run
+        # (MonteCarloSimulator._fan_paths; Simulaciones reads it the same way).
+        # PDF-FAN-PATHS: this read it as {percentile: {year}}, so `10 in fp`
+        # found *year* 10 and the chart was a P10 line of zeros with no bands.
+        # The years are the run's, not mc_params' horizon, and year 0 is the
+        # run's own starting point; `initial` only draws the reference line.
         fp = mc_result.fan_paths
+        years = sorted(fp)
+        horizon = years[-1]
+        initial = mc_params.get("initial_value", 0)
 
         fig, ax = plt.subplots(figsize=(12, 5))
 
         # Shaded bands
         bands = [(5, 95, "#1B3A6B", 0.10), (10, 90, "#17A2B8", 0.14), (25, 75, "#28A745", 0.20)]
-        labels_added = set()
         for lo, hi, color, alpha in bands:
-            if lo in fp and hi in fp:
-                lo_vals = [fp[lo].get(y, 0) for y in range(1, horizon + 1)]
-                hi_vals = [fp[hi].get(y, 0) for y in range(1, horizon + 1)]
-                band_label = f"P{lo}–P{hi}" if (lo, hi) not in labels_added else None
-                ax.fill_between(range(1, horizon + 1), lo_vals, hi_vals,
-                                alpha=alpha, color=color, label=band_label)
-                labels_added.add((lo, hi))
+            lo_vals = [fp[y][lo] for y in years]
+            hi_vals = [fp[y][hi] for y in years]
+            ax.fill_between(years, lo_vals, hi_vals,
+                            alpha=alpha, color=color, label=f"P{lo}–P{hi}")
 
         # Median line
-        if 50 in fp:
-            med_vals = [initial] + [fp[50].get(y, 0) for y in range(1, horizon + 1)]
-            ax.plot(years, med_vals, color="#1B3A6B", linewidth=2.5,
-                    label="Mediana (P50)", zorder=5)
+        ax.plot(years, [fp[y][50] for y in years], color="#1B3A6B", linewidth=2.5,
+                label="Mediana (P50)", zorder=5)
 
         # P10 line
-        if 10 in fp:
-            p10_vals = [initial] + [fp[10].get(y, 0) for y in range(1, horizon + 1)]
-            ax.plot(years, p10_vals, color="#DC3545", linewidth=1.5,
-                    linestyle="--", label="Pesimista (P10)", zorder=4)
+        ax.plot(years, [fp[y][10] for y in years], color="#DC3545", linewidth=1.5,
+                linestyle="--", label="Pesimista (P10)", zorder=4)
 
         # Initial value line
         if initial > 0:

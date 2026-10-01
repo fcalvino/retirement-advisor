@@ -10,6 +10,18 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## PDF-FAN-PATHS — el fan chart del PDF dibuja la corrida (2026-10-01)
+
+Primer paso de la décima `/decidir-proyecto` (sobre `9dbb1e6`), que puso las tres filas de la QA en vivo de PLAN-SAVE-PARAMS antes que WD-PHASED: dos muestran cifras falsas sin aviso. Banda 1, porque el fan chart se lee como la proyección del usuario.
+
+`MonteCarloSimulator._fan_paths` devuelve `{año: {percentil: valor}}` y Simulaciones lo lee así. `InvestmentPlanReport._fan_chart` lo leía como `{percentil: {año: valor}}`, con el comentario a juego. `10 in fp` encontraba el **año** 10 y `fp[10].get(y, 0)` buscaba un percentil con el número del año. Con una corrida de 10 años, el PDF de Mi Plan —el único llamador que le pasa `mc_result`— dibujaba una línea «Pesimista (P10)» en 0 salvo en el año 5, donde ponía el P5 del año 10, y en el 10. Las bandas pedían `5 in fp and 95 in fp` y no salían nunca; la mediana sólo aparecía —con valores sin sentido— en horizontes de 50 años o más. El fallback del horizonte, `fan_paths.get(50, {})`, daba 0. Estaba así desde `5fb471c` (2026-07) y ningún test cubría el gráfico.
+
+Ahora lee `fp[año][percentil]`, con los años de la corrida y no el horizonte de `mc_params`. Año 0: el gráfico arranca en `fan_paths[0]`, que es el punto de partida de la corrida. Verificado sobre el motor: la semana 0 vale el capital inicial en todos los caminos —con aportes, con retiros y con las tres estrategias— porque ningún flujo cae en la semana 0. Ese número cubre también al ahorrista sin capital. `mc_params["initial_value"]` sigue dibujando la línea de referencia «Capital inicial», así que si alguna vez difieren, se ve. Ningún número del motor cambia y `ENGINE_VERSION` no se toca.
+
+Oráculo `tests/test_pdf_fan_paths_oracle.py`. Captura la figura antes de que `_chart_to_image` la convierta en PNG y llama a `_fan_chart` directo, porque el `try` de `_section_risk` saca el gráfico sin aviso. Los `fan_paths` salen de `_fan_paths` del motor sobre caminos sintéticos, y los del ahorrista sin capital, de `_apply_cash_flows`: un dict armado a mano con la forma equivocada es lo que dejó pasar el defecto. Resultado: 9 de 9 en rojo contra `origin/main`.
+
+---
+
 ## PLAN-SAVE-PARAMS — un plan guardado lleva los parámetros de su corrida (2026-10-01)
 
 Primer paso de la novena `/decidir-proyecto` (sobre `1853cdf`). La fila era PLAN-HORIZON-NONE, vista en la QA en vivo de WD-PLAN-PDF: un plan guardado desde Mi Plan después de pasar por Simulaciones decía «Horizonte Nonea». La causa anotada —la clave del widget del horizonte, que Streamlit borra al cambiar de página— no alcanzaba: con un perfil completo `enrich_pdf_mc_params` rellenaba el horizonte desde el perfil, y el `None` sólo salía sin edad. El defecto era más ancho. `_session_mc_params()` armaba lo que Mi Plan guarda y lo que manda al PDF desde las claves de los widgets de Simulaciones e ignoraba `st.session_state["mc_params"]`, donde Simulaciones deja los parámetros de la corrida junto a `mc_result`.
