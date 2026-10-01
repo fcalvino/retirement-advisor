@@ -409,6 +409,12 @@ def _tab_mc_content():
             "initial_value": initial_value,
             "inflation_rate": inflation_rate,
             "contribution_growth_pct": contribution_growth_pct,   # N8b: saved with the plan
+            # PLAN-SAVE-PARAMS: the goal behind prob_target_pct and the savings the
+            # engine deposited travel with the run.
+            "target_value": target_value,
+            "annual_withdrawal": annual_withdrawal,
+            "monthly_savings": _contrib["monthly"],
+            "annual_contribution": annual_contribution,
             "n_sims": n_sims,
             "drags": drags,   # Item 1: remember the assumptions used
             "withdrawal_strategy": wd_strategy,   # Fase H.1: remember the strategy used
