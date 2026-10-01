@@ -2604,20 +2604,25 @@ def plan_load_session_updates(
 
     ``horizon_years`` comes in already snapped to the Simulaciones selectbox
     options (``dashboard.shared._snap_sim_horizon``, which imports Streamlit).
+
+    The two capitals answer different questions (PLAN-LOAD-WIDGETS): the
+    Optimizer splits the capital the profile had when the plan was saved, and
+    Simulaciones re-runs the projection, so its capital is the run's
+    (``mc_summary.initial_value``) before the profile's — like the horizon,
+    which the page already reads from the run first.
     """
     mc = getattr(plan_snapshot, "mc_summary", None) or {}
     personal = getattr(plan_snapshot, "personal", None) or {}
 
-    capital = int(
-        _safe_float(personal.get("current_capital"), 0.0)
-        or _safe_float(mc.get("initial_value"), 0.0)
-        or 100_000
-    )
+    profile_capital = _safe_float(personal.get("current_capital"), 0.0)
+    run_capital = _safe_float(mc.get("initial_value"), 0.0)
+    capital = int(profile_capital or run_capital or 100_000)
+    sim_capital = int(run_capital or profile_capital or 100_000)
 
     updates: Dict[str, Any] = {
         "optimizer_total_capital": capital,
         "horizon_years": int(horizon_years),
-        "initial_value": min(max(capital, 1_000), 10_000_000),
+        "initial_value": min(max(sim_capital, 1_000), 10_000_000),
     }
 
     if profile_key:
@@ -2645,6 +2650,53 @@ def plan_load_session_updates(
         updates["goals_list"] = list(goals)
 
     return updates
+
+
+# The keys of the Simulaciones sidebar widgets that «Cargar plan» seeds.
+SIM_PLAN_WIDGET_KEYS = (
+    "horizon_years",
+    "initial_value",
+    "contribution_growth_pct",
+    "target_value",
+    "inflation_rate",
+)
+PLAN_LOAD_PENDING_KEY = "_plan_load_pending"
+
+
+def stage_plan_load(
+    state: Any, updates: Mapping[str, Any], *, plan_name: str = "",
+) -> None:
+    """Hand a loaded plan to Simulaciones (PLAN-LOAD-WIDGETS).
+
+    Mi Plan used to write the Simulaciones widget keys straight into
+    ``session_state``. The script on the next page read them, but Streamlit
+    only tells the browser about a value set in the same run that creates the
+    widget, so the screen kept its defaults and «Ejecutar» sent those back:
+    the loaded plan was lost without a word. Widget keys now wait under
+    ``PLAN_LOAD_PENDING_KEY`` until Simulaciones applies them before drawing
+    its widgets (``apply_pending_plan_load``); the rest (Optimizer capital and
+    profile, goals) are plain keys and are written now, as before.
+    """
+    pending = {k: v for k, v in updates.items() if k in SIM_PLAN_WIDGET_KEYS}
+    for key, value in updates.items():
+        if key not in SIM_PLAN_WIDGET_KEYS:
+            state[key] = value
+    state[PLAN_LOAD_PENDING_KEY] = {"plan_name": plan_name, "values": pending}
+
+
+def apply_pending_plan_load(state: Any) -> Optional[str]:
+    """Write a staged plan into the Simulaciones widget keys, once.
+
+    Must run before the widgets are created, in the same script run, so the
+    browser shows the values. Returns the plan name when something was applied
+    (the page says so), ``None`` otherwise.
+    """
+    staged = state.pop(PLAN_LOAD_PENDING_KEY, None)
+    if not staged:
+        return None
+    for key, value in (staged.get("values") or {}).items():
+        state[key] = value
+    return staged.get("plan_name") or ""
 
 
 def shareable_report_narrative_blocks(

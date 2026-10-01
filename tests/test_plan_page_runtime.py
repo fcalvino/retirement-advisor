@@ -21,6 +21,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from data.plan_store import PlanSnapshot
+from data.product_ux import PLAN_LOAD_PENDING_KEY
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = str(ROOT / "dashboard" / "views" / "12_Plan.py")
@@ -383,6 +384,8 @@ def test_loading_a_plan_without_monte_carlo_keeps_the_users_goal(stores):
 
     assert not at.exception, [str(e) for e in at.exception]
     assert at.session_state["target_value"] == 500_000
+    staged = at.session_state[PLAN_LOAD_PENDING_KEY]["values"]
+    assert "target_value" not in staged
 
 
 def test_loading_a_plan_with_a_target_still_carries_it_over(stores):
@@ -396,8 +399,12 @@ def test_loading_a_plan_with_a_target_still_carries_it_over(stores):
     _open_snapshot(at, "retiro-2045")
     at.button(key="load_retiro-2045").click().run()
 
-    assert at.session_state["target_value"] == 600_000
-    assert at.session_state["horizon_years"] == 20
+    # PLAN-LOAD-WIDGETS: the Simulaciones widget keys wait until that page
+    # applies them before drawing its widgets (`tests/test_plan_load_widgets_oracle.py`
+    # checks what the browser shows); the Optimizer keys are written now.
+    staged = at.session_state[PLAN_LOAD_PENDING_KEY]["values"]
+    assert staged["target_value"] == 600_000
+    assert staged["horizon_years"] == 20
     assert at.session_state["_preset_profile_key"] == "moderate"
 
 

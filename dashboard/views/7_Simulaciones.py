@@ -42,6 +42,7 @@ from data.product_ux import (
     PROXY_RATIO_LABEL,
     PROXY_RETURN_HELP,
     STRATEGY_IGNORES_SAVINGS_CAPTION,
+    apply_pending_plan_load,
     ar_dual_context,
     contribution_inputs,
     fmt_attractiveness_index,
@@ -93,6 +94,10 @@ def _fmt_idx_delta(a, b) -> str | None:
 
 _prefs_sim = get_user_prefs()
 seed_session_defaults_from_profile(_prefs_sim)  # direct-nav safe
+# PLAN-LOAD-WIDGETS: «Cargar plan» de Mi Plan deja los valores en espera; se
+# escriben acá, antes de los widgets y en esta misma corrida, que es la única
+# forma de que el navegador los muestre. Después del perfil: el plan gana.
+_loaded_plan_name = apply_pending_plan_load(st.session_state)
 if _prefs_sim.is_onboarded and not st.session_state.get("_goal_form_seeded"):
     if _prefs_sim.primary_goal_type in GOAL_TYPE_ICONS:
         st.session_state.setdefault("new_goal_type", _prefs_sim.primary_goal_type)
@@ -191,6 +196,14 @@ if st.session_state.get("preset_applied"):
     st.sidebar.success(f"✅ Preset aplicado: **{last}**", icon="🚀")
     # Clear the flag after showing once
     st.session_state.pop("preset_applied", None)
+
+if _loaded_plan_name is not None:
+    _plan_label = f" «{escape_dollars(_loaded_plan_name)}»" if _loaded_plan_name else ""
+    st.sidebar.success(
+        f"Plan{_plan_label} cargado: los parámetros que guardó ya están en los "
+        "controles. Ejecutá para ver su proyección.",
+        icon="📥",
+    )
 
 # The widgets now use explicit keys so presets can control them directly
 horizon_years = st.sidebar.selectbox(
