@@ -2526,23 +2526,43 @@ def enrich_pdf_mc_params(
     return out
 
 
+# PLAN-SAVE-PARAMS: the scalar inputs of a Monte Carlo run that describe its numbers.
+RUN_PARAM_KEYS = (
+    "horizon_years",
+    "initial_value",
+    "inflation_rate",
+    "contribution_growth_pct",
+    "target_value",
+    "annual_withdrawal",
+)
+
+
 def assemble_plan_pdf_mc_params(
     *,
     session: Optional[Mapping[str, Any]] = None,
     prefs: Any = None,
     profile_name: str = "",
     personal: Optional[Mapping[str, Any]] = None,
+    run_params: Optional[Mapping[str, Any]] = None,
 ) -> dict:
     """Real Plan-page PDF param assembly (mirrors dashboard/views/12_Plan path).
 
     ``session`` is a mapping of Streamlit session_state-like keys from Simulaciones.
     ``prefs`` is UserPreferences (or duck-type). Pure — no Streamlit import.
+
+    ``run_params`` is the ``mc_params`` Simulaciones stored next to the
+    ``mc_result`` being saved or printed (PLAN-SAVE-PARAMS). Its values win: the
+    widget keys are gone once Simulaciones stops rendering — or hold values
+    edited after the run — and the profile horizon is not the run's horizon, so
+    without this a plan described a run nobody made. Pass it only together with
+    that ``mc_result``; without a run, widgets and then the profile fill in.
     """
     session = dict(session or {})
     base = {
         "horizon_years": session.get("horizon_years"),
         "initial_value": session.get("initial_value"),
         "inflation_rate": session.get("inflation_rate"),
+        "contribution_growth_pct": session.get("contribution_growth_pct"),
         "target_value": session.get("target_value"),
         "annual_withdrawal": session.get("annual_withdrawal"),
         "profile_name": profile_name or session.get("profile_name") or "",
@@ -2554,6 +2574,10 @@ def assemble_plan_pdf_mc_params(
         ),
         "annual_savings": session.get("annual_savings"),
     }
+    for key in RUN_PARAM_KEYS:
+        value = (run_params or {}).get(key)
+        if value is not None:
+            base[key] = value
     return enrich_pdf_mc_params(base, prefs=prefs, personal=personal)
 
 

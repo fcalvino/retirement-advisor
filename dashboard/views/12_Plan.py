@@ -111,15 +111,18 @@ _active_name = UNIVERSE_META.get(_active_key, {}).get("name", _active_key)
 
 
 def _session_mc_params() -> dict:
-    """Assemble MC params for PDF/plan from session widgets + user prefs.
+    """Assemble MC params for PDF/plan: the run first, then widgets, then prefs.
 
     Uses the shipped pure helper so savings from the profile are never dropped
-    when Simulaciones was never opened (backlog 11 skeptic fix).
+    when Simulaciones was never opened (backlog 11 skeptic fix). PLAN-SAVE-PARAMS:
+    the ``mc_params`` Simulaciones stored with ``mc_result`` describe the numbers
+    being saved; its widget keys are usually gone by the time this page runs.
     """
     from data.product_ux import assemble_plan_pdf_mc_params
 
     return assemble_plan_pdf_mc_params(
         session=dict(st.session_state),
+        run_params=st.session_state.get("mc_params") if mc_result is not None else None,
         prefs=prefs,
         profile_name=str(getattr(opt_result, "profile_name", "") or ""),
         personal={

@@ -10,6 +10,23 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## PLAN-SAVE-PARAMS — un plan guardado lleva los parámetros de su corrida (2026-10-01)
+
+Primer paso de la novena `/decidir-proyecto` (sobre `1853cdf`). La fila era PLAN-HORIZON-NONE, vista en la QA en vivo de WD-PLAN-PDF: un plan guardado desde Mi Plan después de pasar por Simulaciones decía «Horizonte Nonea». La causa anotada —la clave del widget del horizonte, que Streamlit borra al cambiar de página— no alcanzaba: con un perfil completo `enrich_pdf_mc_params` rellenaba el horizonte desde el perfil, y el `None` sólo salía sin edad. El defecto era más ancho. `_session_mc_params()` armaba lo que Mi Plan guarda y lo que manda al PDF desde las claves de los widgets de Simulaciones e ignoraba `st.session_state["mc_params"]`, donde Simulaciones deja los parámetros de la corrida junto a `mc_result`.
+
+Cuatro síntomas, medidos sobre la página real en `origin/main`:
+
+- La suba del ahorro (N8b) no se guardaba nunca desde Mi Plan: `assemble_plan_pdf_mc_params` no la llevaba. El oráculo de N8b probaba `PlanSnapshot.from_session` con un dict armado a mano, no el camino de la página.
+- El horizonte guardado era el del perfil (24 años) y no el de la corrida (20), o `None` sin edad.
+- La inflación quedaba en `None`, así que la vista en pesos del plan activo decía que no podía convertir.
+- El PDF de Mi Plan recibía el horizonte del perfil como `float`; `_fan_chart` lanzaba `TypeError` y el `try` de `_section_risk` lo sacaba del PDF sin aviso.
+
+`assemble_plan_pdf_mc_params(run_params=…)` deja que las claves de `RUN_PARAM_KEYS` de la corrida pisen a los widgets, y Mi Plan la pasa sólo junto a `mc_result`. Sin corrida —y en el Optimizer y Mis Metas, que imprimen el PDF sin Monte Carlo— todo sigue como antes: widgets y después el perfil. Simulaciones guarda además `target_value` y `annual_withdrawal` en `mc_params`, porque `prob_target_pct` se calculó contra esa meta. Ningún número del motor cambia.
+
+Oráculo `tests/test_plan_save_params_oracle.py`: AppTest sobre `12_Plan.py` que hace clic en «Guardar» y lee el JSON del store, y en «Generar PDF» y corre el fan chart real con los parámetros que recibió. 6 de 10 en rojo contra `origin/main`; los 4 verdes son los controles (sin corrida, widgets sobre el perfil, plan viejo sin la suba, plan sin Monte Carlo). Mutaciones: «los widgets primero» rompe 1 test y «sin la suba del ahorro» rompe 3.
+
+---
+
 ## IDEA-3 MENÚ — el menú pasa de 16 a 11 entradas (2026-09-30)
 
 Último paso del orden de la octava `/decidir-proyecto`; idea 3 del diagnóstico de septiembre y la apuesta #1 de `brainstorm/99_PRIORIZACION.md` (junio). La agrupación por intención ya existía desde la Ola 1; faltaba fusionar. El usuario eligió entre tres agrupaciones (mínima 13, intermedia 11, agresiva 9) la intermedia: Allocation y Comité salen del menú (ya se llegaba desde Optimizer y desde Stock Analysis / Chat), About se abre desde Settings, Watchlist es una pestaña del Screener y Alertas + Track Record son una página.
