@@ -35,8 +35,10 @@ RUN = {
     "contribution_growth_pct": 3.0,
     "target_value": 900_000,
     "annual_withdrawal": 0,
+    "monthly_savings": 1_500,      # el perfil (`_FakePrefs`) dice 500
+    "annual_contribution": 18_000,
     "n_sims": 1_000,
-    "drags": None,
+    "drags": {"enabled": True, "fee_pct": 1.25, "total_annual_drag_pct": 1.25},
     "withdrawal_strategy": None,
 }
 PROFILE_HORIZON = 24   # el perfil dice otra cosa que la corrida, a propósito
@@ -156,7 +158,13 @@ def test_the_saved_plan_can_be_spoken_about_in_pesos(stores):  # noqa: F811
 #  El PDF de Mi Plan                                                          #
 # --------------------------------------------------------------------------- #
 
-def test_the_plan_pdf_gets_the_run_and_keeps_its_fan_chart(monkeypatch):
+def test_the_saved_plan_records_the_runs_drags_not_the_sessions(stores):  # noqa: F811
+    """Los supuestos guardados son los de la corrida detrás de `mc_summary`: la
+    sesión de ahora (drags por defecto) puede no ser la que se simuló."""
+    assert _save(stores, _Prefs()).drags_at_save == RUN["drags"]
+
+
+def test_the_plan_pdf_gets_the_run_and_its_fan_chart_does_not_raise(monkeypatch):
     from reports import investment_plan as ip
 
     captured = {}
@@ -172,8 +180,12 @@ def test_the_plan_pdf_gets_the_run_and_keeps_its_fan_chart(monkeypatch):
 
     params = captured["mc_params"]
     assert params["horizon_years"] == RUN["horizon_years"]
+    assert params["inflation_rate"] == RUN["inflation_rate"]
+    assert float(params["monthly_savings"]) == RUN["monthly_savings"]   # main: 500 del perfil
     # El fan chart real con esos parámetros: con 24.0 lanzaba TypeError y el
-    # `try` de `_section_risk` lo sacaba del PDF sin decir nada.
+    # `try` de `_section_risk` lo sacaba del PDF sin decir nada. Sólo se prueba
+    # que no lanza: que el dibujo sea correcto es PDF-FAN-PATHS (lee los ejes
+    # de `fan_paths` al revés), fuera de este oráculo.
     ip.InvestmentPlanReport()._fan_chart(captured["mc_result"], params)
 
 

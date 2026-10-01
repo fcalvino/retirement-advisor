@@ -110,6 +110,11 @@ _active_key  = st.session_state.get("active_universe_key", getattr(prefs, "activ
 _active_name = UNIVERSE_META.get(_active_key, {}).get("name", _active_key)
 
 
+def _run_params() -> dict | None:
+    """The ``mc_params`` Simulaciones stored with ``mc_result`` — only with it."""
+    return st.session_state.get("mc_params") if mc_result is not None else None
+
+
 def _session_mc_params() -> dict:
     """Assemble MC params for PDF/plan: the run first, then widgets, then prefs.
 
@@ -122,7 +127,7 @@ def _session_mc_params() -> dict:
 
     return assemble_plan_pdf_mc_params(
         session=dict(st.session_state),
-        run_params=st.session_state.get("mc_params") if mc_result is not None else None,
+        run_params=_run_params(),
         prefs=prefs,
         profile_name=str(getattr(opt_result, "profile_name", "") or ""),
         personal={
@@ -312,6 +317,9 @@ else:
         with _sc2:
             st.markdown("&nbsp;")
             if st.button("💾 Guardar", type="primary", width="stretch", key="plan_save_btn"):
+                # PLAN-SAVE-PARAMS: the assumptions of the run behind mc_summary,
+                # not whatever the session holds now.
+                _run = _run_params() or {}
                 snap = PlanSnapshot.from_session(
                     name=plan_name,
                     opt_result=opt_result,
@@ -325,9 +333,14 @@ else:
                     existing_id=_existing.id if _existing else None,
                     existing_created_at=_existing.created_at if _existing else None,
                     price_lookup=plan_price_lookup,
-                    drags=get_economic_drags(),   # Item 1: persist active assumptions
-                    withdrawal_strategy=get_withdrawal_strategy(   # Fase H.1
-                        float(getattr(prefs, "current_capital", 0)) or 100_000.0
+                    drags=(   # Item 1: persist active assumptions
+                        _run["drags"] if "drags" in _run else get_economic_drags()
+                    ),
+                    withdrawal_strategy=(   # Fase H.1
+                        _run["withdrawal_strategy"] if "withdrawal_strategy" in _run
+                        else get_withdrawal_strategy(
+                            float(getattr(prefs, "current_capital", 0)) or 100_000.0
+                        )
                     ),
                 )
                 plan_store.upsert(snap)

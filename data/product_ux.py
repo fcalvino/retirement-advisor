@@ -2534,6 +2534,8 @@ RUN_PARAM_KEYS = (
     "contribution_growth_pct",
     "target_value",
     "annual_withdrawal",
+    "monthly_savings",
+    "annual_contribution",
 )
 
 
