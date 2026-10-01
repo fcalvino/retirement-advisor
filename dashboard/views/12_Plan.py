@@ -916,7 +916,7 @@ def _render_load_plan(snap: PlanSnapshot) -> None:
     """Seed session_state from a saved plan so the user can do what-if iterations."""
     if st.button("📥 Cargar plan en Optimizer / Simulaciones", key=f"load_{snap.id}",
                  help="Usa el perfil, capital, horizonte y metas de este plan como punto de partida"):
-        from data.product_ux import plan_load_session_updates
+        from data.product_ux import plan_load_session_updates, stage_plan_load
 
         _mc = snap.mc_summary or {}
         _personal = snap.personal or {}
@@ -925,12 +925,14 @@ def _render_load_plan(snap: PlanSnapshot) -> None:
         )
         # The pure helper decides which keys the plan can actually answer; keys it
         # omits keep whatever the user already has (a plan saved without Monte
-        # Carlo must not reset the retirement goal to $0).
-        st.session_state.update(plan_load_session_updates(
+        # Carlo must not reset the retirement goal to $0). The Simulaciones widget
+        # keys are staged, not written: that page applies them before drawing its
+        # widgets, or the browser would keep showing the defaults (PLAN-LOAD-WIDGETS).
+        stage_plan_load(st.session_state, plan_load_session_updates(
             snap,
             horizon_years=_horizon,
             profile_key=snap.profile_key or _PROFILE_NAME_TO_KEY.get(snap.profile_name, ""),
-        ))
+        ), plan_name=snap.name)
 
         st.toast(f"📥 Plan «{snap.name}» cargado — andá a 📈 Optimizer o 🎲 Simulaciones y ejecutá.", icon="✅")
 

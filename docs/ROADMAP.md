@@ -10,6 +10,22 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## PLAN-LOAD-WIDGETS — «Cargar plan» llega a la pantalla de Simulaciones (2026-10-01)
+
+Segundo paso de la décima `/decidir-proyecto`, banda 1: «Cargar plan» devolvía otro plan sin avisar. Visto en la QA en vivo de PLAN-SAVE-PARAMS.
+
+`_render_load_plan` (`12_Plan.py`) escribía en `st.session_state`, durante una corrida de Mi Plan, las claves de los widgets de Simulaciones: horizonte, capital, suba del ahorro, meta e inflación. El script de Simulaciones las recibía, pero la pantalla no. Streamlit sólo le manda al navegador un valor fijado en la **misma** corrida que crea el widget: `register_widget` decide si avisarle al frontend (`set_value`) según `_new_session_state`, y eso se vacía en cada rerun. Así que el navegador dibujaba los defaults (20 años, 100.000, meta 500.000) y, al tocar «Ejecutar», mandaba esos valores de vuelta. Además, `plan_load_session_updates` sembraba el capital de Simulaciones con el del perfil antes que con el de la corrida.
+
+Mi Plan ahora deja esas cinco claves en espera (`stage_plan_load`, `PLAN_LOAD_PENDING_KEY`), y Simulaciones las escribe con `apply_pending_plan_load` antes de dibujar sus widgets y después de la siembra del perfil, para que gane el plan. Es el patrón que ya usaba el Optimizer con `_preset_profile_key`. Lo que no es widget —capital y perfil del Optimizer, metas— se escribe como antes. El sidebar dice «Plan «…» cargado» una vez, y lo que el usuario cambie después se queda. El capital de Simulaciones sale de `mc_summary.initial_value` antes que del perfil; el del Optimizer sigue siendo el del perfil (decisión del usuario). Ningún número del motor cambia.
+
+Oráculo `tests/test_plan_load_widgets_oracle.py`. Recorre la app real (`app.py` con `st.navigation`): Mi Plan → «Ver» → «Cargar plan» → Simulaciones. La referencia es lo que dibuja el navegador, leído del proto con la regla del frontend (con `set_value`, el valor del proto; si no, el `default`), porque en el estado del script el defecto no se ve. Resultado: 7 de 10 en rojo contra `origin/main`; los 3 verdes son los controles (el Optimizer conserva el capital del perfil, un plan sin Monte Carlo no pone la meta en 0, una edición posterior no se pisa). Mutaciones: «capital del perfil primero» rompe 2 tests y «escribir directo, sin espera» rompe 6. Se actualizaron los dos tests de `test_plan_page_runtime.py` que fijaban el contrato viejo (las claves en la sesión de Mi Plan).
+
+En vivo, sobre una copia de la base y de los JSON del usuario: el plan real «Plan Agresivo 2026-08», con un `mc_summary` agregado en la copia. En la rama, Simulaciones muestra y corre 15 años / 900.000 / 2,50 / 1.500.000 / 2,5 (log: `Monte Carlo: 10000 sims × 15y`). En `origin/main` muestra los defaults y corre `× 20y`.
+
+La QA dejó dos filas que ya estaban en `origin/main`: la siembra del perfil tiene el mismo defecto (**PROFILE-SEED-WIDGETS**), y un plan no guarda ni devuelve el ahorro mensual de su corrida (**PLAN-LOAD-SAVINGS**). Ver `BACKLOG.md`.
+
+---
+
 ## PDF-FAN-PATHS — el fan chart del PDF dibuja la corrida (2026-10-01)
 
 Primer paso de la décima `/decidir-proyecto` (sobre `9dbb1e6`), que puso las tres filas de la QA en vivo de PLAN-SAVE-PARAMS antes que WD-PHASED: dos muestran cifras falsas sin aviso. Banda 1, porque el fan chart se lee como la proyección del usuario.
