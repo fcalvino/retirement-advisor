@@ -43,6 +43,7 @@ from data.product_ux import (
     PROXY_RETURN_HELP,
     STRATEGY_IGNORES_SAVINGS_CAPTION,
     apply_pending_plan_load,
+    apply_pending_profile_seed,
     ar_dual_context,
     contribution_inputs,
     fmt_attractiveness_index,
@@ -94,6 +95,9 @@ def _fmt_idx_delta(a, b) -> str | None:
 
 _prefs_sim = get_user_prefs()
 seed_session_defaults_from_profile(_prefs_sim)  # direct-nav safe
+# PROFILE-SEED-WIDGETS: la siembra corrió en otra página (casi siempre Inicio);
+# se vuelve a escribir acá, antes de los widgets, para que el navegador la muestre.
+apply_pending_profile_seed(st.session_state)
 # PLAN-LOAD-WIDGETS: «Cargar plan» de Mi Plan deja los valores en espera; se
 # escriben acá, antes de los widgets y en esta misma corrida, que es la única
 # forma de que el navegador los muestre. Después del perfil: el plan gana.

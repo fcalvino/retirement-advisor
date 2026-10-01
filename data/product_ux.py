@@ -2699,6 +2699,25 @@ def apply_pending_plan_load(state: Any) -> Optional[str]:
     return staged.get("plan_name") or ""
 
 
+# The Simulaciones widget values the profile seeded, waiting for that page.
+PROFILE_SEED_PENDING_KEY = "_profile_seed_pending"
+
+
+def apply_pending_profile_seed(state: Any) -> None:
+    """Write the profile's Simulaciones defaults again, once, on that page (PROFILE-SEED-WIDGETS).
+
+    ``seed_session_defaults_from_profile`` runs on the first page of the session
+    —usually Inicio— and writes ``horizon_years`` / ``initial_value`` there. The
+    script on Simulaciones reads them, but the browser only shows a value set in
+    the run that creates the widget, so the screen showed the widget defaults
+    and «Ejecutar» sent those back. The seed also leaves the values it wrote
+    under ``PROFILE_SEED_PENDING_KEY``; Simulaciones re-writes them before its
+    widgets and before ``apply_pending_plan_load``, so a loaded plan still wins.
+    """
+    for key, value in (state.pop(PROFILE_SEED_PENDING_KEY, None) or {}).items():
+        state[key] = value
+
+
 def shareable_report_narrative_blocks(
     *,
     plan_name: str,
