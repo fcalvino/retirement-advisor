@@ -19,11 +19,13 @@ Cuatro síntomas, medidos sobre la página real en `origin/main`:
 - La suba del ahorro (N8b) no se guardaba nunca desde Mi Plan: `assemble_plan_pdf_mc_params` no la llevaba. El oráculo de N8b probaba `PlanSnapshot.from_session` con un dict armado a mano, no el camino de la página.
 - El horizonte guardado era el del perfil (24 años) y no el de la corrida (20), o `None` sin edad.
 - La inflación quedaba en `None`, así que la vista en pesos del plan activo decía que no podía convertir.
-- El PDF de Mi Plan recibía el horizonte del perfil como `float`; `_fan_chart` lanzaba `TypeError` y el `try` de `_section_risk` lo sacaba del PDF sin aviso.
+- El PDF de Mi Plan recibía el horizonte del perfil y no el de la corrida (en vivo sobre `origin/main`: 25 años y capital 11.412 para una corrida de 15 años y 100.000). Cuando ya no quedaba la clave del widget llegaba como `float`; `_fan_chart` lanzaba `TypeError` y el `try` de `_section_risk` lo sacaba del PDF sin aviso.
 
 `assemble_plan_pdf_mc_params(run_params=…)` deja que las claves de `RUN_PARAM_KEYS` de la corrida pisen a los widgets, y Mi Plan la pasa sólo junto a `mc_result`. Sin corrida —y en el Optimizer y Mis Metas, que imprimen el PDF sin Monte Carlo— todo sigue como antes: widgets y después el perfil. Simulaciones guarda además `target_value` y `annual_withdrawal` en `mc_params`, porque `prob_target_pct` se calculó contra esa meta. Ningún número del motor cambia.
 
 Oráculo `tests/test_plan_save_params_oracle.py`: AppTest sobre `12_Plan.py` que hace clic en «Guardar» y lee el JSON del store, y en «Generar PDF» y corre el fan chart real con los parámetros que recibió. 6 de 10 en rojo contra `origin/main`; los 4 verdes son los controles (sin corrida, widgets sobre el perfil, plan viejo sin la suba, plan sin Monte Carlo). Mutaciones: «los widgets primero» rompe 1 test y «sin la suba del ahorro» rompe 3.
+
+La QA en vivo dejó dos defectos que ya estaban en `origin/main` y van aparte (decisión del usuario): «Cargar plan» llega a la sesión pero no a los widgets de Simulaciones (**PLAN-LOAD-WIDGETS**), el fan chart del PDF lee `fan_paths` con los ejes invertidos (**PDF-FAN-PATHS**), y un plan de ejemplo cargado tira la pestaña «Mis Metas» con `KeyError: 'expected_inflation'` (**PLAN-GOALS-KEYS**). Ver `BACKLOG.md`.
 
 ---
 

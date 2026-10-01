@@ -58,9 +58,10 @@ def _mc() -> MonteCarloResult:
     )
     mc.median_terminal, mc.p10_terminal, mc.p90_terminal = 1_200_000.0, 700_000.0, 2_000_000.0
     mc.prob_achieve_target_pct = 71.0
+    # La forma real del motor: {año: {percentil: valor}} (`MonteCarloSimulator._fan_paths`).
     mc.fan_paths = {
-        p: {y: 250_000.0 * (1.0 + 0.004 * p) ** y for y in range(1, RUN["horizon_years"] + 1)}
-        for p in (5, 10, 25, 50, 75, 90, 95)
+        y: {p: 250_000.0 * (1.0 + 0.004 * p) ** y for p in (5, 10, 25, 50, 75, 90, 95)}
+        for y in range(RUN["horizon_years"] + 1)
     }
     return mc
 
