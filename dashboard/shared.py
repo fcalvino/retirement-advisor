@@ -32,7 +32,7 @@ from loguru import logger
 
 from analysis.groq_pacing import GroqTpmPacer
 from analysis.strategy import full_analysis
-from config import COMMITTEE, ENGINE_VERSION, SCREENER, AIConfig
+from config import COMMITTEE, ENGINE_VERSION, MONTE_CARLO, SCREENER, AIConfig
 from data.product_ux import (
     DRAG_WIDGET_RANGES,
     GUARDRAILS_LABEL,
@@ -40,7 +40,9 @@ from data.product_ux import (
     PROFILE_SEED_PENDING_KEY,
     WITHDRAWAL_WIDGET_RANGES,
     decision_explanation,
+    forget_profile_fields_in_sim_memory,
     guardrails_help,
+    sim_sidebar_value,
     technical_signal_label,
 )
 from data.screener_store import EMPTY_FEED_TYPE, format_eta, is_empty_feed
@@ -388,7 +390,7 @@ def _dim_bar_html(score: float, max_score: float = 2.0) -> str:
 # ------------------------------------------------------------------ #
 
 # Horizon options offered by the Monte Carlo selectbox in Simulaciones.
-_SIM_HORIZON_OPTIONS = (5, 10, 15, 20, 25, 30)
+SIM_HORIZON_OPTIONS = (5, 10, 15, 20, 25, 30)
 
 
 def get_user_prefs():
@@ -408,8 +410,18 @@ def get_user_prefs():
 def _snap_sim_horizon(years: int) -> int:
     """Snap an arbitrary horizon to the nearest Monte Carlo selectbox option."""
     if not years or years <= 0:
-        return 20
-    return min(_SIM_HORIZON_OPTIONS, key=lambda o: abs(o - years))
+        return MONTE_CARLO.default_horizon_years
+    return min(SIM_HORIZON_OPTIONS, key=lambda o: abs(o - years))
+
+
+def sim_horizon_index(state) -> int:
+    """Index the Simulaciones horizon selectbox opens on when its key is gone (SIM-REENTRY-WIDGETS).
+
+    The last horizon of the session, snapped to an option —the «Meta importante»
+    preset writes 8, which the selectbox does not offer—, or the config default.
+    """
+    years = sim_sidebar_value(state, "horizon_years", MONTE_CARLO.default_horizon_years)
+    return SIM_HORIZON_OPTIONS.index(_snap_sim_horizon(int(years)))
 
 
 def seed_session_defaults_from_profile(prefs, *, force: bool = False) -> None:
@@ -432,7 +444,7 @@ def seed_session_defaults_from_profile(prefs, *, force: bool = False) -> None:
         st.session_state["optimizer_total_capital"] = capital
 
     horizon = _snap_sim_horizon(getattr(prefs, "primary_horizon_years", 0))
-    sim_capital = min(max(capital or 100_000, 1_000), 10_000_000)
+    sim_capital = min(max(capital or MONTE_CARLO.default_initial_value, 1_000), 10_000_000)
     # PROFILE-SEED-WIDGETS: written here for whoever reads the session (Mi Plan
     # without a run), and left pending so Simulaciones writes them again in the
     # run that draws its widgets — the only way the browser shows them.
@@ -446,6 +458,9 @@ def seed_session_defaults_from_profile(prefs, *, force: bool = False) -> None:
         st.session_state[PROFILE_SEED_PENDING_KEY] = pending
 
     if force:
+        # SIM-REENTRY-WIDGETS: a profile saved now beats what Simulaciones
+        # remembered of the old one; the rest of its edits stay.
+        forget_profile_fields_in_sim_memory(st.session_state)
         # Let Optimizer re-derive its profile radio from the updated default_profile.
         st.session_state.pop("optimizer_profile_label", None)
         st.session_state.pop("optimizer_last_saved_profile", None)

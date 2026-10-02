@@ -229,14 +229,14 @@ def _session_with_strategy_and_savings(stores):  # noqa: F811
 def test_control_an_old_plan_leaves_the_session_alone(stores):  # noqa: F811
     """Un plan anterior a la fila no sabe su ahorro ni si tenía estrategia: no toca nada.
 
-    El ahorro tipeado no sobrevive a salir de Simulaciones —Streamlit borra la
-    clave del widget y la pantalla vuelve a sembrarse con el perfil—, así que lo
-    que el plan viejo no toca es eso: lo que se ve sin cargar ningún plan.
+    Desde SIM-REENTRY-WIDGETS el ahorro tipeado sobrevive a salir de
+    Simulaciones (antes Streamlit borraba la clave del widget y la pantalla
+    volvía al perfil), así que lo que el plan viejo no toca es lo tipeado.
     """
     snap = _plan()               # mc_summary sin las claves nuevas ni la marca
     stores.plans.upsert(snap)
     at = _load(_session_with_strategy_and_savings(stores), snap)
-    assert _number(at, "monthly_savings") == PROFILE["monthly_savings"]
+    assert _number(at, "monthly_savings") == EDITED
     assert _kind(at) == "fixed_real"
     assert _number(at, "sim_wd_amount") == 30_000
     assert _drags_on(at)
