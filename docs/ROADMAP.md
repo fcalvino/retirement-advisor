@@ -10,6 +10,20 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## PLAN-GOALS-KEYS — un plan de ejemplo cargado abre «Mis Metas» y simula (2026-10-01)
+
+Tercer y último paso de la undécima `/decidir-proyecto`, banda 5: el crash era ruidoso y sólo lo provocaban los planes de ejemplo y los JSON importados a mano, porque las metas del formulario traen todas las claves. Visto en la QA en vivo de PLAN-SAVE-PARAMS.
+
+La fila nombraba una clave en un lugar. El `/decidir-proyecto` sobre `6b4b647` encontró tres claves y dos lectores: las metas de `data/sample_plans/*.json` sólo traían `name`, `target_amount_today`, `horizon_years` y `priority`; «Cargar plan» las copiaba tal cual a `goals_list`; y las leen con `g["…"]` «Mis Metas» (`7_Simulaciones.py`, `expected_inflation` y `annual_contribution` al dibujar cada meta) y la construcción de `Goal` en `cached_goal_simulation` / `cached_goal_savings_needed` (`dashboard/shared.py`, las tres). Arreglar sólo la página corría el `KeyError` a «Simular». El oráculo encontró un cuarto defecto en los mismos JSON: la prioridad era texto («esencial», «importante») y `Goal.priority` es 1–3, así que «Simular» se caía en `int(goal.priority)` y el peso por prioridad del planner la tomaba como «Media».
+
+Decisión del usuario: las dos cosas. `goal_dict_with_defaults` (`portfolio/goals.py`) completa cada campo de `Goal` que falta o es `None` con el default del dataclass, leído de `fields(Goal)` para que no haya una segunda copia del número; deja como están los campos que `Goal` no puede completar y las claves desconocidas, y no muta la entrada. `plan_load_session_updates` (`data/product_ux.py`) lo aplica a cada meta que entra a `goals_list`: guardados, importados y ejemplos pasan todos por ahí (`PlanStore.list`, `import_plan_from_dict`, `load_sample_plan` → `PlanSnapshot` → «Cargar plan»), la única puerta además del formulario. Los tres JSON traen las tres claves —la inflación de la meta es la de su `mc_summary`: 3 %, 3 % y 4 %— y la prioridad como número («esencial» → 1, «importante» → 2). Una meta importada a mano con la prioridad en texto sigue sin convertirse; ningún export de la app la escribe así. Ningún número del motor cambia; `ENGINE_VERSION` no se toca.
+
+Oráculo `tests/test_plan_goals_keys_oracle.py`: cada meta de cada ejemplo llega con las claves que leen sus lectores y construye un `Goal`; los JSON están completos y con prioridad 1–3; una meta vieja toma exactamente los defaults de un `Goal` construido sólo con sus campos obligatorios; y la app real (`app.py`) recorre Mi Plan → «Cargar plan» → Simulaciones → «Simular» con cada ejemplo. Resultado: 10 de 14 en rojo contra `origin/main`; los verdes son los controles (meta completa intacta, plan sin mutar, campos obligatorios cubiertos, hay tres ejemplos). `test_product_ux` pedía que las metas se copiaran tal cual; ahora pide que viajen con sus valores.
+
+En vivo, sobre una copia de la base, con la navegación por el menú dentro de la misma sesión: en la rama, Conservador 30 años y Retiro AR con ADRs abren «Mis Metas» («Retiro a los 65 · Alta · $600,000 hoy → $1,456,357 nominal · aporte $0/año») y «Simular plan completo» da viabilidad 95/100 y 97/100, con la meta nominal a la inflación del plan (3 % y 4 %). En `origin/main` los dos tiran `KeyError: 'expected_inflation'` en `7_Simulaciones.py:1687` y la pestaña no llega a dibujar el botón. Control: una meta agregada con el formulario simula igual que antes.
+
+---
+
 ## PLAN-LOAD-SAVINGS — «Cargar plan» devuelve el ahorro, el retiro y los supuestos de la corrida (2026-10-01)
 
 Segundo paso de la undécima `/decidir-proyecto`, banda 1 por decisión del usuario: un plan cargado corría con otro ahorro que el suyo y la pantalla decía «los parámetros que guardó ya están en los controles». Visto en la QA en vivo de PLAN-LOAD-WIDGETS.

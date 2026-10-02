@@ -19,8 +19,8 @@ Usage:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
-from typing import Dict, List, Optional
+from dataclasses import MISSING, dataclass, field, fields, replace
+from typing import Dict, List, Mapping, Optional
 
 import numpy as np
 
@@ -127,6 +127,28 @@ class Goal:
     @property
     def type_label(self) -> str:
         return GOAL_TYPE_LABELS.get(self.goal_type, "Otro")
+
+
+def goal_dict_with_defaults(goal: Mapping) -> dict:
+    """A serialized goal with every ``Goal`` field that has a default filled in.
+
+    The dashboard keeps goals as dicts and reads them with ``g["…"]``. A goal
+    written by the "Mis Metas" form carries every key, but one that arrives from
+    a sample plan, an imported JSON or a plan saved before a field existed may
+    not, and the first reader raised ``KeyError`` (PLAN-GOALS-KEYS). A missing or
+    ``None`` field takes the ``Goal`` default, read from the dataclass so there is
+    no second copy of it. Fields ``Goal`` cannot default (name, target, horizon)
+    and unknown keys are left as they are; the input is not mutated.
+    """
+    out = dict(goal)
+    for f in fields(Goal):
+        if out.get(f.name) is not None:
+            continue
+        if f.default is not MISSING:
+            out[f.name] = f.default
+        elif f.default_factory is not MISSING:
+            out[f.name] = f.default_factory()
+    return out
 
 
 # ------------------------------------------------------------------ #

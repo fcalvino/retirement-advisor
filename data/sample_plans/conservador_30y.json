@@ -32,7 +32,7 @@
     "max_drawdown_estimate_pct": 22.0
   },
   "goals": [
-    {"name": "Retiro a los 65", "target_amount_today": 600000, "horizon_years": 30, "priority": "esencial"}
+    {"name": "Retiro a los 65", "target_amount_today": 600000, "horizon_years": 30, "priority": 1, "expected_inflation": 3.0, "annual_contribution": 0.0, "allocated_capital": 0.0}
   ],
   "mc_summary": {
     "horizon_years": 30,

@@ -544,7 +544,10 @@ class TestPlanLoadSessionUpdates:
             horizon_years=20, profile_key="moderate",
         )
         assert full["_preset_profile_key"] == "moderate"
-        assert full["goals_list"] == [{"name": "casa", "target_amount_today": 100_000}]
+        # PLAN-GOALS-KEYS: the goal travels with its values; what it lacks takes
+        # the Goal defaults (tests/test_plan_goals_keys_oracle.py).
+        (goal,) = full["goals_list"]
+        assert goal.items() >= {"name": "casa", "target_amount_today": 100_000}.items()
 
     def test_capital_falls_back_to_mc_then_to_the_default(self):
         from data.product_ux import plan_load_session_updates
