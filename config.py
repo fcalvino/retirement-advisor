@@ -2063,12 +2063,20 @@ class MonteCarloConfig:
       hasta N8b indexaba también el ahorro y el P10 de un plan con aportes salía
       25–30 % más alto que en Metas para el mismo ahorrista. Decisión del
       usuario (2026-09-30): parámetro aparte, default 0.
+
+    max_monthly_savings / max_annual_withdrawal — topes de los controles de
+      ahorro y retiro de Simulaciones. Viven acá porque los leen dos lados: la
+      pantalla y «Cargar plan» (PLAN-LOAD-SAVINGS), que recorta a ellos un plan
+      que guardó más —un `number_input` con un valor fuera de rango se cae en vez
+      de recortar— y lo dice.
     """
     vol_adjustment: float = 1.10         # +10% volatility (conservative)
     mean_haircut: float = 0.80           # -20% expected return (conservative)
     contribution_periods_per_year: int = 12
     withdrawal_periods_per_year: int = 12
     default_contribution_growth_pct: float = 0.0   # N8b: el ahorro no sigue a la inflación
+    max_monthly_savings: int = 100_000    # tope del control «Ahorro mensual» de Simulaciones
+    max_annual_withdrawal: int = 500_000  # tope del control «Retiro anual» de Simulaciones
     min_history_weeks: int = 104         # 2 years minimum
     default_n_sims: int = 10_000
     default_horizon_years: int = 20

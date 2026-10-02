@@ -34,9 +34,11 @@ from analysis.groq_pacing import GroqTpmPacer
 from analysis.strategy import full_analysis
 from config import COMMITTEE, ENGINE_VERSION, SCREENER, AIConfig
 from data.product_ux import (
+    DRAG_WIDGET_RANGES,
     GUARDRAILS_LABEL,
     GUARDRAILS_OMISSIONS,
     PROFILE_SEED_PENDING_KEY,
+    WITHDRAWAL_WIDGET_RANGES,
     decision_explanation,
     guardrails_help,
     technical_signal_label,
@@ -1210,13 +1212,17 @@ def render_drags_controls(*, key_prefix: str = "") -> dict:
         c1, c2 = st.columns(2)
         with c1:
             _fee = st.number_input(
-                "Fee anual % (TER + advisory)", min_value=0.0, max_value=5.0,
+                "Fee anual % (TER + advisory)",
+                min_value=DRAG_WIDGET_RANGES["annual_fee_pct"][0],
+                max_value=DRAG_WIDGET_RANGES["annual_fee_pct"][1],
                 value=float(st.session_state.get("drag_annual_fee_pct", DRAGS.annual_fee_pct)),
                 step=0.05, disabled=not enabled, key=f"{key_prefix}drag_fee",
             )
             st.session_state["drag_annual_fee_pct"] = _fee
             _tax = st.number_input(
-                "Drag por impuesto a dividendos % anual", min_value=0.0, max_value=5.0,
+                "Drag por impuesto a dividendos % anual",
+                min_value=DRAG_WIDGET_RANGES["dividend_tax_drag_pct"][0],
+                max_value=DRAG_WIDGET_RANGES["dividend_tax_drag_pct"][1],
                 value=float(st.session_state.get("drag_dividend_tax_drag_pct", DRAGS.dividend_tax_drag_pct)),
                 step=0.05, disabled=not enabled, key=f"{key_prefix}drag_tax",
                 help="No-residente US: ~15-30% del yield bruto, expresado como % anual del NAV.",
@@ -1224,13 +1230,17 @@ def render_drags_controls(*, key_prefix: str = "") -> dict:
             st.session_state["drag_dividend_tax_drag_pct"] = _tax
         with c2:
             _rebal = st.number_input(
-                "Costo de rebalanceo % anual", min_value=0.0, max_value=5.0,
+                "Costo de rebalanceo % anual",
+                min_value=DRAG_WIDGET_RANGES["rebalance_cost_annual_pct"][0],
+                max_value=DRAG_WIDGET_RANGES["rebalance_cost_annual_pct"][1],
                 value=float(st.session_state.get("drag_rebalance_cost_annual_pct", DRAGS.rebalance_cost_annual_pct)),
                 step=0.05, disabled=not enabled, key=f"{key_prefix}drag_rebal",
             )
             st.session_state["drag_rebalance_cost_annual_pct"] = _rebal
             _ar = st.number_input(
-                "Buffer AR % anual (cepo / FX / inflación)", min_value=0.0, max_value=10.0,
+                "Buffer AR % anual (cepo / FX / inflación)",
+                min_value=DRAG_WIDGET_RANGES["ar_buffer_pct"][0],
+                max_value=DRAG_WIDGET_RANGES["ar_buffer_pct"][1],
                 value=float(st.session_state.get("drag_ar_buffer_pct", DRAGS.ar_buffer_pct)),
                 step=0.10, disabled=not enabled, key=f"{key_prefix}drag_ar",
                 help="⚠️ Evitá doble conteo: el Optimizer ya descuenta el riesgo argentino "
@@ -1408,7 +1418,8 @@ def render_withdrawal_controls(*, key_prefix: str = "", initial_value: float = 1
         if kind == "fixed_real":
             amount = st.number_input(
                 "Retiro anual (USD, ajustado por inflación)",
-                min_value=0.0, max_value=5_000_000.0,
+                min_value=WITHDRAWAL_WIDGET_RANGES["withdrawal_amount"][0],
+                max_value=WITHDRAWAL_WIDGET_RANGES["withdrawal_amount"][1],
                 value=float(st.session_state.get("withdrawal_amount",
                             round(initial_value * WITHDRAWAL.base_withdrawal_pct / 100.0, -2))),
                 step=1_000.0, format="%.0f", key=f"{key_prefix}wd_amount",
@@ -1418,7 +1429,8 @@ def render_withdrawal_controls(*, key_prefix: str = "", initial_value: float = 1
         elif kind == "constant_pct":
             pct = st.number_input(
                 "% del valor actual a retirar cada año",
-                min_value=0.5, max_value=15.0,
+                min_value=WITHDRAWAL_WIDGET_RANGES["withdrawal_pct"][0],
+                max_value=WITHDRAWAL_WIDGET_RANGES["withdrawal_pct"][1],
                 value=float(st.session_state.get("withdrawal_pct", WITHDRAWAL.constant_pct)),
                 step=0.25, format="%.2f", key=f"{key_prefix}wd_pct",
                 help="Se recalcula sobre el saldo de cada año: el ingreso varía pero la cartera no se agota del todo.",
@@ -1427,7 +1439,8 @@ def render_withdrawal_controls(*, key_prefix: str = "", initial_value: float = 1
         elif kind == "guardrails":
             base = st.number_input(
                 "Tasa de retiro base %",
-                min_value=0.5, max_value=12.0,
+                min_value=WITHDRAWAL_WIDGET_RANGES["withdrawal_base_pct"][0],
+                max_value=WITHDRAWAL_WIDGET_RANGES["withdrawal_base_pct"][1],
                 value=float(st.session_state.get("withdrawal_base_pct", WITHDRAWAL.base_withdrawal_pct)),
                 step=0.25, format="%.2f", key=f"{key_prefix}wd_base_pct",
                 help=guardrails_help(WITHDRAWAL),
@@ -1437,7 +1450,8 @@ def render_withdrawal_controls(*, key_prefix: str = "", initial_value: float = 1
         if kind != "none":
             longevity = st.number_input(
                 "Duración del retiro (años) para medir longevidad",
-                min_value=5, max_value=60,
+                min_value=WITHDRAWAL_WIDGET_RANGES["withdrawal_longevity_years"][0],
+                max_value=WITHDRAWAL_WIDGET_RANGES["withdrawal_longevity_years"][1],
                 value=int(st.session_state.get("withdrawal_longevity_years", WITHDRAWAL.default_longevity_years)),
                 step=1, key=f"{key_prefix}wd_longevity",
                 help="Horizonte sobre el que se calcula 'probabilidad de que el ingreso dure'.",

@@ -31,7 +31,7 @@ from loguru import logger
 
 from config import ENGINE_VERSION
 from data.env_provenance import env_drift, numeric_env
-from data.product_ux import IGNORED_SAVINGS_KEY, mc_has_cash_flows
+from data.product_ux import IGNORED_SAVINGS_KEY, RUN_ASSUMPTIONS_KEY, mc_has_cash_flows
 
 _PLANS_PATH = Path(__file__).parent / "retirement_plans.json"
 
@@ -186,6 +186,7 @@ class PlanSnapshot:
         price_lookup: Optional[Callable[[str], Optional[float]]] = None,
         drags: Optional[dict] = None,
         withdrawal_strategy: Optional[dict] = None,
+        run_params: Optional[dict] = None,
     ) -> "PlanSnapshot":
         """Build a snapshot from the live optimizer/goals/MC objects + prefs.
 
@@ -194,10 +195,23 @@ class PlanSnapshot:
         each allocation entry as ``price_at_save`` so that loading the plan
         later can show a true "price then vs now" delta. The callable is wrapped
         defensively — any failure simply omits the price for that ticker.
+
+        ``run_params`` (PLAN-LOAD-SAVINGS) is the raw ``mc_params`` Simulaciones
+        stored next to ``mc_result``. The savings and withdrawal of the run come
+        from it and not from ``mc_params``: that one went through
+        ``enrich_pdf_mc_params``, which reads a saved 0 as «no data» and puts the
+        profile's savings in its place. Its strategy and drags, when present, are
+        the ones saved, and ``mc_summary`` says so (``RUN_ASSUMPTIONS_KEY``), so a
+        loaded plan can tell «no strategy» from «saved before the field».
         """
         now = datetime.now().isoformat(timespec="seconds")
         goals = goals or []
         mc_params = mc_params or {}
+        run_params = run_params or {}
+        if "drags" in run_params:
+            drags = run_params["drags"]
+        if "withdrawal_strategy" in run_params:
+            withdrawal_strategy = run_params["withdrawal_strategy"]
 
         def _price_at_save(symbol: str) -> Optional[float]:
             if price_lookup is None:
@@ -277,6 +291,12 @@ class PlanSnapshot:
                     float(getattr(mc_result, "sorr_early_drawdown_pct", 0.0)), 1
                 ),
             }
+            # PLAN-LOAD-SAVINGS: what «Cargar plan» needs to re-run this projection.
+            for _key in ("monthly_savings", "annual_withdrawal"):
+                if run_params.get(_key) is not None:
+                    mc_summary[_key] = float(run_params[_key])
+            if "drags" in run_params and "withdrawal_strategy" in run_params:
+                mc_summary[RUN_ASSUMPTIONS_KEY] = True
             # Item 1 — persist base (no-drag) reference + the active drag total
             # so a loaded plan can show "base vs con drags" exactly as generated.
             _drag_total = float(getattr(mc_result, "total_annual_drag_pct", 0.0))
