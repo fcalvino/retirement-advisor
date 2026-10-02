@@ -323,19 +323,23 @@ class InvestmentPlanReport:
         if horizon is None and mc_params.get("horizon_years") is not None:
             horizon = mc_params.get("horizon_years")
 
-        monthly_savings = 0.0
-        try:
-            monthly_savings = float(mc_params.get("monthly_savings") or 0.0)
-        except (TypeError, ValueError):
-            monthly_savings = 0.0
+        # PDF-ZERO-SAVINGS: `None` is «no savings figure anywhere» and 0 is the
+        # run's (or the widget's) «no aporto» — the checklist says each its way.
+        monthly_savings = None
+        if mc_params.get("monthly_savings") is not None:
+            try:
+                monthly_savings = float(mc_params["monthly_savings"])
+            except (TypeError, ValueError):
+                monthly_savings = None
+        saves = monthly_savings is not None and monthly_savings > 0
 
         personal = {
             "primary_horizon_years": horizon,
-            "monthly_savings": monthly_savings if monthly_savings > 0 else None,
+            "monthly_savings": monthly_savings if saves else None,
             "annual_savings": (
                 float(mc_params["annual_savings"])
                 if mc_params.get("annual_savings") is not None
-                else (monthly_savings * 12.0 if monthly_savings > 0 else None)
+                else (monthly_savings * 12.0 if saves else None)
             ),
             "current_capital": mc_params.get("initial_value"),
         }

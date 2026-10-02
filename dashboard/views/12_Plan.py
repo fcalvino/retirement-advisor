@@ -1068,7 +1068,11 @@ else:
             icon="🎯",
         )
         # Backlog 8 — qué hacer este año
-        from data.product_ux import ar_dual_context, build_annual_action_list
+        from data.product_ux import (
+            ar_dual_context,
+            build_annual_action_list,
+            plan_action_monthly_savings,
+        )
 
         _active_snap = next(p for p in _plans if p.id == _active_plan_id)
         _port = st.session_state.get("portfolio")
@@ -1079,7 +1083,8 @@ else:
             _drift = (_rm.get("summary") or {}).get("weighted_delta_pct")
         _actions = build_annual_action_list(
             plan_snapshot=_active_snap,
-            monthly_savings=float(getattr(prefs, "monthly_savings", 0) or 0),
+            # PDF-ZERO-SAVINGS: el ahorro de la corrida que guardó el plan, no el del perfil.
+            monthly_savings=plan_action_monthly_savings(_active_snap, prefs),
             has_portfolio_positions=_has_pos,
             drift_pct=float(_drift) if _drift is not None else None,
             last_backup_days=None if not st.session_state.get("plan_exported") else 0,

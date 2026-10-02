@@ -1078,14 +1078,19 @@ def compute_gap_to_goal_levers(
 def build_annual_action_list(
     *,
     plan_snapshot: Any = None,
-    monthly_savings: float = 0.0,
+    monthly_savings: Optional[float] = None,
     has_portfolio_positions: bool = False,
     drift_pct: Optional[float] = None,
     drift_threshold_pct: float = 5.0,
     last_backup_days: Optional[int] = None,
     review_every_months: int = 6,
 ) -> List[dict]:
-    """Actionable checklist for the next 12 months from plan + optional drift."""
+    """Actionable checklist for the next 12 months from plan + optional drift.
+
+    ``monthly_savings`` ``None`` means «unknown» and falls back to the plan's
+    ``personal``; 0 is an answer —the projection has no contributions— and is
+    said as such (PDF-ZERO-SAVINGS).
+    """
     actions: List[dict] = []
     personal = {}
     if plan_snapshot is not None:
@@ -1094,8 +1099,14 @@ def build_annual_action_list(
     else:
         name = "tu plan"
 
-    annual = float(monthly_savings or 0.0) * 12.0
-    if annual <= 0 and personal:
+    declared: Optional[float] = None
+    if monthly_savings is not None:
+        try:
+            declared = max(float(monthly_savings), 0.0) * 12.0
+        except (TypeError, ValueError):
+            declared = None
+    annual = declared if declared is not None else 0.0
+    if declared is None and personal:
         try:
             annual = float(personal.get("annual_savings") or 0.0)
         except (TypeError, ValueError):
@@ -1114,6 +1125,18 @@ def build_annual_action_list(
             "detail": f"Meta de aporte anual: ${annual:,.0f} (según tu perfil/plan).",
             "when": "mensual",
             "cta_page": "12_Plan.py",
+        })
+    elif declared is not None:
+        actions.append({
+            "id": "no_contributions",
+            "priority": 1,
+            "title": "Esta proyección no incluye aportes",
+            "detail": (
+                "La corrida se hizo con ahorro 0. Si vas a aportar, cargalo en "
+                "Simulaciones y volvé a correr."
+            ),
+            "when": "al revisar el plan",
+            "cta_page": "7_Simulaciones.py",
         })
     else:
         actions.append({
@@ -1185,6 +1208,27 @@ def build_annual_action_list(
 
     actions.sort(key=lambda a: a["priority"])
     return actions
+
+
+def plan_action_monthly_savings(plan_snapshot: Any, prefs: Any = None) -> Optional[float]:
+    """The monthly savings «Qué hacer este año» speaks of for a saved plan.
+
+    The plan's run first: since PLAN-LOAD-SAVINGS ``mc_summary`` keeps the
+    savings of the run, and a 0 there is the run's answer (PDF-ZERO-SAVINGS).
+    A plan saved before that has no key and falls to the profile; ``None``
+    lets ``build_annual_action_list`` read the plan's ``personal``.
+    """
+    summary = getattr(plan_snapshot, "mc_summary", None) or {}
+    if summary.get("monthly_savings") is not None:
+        try:
+            return float(summary["monthly_savings"])
+        except (TypeError, ValueError):
+            pass
+    try:
+        profile = float(getattr(prefs, "monthly_savings", 0) or 0)
+    except (TypeError, ValueError):
+        return None
+    return profile if profile > 0 else None
 
 
 # --------------------------------------------------------------------------- #
@@ -2431,6 +2475,10 @@ def enrich_pdf_mc_params(
     Call sites historically only passed simulation widget keys (often empty).
     Without this, the shareable "Qué hacer este año" block always said
     "Definí cuánto podés aportar…" even when the user had monthly_savings set.
+
+    A savings key present with 0 is an answer —«no aporto»— and is kept: only
+    a missing or ``None`` one falls back to ``personal`` and ``prefs``
+    (PDF-ZERO-SAVINGS).
     """
     out: Dict[str, Any] = dict(mc_params or {})
     personal = dict(personal or {})
@@ -2446,13 +2494,37 @@ def enrich_pdf_mc_params(
         return f if f > 0 else None
 
     # --- monthly / annual savings ---
-    monthly = _pos("monthly_savings") or _pos("monthly_contribution") or _pos("monthly_contrib")
-    if monthly is None and _pos("annual_contribution") is not None:
-        monthly = float(out["annual_contribution"]) / 12.0
-    if monthly is None and _pos("annual_savings") is not None:
-        monthly = float(out["annual_savings"]) / 12.0
+    # PDF-ZERO-SAVINGS: la regla de U4-5 (`contribution_inputs`). Un 0 de la
+    # corrida, o tipeado en el widget «0 = no aporto», es una respuesta: leído
+    # como «sin dato», el PDF describía con el ahorro del perfil una corrida que
+    # no aportó nada. La primera clave con valor decide, en el orden de abajo.
+    monthly = None
+    declared_zero = False
+    for key, divisor in (
+        ("monthly_savings", 1.0),
+        ("monthly_contribution", 1.0),
+        ("monthly_contrib", 1.0),
+        ("annual_contribution", 12.0),
+        ("annual_savings", 12.0),
+    ):
+        if out.get(key) is None:
+            continue
+        try:
+            value = float(out[key])
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            monthly = value / divisor
+            break
+        if value == 0:
+            declared_zero = True
+            break
 
-    if monthly is None and personal:
+    if declared_zero:
+        out["monthly_savings"] = 0.0
+        out["annual_savings"] = 0.0
+
+    if monthly is None and not declared_zero and personal:
         for k in ("monthly_savings", "monthly_contribution"):
             if personal.get(k) is not None:
                 try:
@@ -2470,7 +2542,7 @@ def enrich_pdf_mc_params(
             except (TypeError, ValueError):
                 pass
 
-    if monthly is None and prefs is not None:
+    if monthly is None and not declared_zero and prefs is not None:
         try:
             m = float(getattr(prefs, "monthly_savings", 0) or 0)
             if m > 0:
