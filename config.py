@@ -2080,6 +2080,7 @@ class MonteCarloConfig:
     min_history_weeks: int = 104         # 2 years minimum
     default_n_sims: int = 10_000
     default_horizon_years: int = 20
+    default_initial_value: int = 100_000   # capital de Simulaciones sin perfil (SIM-REENTRY-WIDGETS)
     block_size_weeks: int = 4            # bootstrap block size (preserves autocorrelation)
     warn_static_weights: bool = True
     warn_crypto_without_extra_vol: bool = True

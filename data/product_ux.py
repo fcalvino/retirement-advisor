@@ -2944,6 +2944,46 @@ def apply_pending_profile_seed(state: Any) -> None:
         state[key] = value
 
 
+# SIM-REENTRY-WIDGETS: the Simulaciones sidebar, remembered for the session.
+SIM_SIDEBAR_KEYS = SIM_PLAN_WIDGET_KEYS + ("n_sims",)
+SIM_SIDEBAR_MEMORY_KEY = "_sim_sidebar_memory"
+# The sidebar fields the personal profile defines.
+SIM_PROFILE_FIELDS = ("horizon_years", "initial_value", "monthly_savings")
+
+
+def remember_sim_sidebar(state: Any) -> None:
+    """Keep what the Simulaciones sidebar shows, for the next visit (SIM-REENTRY-WIDGETS).
+
+    Changing pages drops the state of the widgets the new page does not draw, so
+    coming back to Simulaciones drew each widget's written default under the
+    caption that names the profile —20 años y 100.000, which «Ejecutar» ran— and
+    lost every edit. The widget keys stay the contract (the profile seed, «Cargar
+    plan» and the presets write them); this copy lives under a key no widget
+    owns, so it survives, and the page reads it back as the widgets' ``value=``.
+    Call it after the last sidebar widget.
+    """
+    state[SIM_SIDEBAR_MEMORY_KEY] = {k: state[k] for k in SIM_SIDEBAR_KEYS if k in state}
+
+
+def sim_sidebar_value(state: Any, key: str, default: Any) -> Any:
+    """What a Simulaciones sidebar widget opens on when its key is gone.
+
+    The last value of the session, else ``default``. Anything written into the
+    widget key before the widget —the profile seed, a loaded plan, a preset—
+    beats it, because Streamlit only reads ``value=`` for a key it does not have.
+    """
+    return (state.get(SIM_SIDEBAR_MEMORY_KEY) or {}).get(key, default)
+
+
+def forget_profile_fields_in_sim_memory(state: Any) -> None:
+    """Saving the profile again beats what Simulaciones remembered of the old one."""
+    memory = state.get(SIM_SIDEBAR_MEMORY_KEY)
+    if memory:
+        state[SIM_SIDEBAR_MEMORY_KEY] = {
+            k: v for k, v in memory.items() if k not in SIM_PROFILE_FIELDS
+        }
+
+
 def shareable_report_narrative_blocks(
     *,
     plan_name: str,

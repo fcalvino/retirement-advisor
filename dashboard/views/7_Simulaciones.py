@@ -14,6 +14,7 @@ from loguru import logger
 
 from config import AR_FX, GOAL_CARD, MONTE_CARLO, SECTOR_MAP, WITHDRAWAL
 from dashboard.shared import (
+    SIM_HORIZON_OPTIONS,
     _get_ai_config,
     cached_goal_optimization,
     cached_goal_savings_target,
@@ -33,6 +34,7 @@ from dashboard.shared import (
     render_withdrawal_controls,
     run_plan_sensitivity,
     seed_session_defaults_from_profile,
+    sim_horizon_index,
     withdrawal_to_tuple,
 )
 from data.product_ux import (
@@ -55,6 +57,8 @@ from data.product_ux import (
     pot_growth_help,
     pot_growth_pct,
     proxy_attractiveness_index,
+    remember_sim_sidebar,
+    sim_sidebar_value,
 )
 from portfolio.goals import (
     GOAL_TYPE_ICONS,
@@ -217,11 +221,16 @@ if _loaded_plan_name is not None:
             icon="⚠️",
         )
 
-# The widgets now use explicit keys so presets can control them directly
+# The widgets now use explicit keys so presets can control them directly.
+# SIM-REENTRY-WIDGETS: cambiar de página borra esas claves, así que cada widget
+# abre en lo último de la sesión (`sim_sidebar_value`, que se guarda después del
+# último control) y, si no hay, en su default. Lo que se escribe en la clave antes
+# del widget —perfil, plan cargado, preset— gana sobre ese `value=`.
+_ss = st.session_state
 horizon_years = st.sidebar.selectbox(
     "Horizonte de proyección",
-    [5, 10, 15, 20, 25, 30],
-    index=3,
+    list(SIM_HORIZON_OPTIONS),
+    index=sim_horizon_index(_ss),
     format_func=lambda y: f"{y} años",
     help="Años desde hoy hasta la meta de retiro.",
     key="horizon_years",
@@ -230,7 +239,7 @@ initial_value = st.sidebar.number_input(
     "Capital inicial (USD)",
     min_value=1_000,
     max_value=10_000_000,
-    value=100_000,
+    value=int(sim_sidebar_value(_ss, "initial_value", MONTE_CARLO.default_initial_value)),
     step=5_000,
     format="%d",
     key="initial_value",
@@ -249,8 +258,9 @@ st.sidebar.number_input(
     "Ahorro mensual (USD, 0 = no aporto)",
     min_value=0,
     max_value=MONTE_CARLO.max_monthly_savings,
-    value=int(min(max(contribution_inputs(prefs=_prefs_sim)["monthly"], 0),
-                  MONTE_CARLO.max_monthly_savings)),
+    value=int(sim_sidebar_value(_ss, "monthly_savings", min(
+        max(contribution_inputs(prefs=_prefs_sim)["monthly"], 0),
+        MONTE_CARLO.max_monthly_savings))),
     step=100,
     format="%d",
     help=(
@@ -265,7 +275,7 @@ annual_withdrawal = st.sidebar.number_input(
     "Retiro anual (USD, 0 = acumulación)",
     min_value=0,
     max_value=MONTE_CARLO.max_annual_withdrawal,
-    value=0,
+    value=int(sim_sidebar_value(_ss, "annual_withdrawal", 0)),
     step=1_000,
     format="%d",
     help="Cuánto retirás cada año (fase de desacumulación). 0 si todavía estás acumulando.",
@@ -293,7 +303,8 @@ contribution_growth_pct = st.sidebar.number_input(
     "Suba anual del ahorro (%)",
     min_value=0.0,
     max_value=10.0,
-    value=float(MONTE_CARLO.default_contribution_growth_pct),
+    value=float(sim_sidebar_value(_ss, "contribution_growth_pct",
+                                  MONTE_CARLO.default_contribution_growth_pct)),
     step=0.5,
     help=CONTRIBUTION_GROWTH_HELP,
     key="contribution_growth_pct",
@@ -302,7 +313,7 @@ target_value = st.sidebar.number_input(
     "Meta de retiro (USD)",
     min_value=0,
     max_value=20_000_000,
-    value=500_000,
+    value=int(sim_sidebar_value(_ss, "target_value", 500_000)),
     step=10_000,
     format="%d",
     help="Valor objetivo del portafolio al final del horizonte.",
@@ -312,7 +323,7 @@ inflation_rate = st.sidebar.slider(
     "Inflación esperada (%/año)",
     min_value=0.0,
     max_value=8.0,
-    value=3.0,
+    value=float(sim_sidebar_value(_ss, "inflation_rate", 3.0)),
     step=0.5,
     help="Ajusta tanto la línea de 'valor real' en el gráfico como el crecimiento anual del retiro "
          "(si tenés retiro > 0). No mueve tu ahorro: eso es la «Suba anual del ahorro».",
@@ -321,10 +332,11 @@ inflation_rate = st.sidebar.slider(
 n_sims = st.sidebar.select_slider(
     "Número de simulaciones",
     options=[1_000, 2_000, 5_000, 10_000],
-    value=MONTE_CARLO.default_n_sims,
+    value=sim_sidebar_value(_ss, "n_sims", MONTE_CARLO.default_n_sims),
     help="Más simulaciones = más precisión. 10 000 tarda < 3s.",
     key="n_sims",
 )
+remember_sim_sidebar(_ss)   # SIM-REENTRY-WIDGETS: después del último control
 
 # ------------------------------------------------------------------ #
 #  Resolve portfolio from session state                                #
