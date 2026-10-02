@@ -199,8 +199,8 @@ class PlanSnapshot:
         ``run_params`` (PLAN-LOAD-SAVINGS) is the raw ``mc_params`` Simulaciones
         stored next to ``mc_result``. The savings and withdrawal of the run come
         from it and not from ``mc_params``: that one went through
-        ``enrich_pdf_mc_params``, which reads a saved 0 as «no data» and puts the
-        profile's savings in its place. Its strategy and drags, when present, are
+        ``enrich_pdf_mc_params``, which fills in the profile's savings wherever
+        the run left none. Its strategy and drags, when present, are
         the ones saved, and ``mc_summary`` says so (``RUN_ASSUMPTIONS_KEY``), so a
         loaded plan can tell «no strategy» from «saved before the field».
         """

@@ -10,6 +10,22 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## PDF-ZERO-SAVINGS — una corrida sin ahorro no se describe con el ahorro del perfil (2026-10-02)
+
+Segundo paso de la duodécima `/decidir-proyecto`, banda 4. Era el «límite conocido» de PLAN-SAVE-PARAMS, verificado leyendo el código y no en vivo, así que el primer paso fue reproducirlo.
+
+En vivo, sobre una copia de la base, con un perfil de 2.000/mes y una corrida con ahorro 0, el bloque «Para compartir» del PDF de Mi Plan decía «Aportar ~$2,000/mes a Plan de retiro» al lado de la probabilidad (~94 %) y la mediana de esa corrida. `enrich_pdf_mc_params` (`data/product_ux.py`) leía un ahorro ≤ 0 como «sin dato» y ponía el del perfil, y `InvestmentPlanReport` (`reports/investment_plan.py`) lo vuelve a llamar antes de armar el bloque. La fila resultó cierta y más ancha: el checklist «Qué hacer este año» del plan activo en Mi Plan decía «Meta de aporte anual: $24,000 (según tu perfil/plan)» sobre un plan guardado con `mc_summary.monthly_savings = 0.0`, porque `build_annual_action_list` tenía su propio relleno (0 caía al `personal` del plan) y la página le pasaba `prefs.monthly_savings`. La frase que citaba la fila es la del checklist: el PDF sólo muestra los títulos de las acciones. El capital y el horizonte no tienen el problema: los widgets no dejan correr con capital o horizonte 0.
+
+El arreglo es la regla de U4-5 (`contribution_inputs`): un ahorro presente en 0 es «no aporto»; ausente o `None` es «no sé» y sigue cayendo al perfil. `enrich_pdf_mc_params` deja decidir a la primera clave de ahorro con valor —`monthly_savings` primero, así un aporte de meta a medio tipear no pisa el 0 del widget— y escribe el 0 también en `annual_savings`, para que la segunda llamada lo respete. `build_annual_action_list(monthly_savings=None)` distingue los dos casos y, con 0, la acción dice «Esta proyección no incluye aportes». El reporte le pasa `None` cuando no hay dato, así que sin corrida ni perfil sigue «Definí cuánto podés aportar». `plan_action_monthly_savings` le da al checklist el ahorro que guardó el plan (PLAN-LOAD-SAVINGS); un plan guardado antes, sin la clave, sigue con el perfil.
+
+Decisiones del usuario: el PR cubre el PDF y el checklist; el texto de la acción con 0 es el nuevo y no reusa «Definí cuánto podés aportar», cuyo detalle («la proyección es solo teórica») es falso para una corrida de retiro; un 0 tipeado en el widget de Simulaciones cuenta también sin corrida, así que el PDF de Mis Metas con el widget en 0 deja de decir 2.000. El Optimizer, sin corrida ni widget, sigue tomando el perfil. Motor sin cambios; `ENGINE_VERSION` no se toca.
+
+Oráculo `tests/test_pdf_zero_savings_oracle.py`: el PDF real de Mi Plan (AppTest sobre «Generar PDF», el reporte armado de verdad), la sección del reporte con un 0 que le llega, el armado sin corrida con el widget en 0 y el checklist del plan activo; el perfil que el reporte lee de disco se fija en cada test. 7 de 15 en rojo contra `origin/main`; los 8 verdes son controles (corrida con ahorro, sin corrida, sin ahorro en ningún lado, plan viejo, llamador sin ahorro, valores ilegibles). Detecta cinco mutaciones que devuelven partes del comportamiento viejo.
+
+En vivo, rama y `origin/main` lado a lado: con ahorro 0 el PDF y el checklist dicen «Esta proyección no incluye aportes» en la rama y «Aportar ~$2,000/mes» en `main`; con 1.500 los dos dicen «~$1,500/mes»; el PDF del Optimizer dice 2.000 en los dos. Dos hallazgos fuera de alcance quedaron como filas sin banda: **KATEX-DOLLAR-PLAN** y **SIM-REENTRY-WIDGETS**.
+
+---
+
 ## PLAN-GOALS-KEYS — un plan de ejemplo cargado abre «Mis Metas» y simula (2026-10-01)
 
 Tercer y último paso de la undécima `/decidir-proyecto`, banda 5: el crash era ruidoso y sólo lo provocaban los planes de ejemplo y los JSON importados a mano, porque las metas del formulario traen todas las claves. Visto en la QA en vivo de PLAN-SAVE-PARAMS.
