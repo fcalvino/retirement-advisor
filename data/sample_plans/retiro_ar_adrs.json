@@ -33,7 +33,7 @@
     "max_drawdown_estimate_pct": 45.0
   },
   "goals": [
-    {"name": "Retiro complementario", "target_amount_today": 300000, "horizon_years": 20, "priority": "importante"}
+    {"name": "Retiro complementario", "target_amount_today": 300000, "horizon_years": 20, "priority": 2, "expected_inflation": 4.0, "annual_contribution": 0.0, "allocated_capital": 0.0}
   ],
   "mc_summary": {
     "horizon_years": 20,

@@ -2781,9 +2781,14 @@ def plan_load_session_updates(
     # PLAN-LOAD-SAVINGS: the savings, withdrawal, strategy and drags of the run.
     updates.update(plan_load_run_assumptions(plan_snapshot)[0])
 
+    # PLAN-GOALS-KEYS: a goal from a sample plan or an imported JSON may lack keys
+    # that "Mis Metas" and the goal simulation read with g["…"]; they take the
+    # Goal defaults here, the one door into goals_list besides the form.
     goals = getattr(plan_snapshot, "goals", None) or []
     if goals:
-        updates["goals_list"] = list(goals)
+        from portfolio.goals import goal_dict_with_defaults
+
+        updates["goals_list"] = [goal_dict_with_defaults(g) for g in goals]
 
     return updates
 

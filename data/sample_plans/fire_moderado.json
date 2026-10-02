@@ -33,7 +33,7 @@
     "max_drawdown_estimate_pct": 32.0
   },
   "goals": [
-    {"name": "Independencia financiera a los 50", "target_amount_today": 1000000, "horizon_years": 18, "priority": "esencial"}
+    {"name": "Independencia financiera a los 50", "target_amount_today": 1000000, "horizon_years": 18, "priority": 1, "expected_inflation": 3.0, "annual_contribution": 0.0, "allocated_capital": 0.0}
   ],
   "mc_summary": {
     "horizon_years": 25,
