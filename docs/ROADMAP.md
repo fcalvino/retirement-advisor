@@ -10,6 +10,22 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## PLAN-LOAD-SAVINGS — «Cargar plan» devuelve el ahorro, el retiro y los supuestos de la corrida (2026-10-01)
+
+Segundo paso de la undécima `/decidir-proyecto`, banda 1 por decisión del usuario: un plan cargado corría con otro ahorro que el suyo y la pantalla decía «los parámetros que guardó ya están en los controles». Visto en la QA en vivo de PLAN-LOAD-WIDGETS.
+
+`PlanSnapshot.from_session` guardaba en `mc_summary` horizonte, capital, inflación, suba del ahorro y meta, pero no el ahorro mensual ni el retiro anual de la corrida: PLAN-SAVE-PARAMS los había agregado a `mc_params` para el PDF, no al plan. Al cargarlo, Simulaciones mostraba el ahorro de la sesión, que al salir de la página vuelve a ser el del perfil. Al verificar la fila apareció lo mismo con la estrategia de retiro y los drags: el plan los guarda (`withdrawal_strategy`, `drags_at_save`) y «Cargar plan» no los devolvía, así que un plan en acumulación cargado en una sesión con estrategia corría sin su ahorro. Decisión del usuario: las dos cosas en el mismo PR.
+
+Del lado del guardado había una trampa: los parámetros que recibe `from_session` pasan por `enrich_pdf_mc_params`, que lee un ahorro de 0 como «sin dato» y pone el del perfil. El plan toma ahora el ahorro y el retiro de la corrida **cruda** (`from_session(run_params=…)`, que Mi Plan pasa con `mc_params` de Simulaciones) y guarda la marca `assumptions_from_run`, que distingue «sin estrategia» o «sin drags» de un plan guardado antes de la fila.
+
+`plan_load_run_assumptions` (`data/product_ux.py`) decide qué vuelve. El ahorro y el retiro entran a `SIM_PLAN_WIDGET_KEYS` y van por la espera de PLAN-LOAD-WIDGETS. La estrategia y los drags se escriben en sus claves de sesión (`withdrawal_kind` y su monto, porcentaje o tasa base, `withdrawal_longevity_years`, `drags_enabled`, `drag_*`), que sus widgets leen con `value=` bajo claves propias. Un plan sin la clave no toca nada; un dict guardado sin la marca —los planes de ejemplo— se carga igual. Un `number_input` con un valor fuera de rango se cae en vez de recortar, así que un ahorro o un retiro por encima del tope (`MONTE_CARLO.max_monthly_savings` / `max_annual_withdrawal`, que ahora usa también la pantalla) se recorta, y una estrategia o unos drags fuera del rango de sus widgets (`WITHDRAWAL_WIDGET_RANGES`, `DRAG_WIDGET_RANGES`) no se cargan; Simulaciones lo dice en un aviso junto al de «Plan cargado». Las bandas de guardrails salen de `WITHDRAWAL`. Ningún número del motor cambia; `ENGINE_VERSION` no se toca.
+
+Oráculo `tests/test_plan_load_savings_oracle.py`. Recorre `app.py` real con la ida y vuelta de un usuario —Simulaciones → «Ejecutar» → Mi Plan → «Guardar» → cambiar la sesión → «Cargar plan» → Simulaciones— y lee lo que dibuja el navegador y lo que recibe el motor (`mc_result`). Resultado: 10 de 11 en rojo contra `origin/main`; el verde es el control del plan viejo. Las mutaciones «sin las claves nuevas», «sin espera», «ignorar la marca», «el ahorro de los parámetros enriquecidos», «sin estrategia» y «sin drags» fallan.
+
+En vivo, sobre una copia de la base y de los JSON del usuario (perfil: 2.000/mes): una corrida con 3.300/mes y retiro 12.000 se guarda con esas dos cifras y la marca; con la sesión cambiada a 500 / 0 / retiro fijo / sin drags, «Cargar plan» → Simulaciones muestra en la rama 3.300 / 12.000 / acumulación / drags 0,25 %, y «Ejecutar» acierta la caché de la corrida original —los mismos argumentos—. En `origin/main` el plan se guarda sin las cifras, y cargado muestra 2.000 / 0 / retiro fijo / sin drags, con el aviso de que el ahorro no entra, y corre `× 25y (simuladas 30y por longevidad)`. El plan de ejemplo FIRE Moderado carga en la rama guardrails 4 % y sus drags (0,40 %); en `origin/main`, la estrategia y los drags de la sesión. La pestaña «Mis Metas» del plan de ejemplo sigue cayéndose con `KeyError: 'expected_inflation'` en las dos: es PLAN-GOALS-KEYS, la siguiente en el orden.
+
+---
+
 ## PROFILE-SEED-WIDGETS — el perfil llega a la pantalla de Simulaciones (2026-10-01)
 
 Primer paso de la undécima `/decidir-proyecto`, banda 1 por decisión del usuario: la pantalla corría otra cifra que la que decía su caption. Visto en la QA en vivo de PLAN-LOAD-WIDGETS.

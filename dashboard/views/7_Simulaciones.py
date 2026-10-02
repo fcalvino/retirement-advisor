@@ -49,6 +49,7 @@ from data.product_ux import (
     fmt_attractiveness_index,
     indexation_help,
     mc_has_cash_flows,
+    pending_plan_load_notes,
     pot_growth_column_label,
     pot_growth_delta,
     pot_growth_help,
@@ -101,6 +102,7 @@ apply_pending_profile_seed(st.session_state)
 # PLAN-LOAD-WIDGETS: «Cargar plan» de Mi Plan deja los valores en espera; se
 # escriben acá, antes de los widgets y en esta misma corrida, que es la única
 # forma de que el navegador los muestre. Después del perfil: el plan gana.
+_loaded_plan_notes = pending_plan_load_notes(st.session_state)   # PLAN-LOAD-SAVINGS
 _loaded_plan_name = apply_pending_plan_load(st.session_state)
 if _prefs_sim.is_onboarded and not st.session_state.get("_goal_form_seeded"):
     if _prefs_sim.primary_goal_type in GOAL_TYPE_ICONS:
@@ -208,6 +210,12 @@ if _loaded_plan_name is not None:
         "controles. Ejecutá para ver su proyección.",
         icon="📥",
     )
+    if _loaded_plan_notes:
+        st.sidebar.warning(
+            "Del plan no volvió todo como se guardó: "
+            + "; ".join(escape_dollars(n) for n in _loaded_plan_notes) + ".",
+            icon="⚠️",
+        )
 
 # The widgets now use explicit keys so presets can control them directly
 horizon_years = st.sidebar.selectbox(
@@ -240,8 +248,9 @@ initial_value = st.sidebar.number_input(
 st.sidebar.number_input(
     "Ahorro mensual (USD, 0 = no aporto)",
     min_value=0,
-    max_value=100_000,
-    value=int(min(max(contribution_inputs(prefs=_prefs_sim)["monthly"], 0), 100_000)),
+    max_value=MONTE_CARLO.max_monthly_savings,
+    value=int(min(max(contribution_inputs(prefs=_prefs_sim)["monthly"], 0),
+                  MONTE_CARLO.max_monthly_savings)),
     step=100,
     format="%d",
     help=(
@@ -255,7 +264,7 @@ st.sidebar.number_input(
 annual_withdrawal = st.sidebar.number_input(
     "Retiro anual (USD, 0 = acumulación)",
     min_value=0,
-    max_value=500_000,
+    max_value=MONTE_CARLO.max_annual_withdrawal,
     value=0,
     step=1_000,
     format="%d",

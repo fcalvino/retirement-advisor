@@ -2583,6 +2583,139 @@ def assemble_plan_pdf_mc_params(
     return enrich_pdf_mc_params(base, prefs=prefs, personal=personal)
 
 
+# PLAN-LOAD-SAVINGS: a plan whose ``mc_summary`` carries this key stored the
+# strategy and drags of its run, so ``None`` in those fields means «none». Without
+# it ``None`` is a plan saved before the field, and says nothing.
+RUN_ASSUMPTIONS_KEY = "assumptions_from_run"
+
+# The ranges of the Simulaciones strategy and drags widgets (``dashboard.shared``
+# reads them from here), so «Cargar plan» can tell a value the widget would
+# reject: a ``number_input`` raises on a value out of range instead of capping it.
+WITHDRAWAL_WIDGET_RANGES = {
+    "withdrawal_amount": (0.0, 5_000_000.0),
+    "withdrawal_pct": (0.5, 15.0),
+    "withdrawal_base_pct": (0.5, 12.0),
+    "withdrawal_longevity_years": (5, 60),
+}
+DRAG_WIDGET_RANGES = {
+    "annual_fee_pct": (0.0, 5.0),
+    "dividend_tax_drag_pct": (0.0, 5.0),
+    "rebalance_cost_annual_pct": (0.0, 5.0),
+    "ar_buffer_pct": (0.0, 10.0),
+}
+
+
+def _within(value: Optional[float], bounds: tuple) -> bool:
+    return value is not None and bounds[0] <= value <= bounds[1]
+
+
+def _strategy_session_keys(strategy: Mapping[str, Any], mc: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """The session keys ``get_withdrawal_strategy`` reads back into ``strategy``.
+
+    ``None`` when the plan's strategy cannot come back as it was: an unknown kind,
+    a value the widget does not accept, or a fixed amount of 0 (which the builder
+    reads as «no strategy»). The guardrail bands are not restored: they come from
+    ``WITHDRAWAL``, and the screen does not let anyone change them.
+    """
+    kind = strategy.get("kind")
+    pct = _safe_float(strategy.get("pct"))
+    if kind == "fixed_real":
+        amount = _safe_float(strategy.get("annual_amount"))
+        if not amount or amount <= 0:
+            return None
+        keys: Dict[str, Any] = {"withdrawal_amount": amount}
+    elif kind == "constant_pct":
+        keys = {"withdrawal_pct": None if pct is None else round(pct * 100.0, 4)}
+    elif kind == "guardrails":
+        keys = {"withdrawal_base_pct": None if pct is None else round(pct * 100.0, 4)}
+    else:
+        return None
+    # Saved only when the run applied a strategy (Fase H.1).
+    longevity = _safe_float(mc.get("longevity_years"))
+    if longevity:
+        keys["withdrawal_longevity_years"] = int(longevity)
+    if not all(_within(v, WITHDRAWAL_WIDGET_RANGES[k]) for k, v in keys.items()):
+        return None
+    return {"withdrawal_kind": kind, **keys}
+
+
+def _drags_session_keys(drags: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """The session keys ``get_economic_drags`` reads back into ``drags``, or ``None``."""
+    values = {k: _safe_float(drags.get(k)) for k in DRAG_WIDGET_RANGES}
+    if not all(_within(v, DRAG_WIDGET_RANGES[k]) for k, v in values.items()):
+        return None
+    return {
+        "drags_enabled": bool(drags.get("enabled", True)),
+        **{f"drag_{k}": v for k, v in values.items()},
+    }
+
+
+def plan_load_run_assumptions(plan_snapshot: Any) -> tuple:
+    """Savings, withdrawal, strategy and drags of the saved run (PLAN-LOAD-SAVINGS).
+
+    Returns ``(updates, notes)``: the session keys to seed and, in Spanish, what
+    could not come back as saved — the page says it next to «Plan cargado».
+
+    PLAN-LOAD-WIDGETS brought the plan back to the screen, but only the five keys
+    the plan stored; a loaded plan ran with whatever savings the session had —
+    in the live QA, the profile's 2.000/month — and with the session's strategy
+    and drags, though the plan stores both. Same omission rule as the rest: what
+    the plan cannot answer is left out. A savings or withdrawal above the widget
+    cap is capped (the widget would raise) and said; a strategy or drags block the
+    widgets would reject is not loaded, and said.
+    """
+    from config import MONTE_CARLO
+
+    mc = getattr(plan_snapshot, "mc_summary", None) or {}
+    updates: Dict[str, Any] = {}
+    notes: List[str] = []
+
+    for key, cap, label in (
+        ("monthly_savings", MONTE_CARLO.max_monthly_savings, "el ahorro mensual"),
+        ("annual_withdrawal", MONTE_CARLO.max_annual_withdrawal, "el retiro anual"),
+    ):
+        value = _safe_float(mc.get(key))
+        if value is None:
+            continue
+        value = max(value, 0.0)
+        if value > cap:
+            notes.append(
+                f"{label} del plan ({value:,.0f}) supera el máximo de la pantalla "
+                f"y se recortó a {cap:,.0f}"
+            )
+            value = float(cap)
+        updates[key] = int(round(value))
+
+    from_run = bool(mc.get(RUN_ASSUMPTIONS_KEY))
+
+    strategy = getattr(plan_snapshot, "withdrawal_strategy", None)
+    if strategy:
+        keys = _strategy_session_keys(dict(strategy), mc)
+        if keys is None:
+            notes.append(
+                "la estrategia de retiro del plan no se cargó: trae valores que la "
+                "pantalla no admite"
+            )
+        else:
+            updates.update(keys)
+    elif from_run:
+        updates["withdrawal_kind"] = "none"
+
+    drags = getattr(plan_snapshot, "drags_at_save", None)
+    if drags:
+        keys = _drags_session_keys(dict(drags))
+        if keys is None:
+            notes.append(
+                "los drags del plan no se cargaron: traen valores que la pantalla no admite"
+            )
+        else:
+            updates.update(keys)
+    elif from_run:
+        updates["drags_enabled"] = False
+
+    return updates, notes
+
+
 def plan_load_session_updates(
     plan_snapshot: Any,
     *,
@@ -2645,6 +2778,9 @@ def plan_load_session_updates(
     if contribution_growth is not None:
         updates["contribution_growth_pct"] = contribution_growth
 
+    # PLAN-LOAD-SAVINGS: the savings, withdrawal, strategy and drags of the run.
+    updates.update(plan_load_run_assumptions(plan_snapshot)[0])
+
     goals = getattr(plan_snapshot, "goals", None) or []
     if goals:
         updates["goals_list"] = list(goals)
@@ -2652,10 +2788,14 @@ def plan_load_session_updates(
     return updates
 
 
-# The keys of the Simulaciones sidebar widgets that «Cargar plan» seeds.
+# The keys of the Simulaciones sidebar widgets that «Cargar plan» seeds. The
+# strategy and drags keys are not here: their widgets read them with ``value=``
+# under keys of their own (``sim_wd_*``, ``sim_drag_*``), so writing them now works.
 SIM_PLAN_WIDGET_KEYS = (
     "horizon_years",
     "initial_value",
+    "monthly_savings",
+    "annual_withdrawal",
     "contribution_growth_pct",
     "target_value",
     "inflation_rate",
@@ -2665,6 +2805,7 @@ PLAN_LOAD_PENDING_KEY = "_plan_load_pending"
 
 def stage_plan_load(
     state: Any, updates: Mapping[str, Any], *, plan_name: str = "",
+    notes: Sequence[str] = (),
 ) -> None:
     """Hand a loaded plan to Simulaciones (PLAN-LOAD-WIDGETS).
 
@@ -2675,13 +2816,21 @@ def stage_plan_load(
     the loaded plan was lost without a word. Widget keys now wait under
     ``PLAN_LOAD_PENDING_KEY`` until Simulaciones applies them before drawing
     its widgets (``apply_pending_plan_load``); the rest (Optimizer capital and
-    profile, goals) are plain keys and are written now, as before.
+    profile, goals) are plain keys and are written now, as before. ``notes``
+    (``plan_load_run_assumptions``) wait with them, for the page to say.
     """
     pending = {k: v for k, v in updates.items() if k in SIM_PLAN_WIDGET_KEYS}
     for key, value in updates.items():
         if key not in SIM_PLAN_WIDGET_KEYS:
             state[key] = value
-    state[PLAN_LOAD_PENDING_KEY] = {"plan_name": plan_name, "values": pending}
+    state[PLAN_LOAD_PENDING_KEY] = {
+        "plan_name": plan_name, "values": pending, "notes": list(notes),
+    }
+
+
+def pending_plan_load_notes(state: Any) -> List[str]:
+    """What the staged plan could not bring back as saved; read before applying it."""
+    return list((state.get(PLAN_LOAD_PENDING_KEY) or {}).get("notes") or [])
 
 
 def apply_pending_plan_load(state: Any) -> Optional[str]:
