@@ -13,11 +13,14 @@
 
 ## Orden actual
 
-Decimocuarta repriorización (`/decidir-proyecto` sobre `b3441aa`, 2026-10-03). La
-decimotercera cerró REALISTIC-TAIL-CLIP (#225).
+Decimoquinta repriorización (sesión de diseño sobre `f8c9e76`, 2026-10-03): la
+Estimación objetiva ([ADR 0001](adr/0001-estimacion-objetiva.md)) entra detrás de lo
+que ya estaba en cola. La decimocuarta cerró WD-PHASED (#226).
 
-1. ~~**WD-PHASED, PR 2** — las superficies. El PR 1 (motor) es #219, `2664c10`.~~
+1. **Sincronización** — este orden, el ADR 0001 y el glosario llegan a `main` (sólo docs).
 2. **SIM-GAP-PCT + KATEX-DOLLAR-PLAN** — banda 4, un PR: el mismo bloque «Dos escenarios».
+3. **EO-0 → EO-1 → EO-2 → EO-3 → EO-4**, en orden; EO-4 no entra si EO-3 no pasa.
+4. **EO-5** y **EO-6**, después de EO-1, en paralelo con EO-2…EO-4. Ver bloque 6.
 
 Esperan disparador: U5-1b y COM-*. Sin orden: STREAMLIT-1.65 (sin banda), PORTFOLIO-FX,
 COM-LOG-TESTS, IDEA-4, IDEA-5, PIT-TOOLS y GOAL-PRIORITY-TEXT.
@@ -99,6 +102,13 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **GOAL-PRIORITY-TEXT** | 5 | Una meta importada a mano con la prioridad en texto («esencial») llega a `goals_list` sin convertir y «Simular» la pasa por `int()`. Residual declarado de PLAN-GOALS-KEYS (#214); ningún export de la app la escribe así. Anotado el 2026-10-02, **no priorizado**. Ver bloque 4 |
 | **SIM-GAP-PCT** | 4 | «Dos escenarios» (`7_Simulaciones.py:560`) dice que la mediana conservadora es «~X% más baja que el realista» con `X = (realista / conservadora − 1)`, que es cuánto más alta es la realista: con 3.155.332 y 1.220.635 escribe «~158% más baja» y la conservadora es un 61 % más baja; con 1.097.404 y 90.829, «~1108%». Una baja no pasa del 100 %. Anotado el 2026-10-03 (QA en vivo de REALISTIC-TAIL-CLIP); **banda 4** (decimocuarta repriorización, decisión del usuario), en un PR con KATEX-DOLLAR-PLAN. Ver bloque 4 |
+| **EO-0** | dec. | Estimación objetiva, etapa 0: se borra la escala por perfil de Simulaciones y el historial de salud y el track record guardan `ENGINE_VERSION`, sin alerta de deterioro entre versiones distintas. El ADR, el glosario, X-07 y CONTEXT §1 llegaron con la sincronización. Ver bloque 6 |
+| **EO-1** | dec. | El Perfil deja de tocar la Estimación; sin Perfil no hay Postura; Exigencia, margen de seguridad y Escenario de planificación pasan al Perfil. Ver bloque 6 |
+| **EO-2** | dec. | Fuentes por Clase de activo (historia, CAPE, tabla de gestoras), Desacuerdo, antigüedad, cripto y Argentina. Ver bloque 6 |
+| **EO-3** | dec. | Backtest del método con historia y CAPE: es la condición de EO-4. Ver bloque 6 |
+| **EO-4** | dec. | Una Estimación por activo para el Monte Carlo y el optimizador; se borra el haircut global; Escenarios en la UI. Ver bloque 6 |
+| **EO-5** | dec. | La IA calibrada: prompts, `recommended_max_allocation`, el PM recibe la Postura, oráculo de postura. Ver bloque 6 |
+| **EO-6** | dec. | Señales: tope simétrico, imputación por mediana del sector, atenuación simétrica, rótulo «no calibrado». Ver bloque 6 |
 
 Las filas cerradas están en [`ROADMAP.md`](ROADMAP.md): una entrada por fila, con su commit.
 
@@ -287,6 +297,72 @@ Streamlit está declarado. Ver `ROADMAP.md`.
 
 ---
 
+## Bloque 6 — Estimación objetiva (ADR 0001)
+
+Sesión de diseño del 2026-10-03 (decisiones del usuario, una por una): la app deja de
+ser «conservadora por defecto». La **Estimación** es Objetiva y la prudencia pasa a
+ser **Postura** del Perfil. El porqué y lo descartado están en
+[`adr/0001-estimacion-objetiva.md`](adr/0001-estimacion-objetiva.md); los términos, en
+[`GLOSARIO.md`](GLOSARIO.md). Banda «dec.»: el orden lo fijó el usuario, no las bandas.
+Toda etapa que mueva μ o el Monte Carlo sube `ENGINE_VERSION`.
+
+- **EO-0 — Arranque.** El ADR, el glosario, CONTEXT §1 («en transición») y X-07
+  fuera de «Fuera de alcance» llegaron con la sincronización. Queda: borrar la
+  escala por perfil escrita en `7_Simulaciones.py` (`_PROFILE_MC_SCALES` y
+  `_PLAN_MC_SCALES`, `:134-138` y `:1939-1943` en `f8c9e76`; ×0,56 al rendimiento
+  en la pestaña Plan con el selector en Conservador, mientras la principal usa
+  1,0), que además viola CONTEXT §5. `data/plan_health.py` y el track record guardan
+  `ENGINE_VERSION`; una comparación entre versiones no dispara la alerta de deterioro
+  y se anota «cambio de método, no del plan». La versión entra antes de mover la
+  primera cifra.
+- **EO-1 — El Perfil fuera de la Estimación.** `ars_risk_discount` rige para todos
+  los perfiles (`optimizer.py:512-523` lo saltea en Agresivo) con el 0,85 actual
+  rotulado «pendiente de Fuente» —el valor del riesgo país llega en EO-2; el EMBI no
+  está en FRED—. El δ de Black-Litterman queda fijo en el del mercado
+  (`optimizer.py:828-831` lo toma del perfil; con Π = δ·Σ·w, Conservador era el más
+  optimista). Sin Perfil no hay Postura: el onboarding obliga a elegir y, sin Perfil,
+  la app muestra Estimaciones y no dimensiona (hoy todo cae en Conservador:
+  `preferences.py:65,76`, `config.py:1545-1549,1589,1680`, `ai_analyzer.py:113-138`,
+  `9_Settings.py:416`, `5_Optimizer.py:207`). Exigencia (hoy
+  `GOAL_CARD.success_target_pct`, 80 para todos), margen de seguridad (hoy
+  `STRATEGY`, 10 %) y Escenario de planificación pasan a ser atributos editables del
+  Perfil.
+- **EO-2 — Fuentes.** Por Clase de activo: historia, valuación (CAPE de Shiller) y
+  la tabla de proyecciones a 10 años de Vanguard, JPMorgan, BlackRock y Research
+  Affiliates, cargada a mano una vez por año con `as_of` y `source` (patrón
+  `LlmPriceConfig`). Central = mediana; Desacuerdo = rango. Aviso a los 12 meses,
+  fuera del central a los 24 (umbrales en `config.py`). Argentina: emergentes +
+  riesgo país como Fuente del descuento. Cripto: Fuente declarada ausente.
+- **EO-3 — Backtest del método.** Con las Fuentes de historia larga (precios y CAPE
+  de Shiller), point-in-time como PIT: ¿el rango declarado contiene el resultado a
+  10 años con la frecuencia que dice? La tolerancia va en `config.py`. Si falla se
+  corrige el método, no la tolerancia; si no puede calibrar, se anota en el ADR.
+- **EO-4 — Una Estimación, dos motores.** La Estimación de cada activo se contrae
+  hacia la de su Clase según su evidencia (el score, con el peso que respalde U6-1);
+  la usan el optimizador y el Monte Carlo, que sigue sorteando de la historia
+  recentrada en ella. Cierra la opción B de D3. Se borra `vol_adjustment` /
+  `mean_haircut`. La UI muestra Escenarios (pesimista/central/optimista, cada uno con
+  su p10–p90) y retira «Realista» y «Conservador»; la historia cruda queda como la
+  Fuente «Historia» en el desglose. Planes, semáforo, ahorro y salud usan el
+  Escenario de planificación del Perfil; cripto, siempre el pesimista.
+- **EO-5 — IA calibrada.** Fuera «filosofía conservadora» (`committee_prompts.py`),
+  «extremadamente… conservador» y «nunca digas esto es genial» (`prompts.py`),
+  «asesor… conservador» (`chat_agent.py:138`); la instrucción es decir lo que la
+  evidencia sostiene, con su incertidumbre. El Abogado del Diablo se queda (método,
+  no sesgo) si la agregación es simétrica. `recommended_max_allocation_conservative`
+  → `recommended_max_allocation` en prompts, parser, `STRATEGY` y el banco de eval;
+  el PM recibe la Postura y el Perfil entra a la clave de caché del comité. Un
+  oráculo barre los prompts como hoy barre los nombres de proveedor.
+- **EO-6 — Señales.** `ai_action_capped_by_score_ladder` (`config.py:442`) pasa a
+  simétrico, un escalón; la asimetría vuelve sólo si el track record muestra que las
+  subas de la IA aciertan menos que sus bajas. `missing_data_score` deja el 0 por la
+  mediana del sector. Con datos parciales la señal se atenúa hacia HOLD en las dos
+  direcciones; el tope de confianza se queda. Los umbrales 82/68/55/45 se rotulan
+  «ranking relativo, no calibrado» en la ficha; recalibrar cuando haya outcomes a
+  365 días.
+
+---
+
 ## Qué de la ideación ya no aplica
 
 `brainstorm/99_PRIORIZACION.md` es del 2026-06-20. Verificado contra el código de
@@ -328,7 +404,8 @@ priorizarlo:
 - `X-04` — AAA en vivo
 - `X-05` — universo/prefiltro
 - `X-06` — reabrir D1/D2/D4/D5/D6
-- `X-07` — haircut MC −20 %/+10 % vol (documentado)
+**`X-07` (haircut MC −20 %/+10 % vol) sale de esta lista** — lo reemplaza la Estimación
+objetiva, bloque 6 (ADR 0001).
 
 **`X-08` (yfinance como fuente única) sale de esta lista** — ver N2.
 

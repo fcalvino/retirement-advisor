@@ -42,6 +42,8 @@ Roles:
 | living-guide | `README.md` | Introducción, Quick Start, metodología resumida, árbol del repo |
 | living-guide | `CONTRIBUTING.md` | Bugs, ideas, setup de desarrollo, PRs |
 | living-guide | `docs/MAINTENANCE.md` | Cómo mantener CONTEXT y el resto de la documentación |
+| living-guide | `docs/GLOSARIO.md` | Vocabulario del dominio: qué significa cada término (Estimación, Postura, Fuente…) |
+| methodology | `docs/adr/` | Registros de decisión (ADR): decisiones caras de revertir, con su porqué y lo descartado |
 | how-to | `docs/DEMO_HOSTED.md` | Demo Docker (un usuario por instancia, no SaaS) |
 | methodology | `docs/architecture.md` | Capas, flujo de datos, módulos |
 | methodology | `docs/moat_methodology.md` | Economic Moat cuantitativo + AI |
