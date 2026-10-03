@@ -1102,10 +1102,10 @@ else:
             st.markdown("#### ✅ Qué hacer este año")
             st.caption("📊 Calculado · checklist a partir de tu plan y perfil (no es IA).")
             for _a in _actions:
-                st.markdown(
+                st.markdown(escape_dollars(   # KATEX-DOLLAR-PLAN: «Aportar ~$2,000/mes»
                     f"- **{_a['title']}** · _{_a.get('when', '')}_  \n"
                     f"  {_a.get('detail', '')}"
-                )
+                ))
 
         # Backlog 10 — AR dual on plan capital/median.
         #

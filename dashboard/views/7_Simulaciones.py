@@ -504,9 +504,11 @@ def _tab_mc_content():
         }
         if getattr(mc, "total_annual_drag_pct", 0.0) > 0:
             st.info(
-                f"{format_drags_badge(drags)}  \n"
-                f"Mediana **con drags**: ${mc.median_terminal:,.0f} · "
-                f"**base** (sin drags): ${mc.base_median_terminal:,.0f}.",
+                escape_dollars(   # KATEX-DOLLAR-PLAN
+                    f"{format_drags_badge(drags)}  \n"
+                    f"Mediana **con drags**: ${mc.median_terminal:,.0f} · "
+                    f"**base** (sin drags): ${mc.base_median_terminal:,.0f}."
+                ),
                 icon="📊",
             )
         # Next step in the recommended flow (Fase E): consolidate into Mi Plan
@@ -589,8 +591,10 @@ def _tab_mc_content():
 
     # ---- Realista vs Conservador: no engañar con un solo número ----
     if getattr(mc, "realistic_reference_applied", False) and mc.realistic_median_terminal > 0:
-        _gap_pct = (mc.realistic_median_terminal / mc.median_terminal - 1) * 100 if mc.median_terminal else 0
-        st.info(
+        # SIM-GAP-PCT: cuánto más baja es la conservadora, sobre la realista (no
+        # cuánto más alta es la realista, que pasa del 100 %).
+        _gap_pct = (1 - mc.median_terminal / mc.realistic_median_terminal) * 100
+        st.info(escape_dollars(   # KATEX-DOLLAR-PLAN
             "📊 **Dos escenarios para no engañarte con un solo número:**  \n"
             f"• **Realista** (si el futuro se parece al historial): mediana **${mc.realistic_median_terminal:,.0f}** "
             f"· pesimista ${mc.realistic_p10_terminal:,.0f}  \n"
@@ -598,9 +602,8 @@ def _tab_mc_content():
             f"· pesimista ${mc.p10_terminal:,.0f}  \n"
             f"Planificá con el conservador (mediana ~{_gap_pct:.0f}% más baja que el realista a propósito): "
             "asume rendimientos futuros más bajos y más volatilidad, así que también baja el piso pesimista. "
-            "El realista es la referencia de cuánto podrías terminar si todo sale como el pasado reciente.",
-            icon="📊",
-        )
+            "El realista es la referencia de cuánto podrías terminar si todo sale como el pasado reciente."
+        ), icon="📊")
 
     # From "no llegás" to "hacé esto" with *numbers* (backlog 3).
     if target_value > 0 and mc.prob_achieve_target_pct < 70:
