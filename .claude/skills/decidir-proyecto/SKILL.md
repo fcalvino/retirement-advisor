@@ -14,7 +14,8 @@ para otra tarea; no habilita ejecutarla acá.
 ## Efectos permitidos
 
 - Permitido: leer archivos; `git` de lectura (`log`, `show`, `diff`, `ls-remote`,
-  `merge-base`, `rev-parse`, `patch-id`); `gh … --json`; `sqlite3 -readonly` sobre una
+  `merge-base`, `rev-parse`, `patch-id`); `gh … --json`; `scripts/estado.py`
+  (stdlib, no importa `config`); `sqlite3 -readonly` sobre una
   copia; linters sin escritura (`ruff check --no-cache`). De un `.env` solo se leen los
   nombres de las claves, nunca los valores.
 - Prohibido: `make`, `pip`, `run.sh`, `git fetch`/`checkout`/`stash`, escribir fuera de
@@ -44,9 +45,11 @@ para otra tarea; no habilita ejecutarla acá.
 
 ## Estado del código y de los datos
 
-- Registrá tres SHA con fecha: HEAD del worktree, `origin/main` según
-  `git ls-remote origin refs/heads/main`, y HEAD de `~/retirement_advisor` (el clon
-  real: su base, su venv y su scheduler). Si difieren, decí cuál estudiaste y no llames
+- Registrá tres SHA con fecha: HEAD del worktree, `origin/main` remoto y HEAD de
+  `~/retirement_advisor` (el clon real: su base, su venv y su scheduler). Los imprime,
+  con los PR abiertos, los worktrees, `## Orden actual` y la fila `(pending)`,
+  `~/retirement_advisor/venv/bin/python3 scripts/estado.py` (solo lectura; es lo que
+  corre `make estado`). Si difieren, decí cuál estudiaste y no llames
   «actual» a otro.
 - Cada dato de la base lleva el SHA del código que lo escribió, normalmente el del clon
   real. Una fila escrita por código viejo no prueba nada sobre main.

@@ -23,7 +23,7 @@ data/db/
 !.claude/agents/engine-reviewer.md
 !.claude/agents/pit-investigator.md
 .rtk/
-# Skill installers (`npx skills`) write here; Claude Code reads .claude/skills/.
+# Skill installers (`npx skills`) write here; this repo's skills live in .claude/skills/.
 .agents/
 skills-lock.json
 .ruff_cache/
