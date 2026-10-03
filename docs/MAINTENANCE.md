@@ -73,6 +73,11 @@ Los demás archivos de instrucciones son punteros a ese path:
 `CLAUDE.md` carga `docs/PROMPT_INSTRUCTIONS.md` en cada sesión, así que un prompt no
 necesita pedir que se lea CONTEXT: alcanza con nombrar la tarea.
 
+Para arrancar una sesión sin tarea: `/que-sigue [tema]`
+(`.claude/skills/que-sigue/`). Corre `scripts/estado.py`, pregunta a decidir-proyecto
+y cierra con el prompt del paso recomendado. Sólo se invoca a mano, así que no carga
+contexto en cada turno.
+
 ---
 
 ## 3. Docs existentes
