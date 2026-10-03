@@ -31,12 +31,32 @@
 ### La columna Commit de §9
 
 Un PR no conoce su SHA de merge, así que escribe su fila de §9 como `` `(pending)` ``.
-**El PR siguiente la resuelve** con el SHA que quedó en `main`
-(`git log origin/main --oneline`) antes de agregar la suya. Puede haber **una sola**
+**El PR siguiente la resuelve** con el SHA del merge que la llevó a `main` antes de
+agregar la suya; `scripts/close_row.py` lo busca solo. Puede haber **una sola**
 fila `(pending)`, y tiene que ser la primera (la más nueva):
 `tests/test_context_changelog_pending.py` lo hace cumplir en `make check` y en el CI.
 El 2026-09-28 había 20; las de 2026-06/07 cayeron en commits de importación en bloque
 (`5fb471c`, `5eed792`), y ése es su SHA real.
+
+### Cerrar una fila o registrar un PR
+
+Todo PR toca CONTEXT §9 y la cabecera de CONTEXT; el que cierra una fila del BACKLOG
+toca además ROADMAP y el BACKLOG. Esas ediciones las hace `scripts/close_row.py`:
+la prosa (la celda de §9 y el cuerpo de la entrada de ROADMAP) va en dos archivos que
+escribís vos, y el script la pone en su lugar.
+
+```bash
+./venv/bin/python3 scripts/close_row.py ID --title "frase" \
+    --context-row .context/fila.md --roadmap-body .context/entrada.md        # muestra el diff
+./venv/bin/python3 scripts/close_row.py … --write                            # lo aplica
+./venv/bin/python3 scripts/close_row.py ID --title "frase" \
+    --context-row .context/fila.md --no-row --write                          # PR sin fila
+```
+
+Después de `--write` lista las líneas del BACKLOG que todavía nombran el id: el
+detalle del Bloque y las listas de `## Orden actual` son decisión tuya. Se niega,
+sin escribir nada, si el id no está entre las abiertas, si ROADMAP ya tiene su entrada
+o si la fila `(pending)` no llegó a `origin/main` (hacé `git fetch`).
 
 ---
 
