@@ -381,6 +381,16 @@ if not (opt_result and opt_result.tickers):
 #  Tabs                                                                #
 # ------------------------------------------------------------------ #
 
+def _saving_years() -> int:
+    """Years the plan saves before its withdrawal strategy starts (WD-PHASED).
+
+    From the profile's retirement age, with no control of its own here. 0 when
+    the age is unknown or already reached: then a strategy means «ya estás
+    retirado» and the savings stay out, as before.
+    """
+    return int(getattr(_prefs_sim, "primary_horizon_years", 0) or 0)
+
+
 def _plan_mc_kwargs() -> dict:
     """The user's plan as ``cached_monte_carlo`` arguments — one source for every tab.
 
@@ -404,6 +414,7 @@ def _plan_mc_kwargs() -> dict:
         drags_tuple=drags_to_tuple(get_economic_drags()),      # Item 1
         withdrawal_tuple=withdrawal_to_tuple(_wd),              # Fase H.1
         longevity_years=get_longevity_years() if _wd else None,  # Fase H.1
+        years_to_retirement=_saving_years() if _wd else None,  # WD-PHASED
     )
 
 
@@ -421,8 +432,10 @@ def _tab_mc_content():
     render_drags_controls(key_prefix="sim_")
     # Fase H.1 — decumulation / withdrawal strategy (persistent, opt-in).
     render_withdrawal_controls(key_prefix="sim_", initial_value=float(initial_value))
-    # Misma fuente que el motor: con monto 0 no hay estrategia y el ahorro sí entra.
-    if annual_contribution > 0 and get_withdrawal_strategy(float(initial_value)) is not None:
+    # Misma fuente que el motor: con monto 0 no hay estrategia y el ahorro sí entra,
+    # y con una edad de retiro por delante también (WD-PHASED).
+    if (annual_contribution > 0 and get_withdrawal_strategy(float(initial_value)) is not None
+            and not _saving_years()):
         _savings_strategy_slot.caption(STRATEGY_IGNORES_SAVINGS_CAPTION)
     run_mc = st.button("▶ Ejecutar simulación Monte Carlo", type="primary")
 
@@ -1043,7 +1056,7 @@ def _render_sensitivity_lab():
         return
 
     _wd = get_withdrawal_strategy(float(initial_value))
-    if _wd and annual_contribution > 0:
+    if _wd and annual_contribution > 0 and not _saving_years():
         # WD-STRATEGY-CONTRIB: el caso base y cada palanca corren sin el ahorro.
         st.caption(STRATEGY_IGNORES_SAVINGS_CAPTION)
     base_params = {
@@ -1066,6 +1079,7 @@ def _render_sensitivity_lab():
         "drags_total_pct": float(get_economic_drags().get("total_annual_drag_pct", 0.0)),
         "withdrawal_tuple": withdrawal_to_tuple(_wd),
         "longevity_years": get_longevity_years() if _wd else None,
+        "years_to_retirement": _saving_years() if _wd else None,  # WD-PHASED
     }
 
     with st.spinner("Corriendo el laboratorio de sensibilidad…"):

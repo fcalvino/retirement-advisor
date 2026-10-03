@@ -2359,6 +2359,13 @@ ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
         "supuesto, «Suba anual del ahorro», en 0 salvo que lo cambies. Si tu plan no "
         "tiene aportes, no cambia nada.",
     ),
+    (
+        "2026.10-tier17",
+        "Si tenés cargada tu edad y una estrategia de retiro, la proyección ahora suma "
+        "tu ahorro hasta la edad de retiro y empieza a gastar desde ahí, sobre lo que "
+        "juntaste. Antes suponía que ya estabas retirado y dejaba el ahorro afuera. Si "
+        "no cargaste tu edad o ya estás retirado, no cambia nada.",
+    ),
 )
 
 

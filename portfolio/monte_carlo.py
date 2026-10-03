@@ -28,7 +28,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-from config import MONTE_CARLO
+from config import MONTE_CARLO, WITHDRAWAL
 from data.fetcher import get_history
 from data.fx import fx_pair_symbol, to_base_or_reason
 from portfolio.decumulation import (
@@ -37,6 +37,7 @@ from portfolio.decumulation import (
     apply_withdrawal_strategy,
     cash_flow_weeks,
     decumulation_metrics,
+    phased_strategy_events,
     wealth_basis,
 )
 
@@ -162,8 +163,11 @@ class MonteCarloResult:
     prob_sustain_real_pct: float = 0.0        # % paths income lasted the whole horizon
     prob_legacy_pct: float = 0.0              # % paths with money left at the end
     median_legacy: float = 0.0               # median terminal value (USD)
-    expected_depletion_year: float = 0.0     # median year of depletion among paths that ran dry
-    longevity_years: int = 0                 # horizon the sustain metric refers to
+    expected_depletion_year: float = 0.0     # median year (from today) of depletion among paths that ran dry
+    longevity_years: int = 0                 # years of retirement the sustain metric refers to
+    #: Years of saving before the strategy starts (WD-PHASED). 0 = the plan is
+    #: already retired: the strategy draws from today and the savings stay out.
+    retirement_years: int = 0
 
 
 # ------------------------------------------------------------------ #
@@ -239,6 +243,7 @@ class MonteCarloSimulator:
         longevity_years: Optional[int] = None, # Fase H.1: horizon for "outliving money" metric
         include_realistic_reference: bool = False,  # show realistic (no-haircut) next to conservative
         contribution_growth_rate: float = 0.0, # N8b: yearly raise of the savings, its own assumption
+        years_to_retirement: Optional[int] = None,  # WD-PHASED: save until then, spend after
     ) -> MonteCarloResult:
         """
         Run the full Monte Carlo simulation.
@@ -275,7 +280,17 @@ class MonteCarloSimulator:
                         prob_legacy, expected_depletion_year). When None the
                         engine is byte-identical to the pre-feature behavior.
         longevity_years : optional planning horizon (years) the "income lasts"
-                        metric refers to. Defaults to ``horizon_years``.
+                        metric refers to. Defaults to ``horizon_years``; with a
+                        retirement phase, to ``WITHDRAWAL.default_longevity_years``.
+                        Counted from retirement.
+        years_to_retirement : WD-PHASED. With a strategy and a value > 0 the plan
+                        saves for that many years —``annual_contribution``,
+                        monthly— and the strategy draws from the pot each path
+                        reached by then, for ``longevity_years`` more. ``None``
+                        or ≤ 0 is the plan that is already retired: the strategy
+                        draws from today, the savings stay out and the result is
+                        byte-identical to the engine before this parameter.
+                        Without a strategy it is ignored.
         include_realistic_reference : when True, runs a second compact pass on
                         the RAW historical returns (no conservative haircut) and
                         populates the ``realistic_*`` fields so the UI can show
@@ -349,7 +364,19 @@ class MonteCarloSimulator:
         # drawdown y ruina se leen en `horizon_week`, no al final del array. Sólo
         # las de decumulación miran la ventana larga. Con longevidad ≤ horizonte
         # nada se mueve.
-        sim_years = max(int(horizon_years), int(longevity_years or 0))
+        #
+        # WD-PHASED: con una fase de ahorro la longevidad se cuenta desde el
+        # retiro, así que la ventana larga termina R + longevidad años después de
+        # hoy. Sin estrategia la edad de retiro no significa nada para el motor.
+        retirement_years = 0
+        if withdrawal_strategy is not None and years_to_retirement and int(years_to_retirement) > 0:
+            retirement_years = int(years_to_retirement)
+            longevity_years = (
+                int(longevity_years) if longevity_years else int(WITHDRAWAL.default_longevity_years)
+            )
+            sim_years = max(int(horizon_years), retirement_years + longevity_years)
+        else:
+            sim_years = max(int(horizon_years), int(longevity_years or 0))
         logger.info(
             f"Monte Carlo: {n_sims} sims × {horizon_years}y "
             + (f"(simuladas {sim_years}y por longevidad) " if sim_years > horizon_years else "")
@@ -450,6 +477,13 @@ class MonteCarloSimulator:
         result.annual_contribution = contribution
 
         def _wealth_usd(market: np.ndarray) -> np.ndarray:
+            if strategy is not None and retirement_years:
+                return self._apply_phased_plan(
+                    market, initial_value, basis, contribution, strategy,
+                    retirement_years, n_sim_weeks,
+                    withdrawal_growth_rate=withdrawal_growth_rate,
+                    contribution_growth_rate=contribution_growth_rate,
+                ) * basis
             if strategy is not None:
                 return apply_withdrawal_strategy(
                     market, initial_value, strategy, n_sim_weeks,
@@ -564,13 +598,16 @@ class MonteCarloSimulator:
             dec = decumulation_metrics(
                 paths_usd, horizon_years, initial_value,
                 longevity_years=longevity_years,
+                start_week=retirement_years * 52,
             )
             result.withdrawal_strategy_applied = strategy.to_dict()
+            result.retirement_years = retirement_years
             # WD-STRATEGY-CONTRIB: apply_withdrawal_strategy takes no deposits, so a
             # plan with savings and a strategy projects without the savings. That
-            # is the decided model — a strategy means you already retired — but the
-            # screen must not show it as a projection that includes them.
-            if contribution > 0:
+            # is the decided model when there is no saving phase — a strategy
+            # means you already retired — but the screen must not show it as a
+            # projection that includes them. With a phase (WD-PHASED) they do go in.
+            if contribution > 0 and not retirement_years:
                 result.contribution_ignored_by_strategy = contribution
                 result.warnings.append(
                     f"Con una estrategia de retiro activa la proyección no incluye tu "
@@ -850,25 +887,92 @@ class MonteCarloSimulator:
         horizon_years = n_horizon_weeks // 52
         events: List[Tuple[int, object]] = []
 
-        def _schedule(
-            annual_amount: float, periods_per_year: int, sign: float, growth_rate: float,
-        ) -> None:
-            periods = max(1, int(periods_per_year))
-            per_period = annual_amount / periods / basis
-            for i, week in enumerate(cash_flow_weeks(periods, horizon_years, n_cols)):
-                year = i // periods + 1
-                grown = per_period * ((1 + growth_rate) ** (year - 1))
-                events.append((week, _constant_amount(sign * grown)))
-
         # Contributions are queued first, and the sort below is stable, so a
         # deposit and a withdrawal on the same week keep that order.
         if annual_contribution:
-            _schedule(annual_contribution, MONTE_CARLO.contribution_periods_per_year, -1.0,
-                      contribution_growth_rate)
+            events += MonteCarloSimulator._flow_events(
+                annual_contribution, MONTE_CARLO.contribution_periods_per_year, -1.0,
+                contribution_growth_rate, basis, horizon_years, n_cols,
+            )
         if annual_withdrawal:
-            _schedule(annual_withdrawal, MONTE_CARLO.withdrawal_periods_per_year, +1.0,
-                      withdrawal_growth_rate)
+            events += MonteCarloSimulator._flow_events(
+                annual_withdrawal, MONTE_CARLO.withdrawal_periods_per_year, +1.0,
+                withdrawal_growth_rate, basis, horizon_years, n_cols,
+            )
 
+        events.sort(key=lambda ev: ev[0])
+        return apply_cash_flow_schedule(market, initial_value / basis, events)
+
+    @staticmethod
+    def _flow_events(
+        annual_amount: float,
+        periods_per_year: int,
+        sign: float,
+        growth_rate: float,
+        basis: float,
+        years: int,
+        n_cols: int,
+    ) -> List[Tuple[int, object]]:
+        """A fixed flow of ``annual_amount`` a year for ``years`` years, as events.
+
+        In multiples of ``basis``; ``sign`` −1 deposits, +1 withdraws. The amount
+        steps up by ``growth_rate`` once a year, so the instalments of one year
+        add up to that year's nominal total.
+        """
+        periods = max(1, int(periods_per_year))
+        per_period = annual_amount / periods / basis
+        events: List[Tuple[int, object]] = []
+        for i, week in enumerate(cash_flow_weeks(periods, years, n_cols)):
+            year = i // periods + 1
+            grown = per_period * ((1 + growth_rate) ** (year - 1))
+            events.append((week, _constant_amount(sign * grown)))
+        return events
+
+    @staticmethod
+    def _apply_phased_plan(
+        market: np.ndarray,
+        initial_value: float,
+        basis: float,
+        annual_contribution: float,
+        strategy: WithdrawalStrategy,
+        years_to_retirement: int,
+        n_sim_weeks: int,
+        withdrawal_growth_rate: float = 0.0,
+        contribution_growth_rate: float = 0.0,
+    ) -> np.ndarray:
+        """Save until retirement, then run the strategy on what each path saved.
+
+        WD-PHASED. Deposits arrive monthly for ``years_to_retirement`` years —
+        the same schedule ``_apply_cash_flows`` uses — and the strategy starts
+        the week after: its first year is the first one of retirement, and it
+        draws on the pot **each path** reached, not on today's capital. The
+        fixed amount of ``fixed_real`` is in today's dollars, so it has already
+        grown ``years_to_retirement`` years of inflation by the first withdrawal.
+
+        Events past the end of ``market`` are dropped, not clipped onto its last
+        week: a market that ends before retirement (the realistic reference only
+        draws the projection horizon) just has not got there yet. In multiples of
+        ``basis``, like ``_apply_cash_flows``.
+        """
+        n_cols = market.shape[1]
+        unbounded = n_sim_weeks + 1
+        events: List[Tuple[int, object]] = []
+        if annual_contribution:
+            events += MonteCarloSimulator._flow_events(
+                annual_contribution, MONTE_CARLO.contribution_periods_per_year, -1.0,
+                contribution_growth_rate, basis, years_to_retirement, unbounded,
+            )
+        retirement_week = years_to_retirement * 52
+        events += phased_strategy_events(
+            strategy,
+            n_sims=market.shape[0],
+            unit=basis,
+            retirement_week=retirement_week,
+            decumulation_years=n_sim_weeks // 52 - years_to_retirement,
+            inflation_rate=withdrawal_growth_rate,
+            index_years=years_to_retirement,
+        )
+        events = [ev for ev in events if ev[0] < n_cols]
         events.sort(key=lambda ev: ev[0])
         return apply_cash_flow_schedule(market, initial_value / basis, events)
 

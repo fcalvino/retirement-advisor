@@ -576,6 +576,7 @@ def _sensitivity_run_fn(params: dict):
         drags_tuple=drags_tuple,
         withdrawal_tuple=params.get("withdrawal_tuple"),
         longevity_years=params.get("longevity_years"),
+        years_to_retirement=params.get("years_to_retirement"),
     )
 
 
@@ -1614,6 +1615,7 @@ def cached_monte_carlo(
     longevity_years: int | None = None,    # Fase H.1: horizon for "income lasts" metric
     include_realistic_reference: bool = True,  # show realistic (no-haircut) next to conservative
     contribution_growth_rate: float = 0.0, # N8b: yearly raise of the savings, not inflation
+    years_to_retirement: int | None = None,  # WD-PHASED: save until then, then the strategy
 ):
     """Cache Monte Carlo runs for 30 min — same params = instant re-render.
 
@@ -1647,6 +1649,7 @@ def cached_monte_carlo(
         longevity_years=longevity_years,
         include_realistic_reference=include_realistic_reference,
         contribution_growth_rate=contribution_growth_rate,
+        years_to_retirement=years_to_retirement,
     )
 
 
