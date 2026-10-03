@@ -65,7 +65,9 @@ o si la fila `(pending)` no llegó a `origin/main` (hacé `git fetch`).
 **Path canónico:** `docs/PROMPT_INSTRUCTIONS.md` (regla: leer por sección las partes de `docs/CONTEXT.md` que toca la tarea).
 Los demás archivos de instrucciones son punteros a ese path:
 
-- `CLAUDE.md` → `@docs/PROMPT_INSTRUCTIONS.md` (no editar el bloque RTK)
+- `CLAUDE.md` → `@docs/PROMPT_INSTRUCTIONS.md`, y nada más: se carga en cada turno.
+  Las instrucciones de rtk son de la máquina (`~/.claude/RTK.md`); si `rtk init`
+  vuelve a escribir su bloque acá, se borra
 - `AI_CODING_GUIDELINES.md` → puntero corto al mismo archivo
 
 `CLAUDE.md` carga `docs/PROMPT_INSTRUCTIONS.md` en cada sesión, así que un prompt no

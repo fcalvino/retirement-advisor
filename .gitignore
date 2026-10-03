@@ -1,4 +1,6 @@
-venv/
+# `venv` without the slash: in a worktree it is a symlink to the clone's venv
+# (`make worktree`), and `venv/` only matches directories.
+venv
 .venv/
 __pycache__/
 *.pyc
