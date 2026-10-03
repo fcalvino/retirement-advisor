@@ -47,13 +47,13 @@ Roles:
 | methodology | `docs/moat_methodology.md` | Economic Moat cuantitativo + AI |
 | methodology | `docs/portfolio_optimizer.md` | SLSQP, constraints, fallback |
 | methodology | `docs/alert_system.md` | Tipos de alerta, cooldowns, scheduler |
-| ai-context | `docs/PROMPT_INSTRUCTIONS.md` | **Path canónico** — leer `docs/CONTEXT.md` primero |
+| ai-context | `docs/PROMPT_INSTRUCTIONS.md` | **Path canónico** — qué sección de `docs/CONTEXT.md` leer según la tarea |
 | ai-context | `docs/CONTEXT.md` | Contexto canónico del proyecto (arquitectura, features, estándares) |
 | ai-context | `AI_CODING_GUIDELINES.md` | Puntero corto al path canónico |
 | ai-context | `CLAUDE.md` | Puntero Claude Code (`@docs/PROMPT_INSTRUCTIONS.md`) |
-| living-guide | `docs/BACKLOG.md` | **Lo que falta hacer** — repriorización unificada (auditoría + ideación + specs) |
+| living-guide | `docs/BACKLOG.md` | **Lo que falta hacer** — qué sigue en `## Orden actual`, arriba de todo; repriorización unificada (auditoría + ideación + specs) |
 | historical-audit | `docs/FIX_FCF_YIELD_MONEDA.md` | Evidencia y cierre documental 2026-09-11 de `fcf_yield`/`p_ffo` entre monedas; la serie cerró con PR 4 (#117) |
-| historical-plan | `docs/ROADMAP.md` | Fases ya completadas (no es backlog abierto) |
+| historical-plan | `docs/ROADMAP.md` | Fases ya completadas (no es backlog abierto); al final, el archivo de repriorizaciones y filas cerradas del backlog |
 | historical-plan | `docs/IMPLEMENTATION_PLAN.md` | Plan 2026-06 del Gran Salto — las 5 fases ya están shipped |
 | ideation | `docs/VISION_GRAN_SALTO.md` | Visión de producto 2026-06; las 3 apuestas ya están en el código |
 | ideation | `docs/DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md` | Diagnóstico + brainstorming 2026-09 basado en código; complementa `brainstorm/99_PRIORIZACION.md` |
@@ -110,8 +110,8 @@ antes de modificar los módulos correspondientes.
 
 ## Contexto y guías para AI
 
-Un solo path canónico: **`docs/PROMPT_INSTRUCTIONS.md`** (regla: leer
-`docs/CONTEXT.md` primero). El resto son punteros.
+Un solo path canónico: **`docs/PROMPT_INSTRUCTIONS.md`** (regla: leer por sección
+lo que toca la tarea de `docs/CONTEXT.md`). El resto son punteros.
 
 | Documento | Descripción |
 |-----------|-------------|
@@ -209,7 +209,7 @@ descripción viva del sistema.
 → `tests/conftest.py`
 
 ### Voy a tocar código con un AI assistant
-→ [`PROMPT_INSTRUCTIONS.md`](PROMPT_INSTRUCTIONS.md) (leer `CONTEXT.md` primero)
+→ [`PROMPT_INSTRUCTIONS.md`](PROMPT_INSTRUCTIONS.md) (qué sección de `CONTEXT.md` leer)
 
 ---
 

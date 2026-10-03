@@ -77,8 +77,10 @@ para otra tarea; no habilita ejecutarla acá.
 
 ## Lecturas
 
-- Obligatorio: `docs/CONTEXT.md` §5–§9, las entradas de `config.py` que toca la
-  decisión (leídas, no importadas) y `docs/BACKLOG.md`. Decisiones de IA: también
+- Obligatorio: `docs/BACKLOG.md` (§ Orden actual y las filas que toca la decisión),
+  `docs/CONTEXT.md` §5 y las filas de §9 de los últimos merges, y las entradas de
+  `config.py` que toca la decisión (leídas, no importadas). En CONTEXT §6–§8, buscar
+  por los términos de la decisión en vez de leerlas enteras. Decisiones de IA: también
   `analysis/prompts.py`, `analysis/committee_prompts.py` y `analysis/ai_analyzer.py`.
   Proceso y PRs: `CONTRIBUTING.md`. `docs/ROADMAP.md` y el resto de CONTEXT solo si la
   decisión los cita.
@@ -131,7 +133,7 @@ para otra tarea; no habilita ejecutarla acá.
 
 ## Salida, en español
 
-Arrancá con el acuse de `docs/PROMPT_INSTRUCTIONS.md`, diciendo qué tramos leíste, y
+Arrancá nombrando los tramos que leíste (la regla de `docs/PROMPT_INSTRUCTIONS.md`) y
 los tres SHA.
 
 1. Por decisión, una línea: qué recomendás, con qué confianza y qué le toca hacer al
@@ -148,7 +150,9 @@ los tres SHA.
    `TZ=UTC make test` si toca fechas; `probar-en-vivo` si cambia código de la app) y
    aprobación pendiente.
 5. Seguimiento: el texto para registrar cada condición de reversión y cada opción
-   diferida (entrada de BACKLOG o comentario de issue), mostrado y no publicado.
+   diferida (entrada de BACKLOG o comentario de issue), mostrado y no publicado. Si la
+   decisión es de prioridad, también el bloque `## Orden actual` completo, listo para
+   reemplazar el vigente (con el número de la repriorización nueva).
 6. Lo que no se pudo verificar y las preguntas.
 
 ## Antes de entregar
