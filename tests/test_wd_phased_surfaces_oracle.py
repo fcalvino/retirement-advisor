@@ -326,7 +326,7 @@ def test_the_pdf_params_carry_the_age_of_the_profile():
 #  La narrativa del plan                                                       #
 # --------------------------------------------------------------------------- #
 
-def _prompt(retirement_years: int, personal=None) -> str:
+def _prompt(retirement_years: int, personal=None, strategy=None) -> str:
     from analysis.prompts import plan_level_narrative_prompt
 
     return plan_level_narrative_prompt(
@@ -336,7 +336,7 @@ def _prompt(retirement_years: int, personal=None) -> str:
         mc_summary={"longevity_years": L, "retirement_years": retirement_years,
                     "prob_sustain_real_pct": 80.0, "expected_depletion_year": float(X),
                     "contribution_ignored_by_strategy": 0.0},
-        withdrawal_strategy=dict(STRATEGY),
+        withdrawal_strategy=dict(strategy or STRATEGY),
     )
 
 
@@ -356,3 +356,14 @@ def test_control_an_already_retired_plan_has_no_saving_phase():
 def test_the_narrative_without_age_says_from_when():
     text = _prompt(R, personal={})
     assert f"dure {SPAN_YEARS}" in text and DEPLETION_YEARS in text
+
+
+@pytest.mark.parametrize("strategy", [
+    {"kind": "constant_pct", "pct": 0.04},
+    {"kind": "guardrails", "pct": 0.05},
+])
+def test_only_the_fixed_withdrawal_is_said_in_todays_dollars(strategy):
+    """Un porcentaje sale del pozo de cada camino: no tiene monto en dólares de hoy."""
+    text = _prompt(R, strategy=strategy)
+    assert "FASE DE AHORRO" in text and "ahorra 25 años (hasta los 65)" in text
+    assert "dólares de hoy" not in text

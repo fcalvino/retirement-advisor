@@ -1369,12 +1369,17 @@ def plan_level_narrative_prompt(
         _r = max(int(_m.get("retirement_years") or 0), 0)
         if _r > 0:
             _until = f" (hasta los {_age + _r})" if _age > 0 else ""
-            _strat_desc = (
+            _phase = (
                 f"FASE DE AHORRO: ahorra {_r} años{_until} y la estrategia arranca al "
-                "retirarse, sobre lo que juntó cada simulación; no gasta desde hoy. El monto "
-                f"del retiro fijo está en dólares de hoy: el primer retiro trae {_r} años de "
-                "inflación. " + _strat_desc
+                "retirarse, sobre lo que juntó cada simulación; no gasta desde hoy. "
             )
+            # Sólo el retiro fijo tiene un monto: los porcentajes salen del pozo.
+            if _wk == "fixed_real":
+                _phase += (
+                    "El monto del retiro fijo está en dólares de hoy: el primer retiro "
+                    f"trae {_r} años de inflación. "
+                )
+            _strat_desc = _phase + _strat_desc
         if "prob_sustain_real_pct" in _m:
             _ly = _m.get("longevity_years", _m.get("horizon_years", 0))
             _dep = float(_m.get("expected_depletion_year", 0) or 0)
