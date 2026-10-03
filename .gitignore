@@ -20,6 +20,9 @@ data/db/
 !.claude/skills/probar-en-vivo/
 .claude/skills/probar-en-vivo/*
 !.claude/skills/probar-en-vivo/SKILL.md
+!.claude/skills/que-sigue/
+.claude/skills/que-sigue/*
+!.claude/skills/que-sigue/SKILL.md
 !.claude/agents/
 .claude/agents/*
 !.claude/agents/engine-reviewer.md
