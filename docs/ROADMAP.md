@@ -10,6 +10,20 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## REALISTIC-TAIL-CLIP — la referencia realista no cobra lo que no simula (2026-10-03)
+
+Primer paso de la decimotercera `/decidir-proyecto`, banda 1 por decisión del usuario: con los defaults, «Dos escenarios» de Simulaciones y Mi Plan mostraban una mediana «realista» menor que la conservadora, o en 0, sin aviso. Visto al implementar WD-PHASED; reproducido en `c639da5` antes de tocar nada.
+
+La pasada realista sortea sólo el horizonte de proyección (`_simulate_paths(port_hist, n_sims, n_horizon_weeks)`), pero `_wealth_usd` le aplicaba el plan por `n_sim_weeks`, que desde U4-4 llega a la longevidad. `_annual_review_schedule` y `cash_flow_weeks` recortan cada semana a la última del mercado, así que los retiros de los años que ese mercado no tiene —y los aportes, sin estrategia— se cobraban todos en la semana del terminal. La rama por fases (`_apply_phased_plan`) descarta esos eventos desde WD-PHASED y no lo tenía.
+
+El arreglo: `_wealth_usd` cubre los años que tiene el mercado que recibe (`plan_weeks`). En la pasada principal y en la base sin drags eso ya era `n_sim_weeks`, así que son bit a bit las de antes. Acotar la realista al horizonte no cambia ninguna semana anterior porque el recorte de guardrails corre todos los años. Un caso que la fila no nombraba: sin estrategia, con longevidad, el ahorro de los años no simulados también se apilaba, y la realista salía **inflada** (4,32 M contra 4,08 M). Ninguna pantalla llega a ese caso: Simulaciones pasa la longevidad sólo con estrategia.
+
+Oráculo `tests/test_realistic_tail_clip_oracle.py`: la riqueza a 20 años caminada desde la definición sobre un mercado constante (realista y conservadora), la invariancia bit a bit de los cuatro `realistic_*` frente a la longevidad —`fixed_real`, `constant_pct`, guardrails y flujos fijos, con y sin drags—, la rama por fases y que pedir la referencia no mueve ningún número de la corrida. 28 rojos y 20 verdes sobre `c639da5`; 48 verdes después. Una grilla de 60 casos contra `main` (seis planes × cinco longevidades × drags) cambia sólo los cuatro `realistic_*` y sólo con longevidad > horizonte. `ENGINE_VERSION` `2026.10-tier18`, con su texto de plan desactualizado. Revisado con `engine-reviewer`: sin bloqueantes.
+
+En vivo, rama y `origin/main` lado a lado sobre una copia de la base, con la cartera del usuario: con retiro de 4 000, la realista de `main` pasaba de 3 155 332 (longevidad 20) a 3 072 512 (30) y la de la rama queda en 3 155 332; con 12 000, `main` mostraba 307 210 con longevidad 45 contra 1 097 404 con 20, y la rama 1 097 404 en las dos. La conservadora, idéntica en todas. Dos hallazgos que no son de este PR, igual en `main`: el `$` sin escapar de KATEX-DOLLAR-PLAN en el mismo bloque, y el porcentaje de «Dos escenarios», anotado como SIM-GAP-PCT.
+
+---
+
 ## SIM-REENTRY-WIDGETS — volver a Simulaciones muestra lo último de la sesión (2026-10-02)
 
 Primer paso de la decimotercera `/decidir-proyecto`, banda 1 por decisión del usuario: el caption afirmaba el perfil y los widgets mostraban y corrían otra cosa, sin aviso. Visto en la QA en vivo de PDF-ZERO-SAVINGS.

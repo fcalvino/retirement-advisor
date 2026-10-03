@@ -163,7 +163,20 @@ DB_PATH = Path(os.getenv("RETIREMENT_ADVISOR_DB_PATH") or DB_DIR / "retirement_a
 #                   pasa de sostener 0 % (agotado en el año 4) a 78,45 %; la
 #                   mediana a 25 años, de 0–296 000 a 2,38 M en las tres
 #                   estrategias. Sin edad, o ya alcanzada, byte-idéntica.
-ENGINE_VERSION = "2026.10-tier17"
+#   2026.10-tier18 — REALISTIC-TAIL-CLIP: la referencia realista sortea sólo el
+#                   horizonte y le cobraba el plan de toda la longevidad: los
+#                   retiros (y los aportes) de los años que no simula caían en la
+#                   semana del terminal. Con longevidad mayor que el horizonte su
+#                   mediana bajaba, quedaba debajo de la conservadora y llegaba a
+#                   0 con longevidades o retiros mayores. Ahora el plan cubre los
+#                   años que su mercado tiene. Medido con el helper de
+#                   tests/test_realistic_tail_clip_oracle.py (fixed_real 40 000
+#                   sobre 1 000 000, horizonte 20, conservadora 601 012):
+#                   realista 326 220 → 1 154 422 con longevidad 30 y 0 →
+#                   1 154 422 con 45, la de longevidad 20. Sólo cambian los
+#                   cuatro campos realistic_* con longevidad > horizonte; la
+#                   corrida conservadora y la rama por fases, byte-idénticas.
+ENGINE_VERSION = "2026.10-tier18"
 
 
 @dataclass(frozen=True)
