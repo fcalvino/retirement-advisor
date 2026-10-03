@@ -38,6 +38,8 @@ from data.product_ux import (
     PROXY_INDEX_LABEL,
     PROXY_RATIO_LABEL,
     TREND_MA_LABEL,
+    decumulation_span_text,
+    depletion_text,
     format_dividend_score,
     market_cap_currency,
     max_dd_estimate_help,
@@ -1340,7 +1342,7 @@ def plan_level_narrative_prompt(
                 f"RETIRO FIJO REAL: ${float(withdrawal_strategy.get('annual_amount', 0) or 0):,.0f}/año "
                 "ajustado por inflación (estilo regla del 4%). Es el más predecible para el gasto, "
                 "pero el MÁS expuesto al riesgo de secuencia de retornos: una caída fuerte en los "
-                "primeros años puede agotar el capital de forma irreversible."
+                "primeros años de retiro puede agotar el capital de forma irreversible."
             )
         elif _wk == "constant_pct":
             _strat_desc = (
@@ -1359,13 +1361,28 @@ def plan_level_narrative_prompt(
             _strat_desc = f"Estrategia de retiro: {_wk}."
 
         _m = mc_summary or {}
+        # WD-PHASED PR 2: un plan por fases ahorra R años y gasta después. La
+        # longevidad cuenta desde el retiro y el agotamiento desde hoy; con la
+        # edad del perfil, los dos como edades. La edad de retiro es la de la
+        # corrida (edad + R): un plan cargado puede no compartir la del perfil.
+        _age = int((personal or {}).get("age") or 0)
+        _r = max(int(_m.get("retirement_years") or 0), 0)
+        if _r > 0:
+            _until = f" (hasta los {_age + _r})" if _age > 0 else ""
+            _strat_desc = (
+                f"FASE DE AHORRO: ahorra {_r} años{_until} y la estrategia arranca al "
+                "retirarse, sobre lo que juntó cada simulación; no gasta desde hoy. El monto "
+                f"del retiro fijo está en dólares de hoy: el primer retiro trae {_r} años de "
+                "inflación. " + _strat_desc
+            )
         if "prob_sustain_real_pct" in _m:
-            _ly = _m.get("longevity_years", _m.get("horizon_years", "?"))
+            _ly = _m.get("longevity_years", _m.get("horizon_years", 0))
             _dep = float(_m.get("expected_depletion_year", 0) or 0)
-            _dep_txt = (f"si se agota, el año típico es ~{_dep:.0f}" if _dep > 0
+            _dep_txt = (f"si se agota, típicamente es {depletion_text(_dep, age=_age)}" if _dep > 0
                         else "no se agotó en ninguna simulación dentro del horizonte")
             _metrics_txt = (
-                f" RESULTADOS SIMULADOS: probabilidad de que el ingreso dure {_ly} años "
+                f" RESULTADOS SIMULADOS: probabilidad de que el ingreso dure "
+                f"{decumulation_span_text(_ly, _r, age=_age)} "
                 f"= {float(_m.get('prob_sustain_real_pct', 0) or 0):.0f}%, "
                 f"herencia mediana ${float(_m.get('median_legacy', 0) or 0):,.0f}; {_dep_txt}."
             )

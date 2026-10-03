@@ -319,6 +319,9 @@ def strategy_ignored_savings_note(mc, *, monthly_savings: float = 0.0) -> Option
         if IGNORED_SAVINGS_KEY not in mc:
             if "prob_sustain_real_pct" not in mc or float(monthly_savings or 0.0) <= 0:
                 return None
+            # WD-PHASED: a plan with years of saving ahead did add the savings.
+            if int(_safe_float(mc.get("retirement_years"), 0.0) or 0) > 0:
+                return None
             return (
                 "Esta proyección se generó con una estrategia de retiro activa, que "
                 "supone que ya estás retirado y no suma ahorro: si al simular ahorrabas "
@@ -338,6 +341,63 @@ def strategy_ignored_savings_note(mc, *, monthly_savings: float = 0.0) -> Option
         f"Esta proyección no incluye tu ahorro (${amount:,.0f}/año): se generó con "
         "una estrategia de retiro activa, que supone que ya estás retirado y gastando."
     )
+
+
+def decumulation_span_text(
+    longevity_years: Any, retirement_years: Any = 0, *, age: Any = None,
+) -> str:
+    """How long the retirement income has to last, as the surfaces say it (WD-PHASED PR 2).
+
+    The longevity counts from retirement, which a phased plan reaches ``R`` years
+    from today. With an age the span is two ages —«de los 65 a los 95»—; without
+    one it says from when. The start is ``age + R``: the R the plan ran with, not
+    the profile's retirement age, which a loaded plan need not share.
+    """
+    span = int(longevity_years or 0)
+    start_in = max(int(retirement_years or 0), 0)
+    current = int(age or 0)
+    if current > 0:
+        start = current + start_in
+        return f"de los {start} a los {start + span}"
+    if start_in > 0:
+        return f"{span} años desde el retiro, que empieza en {start_in} años"
+    return f"{span} años desde hoy"
+
+
+def depletion_text(year_from_today: Any, *, age: Any = None) -> str:
+    """When a depleted path typically ran dry: the engine counts it from today."""
+    year = float(year_from_today or 0.0)
+    current = int(age or 0)
+    if current > 0:
+        return f"a los {current + year:.0f}"
+    return f"en el año {year:.0f} desde hoy"
+
+
+def loaded_plan_saving_years_note(
+    plan_years: Any, profile_years: Any, *, profile_has_age: bool,
+) -> Optional[str]:
+    """What Simulaciones says when a loaded plan runs with another R than the profile.
+
+    A loaded plan keeps the years of saving it was saved with (user's decision,
+    2026-10-03), so the numbers it shows are the ones it stored. None when the
+    two agree. Plain text: the caller escapes nothing, there are no amounts.
+    """
+    plan = max(int(plan_years or 0), 0)
+    profile = max(int(profile_years or 0), 0)
+    if plan == profile:
+        return None
+    first = (
+        f"Este plan corre con el retiro en {plan} años, como se guardó"
+        if plan > 0
+        else "Este plan se guardó ya retirado: la estrategia gasta desde hoy"
+    )
+    if profile > 0:
+        second = f"tu perfil hoy da {profile} años"
+    elif profile_has_age:
+        second = "según tu perfil ya estás retirado"
+    else:
+        second = "tu perfil no tiene edad de retiro"
+    return f"{first}; {second}."
 
 
 #: The savings' own growth assumption (N8b). Separate from the spending
@@ -2611,6 +2671,20 @@ def enrich_pdf_mc_params(
             except (TypeError, ValueError):
                 pass
 
+    # --- age (WD-PHASED PR 2): the PDF labels the retirement income as ages ---
+    if _pos("age") is None:
+        for src in (
+            personal.get("age"),
+            getattr(prefs, "age", None) if prefs is not None else None,
+        ):
+            try:
+                a = int(src or 0)
+            except (TypeError, ValueError):
+                continue
+            if a > 0:
+                out["age"] = a
+                break
+
     return out
 
 
@@ -2738,6 +2812,12 @@ def _drags_session_keys(drags: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
     }
 
 
+#: Session key (not a widget's) with the years of saving of a loaded plan, which
+#: Simulaciones uses instead of the profile's (WD-PHASED PR 2). None or absent:
+#: the profile rules.
+LOADED_PLAN_RETIREMENT_KEY = "sim_loaded_retirement_years"
+
+
 def plan_load_run_assumptions(plan_snapshot: Any) -> tuple:
     """Savings, withdrawal, strategy and drags of the saved run (PLAN-LOAD-SAVINGS).
 
@@ -2776,6 +2856,10 @@ def plan_load_run_assumptions(plan_snapshot: Any) -> tuple:
 
     from_run = bool(mc.get(RUN_ASSUMPTIONS_KEY))
 
+    # WD-PHASED PR 2: the plan runs with the years of saving it was saved with.
+    # Always written, so the R of a plan loaded earlier never survives; None
+    # whenever no strategy comes back, and the profile rules again.
+    updates[LOADED_PLAN_RETIREMENT_KEY] = None
     strategy = getattr(plan_snapshot, "withdrawal_strategy", None)
     if strategy:
         keys = _strategy_session_keys(dict(strategy), mc)
@@ -2786,6 +2870,10 @@ def plan_load_run_assumptions(plan_snapshot: Any) -> tuple:
             )
         else:
             updates.update(keys)
+            # Without the key the plan predates WD-PHASED: «ya retirado».
+            updates[LOADED_PLAN_RETIREMENT_KEY] = max(
+                int(_safe_float(mc.get("retirement_years"), 0.0) or 0), 0
+            )
     elif from_run:
         updates["withdrawal_kind"] = "none"
 

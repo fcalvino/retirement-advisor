@@ -530,8 +530,12 @@ class TestSimulacionesWiring:
     def test_the_age_comes_from_the_profile(self):
         import re
 
+        profile = re.search(r"def _profile_saving_years\(\).*?\n\n\n", self._page(), re.S)
+        assert profile and "primary_horizon_years" in profile.group(0)
+        # WD-PHASED PR 2: un plan cargado manda con su R; si no, el perfil.
         helper = re.search(r"def _saving_years\(\).*?\n\n\n", self._page(), re.S)
-        assert helper and "primary_horizon_years" in helper.group(0)
+        assert helper and "LOADED_PLAN_RETIREMENT_KEY" in helper.group(0)
+        assert "_profile_saving_years()" in helper.group(0)
 
     def test_the_main_run_and_the_lab_pass_it(self):
         page = self._page()

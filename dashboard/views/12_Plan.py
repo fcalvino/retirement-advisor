@@ -50,6 +50,8 @@ from data.product_ux import (
     PROXY_RATIO_HELP,
     PROXY_RATIO_LABEL,
     PROXY_RETURN_HELP,
+    decumulation_span_text,
+    depletion_text,
     max_dd_estimate_help,
     proxy_attractiveness_index,
     strategy_ignored_savings_note,
@@ -548,11 +550,18 @@ def _render_snapshot(snap: PlanSnapshot) -> None:
             st.markdown("**🏖️ Estrategia de retiro**")
             st.caption(format_withdrawal_badge(_wd))
             if m.get("prob_sustain_real_pct") is not None and "prob_sustain_real_pct" in m:
-                _ly = m.get("longevity_years", m.get("horizon_years", "—"))
+                _ly = m.get("longevity_years", m.get("horizon_years", 0))
                 _dep = m.get("expected_depletion_year", 0) or 0
-                _dep_txt = f"se agota típicamente en año {_dep:.0f}" if _dep > 0 else "no se agota en el horizonte"
+                # WD-PHASED PR 2: la longevidad cuenta desde el retiro y el
+                # agotamiento desde hoy; con la edad guardada, como edades.
+                _age = (getattr(snap, "personal", None) or {}).get("age")
+                _dep_txt = (
+                    f"se agota típicamente {depletion_text(_dep, age=_age)}"
+                    if _dep > 0 else "no se agota en el horizonte"
+                )
+                _span = decumulation_span_text(_ly, m.get("retirement_years", 0), age=_age)
                 st.caption(
-                    f"Prob. de que el ingreso dure {_ly} años: **{m.get('prob_sustain_real_pct', 0):.0f}%** · "
+                    f"Prob. de que el ingreso dure {_span}: **{m.get('prob_sustain_real_pct', 0):.0f}%** · "
                     f"herencia mediana \\${m.get('median_legacy', 0):,.0f} · {_dep_txt}."
                 )
 

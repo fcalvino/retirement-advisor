@@ -50,7 +50,7 @@
     "prob_legacy_pct": 62.0,
     "median_legacy": 540000,
     "expected_depletion_year": 28.0,
-    "longevity_years": 30
+    "longevity_years": 30, "retirement_years": 18
   },
   "narrative": "Cartera moderada estilo FIRE: empresas de calidad con moat amplio y crecimiento sostenido, asumiendo más volatilidad a cambio de mayor capital terminal. Usa una estrategia de retiro con guardrails para reducir el riesgo de secuencia de retornos durante la fase de gasto.",
   "personal": {
