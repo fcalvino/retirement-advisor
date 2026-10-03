@@ -943,9 +943,11 @@ class MonteCarloSimulator:
         """Save until retirement, then run the strategy on what each path saved.
 
         WD-PHASED. Deposits arrive monthly for ``years_to_retirement`` years —
-        the same schedule ``_apply_cash_flows`` uses — and the strategy starts
-        the week after: its first year is the first one of retirement, and it
-        draws on the pot **each path** reached, not on today's capital. The
+        the same schedule ``_apply_cash_flows`` uses. Week ``52 R`` takes the pot
+        **each path** reached, after that week's deposit, and the strategy's
+        first instalment lands one withdrawal period later: its first year is
+        the first one of retirement, drawn on that pot and not on today's
+        capital. The
         fixed amount of ``fixed_real`` is in today's dollars, so it has already
         grown ``years_to_retirement`` years of inflation by the first withdrawal.
 

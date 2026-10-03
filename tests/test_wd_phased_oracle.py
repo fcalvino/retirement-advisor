@@ -36,9 +36,11 @@ import pandas as pd
 import pytest
 
 from config import MONTE_CARLO, WITHDRAWAL
+from portfolio.decumulation import WithdrawalStrategy
 from portfolio.monte_carlo import MonteCarloSimulator
 
-PERIODS = 12
+DEPOSITS = int(MONTE_CARLO.contribution_periods_per_year)
+PAYMENTS = int(MONTE_CARLO.withdrawal_periods_per_year)
 
 
 def _weekly_rate(annual_rate: float) -> float:
@@ -77,12 +79,14 @@ def oracle_phased_wealth(
 ) -> np.ndarray:
     """Wealth at the end of every week of a saver who retires and then spends.
 
-    * Saving: one twelfth of the year's savings lands on the first bar of each
-      month (month 12 on week 52), for ``years_to_retirement`` years, raised by
+    * Saving: one instalment of the year's savings per period
+      (``MONTE_CARLO.contribution_periods_per_year``, monthly: the last one on
+      week 52), for ``years_to_retirement`` years, raised by
       ``contribution_growth`` once a year.
     * Retiring: the pot at week ``52 R`` — after that week's deposit — is what
       the strategy starts from.
-    * Spending: twelve instalments a year from the month after retirement. The
+    * Spending: ``MONTE_CARLO.withdrawal_periods_per_year`` instalments a year
+      from the period after retirement. The
       year's figure is decided on its first instalment and repeated on the
       other eleven. ``fixed_real`` is in today's dollars: year ``y`` of
       retirement pays ``A (1 + i)^(R + y - 1)``. ``constant_pct`` takes ``pct``
@@ -96,15 +100,15 @@ def oracle_phased_wealth(
     retirement_week = 52 * years_to_retirement
     deposits: dict[int, list[float]] = {}
     for yr in range(1, years_to_retirement + 1):
-        for m in range(1, PERIODS + 1):
-            week = (yr - 1) * 52 + round(m * 52 / PERIODS)
+        for m in range(1, DEPOSITS + 1):
+            week = (yr - 1) * 52 + round(m * 52 / DEPOSITS)
             deposits.setdefault(week, []).append(
-                annual_contribution / PERIODS * (1.0 + contribution_growth) ** (yr - 1)
+                annual_contribution / DEPOSITS * (1.0 + contribution_growth) ** (yr - 1)
             )
     payments: dict[int, tuple[int, bool]] = {}
     for y in range(1, decumulation_years + 1):
-        for p in range(1, PERIODS + 1):
-            payments[retirement_week + (y - 1) * 52 + round(p * 52 / PERIODS)] = (y, p == 1)
+        for p in range(1, PAYMENTS + 1):
+            payments[retirement_week + (y - 1) * 52 + round(p * 52 / PAYMENTS)] = (y, p == 1)
 
     wealth = float(initial)
     out = np.empty(n_cols)
@@ -124,9 +128,9 @@ def oracle_phased_wealth(
                 kind = strategy["kind"]
                 if kind == "fixed_real":
                     instalment = strategy["annual_amount"] * (1.0 + inflation) ** (
-                        years_to_retirement + year - 1) / PERIODS
+                        years_to_retirement + year - 1) / PAYMENTS
                 elif kind == "constant_pct":
-                    instalment = strategy["pct"] * wealth / PERIODS
+                    instalment = strategy["pct"] * wealth / PAYMENTS
                 elif kind == "guardrails":
                     wr0 = strategy["pct"]
                     if spend is None:
@@ -138,7 +142,7 @@ def oracle_phased_wealth(
                         spend *= 1.0 - WITHDRAWAL.guardrail_cut_pct
                     if rate < wr0 * (1.0 - WITHDRAWAL.guardrail_floor_band):
                         spend *= 1.0 + WITHDRAWAL.guardrail_raise_pct
-                    instalment = spend / PERIODS
+                    instalment = spend / PAYMENTS
             wealth = max(wealth - instalment, 0.0)
         out[t] = wealth
     return out
@@ -389,6 +393,78 @@ class TestEventsPastTheMarketAreDropped:
         assert result.realistic_median_terminal == pytest.approx(pot, rel=1e-9)
 
 
+class TestRealisticReferenceAcrossRetirement:
+    """El horizonte cae entre el retiro y el final: hay retiros dentro del mercado
+    realista y otros después de su última semana, que no existen ahí."""
+
+    def test_withdrawals_inside_the_horizon_count_and_the_rest_do_not(self):
+        R, horizon, L = 10, 20, 30
+        strategy = STRATEGIES["guardrails"]
+        result = _run(
+            horizon=horizon, initial_value=100_000.0, annual_contribution=18_000.0,
+            withdrawal_strategy=strategy, longevity_years=L, years_to_retirement=R,
+            include_realistic_reference=True,
+        )
+        expected = _oracle(
+            years=horizon, haircut=False, initial=100_000.0, annual_contribution=18_000.0,
+            years_to_retirement=R, decumulation_years=L, strategy=strategy,
+        )
+        assert result.realistic_median_terminal == pytest.approx(expected[-1], rel=1e-9)
+
+
+class TestHorizonBeyondRetirement:
+    """Horizonte > R + longevidad: el gasto sigue hasta el final del horizonte,
+    pero las métricas de retiro leen la longevidad pedida."""
+
+    def test_terminal_reads_the_horizon_and_legacy_reads_the_longevity(self):
+        R, L, horizon = 10, 20, 40
+        strategy = STRATEGIES["constant_pct"]
+        result = _run(
+            horizon=horizon, initial_value=100_000.0, annual_contribution=18_000.0,
+            withdrawal_strategy=strategy, longevity_years=L, years_to_retirement=R,
+        )
+        expected = _oracle(
+            years=horizon, initial=100_000.0, annual_contribution=18_000.0,
+            years_to_retirement=R, decumulation_years=horizon - R, strategy=strategy,
+        )
+        assert result.median_terminal == pytest.approx(expected[-1], rel=1e-9)
+        assert result.median_legacy == pytest.approx(expected[52 * (R + L)], abs=1.0)
+
+
+class TestEachPathKeepsItsOwnPot:
+    """Con un mercado plano todos los caminos son el mismo, y un pozo común o
+    escalar pasaría igual. Acá cada camino tiene su mercado y se compara contra
+    la referencia corrida camino por camino."""
+
+    R, L = 8, 12
+
+    @staticmethod
+    def _market(n_sims: int, years: int) -> np.ndarray:
+        rng = np.random.default_rng(20261002)
+        weekly = rng.normal(0.0012, 0.02, size=(n_sims, years * 52))
+        return np.concatenate([np.ones((n_sims, 1)), np.cumprod(1.0 + weekly, axis=1)], axis=1)
+
+    @pytest.mark.parametrize("kind", sorted(STRATEGIES))
+    def test_every_path_matches_its_own_reference(self, kind):
+        strategy = STRATEGIES[kind]
+        market = self._market(40, self.R + self.L)
+        initial, contrib = 80_000.0, 12_000.0
+        basis = initial
+        wealth = MonteCarloSimulator._apply_phased_plan(
+            market, initial, basis, contrib, WithdrawalStrategy.coerce(strategy),
+            self.R, (self.R + self.L) * 52, withdrawal_growth_rate=INFLATION,
+        ) * basis
+        pots = wealth[:, 52 * self.R]
+        assert np.ptp(pots) > 0.1 * pots.mean()  # los pozos sí difieren
+        for i in range(market.shape[0]):
+            expected = oracle_phased_wealth(
+                market[i], initial=initial, annual_contribution=contrib,
+                years_to_retirement=self.R, decumulation_years=self.L,
+                strategy=strategy, inflation=INFLATION,
+            )
+            np.testing.assert_allclose(wealth[i], expected, rtol=1e-9, atol=1e-6)
+
+
 # ================================================================== #
 #  5. Lo que no cambia                                                 #
 # ================================================================== #
@@ -403,7 +479,15 @@ def _same(a, b):
 
 
 class TestAlreadyRetiredIsTodaysEngine:
-    """Edad desconocida o ya alcanzada: «ya estás retirado», el ahorro afuera."""
+    """Edad desconocida o ya alcanzada: «ya estás retirado», el ahorro afuera.
+
+    Esto prueba que el parámetro no cambia nada cuando no hay fase. Que esa rama
+    sea la de antes de WD-PHASED lo sostienen los oráculos que ya la fijaban
+    (``test_withdrawal_oracle``, ``test_longevity_horizon_oracle``,
+    ``test_cash_flow_oracle``, ``test_decumulation``), que no se tocaron, y una
+    comparación de 144 corridas bit a bit contra el motor de ``feba226`` hecha al
+    implementar (tres estrategias y sin estrategia × capital × aporte ×
+    longevidad × R en {None, 0, −3})."""
 
     @pytest.mark.parametrize("kind", sorted(STRATEGIES))
     @pytest.mark.parametrize("years", [0, -4])
