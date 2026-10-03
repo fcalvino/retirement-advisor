@@ -58,7 +58,9 @@ Las secciones se ubican con `grep -n '^## ' docs/CONTEXT.md`.
       base real igual antes y después. `make check` y AppTest no la reemplazan:
       EMPTY-FEED-SA y el caption de LLM-2 aparecieron recién en la QA en vivo. Si
       no se pudo (sin red, sin key), el PR lo dice con nombre
-- [ ] ¿Actualicé `docs/CONTEXT.md` si el cambio es grande?
+- [ ] ¿Abro un PR? → la fila de CONTEXT §9, la entrada de ROADMAP y la fila del
+      BACKLOG las escribe `scripts/close_row.py` (`--help`; `--no-row` si el PR no
+      cierra una fila). Vos escribís la prosa; el script la pone en su lugar
 - [ ] ¿Agregué o borré un `.md`? → actualizar la tabla canónica de `docs/INDEX.md`
 
 ---

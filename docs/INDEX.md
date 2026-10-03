@@ -70,6 +70,7 @@ Roles:
 | historical-audit | `docs/PIT2_EVIDENCIA_2026-09.md` | PIT-2 (2026-09-26): F-Score point-in-time vs exceso a 1 año, fuerte − débil por corte (inconcluso); se regenera con `scripts/pit_evidence_report.py` |
 | historical-audit | `docs/AUDIT_LLM_2026-09.md` | Capa de IA (2026-09-25): inventario de 11 superficies y su guarda, comité sin overlay, titulares sin delimitar, banco de eval congelado (LLM-1..LLM-6) |
 | historical-audit | `docs/universe_coverage_analysis.md` | Cobertura del universo (snapshot 2026-07) |
+| historical-audit | `docs/retro/` | Colección: un informe de `/retro` por fecha (dónde los agentes tardan o leen docs viejos); la cabecera de cada uno dice qué quedó pendiente |
 | historical-audit | `docs/issues/SIGNAL_REASON_CONFIDENCE_ISSUES.md` | Hallazgos 2026-09-12 de la cadena Signal → Motivo → Confidence, listos para abrir como GitHub Issues (tests en `xfail(strict=True)`) |
 | historical-plan | `docs/plans/SIGNAL_REASON_CONFIDENCE_PLAN.md` | Serie `signal_reason_confidence` (cerrada 2026-09-12): cómo se cerraron SIGNAL-1..SIGNAL-5 y las decisiones de diseño |
 | living-guide | `docs/plans/PROMPTS_MULTIMODELO_PLAN.md` | Diagnóstico 2026-09-14 del sesgo a Grok en `analysis/prompts.py` + `committee_prompts.py` y plan de adaptación multimodelo en 8 PRs (contrato de salida portable) |

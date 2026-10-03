@@ -361,7 +361,8 @@ priorizarlo:
 - Una fila se cierra cuando su **oráculo** pasa, no cuando el código "parece bien".
   Ver CONTEXT §5: *"tests del motor = oráculo, no auto-consistencia"*.
 - Al cerrar una fila, moverla a [`ROADMAP.md`](ROADMAP.md) con su commit y sacarla de
-  la tabla de abiertas. El BACKLOG no lleva lista de cerradas.
+  la tabla de abiertas: lo hace `scripts/close_row.py` (`docs/MAINTENANCE.md` §1). El
+  BACKLOG no lleva lista de cerradas.
 - **`## Orden actual` se reescribe, no se le agrega.** Lleva la repriorización vigente
   (número, fecha, SHA base), sus pasos en orden y, por id, lo que espera disparador o
   no tiene orden. Cuando un paso cierra, se tacha de la lista; cuando hay una

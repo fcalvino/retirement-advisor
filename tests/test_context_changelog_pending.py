@@ -51,7 +51,7 @@ def test_only_the_newest_row_may_be_pending():
     assert bad == [], (
         f"CONTEXT §9 tiene {len(bad)} fila(s) `(pending)` que no son la más nueva "
         f"(índices {bad}). Resolvé el SHA de la fila del PR anterior "
-        "(`git log origin/main --oneline`) antes de agregar la tuya — ver docs/MAINTENANCE.md."
+        "antes de agregar la tuya: `scripts/close_row.py` lo hace (docs/MAINTENANCE.md §1)."
     )
 
 
