@@ -12,7 +12,7 @@ para leerlos enteros: se leen por sección.
 
 | Para saber… | Leé |
 |---|---|
-| Qué sigue y qué está abierto | `docs/BACKLOG.md` § Orden actual (las primeras 25 líneas) |
+| Qué sigue, qué está abierto y en qué SHA estás | `make estado`: Orden actual, PR abiertos, worktrees, los tres SHA y la fila `(pending)`, en una llamada |
 | Dónde vive algo | `docs/CONTEXT.md` §4, mapa de archivos |
 | Cómo se escribe código acá | `docs/CONTEXT.md` §5, estándares — siempre que vayas a escribir código |
 | Qué umbral o parámetro existe | `docs/CONTEXT.md` §7 y la dataclass de `config.py` que toca el cambio |

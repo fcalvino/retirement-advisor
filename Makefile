@@ -7,7 +7,7 @@ PYTHON ?= python3
 VENV   ?= venv
 BIN     = $(VENV)/bin
 
-.PHONY: help setup run test lint check clean lock launchd-install launchd-uninstall
+.PHONY: help setup run test lint check estado clean lock launchd-install launchd-uninstall
 
 help:
 	@echo "Targets disponibles:"
@@ -16,6 +16,7 @@ help:
 	@echo "  make test    - correr la suite de tests (pytest)"
 	@echo "  make lint    - correr ruff"
 	@echo "  make check   - lint + test (lo que corre el CI)"
+	@echo "  make estado  - SHA, PR abiertos, worktrees, Orden actual y la fila (pending) (solo lectura)"
 	@echo "  make lock    - regenerar requirements.lock (hashes) desde requirements.txt"
 	@echo "  make clean   - borrar el venv y caches"
 	@echo "  make launchd-install   - (macOS) corrida diaria 07:30: alertas + scoring"
@@ -35,6 +36,10 @@ lint: setup
 	$(BIN)/ruff check .
 
 check: lint test
+
+# Read-only and without `setup`: a worktree has no venv, and the script is stdlib.
+estado:
+	@if [ -x $(BIN)/python3 ]; then $(BIN)/python3 scripts/estado.py; else $(PYTHON) scripts/estado.py; fi
 
 # Audit D5 — regenerate the hash-pinned lockfile. Targets 3.11 (the CI floor) so
 # a single lock installs across the whole supported range; 3.12 resolves from it
