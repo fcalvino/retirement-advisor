@@ -17,9 +17,10 @@ Decimoquinta repriorización (sesión de diseño sobre `f8c9e76`, 2026-10-03): l
 Estimación objetiva ([ADR 0001](adr/0001-estimacion-objetiva.md)) entra detrás de lo
 que ya estaba en cola. La decimocuarta cerró WD-PHASED (#226).
 
-1. **SIM-GAP-PCT + KATEX-DOLLAR-PLAN** — banda 4, un PR: el mismo bloque «Dos escenarios».
-2. **EO-0 → EO-1 → EO-2 → EO-3 → EO-4**, en orden; EO-4 no entra si EO-3 no pasa.
-3. **EO-5** y **EO-6**, después de EO-1, en paralelo con EO-2…EO-4. Ver bloque 6.
+1. **Sincronización** — este orden, el ADR 0001 y el glosario llegan a `main` (sólo docs).
+2. **SIM-GAP-PCT + KATEX-DOLLAR-PLAN** — banda 4, un PR: el mismo bloque «Dos escenarios».
+3. **EO-0 → EO-1 → EO-2 → EO-3 → EO-4**, en orden; EO-4 no entra si EO-3 no pasa.
+4. **EO-5** y **EO-6**, después de EO-1, en paralelo con EO-2…EO-4. Ver bloque 6.
 
 Esperan disparador: U5-1b y COM-*. Sin orden: STREAMLIT-1.65 (sin banda), PORTFOLIO-FX,
 COM-LOG-TESTS, IDEA-4, IDEA-5, PIT-TOOLS y GOAL-PRIORITY-TEXT.
@@ -101,7 +102,7 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **GOAL-PRIORITY-TEXT** | 5 | Una meta importada a mano con la prioridad en texto («esencial») llega a `goals_list` sin convertir y «Simular» la pasa por `int()`. Residual declarado de PLAN-GOALS-KEYS (#214); ningún export de la app la escribe así. Anotado el 2026-10-02, **no priorizado**. Ver bloque 4 |
 | **SIM-GAP-PCT** | 4 | «Dos escenarios» (`7_Simulaciones.py:560`) dice que la mediana conservadora es «~X% más baja que el realista» con `X = (realista / conservadora − 1)`, que es cuánto más alta es la realista: con 3.155.332 y 1.220.635 escribe «~158% más baja» y la conservadora es un 61 % más baja; con 1.097.404 y 90.829, «~1108%». Una baja no pasa del 100 %. Anotado el 2026-10-03 (QA en vivo de REALISTIC-TAIL-CLIP); **banda 4** (decimocuarta repriorización, decisión del usuario), en un PR con KATEX-DOLLAR-PLAN. Ver bloque 4 |
-| **EO-0** | dec. | Estimación objetiva, etapa 0: ADR 0001, CONTEXT §1 («en transición»), X-07 sale de fuera de alcance, se borra la escala por perfil de Simulaciones y el historial de salud y el track record guardan `ENGINE_VERSION`. Ver bloque 6 |
+| **EO-0** | dec. | Estimación objetiva, etapa 0: se borra la escala por perfil de Simulaciones y el historial de salud y el track record guardan `ENGINE_VERSION`, sin alerta de deterioro entre versiones distintas. El ADR, el glosario, X-07 y CONTEXT §1 llegaron con la sincronización. Ver bloque 6 |
 | **EO-1** | dec. | El Perfil deja de tocar la Estimación; sin Perfil no hay Postura; Exigencia, margen de seguridad y Escenario de planificación pasan al Perfil. Ver bloque 6 |
 | **EO-2** | dec. | Fuentes por Clase de activo (historia, CAPE, tabla de gestoras), Desacuerdo, antigüedad, cripto y Argentina. Ver bloque 6 |
 | **EO-3** | dec. | Backtest del método con historia y CAPE: es la condición de EO-4. Ver bloque 6 |
@@ -305,11 +306,11 @@ ser **Postura** del Perfil. El porqué y lo descartado están en
 [`GLOSARIO.md`](GLOSARIO.md). Banda «dec.»: el orden lo fijó el usuario, no las bandas.
 Toda etapa que mueva μ o el Monte Carlo sube `ENGINE_VERSION`.
 
-- **EO-0 — Arranque.** El ADR y el glosario; CONTEXT §1 dice «en transición hacia
-  una Estimación objetiva (ADR 0001); el haircut global sigue aplicado hasta EO-4» —
-  §1 describe lo mergeado—; X-07 sale de «Fuera de alcance». Se borra la escala por
-  perfil escrita en `7_Simulaciones.py` (`:135-137` y `:1940-1942`, ×0,56 al
-  rendimiento en la pestaña Plan con el selector en Conservador; la principal usa
+- **EO-0 — Arranque.** El ADR, el glosario, CONTEXT §1 («en transición») y X-07
+  fuera de «Fuera de alcance» llegaron con la sincronización. Queda: borrar la
+  escala por perfil escrita en `7_Simulaciones.py` (`_PROFILE_MC_SCALES` y
+  `_PLAN_MC_SCALES`, `:134-138` y `:1939-1943` en `f8c9e76`; ×0,56 al rendimiento
+  en la pestaña Plan con el selector en Conservador, mientras la principal usa
   1,0), que además viola CONTEXT §5. `data/plan_health.py` y el track record guardan
   `ENGINE_VERSION`; una comparación entre versiones no dispara la alerta de deterioro
   y se anota «cambio de método, no del plan». La versión entra antes de mover la
