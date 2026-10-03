@@ -102,3 +102,14 @@ def test_backlog_opens_with_a_short_orden_actual():
         f"«{ORDEN_HEADING}» tiene {len(body)} líneas con texto: se reescribe, no "
         "se le agrega (BACKLOG «Cómo mantener este archivo»)"
     )
+
+
+def test_claude_md_is_only_the_pointer():
+    """``CLAUDE.md`` loads on every turn. It held a 138-line rtk block that the
+    machine's ``~/.claude/RTK.md`` already loads, and that contradicted it (retro
+    2026-10-03, item 5). ``rtk init`` writes the block back; this catches it."""
+    text = (ROOT / "CLAUDE.md").read_text(encoding="utf-8").strip()
+    assert text == "@docs/PROMPT_INSTRUCTIONS.md", (
+        "CLAUDE.md es sólo el puntero a docs/PROMPT_INSTRUCTIONS.md "
+        "(docs/MAINTENANCE.md §2); las instrucciones de rtk son de la máquina"
+    )

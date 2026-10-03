@@ -119,7 +119,7 @@ lo que toca la tarea de `docs/CONTEXT.md`). El resto son punteros.
 | [`PROMPT_INSTRUCTIONS.md`](PROMPT_INSTRUCTIONS.md) | Instrucciones obligatorias (Claude Code u otro AI coding assistant) |
 | [`CONTEXT.md`](CONTEXT.md) | Contexto canónico — arquitectura, features, estándares, limitaciones |
 | [`../AI_CODING_GUIDELINES.md`](../AI_CODING_GUIDELINES.md) | Puntero a `PROMPT_INSTRUCTIONS.md` |
-| [`../CLAUDE.md`](../CLAUDE.md) | Puntero Claude Code (no editar el bloque RTK) |
+| [`../CLAUDE.md`](../CLAUDE.md) | Puntero Claude Code (`@docs/PROMPT_INSTRUCTIONS.md`, una línea) |
 | [`MAINTENANCE.md`](MAINTENANCE.md) | Cómo refrescar CONTEXT (`scripts/refresh_context.py`) |
 
 ---

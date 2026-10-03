@@ -7,7 +7,7 @@ PYTHON ?= python3
 VENV   ?= venv
 BIN     = $(VENV)/bin
 
-.PHONY: help setup run test lint check estado clean lock launchd-install launchd-uninstall
+.PHONY: help setup run test lint check estado worktree clean lock launchd-install launchd-uninstall
 
 help:
 	@echo "Targets disponibles:"
@@ -17,6 +17,7 @@ help:
 	@echo "  make lint    - correr ruff"
 	@echo "  make check   - lint + test (lo que corre el CI)"
 	@echo "  make estado  - SHA, PR abiertos, worktrees, Orden actual y la fila (pending) (solo lectura)"
+	@echo "  make worktree BRANCH=fix/x - worktree en ../ra-x desde origin/main, con el venv enlazado"
 	@echo "  make lock    - regenerar requirements.lock (hashes) desde requirements.txt"
 	@echo "  make clean   - borrar el venv y caches"
 	@echo "  make launchd-install   - (macOS) corrida diaria 07:30: alertas + scoring"
@@ -40,6 +41,21 @@ check: lint test
 # Read-only and without `setup`: a worktree has no venv, and the script is stdlib.
 estado:
 	@if [ -x $(BIN)/python3 ]; then $(BIN)/python3 scripts/estado.py; else $(PYTHON) scripts/estado.py; fi
+
+# A worktree has no venv: link the clone's, so `make check` runs there as is.
+#   make worktree BRANCH=fix/x [BASE=origin/main] [DIR=$$HOME/ra-x]  new branch
+#   make worktree REF=<sha> DIR=$$HOME/ra-qa-main                      detached
+BASE ?= origin/main
+worktree:
+	@if [ -z "$(BRANCH)$(REF)" ]; then \
+		echo "uso: make worktree BRANCH=fix/x [BASE=origin/main] [DIR=…]  |  make worktree REF=<sha> [DIR=…]"; exit 1; fi
+	@test -d "$(realpath $(VENV))" || { echo "no hay venv en $(CURDIR)/$(VENV): make setup"; exit 1; }
+	@git fetch -q origin || echo "sin red: uso el $(BASE) local"
+	@dir="$(DIR)"; [ -n "$$dir" ] || dir="../ra-$(notdir $(or $(BRANCH),$(REF)))"; \
+	if [ -n "$(BRANCH)" ]; then git worktree add -q -b "$(BRANCH)" "$$dir" "$(BASE)"; \
+	else git worktree add -q --detach "$$dir" "$(REF)"; fi && \
+	ln -s "$(realpath $(VENV))" "$$dir/venv" && \
+	echo "worktree: $$dir ($$(git -C "$$dir" log -1 --format='%h %s'); venv → $(realpath $(VENV)))"
 
 # Audit D5 — regenerate the hash-pinned lockfile. Targets 3.11 (the CI floor) so
 # a single lock installs across the whole supported range; 3.12 resolves from it

@@ -33,8 +33,9 @@ cp $REAL/portfolio.json .context/live/portfolio.json
 ```
 
 `config.DB_PATH` lee `RETIREMENT_ADVISOR_DB_PATH` (`config.py:17`), y `portfolio.json` y
-los backtests cuelgan de `DB_PATH.parent`, así que la copia los aísla a los dos. Si el
-worktree no tiene venv, usar `~/retirement_advisor/venv` sin instalar nada en él.
+los backtests cuelgan de `DB_PATH.parent`, así que la copia los aísla a los dos. Un worktree
+hecho con `make worktree` (`BRANCH=…`, o `REF=<sha> DIR=…` para comparar dos commits)
+ya trae `venv` enlazado al del clon: no instalar nada en él.
 
 ## 2. Levantar
 
