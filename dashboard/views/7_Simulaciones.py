@@ -39,6 +39,7 @@ from dashboard.shared import (
 )
 from data.product_ux import (
     CONTRIBUTION_GROWTH_HELP,
+    LOADED_PLAN_RETIREMENT_KEY,
     PROXY_INDEX_LABEL,
     PROXY_RATIO_HELP,
     PROXY_RATIO_LABEL,
@@ -48,8 +49,11 @@ from data.product_ux import (
     apply_pending_profile_seed,
     ar_dual_context,
     contribution_inputs,
+    decumulation_span_text,
+    depletion_text,
     fmt_attractiveness_index,
     indexation_help,
+    loaded_plan_saving_years_note,
     mc_has_cash_flows,
     pending_plan_load_notes,
     pot_growth_column_label,
@@ -381,14 +385,41 @@ if not (opt_result and opt_result.tickers):
 #  Tabs                                                                #
 # ------------------------------------------------------------------ #
 
+def _profile_saving_years() -> int:
+    """Years until the profile's retirement age; 0 when unknown or reached."""
+    return int(getattr(_prefs_sim, "primary_horizon_years", 0) or 0)
+
+
 def _saving_years() -> int:
     """Years the plan saves before its withdrawal strategy starts (WD-PHASED).
 
-    From the profile's retirement age, with no control of its own here. 0 when
-    the age is unknown or already reached: then a strategy means «ya estás
-    retirado» and the savings stay out, as before.
+    A loaded plan runs with the R it was saved with (WD-PHASED PR 2, user's
+    decision); otherwise the profile's retirement age, with no control of its own
+    here. 0 means «ya estás retirado»: the strategy draws from today and the
+    savings stay out, as before.
     """
-    return int(getattr(_prefs_sim, "primary_horizon_years", 0) or 0)
+    loaded = st.session_state.get(LOADED_PLAN_RETIREMENT_KEY)
+    if loaded is not None:
+        return int(loaded)
+    return _profile_saving_years()
+
+
+def _render_loaded_plan_saving_years() -> None:
+    """Say it when a loaded plan's R is not the profile's, with a way back to the profile."""
+    if st.session_state.get(LOADED_PLAN_RETIREMENT_KEY) is None:
+        return
+    if get_withdrawal_strategy(float(initial_value)) is None:
+        return
+    note = loaded_plan_saving_years_note(
+        _saving_years(), _profile_saving_years(),
+        profile_has_age=int(getattr(_prefs_sim, "age", 0) or 0) > 0,
+    )
+    if note is None:
+        return
+    st.info(note, icon="📥")
+    if st.button("Usar la edad de mi perfil", key="sim_use_profile_retirement"):
+        st.session_state.pop(LOADED_PLAN_RETIREMENT_KEY, None)
+        st.rerun()
 
 
 def _plan_mc_kwargs() -> dict:
@@ -432,6 +463,7 @@ def _tab_mc_content():
     render_drags_controls(key_prefix="sim_")
     # Fase H.1 — decumulation / withdrawal strategy (persistent, opt-in).
     render_withdrawal_controls(key_prefix="sim_", initial_value=float(initial_value))
+    _render_loaded_plan_saving_years()   # WD-PHASED PR 2
     # Misma fuente que el motor: con monto 0 no hay estrategia y el ahorro sí entra,
     # y con una edad de retiro por delante también (WD-PHASED).
     if (annual_contribution > 0 and get_withdrawal_strategy(float(initial_value)) is not None
@@ -678,8 +710,11 @@ def _tab_mc_content():
         st.caption(format_withdrawal_badge(_wd))
         d1, d2, d3 = st.columns(3)
         _longevity = getattr(mc, "longevity_years", 0) or horizon_years
+        # WD-PHASED PR 2: la longevidad cuenta desde el retiro y el agotamiento
+        # desde hoy; con edad en el perfil, los dos se dicen como edades.
+        _age = int(getattr(_prefs_sim, "age", 0) or 0)
         d1.metric(
-            f"Prob. de que dure {_longevity} años",
+            f"Prob. de que dure {decumulation_span_text(_longevity, getattr(mc, 'retirement_years', 0), age=_age)}",
             f"{mc.prob_sustain_real_pct:.0f}%",
             help="Porcentaje de simulaciones en las que el ingreso NUNCA se agotó durante el horizonte de retiro.",
         )
@@ -690,14 +725,14 @@ def _tab_mc_content():
         )
         if mc.expected_depletion_year > 0:
             d3.metric(
-                "Si se agota, año típico",
-                f"Año {mc.expected_depletion_year:.0f}",
+                "Si se agota, típicamente",
+                depletion_text(mc.expected_depletion_year, age=_age).capitalize(),
                 delta_color="off",
                 help="Entre las simulaciones que SÍ se quedaron sin fondos, el año mediano en que ocurrió.",
             )
         else:
             d3.metric(
-                "Si se agota, año típico",
+                "Si se agota, típicamente",
                 "Nunca",
                 delta_color="off",
                 help="Ninguna simulación se quedó sin fondos en este horizonte.",

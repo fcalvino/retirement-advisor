@@ -602,7 +602,9 @@ class TestPlanLevelNarrativePrompt:
         )
         assert "GUARDRAILS" in p
         assert "82%" in p              # prob sustain surfaced
-        assert "dure 30 años" in p
+        # WD-PHASED PR 2: edad 40 y sin R guardado (ya retirado) → como edades.
+        assert "dure de los 40 a los 70" in p
+        assert "a los 67" in p
         # Narrative guidance asks for the retirement-income bullet + sequence risk.
         assert "¿Cuánto dura tu ingreso?" in p
         assert "secuencia de retornos" in p

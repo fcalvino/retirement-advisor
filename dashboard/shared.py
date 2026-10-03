@@ -1439,7 +1439,11 @@ def render_withdrawal_controls(*, key_prefix: str = "", initial_value: float = 1
                 value=float(st.session_state.get("withdrawal_amount",
                             round(initial_value * WITHDRAWAL.base_withdrawal_pct / 100.0, -2))),
                 step=1_000.0, format="%.0f", key=f"{key_prefix}wd_amount",
-                help="Monto fijo que retirás el primer año; crece cada año con la inflación.",
+                help=(
+                    "Monto anual en dólares de hoy; crece cada año con la inflación. Si tu "
+                    "plan ahorra hasta la edad de retiro, el primer retiro llega al "
+                    "retirarte, ya ajustado por la inflación de esos años."
+                ),
             )
             st.session_state["withdrawal_amount"] = amount
         elif kind == "constant_pct":

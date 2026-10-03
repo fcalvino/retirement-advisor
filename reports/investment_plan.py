@@ -54,6 +54,8 @@ from data.product_ux import (
     POT_GROWTH_LABEL,
     PROXY_INDEX_LABEL,
     PROXY_RATIO_LABEL,
+    decumulation_span_text,
+    depletion_text,
     mc_has_cash_flows,
     proxy_attractiveness_index,
     strategy_ignored_savings_note,
@@ -863,20 +865,33 @@ class InvestmentPlanReport:
             elements.append(Paragraph(_desc, st["small"]))
             elements.append(Spacer(1, 0.2 * cm))
 
-            _ly = getattr(mc_result, "longevity_years", 0) or mc_params.get("horizon_years", "—")
+            _ly = getattr(mc_result, "longevity_years", 0) or mc_params.get("horizon_years", 0)
             _dep = float(getattr(mc_result, "expected_depletion_year", 0) or 0)
-            _dep_txt = f"~año {_dep:.0f}" if _dep > 0 else "no se agota en el horizonte"
-            dec_rows = [
-                ["Métrica de retiro", "Valor", "Interpretación"],
-                [f"Prob. de que el ingreso dure {_ly} años",
-                 f"{getattr(mc_result, 'prob_sustain_real_pct', 0):.0f}%",
-                 "≥ 85% es robusto para retiro"],
-                ["Herencia mediana",
-                 f"${getattr(mc_result, 'median_legacy', 0):,.0f}",
-                 "Valor final mediano"],
-                ["Si se agota, año típico",
-                 _dep_txt,
-                 "Entre los paths que sí se agotan"],
+            # WD-PHASED PR 2: la longevidad cuenta desde el retiro y el agotamiento
+            # desde hoy; con la edad del perfil (enrich_pdf_mc_params), como edades.
+            _age = (mc_params or {}).get("age")
+            _dep_txt = depletion_text(_dep, age=_age) if _dep > 0 else "no se agota en el horizonte"
+            _span = decumulation_span_text(
+                _ly, getattr(mc_result, "retirement_years", 0), age=_age,
+            )
+            # Rótulo y valor en Paragraph: con edades o «desde el retiro» ya no
+            # entran en una línea, y un string de tabla no hace salto. Los estilos
+            # copian los de la tabla (8,5 pt, valor en negrita y centrado).
+            _cell = ParagraphStyle("dec_cell", parent=st["body"], fontSize=8.5, leading=10.5)
+            _value = ParagraphStyle("dec_value", parent=_cell, fontName="Helvetica-Bold",
+                                    alignment=TA_CENTER)
+            dec_rows = [["Métrica de retiro", "Valor", "Interpretación"]] + [
+                [Paragraph(label, _cell), Paragraph(value, _value), why]
+                for label, value, why in (
+                    (f"Prob. de que el ingreso dure {_span}",
+                     f"{getattr(mc_result, 'prob_sustain_real_pct', 0):.0f}%",
+                     "≥ 85% es robusto para retiro"),
+                    ("Herencia mediana",
+                     f"${getattr(mc_result, 'median_legacy', 0):,.0f}",
+                     "Valor final mediano"),
+                    ("Si se agota, típicamente", _dep_txt,
+                     "Entre los paths que sí se agotan"),
+                )
             ]
             dec_tbl = Table(dec_rows, colWidths=[7.5 * cm, 2.5 * cm, 7.2 * cm])
             dec_tbl.setStyle(TableStyle([
@@ -887,6 +902,7 @@ class InvestmentPlanReport:
                 ("FONTNAME",      (1, 1), (1, -1), "Helvetica-Bold"),
                 ("TEXTCOLOR",     (2, 1), (2, -1), _DGRAY),
                 ("ALIGN",         (1, 0), (1, -1), "CENTER"),
+                ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
                 ("ROWBACKGROUNDS",(0, 1), (-1, -1), [_WHITE, _LGRAY]),
                 ("GRID",          (0, 0), (-1, -1), 0.3, _DGRAY),
                 ("TOPPADDING",    (0, 0), (-1, -1), 4),

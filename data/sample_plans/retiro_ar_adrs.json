@@ -54,7 +54,7 @@
     "prob_legacy_pct": 55.0,
     "median_legacy": 140000,
     "expected_depletion_year": 26.0,
-    "longevity_years": 25
+    "longevity_years": 25, "retirement_years": 15
   },
   "narrative": "Cartera de ADRs argentinos con colas de viento estructurales (energía Vaca Muerta, e-commerce LatAm) y un ancla global (SPY). Asume fricciones locales explícitas (buffer AR por cepo/brecha/diferencial de inflación) y un retiro como % constante para no agotar capital en un contexto volátil.",
   "personal": {

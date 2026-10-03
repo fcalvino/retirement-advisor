@@ -49,7 +49,7 @@
     "prob_legacy_pct": 71.0,
     "median_legacy": 320000,
     "expected_depletion_year": 0.0,
-    "longevity_years": 30
+    "longevity_years": 30, "retirement_years": 20
   },
   "narrative": "Cartera conservadora orientada a preservar capital y generar ingreso estable para un retiro a 30 años. El énfasis está en empresas defensivas de consumo y salud con dividendos confiables, complementadas con un par de nombres de calidad para crecimiento moderado.",
   "personal": {
