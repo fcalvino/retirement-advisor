@@ -6,7 +6,7 @@
 
 ## 1. El archivo más importante: `docs/CONTEXT.md`
 
-`docs/CONTEXT.md` es el **contexto canónico del proyecto**. Cualquier AI coding assistant (Claude Code u otro) debe leerlo antes de planear o codificar. Si este archivo está desactualizado, el AI trabajará con información incorrecta.
+`docs/CONTEXT.md` es el **contexto canónico del proyecto**. Cualquier AI coding assistant (Claude Code u otro) lee las secciones que toca su tarea antes de planear o codificar (la tabla de `docs/PROMPT_INSTRUCTIONS.md`). Si este archivo está desactualizado, el AI trabajará con información incorrecta.
 
 ### Cuándo actualizar CONTEXT.md
 
@@ -42,20 +42,14 @@ El 2026-09-28 había 20; las de 2026-06/07 cayeron en commits de importación en
 
 ## 2. Flujo de trabajo con AI assistants
 
-**Path canónico:** `docs/PROMPT_INSTRUCTIONS.md` (regla: leer `docs/CONTEXT.md` primero).
+**Path canónico:** `docs/PROMPT_INSTRUCTIONS.md` (regla: leer por sección las partes de `docs/CONTEXT.md` que toca la tarea).
 Los demás archivos de instrucciones son punteros a ese path:
 
 - `CLAUDE.md` → `@docs/PROMPT_INSTRUCTIONS.md` (no editar el bloque RTK)
 - `AI_CODING_GUIDELINES.md` → puntero corto al mismo archivo
 
-**Todo prompt a Claude Code u otro AI coding assistant debe comenzar así:**
-
-```
-Antes de responder, lee docs/CONTEXT.md completo.
-[tu pregunta o tarea aquí]
-```
-
-O configurar Claude Code para leerlo automáticamente mediante `CLAUDE.md`.
+`CLAUDE.md` carga `docs/PROMPT_INSTRUCTIONS.md` en cada sesión, así que un prompt no
+necesita pedir que se lea CONTEXT: alcanza con nombrar la tarea.
 
 ---
 

@@ -6,19 +6,23 @@
 
 ## REGLA PRINCIPAL
 
-**Antes de generar CUALQUIER plan, fix, feature o código en este proyecto:**
+**Antes de generar CUALQUIER plan, fix, feature o código en este proyecto, cargá el
+contexto que toca la tarea.** `docs/CONTEXT.md` y `config.py` son demasiado largos
+para leerlos enteros: se leen por sección.
 
-1. Lee completamente el archivo `docs/CONTEXT.md`
-2. Lee `config.py` (fuente de verdad de thresholds, perfiles y parámetros)
-3. Si vas a modificar prompts o lógica AI → lee `analysis/prompts.py`
-4. Si vas a modificar el roadmap o planear una Fase nueva → lee `docs/ROADMAP.md`
+| Para saber… | Leé |
+|---|---|
+| Qué sigue y qué está abierto | `docs/BACKLOG.md` § Orden actual (las primeras 25 líneas) |
+| Dónde vive algo | `docs/CONTEXT.md` §4, mapa de archivos |
+| Cómo se escribe código acá | `docs/CONTEXT.md` §5, estándares — siempre que vayas a escribir código |
+| Qué umbral o parámetro existe | `docs/CONTEXT.md` §7 y la dataclass de `config.py` que toca el cambio |
+| Si algo ya falló antes | `docs/CONTEXT.md` §8, buscando por término |
+| Qué cambió y por qué | `docs/CONTEXT.md` §9 (una fila por PR) y `docs/ROADMAP.md` |
+| Prompts o lógica de IA | `analysis/prompts.py` y `analysis/ai_analyzer.py` |
 
-**Incluye al inicio de tu respuesta:**
-```
-✅ He leído CONTEXT.md actualizado
-```
+Las secciones se ubican con `grep -n '^## ' docs/CONTEXT.md`.
 
-Nunca propongas cambios sin haber cargado primero este contexto.
+**Al inicio de tu respuesta, nombrá las secciones que leíste.**
 
 ---
 
@@ -34,7 +38,7 @@ Nunca propongas cambios sin haber cargado primero este contexto.
 
 ## Checklist antes de proponer código
 
-- [ ] ¿Leí `docs/CONTEXT.md` completo?
+- [ ] ¿Leí las secciones de `docs/CONTEXT.md` que toca el cambio (§5 si escribo código)?
 - [ ] ¿El cambio requiere editar thresholds? → hacerlo en `config.py`, no inline
 - [ ] ¿Agrego una función de dashboard? → usar `@st.cache_data` y pasar params como tuplas
 - [ ] ¿Toco lógica AI? → revisar `analysis/prompts.py` y `analysis/ai_analyzer.py`
