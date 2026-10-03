@@ -895,7 +895,7 @@ if symbol:
             with col1:
                 shares = st.number_input("Acciones", min_value=0.01, value=float(_suggested_shares), step=1.0)
                 if _shares_caption:
-                    st.caption(_shares_caption)
+                    st.caption(escape_dollars(_shares_caption))   # KATEX-DOLLAR-PLAN
             with col2:
                 cost = st.number_input("Costo promedio (USD)", min_value=0.01, value=_price)
             with col3:

@@ -10,6 +10,17 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## SIM-GAP-PCT — «Dos escenarios» rotula la baja, no la suba; los montos no se leen como KaTeX (2026-10-03)
+
+Segundo paso de la decimoquinta repriorización (sobre `f8c9e76`; el primero fue la sincronización, #227 `55107b3`), banda 4. Cierra **SIM-GAP-PCT** y **KATEX-DOLLAR-PLAN** en un PR: los dos rompían el mismo bloque «Dos escenarios».
+
+- **SIM-GAP-PCT:** `_gap_pct` pasa de `realista / conservadora − 1` (cuánto más alta es la realista) a `1 − conservadora / realista` (cuánto más baja es la conservadora). Con los números de la QA en vivo de REALISTIC-TAIL-CLIP: «~158%» → «~61%». El texto del bloque no se reescribe: EO-4 lo reemplaza por Escenarios (ADR 0001).
+- **KATEX-DOLLAR-PLAN:** `escape_dollars` en el sitio, en cuatro sinks — `7_Simulaciones.py` (mediana con drags; «Dos escenarios»), `12_Plan.py` (checklist «Qué hacer este año») y `2_Stock_Analysis.py` (caption de acciones sugeridas). El cuarto no estaba en la fila: lo encontró el barrido de `/decidir-proyecto` del 2026-10-03 sobre `55107b3`, y ese barrido (regex sobre f-strings con `${` en `dashboard/`) no encontró otro sink con dos `$` en la misma cadena.
+- **Oráculo:** `tests/test_sim_gap_katex_oracle.py`, cinco tests con AppTest sobre las páginas reales, todos rojos en `55107b3`.
+- **Residual:** no hay un test estático que impida un sink nuevo con dos `$` sin escapar; el barrido por regex tampoco ve textos armados en varias líneas o en otro módulo (`data/product_ux.py`).
+
+---
+
 ## WD-PHASED — las superficies describen y reproducen el plan por fases (2026-10-03)
 
 Segundo y último PR de WD-PHASED, primer paso de la decimocuarta `/decidir-proyecto` (sobre `b3441aa`). El PR 1 (#219, `2664c10`) cambió el motor y cableó sólo Simulaciones; Mi Plan, el PDF, la narrativa y la carga de un plan seguían tratando un plan por fases como «ya retirado» o sin decir desde cuándo se cuentan sus años.
