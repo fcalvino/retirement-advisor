@@ -477,6 +477,15 @@ class MonteCarloSimulator:
         result.annual_contribution = contribution
 
         def _wealth_usd(market: np.ndarray) -> np.ndarray:
+            # REALISTIC-TAIL-CLIP: the plan covers the years this market has, not
+            # `n_sim_weeks`. The two kernels below clip every flow onto the last
+            # week, so a market shorter than the plan — the realistic reference
+            # only draws the projection horizon — got the spending of the years it
+            # does not simulate all at once, on the week of the terminal. With the
+            # defaults (horizon 20, longevity 30) the realistic median fell below
+            # the conservative one, or to 0. `_apply_phased_plan` drops those
+            # events instead, so it keeps `n_sim_weeks`.
+            plan_weeks = min(n_sim_weeks, (market.shape[1] - 1) // 52 * 52)
             if strategy is not None and retirement_years:
                 return self._apply_phased_plan(
                     market, initial_value, basis, contribution, strategy,
@@ -486,12 +495,12 @@ class MonteCarloSimulator:
                 ) * basis
             if strategy is not None:
                 return apply_withdrawal_strategy(
-                    market, initial_value, strategy, n_sim_weeks,
+                    market, initial_value, strategy, plan_weeks,
                     inflation_rate=withdrawal_growth_rate,
                 ) * initial_value
             return self._apply_cash_flows(
                 market, initial_value, basis, withdrawal, contribution,
-                n_sim_weeks, withdrawal_growth_rate=withdrawal_growth_rate,
+                plan_weeks, withdrawal_growth_rate=withdrawal_growth_rate,
                 contribution_growth_rate=contribution_growth_rate,
             ) * basis
 

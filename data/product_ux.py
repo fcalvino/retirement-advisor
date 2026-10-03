@@ -2366,6 +2366,15 @@ ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
         "juntaste. Antes suponía que ya estabas retirado y dejaba el ahorro afuera. Si "
         "no cargaste tu edad o ya estás retirado, no cambia nada.",
     ),
+    (
+        "2026.10-tier18",
+        "Con una estrategia de retiro, o con retiros y aportes fijos, y una longevidad "
+        "más larga que el horizonte, el escenario «realista» cobraba en su último año "
+        "los retiros de los años que no simula, y podía salir más bajo que el "
+        "conservador o en 0. Ahora llega hasta el horizonte, como el conservador. "
+        "Cambia sólo el escenario realista (mediana, banda y probabilidad de llegar a "
+        "la meta); la proyección con la que planificás no se mueve.",
+    ),
 )
 
 
