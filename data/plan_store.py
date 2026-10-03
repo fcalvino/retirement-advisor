@@ -315,6 +315,9 @@ class PlanSnapshot:
                 mc_summary["median_legacy"]           = round(float(getattr(mc_result, "median_legacy", 0.0)), 0)
                 mc_summary["expected_depletion_year"] = round(float(getattr(mc_result, "expected_depletion_year", 0.0)), 2)
                 mc_summary["longevity_years"]         = int(getattr(mc_result, "longevity_years", 0))
+                # WD-PHASED: years saved before the strategy started; 0 = already
+                # retired, which is also what a plan without the key was.
+                mc_summary["retirement_years"]        = int(getattr(mc_result, "retirement_years", 0) or 0)
                 # WD-PLAN-PDF: the strategy run leaves the savings out (WD-STRATEGY-CONTRIB);
                 # always written, so a plan without the key is one saved before it.
                 mc_summary[IGNORED_SAVINGS_KEY] = round(

@@ -275,6 +275,7 @@ def _annual_review_schedule(
     horizon_years: int,
     n_cols: int,
     periods_per_year: int,
+    start_week: int = 0,
 ) -> list[tuple[int, int, bool]]:
     """Las semanas en que sale plata, cada una etiquetada con su año y con si es
     la que dispara la revisión de ese año.
@@ -285,12 +286,15 @@ def _annual_review_schedule(
     cae en la semana 52, así que la lista es idéntica a la que producía el
     cronograma anual — de ahí que poner la config en 1 reproduzca el motor
     previo exactamente.
+
+    ``start_week`` corre el cronograma entero: el año 1 es el primero **desde
+    el retiro** (WD-PHASED), no desde hoy.
     """
     periods = max(1, int(periods_per_year))
     out: list[tuple[int, int, bool]] = []
     for year in range(1, horizon_years + 1):
         for period in range(1, periods + 1):
-            week = min((year - 1) * 52 + round(period * 52 / periods), n_cols - 1)
+            week = min(start_week + (year - 1) * 52 + round(period * 52 / periods), n_cols - 1)
             out.append((week, year, period == 1))
     return out
 
@@ -361,10 +365,7 @@ def apply_withdrawal_strategy(
     horizon_years = n_horizon_weeks // 52
     n_cols = paths.shape[1]
     n_sims = paths.shape[0]
-    periods = max(1, int(
-        MONTE_CARLO.withdrawal_periods_per_year
-        if periods_per_year is None else periods_per_year
-    ))
+    periods = _withdrawal_periods(periods_per_year)
     agenda = _annual_review_schedule(horizon_years, n_cols, periods)
 
     if initial_value <= 0:
@@ -374,15 +375,58 @@ def apply_withdrawal_strategy(
         # one. ``MonteCarloSimulator.run`` warns when it hits this.
         return np.zeros_like(paths)
 
+    # Spending in relative units: the paths start at 1.0 == initial_value.
+    decide = _strategy_decider(
+        strategy, n_sims=n_sims, periods=periods, unit=initial_value,
+        inflation_rate=inflation_rate, start_pot=lambda: 1.0,
+    )
+    pagar = _in_instalments(decide)
+    events = [
+        (week, partial(pagar, year=year, es_revision=es_rev))
+        for week, year, es_rev in agenda
+    ]
+    return apply_cash_flow_schedule(paths, 1.0, events)
+
+
+def _withdrawal_periods(periods_per_year: Optional[int]) -> int:
+    return max(1, int(
+        MONTE_CARLO.withdrawal_periods_per_year
+        if periods_per_year is None else periods_per_year
+    ))
+
+
+def _strategy_decider(
+    strategy: WithdrawalStrategy,
+    *,
+    n_sims: int,
+    periods: int,
+    unit: float,
+    inflation_rate: float,
+    start_pot,
+    index_years: int = 0,
+):
+    """La regla anual de cada estrategia, como ``decide(wealth, year) -> cuota``.
+
+    Todo está en la unidad de la riqueza relativa: ``unit`` son los dólares que
+    vale una unidad, y convierte el monto fijo de ``fixed_real``. ``start_pot()``
+    es el pozo de cada camino cuando empieza el retiro, del que parte el gasto de
+    los guardrails; se pide recién en la primera revisión porque en el modelo
+    por fases (WD-PHASED) no se conoce hasta que el camino llega a esa semana.
+
+    ``index_years`` son los años de inflación que ya corrieron antes del primer
+    retiro. El monto de ``fixed_real`` está en dólares de hoy (decisión del
+    usuario, 2026-10-02): quien se retira en 25 años y pide 40 000 «reales» saca
+    el primer año 40 000 × (1 + i)^25, no 40 000 nominales.
+    """
     if strategy.kind == "fixed_real":
 
         # Mismo orden que `_apply_cash_flows`: dividir por las cuotas primero y
         # crecer con la inflación después, para que los dos entry points den
         # exactamente los mismos bits.
-        per_period_fraction = strategy.annual_amount / periods / initial_value
+        per_period_fraction = strategy.annual_amount / periods / unit
 
         def decide(_wealth, year):
-            return per_period_fraction * ((1 + inflation_rate) ** (year - 1))
+            return per_period_fraction * ((1 + inflation_rate) ** (year - 1 + index_years))
 
     elif strategy.kind == "constant_pct":
         pct = strategy.pct
@@ -391,13 +435,14 @@ def apply_withdrawal_strategy(
             return pct * wealth / periods
 
     elif strategy.kind == "guardrails":
-        wr0 = strategy.pct                           # initial withdrawal rate (fraction of initial value)
+        wr0 = strategy.pct                           # initial withdrawal rate (fraction of the pot at retirement)
         ceiling_rate = wr0 * (1.0 + strategy.guardrail_ceiling_band)
         floor_rate = wr0 * (1.0 - strategy.guardrail_floor_band)
-        # Spending in relative units (start = wr0, since paths start at 1.0 == initial_value).
-        state = {"spend": np.full(n_sims, wr0, dtype=float)}
+        state: dict = {"spend": None}
 
         def decide(current, year):
+            if state["spend"] is None:
+                state["spend"] = np.full(n_sims, wr0, dtype=float) * start_pot()
             spend = state["spend"]
             if year > 1:
                 spend = spend * (1.0 + inflation_rate)
@@ -414,13 +459,54 @@ def apply_withdrawal_strategy(
 
     else:
         raise ValueError(f"Unknown withdrawal strategy '{strategy.kind}'")
+    return decide
 
+
+def phased_strategy_events(
+    strategy: WithdrawalStrategy,
+    *,
+    n_sims: int,
+    unit: float,
+    retirement_week: int,
+    decumulation_years: int,
+    inflation_rate: float = 0.0,
+    index_years: int = 0,
+    periods_per_year: Optional[int] = None,
+) -> list:
+    """Los eventos de una estrategia que empieza a gastar en ``retirement_week``.
+
+    El modelo por fases (WD-PHASED): se ahorra hasta la edad de retiro y la
+    estrategia corre desde ahí sobre el pozo **de cada camino** en ese momento —
+    no sobre el capital de hoy, que es lo que suponía «una estrategia significa
+    que ya estás retirado».
+
+    Devuelve ``(week, amount_fn)`` para ``apply_cash_flow_schedule``, con las
+    semanas sin recortar: quien llama descarta las que caen después del final de
+    su mercado. El primero es un evento de monto 0 en ``retirement_week`` que
+    sólo mira el pozo; va **después** del aporte de esa semana (el orden estable
+    de la agenda lo garantiza si se encola después), así que el último ahorro
+    cuenta. Vender 0 unidades no mueve nada: ``cash_flow_units`` resta 0.
+    """
+    periods = _withdrawal_periods(periods_per_year)
+    pot: dict = {}
+
+    def _mirar(wealth):
+        pot["start"] = np.asarray(wealth, dtype=float).copy()
+        return 0.0
+
+    decide = _strategy_decider(
+        strategy, n_sims=n_sims, periods=periods, unit=unit,
+        inflation_rate=inflation_rate, start_pot=lambda: pot["start"],
+        index_years=index_years,
+    )
     pagar = _in_instalments(decide)
-    events = [
+    agenda = _annual_review_schedule(
+        decumulation_years, np.iinfo(np.int64).max, periods, start_week=retirement_week,
+    )
+    return [(retirement_week, _mirar)] + [
         (week, partial(pagar, year=year, es_revision=es_rev))
         for week, year, es_rev in agenda
     ]
-    return apply_cash_flow_schedule(paths, 1.0, events)
 
 
 
@@ -440,8 +526,16 @@ def decumulation_metrics(
     horizon_years: int,
     initial_value: float,
     longevity_years: Optional[int] = None,
+    start_week: int = 0,
 ) -> Dict[str, float]:
     """Compute retirement-specific success metrics from USD paths.
+
+    ``start_week`` is the week retirement begins (WD-PHASED). The window the
+    metrics read is the ``longevity_years`` that follow it, not the ones that
+    follow today: an empty pot before the first deposit of a saver who starts
+    with nothing is not an income that ran out. ``expected_depletion_year``
+    stays counted **from today**, so every surface that prints «año X» keeps
+    saying something true.
 
     Returns a dict with:
       prob_sustain_real_pct  — % of paths that NEVER ran dry over the horizon
@@ -470,8 +564,8 @@ def decumulation_metrics(
 
     longevity = int(longevity_years) if longevity_years else horizon_years
     n_cols = paths_usd.shape[1]
-    cap_week = min(longevity * 52, n_cols - 1)
-    window = paths_usd[:, : cap_week + 1]
+    cap_week = min(start_week + longevity * 52, n_cols - 1)
+    window = paths_usd[:, start_week : cap_week + 1]
 
     eps = max(initial_value, 1.0) * 1e-9
     min_vals = window.min(axis=1)
@@ -484,7 +578,7 @@ def decumulation_metrics(
 
     if depleted.any():
         zero_hit = window <= eps
-        first_zero_week = np.argmax(zero_hit, axis=1)      # first depleted week per path
+        first_zero_week = np.argmax(zero_hit, axis=1) + start_week   # from today
         dep_weeks = first_zero_week[depleted]
         expected_depletion_year = float(np.median(dep_weeks) / 52)
     else:

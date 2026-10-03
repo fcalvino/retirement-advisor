@@ -151,7 +151,19 @@ DB_PATH = Path(os.getenv("RETIREMENT_ADVISOR_DB_PATH") or DB_DIR / "retirement_a
 #                   su propia tasa, MONTE_CARLO.default_contribution_growth_pct = 0
 #                   (decisión del usuario). Sin aportes, o con la inflación en 0,
 #                   la proyección es byte-idéntica.
-ENGINE_VERSION = "2026.09-tier16"
+#   2026.10-tier17 — WD-PHASED: una estrategia de retiro significaba «ya estás
+#                   retirado» —gastaba desde hoy sobre el capital de hoy y el
+#                   ahorro no entraba—. Con una edad de retiro por delante
+#                   (UserPreferences.primary_horizon_years > 0), ahora se ahorra
+#                   hasta ahí y la estrategia corre después sobre el pozo de
+#                   cada camino, durante la longevidad contada desde el retiro;
+#                   el monto de fixed_real está en dólares de hoy. Medido sobre
+#                   la historia sintética DISPERSA (150 000, 2 000/mes, retiro en
+#                   25 años, longevidad 30, inflación 3 %): fixed_real 40 000
+#                   pasa de sostener 0 % (agotado en el año 4) a 78,45 %; la
+#                   mediana a 25 años, de 0–296 000 a 2,38 M en las tres
+#                   estrategias. Sin edad, o ya alcanzada, byte-idéntica.
+ENGINE_VERSION = "2026.10-tier17"
 
 
 @dataclass(frozen=True)
