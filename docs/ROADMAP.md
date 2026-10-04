@@ -10,6 +10,20 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## EO-1c — la Exigencia y el margen de seguridad son Postura del Perfil (2026-10-04)
+
+Tercera y última parte de EO-1 (ADR 0001). Decisiones del usuario (2026-10-04): Exigencia 90/80/70 por perfil, editable; sin perfil, «Mis Metas» muestra la probabilidad sin juicio; margen del Perfil 20/10/5, sólo en la ficha, con la Señal en su 10 % fijo (opción a de la víspera).
+
+- **Config:** `ProfileConfig.exigencia_pct` y `margin_of_safety_pct`, con los valores por perfil. `GOAL_CARD.success_target_pct` (80, sin Fuente ni dueño) se borra: el parámetro `target_prob_pct` de `monthly_savings_for_probability` pasa a ser obligatorio. Todos los que lo llamaban ya lo pasaban explícito.
+- **Resolución:** `data.product_ux.profile_exigencia_pct` / `profile_margin_pct` devuelven el valor del usuario si lo fijó, el del perfil si no, y None sin perfil.
+- **«Mis Metas»:** el KPI «Metas con >X% prob. éxito», el consejo de ahorro y su rótulo usan la Exigencia del perfil del selector de la pestaña. Sin perfil, el KPI dice «—» y un aviso pide elegir.
+- **Ficha de Análisis:** bajo «Margin of Safety», «Tu perfil pide un margen de X %: este alcanza» o «esperá una baja antes de comprar»; sin perfil, pide elegirlo.
+- **Settings:** «Tu Postura» con los dos números, arrancando en los del perfil; guardar el mismo valor del perfil no fija un override, así sigue al perfil si se cambia.
+- **QA en vivo** (`276a221` contra la rama, preferencias reales copiadas al worktree): una meta de 700.000 a 20 años al 76,0 %: antes «Metas con >80 %: 0/1» y «Para llevar… al 80 %: $2,208/mes» (+$208); después «>70 %: 1/1» y sin consejo. Ficha: BAC (38,7 %), MO (44,9 %) y JNJ (21,2 %) dicen «alcanza» con el 5 % de Agresivo; con el margen subido a 40 % en Settings, JNJ dice «esperá una baja». Antes no había línea. Hash de la base, el portfolio y las preferencias reales sin cambios.
+- **Oráculo:** `tests/test_eo1c_exigencia_perfil_oracle.py`, 20 casos con los números literales de las decisiones. Tests ajustados: los dos de `test_goal_card.py` que fijaban el 80 (ahora piden que no haya default) y el caso degenerado, que pasa la probabilidad explícita.
+
+---
+
 ## EO-1b — sin Perfil no hay Postura: ningún camino cae en Conservador en silencio (2026-10-04)
 
 Segunda parte de EO-1 (ADR 0001), con las decisiones del usuario del 2026-10-04: **D1 (a)** hay Perfil sólo si el inversor lo eligió, con una marca (`UserPreferences.profile_chosen`) que ponen el onboarding, el radio y los presets del Optimizer, y un archivo que ya completó el onboarding cuenta como elegido; **D2 (a)** sin Perfil, lo que dimensiona pide elegir y las simulaciones corren.

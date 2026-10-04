@@ -37,6 +37,7 @@ from data.product_ux import (
     format_dividend_score,
     graham_value_help,
     market_cap_currency,
+    profile_margin_pct,
     roic_sustained_help,
     technical_signal_label,
     with_currency,
@@ -740,6 +741,25 @@ if symbol:
                         delta_color=delta_color,
                         delta_arrow="off",
                     )
+                    # EO-1c (ADR 0001): the margin the investor asks is Postura of the
+                    # profile. The Señal above keeps its own fixed rule for everyone.
+                    _my_margin = profile_margin_pct(
+                        getattr(_prefs, "chosen_profile_key", None), getattr(_prefs, "margin_pct", None)
+                    )
+                    if _my_margin is None:
+                        col2.caption(
+                            "🧭 Elegí tu perfil de riesgo para ver si este margen de seguridad "
+                            "alcanza para vos."
+                        )
+                    elif fund.margin_of_safety_pct >= _my_margin:
+                        col2.caption(
+                            f"🧭 Tu perfil pide un margen de **{_my_margin:.0f}%**: este alcanza."
+                        )
+                    else:
+                        col2.caption(
+                            f"🧭 Tu perfil pide un margen de **{_my_margin:.0f}%**: "
+                            "esperá una baja antes de comprar."
+                        )
 
     with tab_tech:
         col1, col2, col3 = st.columns(3)

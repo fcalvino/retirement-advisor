@@ -60,6 +60,7 @@ from data.product_ux import (
     pot_growth_delta,
     pot_growth_help,
     pot_growth_pct,
+    profile_exigencia_pct,
     proxy_attractiveness_index,
     remember_sim_sidebar,
     sim_sidebar_value,
@@ -2012,12 +2013,34 @@ def _tab_goals_content():
                 delta_arrow="off",
                 help="Score ponderado por prioridad: P(éxito) × peso de prioridad.",
             )
-            _success_target = GOAL_CARD.success_target_pct
-            pk3.metric(
-                f"Metas con >{_success_target:.0f}% prob. éxito",
-                f"{sum(1 for gr in plan_result.goal_results if gr.prob_success_pct >= _success_target)}"
-                f"/{len(plan_result.goal_results)}",
+            # EO-1c (ADR 0001): each goal is judged against the Exigencia of the
+            # profile on this tab's selector — Postura, not a global 80 %. Without a
+            # profile there is nothing to judge against (EO-1b).
+            _exigencia = profile_exigencia_pct(
+                st.session_state.get("plan_profile"), getattr(_prefs_sim, "exigencia_pct", None)
             )
+            if _exigencia is None:
+                pk3.metric(
+                    "Metas que cumplen tu Exigencia", "—",
+                    help="Elegí tu perfil de riesgo: la Exigencia (la probabilidad que le pedís "
+                         "a cada meta) sale de él.",
+                )
+            else:
+                pk3.metric(
+                    f"Metas con >{_exigencia:.0f}% prob. éxito",
+                    f"{sum(1 for gr in plan_result.goal_results if gr.prob_success_pct >= _exigencia)}"
+                    f"/{len(plan_result.goal_results)}",
+                    help="La Exigencia de tu perfil: la probabilidad de éxito que le pedís a cada "
+                         "meta. Se edita en ⚙️ Settings.",
+                )
+            if _exigencia is None:
+                st.info(
+                    "🧭 **Elegí tu perfil de riesgo** (abajo, en «Parámetros del plan», o en el "
+                    "Optimizer) para juzgar cada meta: la Exigencia —qué probabilidad le pedís— "
+                    "sale de tu perfil. Mientras tanto ves la probabilidad sin semáforo ni "
+                    "consejo de ahorro.",
+                    icon="🧭",
+                )
             capital_gap = plan_result.capital_gap_today
             pk4.metric(
                 "Gap de capital (en USD de hoy)",
@@ -2312,7 +2335,7 @@ def _tab_goals_content():
                     # no contra una anualidad determinística con la CAGR mediana:
                     # un cálculo sin volatilidad al retorno mediano da ~50% de
                     # éxito por construcción, nunca el objetivo que se promete.
-                    if gr.prob_success_pct < GOAL_CARD.success_target_pct:
+                    if _exigencia is not None and gr.prob_success_pct < _exigencia:
                         with st.spinner(f"Calculando el ahorro necesario para {goal.name}…"):
                             _total_mensual = cached_goal_savings_target(
                                 symbols=tuple(symbols),
@@ -2332,11 +2355,11 @@ def _tab_goals_content():
                                     ("goal_type", goal.goal_type),
                                 ),
                                 allocated_capital=float(gr.allocated_capital),
-                                target_prob_pct=GOAL_CARD.success_target_pct,
+                                target_prob_pct=_exigencia,
                                 n_sims=GOAL_CARD.advice_n_sims,
                             )
 
-                        _obj = f"{GOAL_CARD.success_target_pct:.0f}%"
+                        _obj = f"{_exigencia:.0f}%"
                         if _total_mensual is None:
                             st.warning(
                                 f"⚠️ **{g_icon} {goal.name}** no llega al {_obj} de probabilidad "

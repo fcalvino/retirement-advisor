@@ -7,7 +7,13 @@ from pathlib import Path
 
 import streamlit as st
 
-from config import CLAUDE_MODEL_CATALOG, GROQ_MODEL_CATALOG, SCREENER, ar_fx_from_market
+from config import (
+    CLAUDE_MODEL_CATALOG,
+    GROQ_MODEL_CATALOG,
+    OPTIMIZER_PROFILES,
+    SCREENER,
+    ar_fx_from_market,
+)
 from dashboard.shared import (
     _save_ai_config_to_env,
     cache_stats,
@@ -50,6 +56,39 @@ if _prefs.is_onboarded:
 else:
     if render_onboarding_wizard(key_prefix="settings_onb"):
         st.rerun()
+
+# EO-1c (ADR 0001): la Exigencia y el margen de seguridad son tu Postura. Arrancan
+# en los de tu perfil y se pueden ajustar; un valor igual al del perfil no se fija,
+# así sigue al perfil si lo cambiás.
+_chosen = _prefs.chosen_profile_key
+if _chosen:
+    _prof_cfg = OPTIMIZER_PROFILES[_chosen]
+    st.markdown("##### 🎯 Tu Postura")
+    _pc1, _pc2 = st.columns(2)
+    _exig = _pc1.number_input(
+        "Exigencia: probabilidad que le pedís a cada meta (%)",
+        min_value=50, max_value=99, step=1, key="settings_exigencia",
+        value=int(_prefs.exigencia_pct or _prof_cfg.exigencia_pct),
+        help=f"La de tu perfil ({_prof_cfg.name}) es {_prof_cfg.exigencia_pct:.0f}%. "
+             "«Mis Metas» juzga cada meta y calcula el ahorro necesario contra este número.",
+    )
+    _marg = _pc2.number_input(
+        "Margen de seguridad que pedís antes de comprar (%)",
+        min_value=0, max_value=60, step=1, key="settings_margin",
+        value=int(_prefs.margin_pct or _prof_cfg.margin_of_safety_pct),
+        help=f"El de tu perfil ({_prof_cfg.name}) es {_prof_cfg.margin_of_safety_pct:.0f}%. "
+             "Se muestra en la ficha de Análisis; la Señal usa su propia regla fija.",
+    )
+    if st.button("💾 Guardar mi Postura", key="settings_postura_save"):
+        _prefs.exigencia_pct = None if _exig == _prof_cfg.exigencia_pct else float(_exig)
+        _prefs.margin_pct = None if _marg == _prof_cfg.margin_of_safety_pct else float(_marg)
+        _prefs.save()
+        st.toast("✅ Postura guardada", icon="🎯")
+else:
+    st.caption(
+        "🎯 Tu Postura —la Exigencia de tus metas y el margen de seguridad— sale de tu "
+        "perfil de riesgo: elegilo arriba para ajustarla."
+    )
 
 st.divider()
 

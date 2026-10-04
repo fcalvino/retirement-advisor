@@ -190,14 +190,16 @@ class TestSavingsSolver:
     def test_degenerate_goals_are_refused(self):
         planner = _StubPlanner()
         assert monthly_savings_for_probability(
-            planner, _goal(horizon_years=0), 1_000.0
+            planner, _goal(horizon_years=0), 1_000.0, target_prob_pct=80.0
         ) is None
 
-    def test_defaults_come_from_config(self):
+    def test_the_target_has_no_default(self):
+        """EO-1c (ADR 0001): the target is the investor's Exigencia, so the solver
+        has no silent 80 % — every caller names the probability it solves for."""
         planner = _StubPlanner(threshold=500.0)
-        monthly_savings_for_probability(planner, _goal(), 1_000.0)
-        # the solver must have aimed at the configured target, not a literal 80
-        assert GOAL_CARD.success_target_pct == 80.0
+        with pytest.raises(TypeError):
+            monthly_savings_for_probability(planner, _goal(), 1_000.0)
+        assert not hasattr(GOAL_CARD, "success_target_pct")
 
 
 # ------------------------------------------------------------------ #
@@ -256,7 +258,8 @@ class TestCardSource:
         assert not offenders, f"text delta without delta_arrow='off' on lines {offenders}"
 
     def test_success_threshold_is_not_hardcoded(self, src):
-        assert "GOAL_CARD.success_target_pct" in src
+        """EO-1c: the threshold is the profile's Exigencia, resolved in one place."""
+        assert "profile_exigencia_pct" in src
         assert "prob_success_pct < 80" not in src
 
     def test_chart_labels_the_log_axis(self, src):

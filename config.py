@@ -1437,6 +1437,17 @@ class ProfileConfig:
       target_max_human_positions — ideal core portfolio size for the deterministic core selector.
                                    Used by _select_core_holdings() without LLM.
 
+    Postura (EO-1c, ADR 0001) — what the investor demands, never an Estimación:
+      exigencia_pct        — success probability the investor asks of a goal
+                             («que funcione en el 90 % de los futuros»). «Mis Metas»
+                             judges each goal and solves the savings advice against it.
+                             Decisión del usuario (2026-10-04): 90 / 80 / 70.
+      margin_of_safety_pct — discount to estimated value the investor asks before
+                             buying; shown in the Análisis card only. The Señal keeps
+                             ``STRATEGY.min_margin_of_safety_pct`` for everyone so the
+                             track record does not mix profiles. Decisión: 20 / 10 / 5.
+      Both are editable per user (``UserPreferences.exigencia_pct`` / ``margin_pct``).
+
     Age-based allocation (U5-7):
       bond_age_offset_pp — shifts the "defensive % = age" glide path by profile:
                            0 for conservative, -5 moderate, -10 aggressive.
@@ -1468,6 +1479,8 @@ class ProfileConfig:
     pre_filter_top_k: int = 30    # max candidates into SLSQP (profile-tilt down-select)
     target_max_human_positions: int = 12  # ideal core size for deterministic core selector
     bond_age_offset_pp: float = 0.0  # shifts the "defensive % = age" glide path (U5-7)
+    exigencia_pct: float = 80.0          # Postura: probabilidad que se le pide a una meta (EO-1c)
+    margin_of_safety_pct: float = 10.0   # Postura: margen pedido antes de comprar (EO-1c)
 
 
 # Module-level profile definitions (importable by name)
@@ -1486,6 +1499,8 @@ CONSERVATIVE_PROFILE = ProfileConfig(
     pre_filter_top_k=20,       # conservative: smaller, income-tilted pool
     target_max_human_positions=10,
     bond_age_offset_pp=0.0,    # defensivo % = age (bonos + efectivo)
+    exigencia_pct=90.0,
+    margin_of_safety_pct=20.0,
 )
 
 MODERATE_PROFILE = ProfileConfig(
@@ -1504,6 +1519,8 @@ MODERATE_PROFILE = ProfileConfig(
     target_max_human_positions=12,
     bond_age_offset_pp=-5.0,   # defensivo % = age - 5, bonos + efectivo (midpoint; the docstring named
                                # only the two ends, and this product has three)
+    exigencia_pct=80.0,
+    margin_of_safety_pct=10.0,
 )
 
 AGGRESSIVE_PROFILE = ProfileConfig(
@@ -1521,6 +1538,8 @@ AGGRESSIVE_PROFILE = ProfileConfig(
     pre_filter_top_k=45,       # aggressive: larger pool for growth coverage
     target_max_human_positions=15,
     bond_age_offset_pp=-10.0,  # defensivo % = age - 10 (bonos + efectivo)
+    exigencia_pct=70.0,
+    margin_of_safety_pct=5.0,
 )
 
 OPTIMIZER_PROFILES: Dict[str, ProfileConfig] = {
@@ -2359,8 +2378,8 @@ class GoalCardConfig:
       high_dd_pct          — drawdown mediano (%) a partir del cual el riesgo es Alto.
       low_sorr_pct         — SORR por debajo del cual (junto a low_dd_pct) es Bajo.
       low_dd_pct           — drawdown por debajo del cual (junto a low_sorr_pct) es Bajo.
-      success_target_pct   — probabilidad objetivo del consejo de ahorro y del
-                             KPI "metas con >X% de prob. de éxito".
+      (La probabilidad objetivo del consejo de ahorro y del KPI de metas ya no vive
+      acá: es la Exigencia del Perfil, ``ProfileConfig.exigencia_pct`` — EO-1c.)
       advice_n_sims        — sims por iteración del solver de ahorro (lab liviano,
                              mismo criterio que SENSITIVITY.n_sims).
       advice_max_iter      — iteraciones de bisección del solver de ahorro.
@@ -2372,7 +2391,6 @@ class GoalCardConfig:
     high_dd_pct: float = 45.0
     low_sorr_pct: float = 25.0
     low_dd_pct: float = 30.0
-    success_target_pct: float = 80.0
     advice_n_sims: int = 2_000
     advice_max_iter: int = 12
     chart_log_scale_ratio: float = 4.0
@@ -2383,7 +2401,6 @@ class GoalCardConfig:
             "high_dd_pct": self.high_dd_pct,
             "low_sorr_pct": self.low_sorr_pct,
             "low_dd_pct": self.low_dd_pct,
-            "success_target_pct": self.success_target_pct,
             "advice_n_sims": self.advice_n_sims,
             "advice_max_iter": self.advice_max_iter,
             "chart_log_scale_ratio": self.chart_log_scale_ratio,
