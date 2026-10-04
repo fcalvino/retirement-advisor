@@ -13,14 +13,14 @@
 
 ## Orden actual
 
-Decimoquinta repriorización (sesión de diseño sobre `f8c9e76`, 2026-10-03): la
-Estimación objetiva ([ADR 0001](adr/0001-estimacion-objetiva.md)) entra detrás de lo
-que ya estaba en cola. La decimocuarta cerró WD-PHASED (#226).
+Decimoquinta repriorización (sesión de diseño sobre `f8c9e76`, 2026-10-03), con el
+ajuste del usuario del 2026-10-04 (EO-1 en tres PRs): la Estimación objetiva
+([ADR 0001](adr/0001-estimacion-objetiva.md)) entra detrás de lo que ya estaba en cola.
 
 1. ~~**Sincronización** — este orden, el ADR 0001 y el glosario llegan a `main` (sólo docs).~~
 2. ~~**SIM-GAP-PCT + KATEX-DOLLAR-PLAN** — banda 4, un PR: el mismo bloque «Dos escenarios».~~
-3. ~~**EO-0**~~ **→ EO-1 → EO-2 → EO-3 → EO-4**, en orden; EO-4 no entra si EO-3 no pasa.
-4. **EO-5** y **EO-6**, después de EO-1, en paralelo con EO-2…EO-4. Ver bloque 6.
+3. ~~**EO-0 → EO-1a**~~ **→ EO-1b → EO-1c → EO-2 → EO-3 → EO-4**; EO-4 no entra si EO-3 no pasa.
+4. **EO-5** (después de EO-1b) y **EO-6** (después de EO-1a), en paralelo. Ver bloque 6.
 
 Esperan disparador: U5-1b y COM-*. Sin orden: STREAMLIT-1.65 (sin banda), PORTFOLIO-FX,
 COM-LOG-TESTS, IDEA-4, IDEA-5, PIT-TOOLS y GOAL-PRIORITY-TEXT.
@@ -100,7 +100,8 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **IDEA-5 IMPUESTOS** | 5 | Módulo de impuestos personales —bienes personales, retención de dividendos, ganancia de capital— (idea 5 de `DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`; `TaxConfig` sólo modela el impuesto corporativo). Sin alcance ni orden. Ver bloque 4 |
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **GOAL-PRIORITY-TEXT** | 5 | Una meta importada a mano con la prioridad en texto («esencial») llega a `goals_list` sin convertir y «Simular» la pasa por `int()`. Residual declarado de PLAN-GOALS-KEYS (#214); ningún export de la app la escribe así. Anotado el 2026-10-02, **no priorizado**. Ver bloque 4 |
-| **EO-1** | dec. | El Perfil deja de tocar la Estimación; sin Perfil no hay Postura; Exigencia, margen de seguridad y Escenario de planificación pasan al Perfil. Ver bloque 6 |
+| **EO-1b** | dec. | Sin Perfil no hay Postura: el onboarding obliga a elegir y, sin Perfil, la app muestra Estimaciones y no dimensiona. Ver bloque 6 |
+| **EO-1c** | dec. | La Exigencia pasa a ser atributo editable del Perfil; el margen del Perfil se muestra en la ficha (la Señal conserva su umbral fijo). Ver bloque 6 |
 | **EO-2** | dec. | Fuentes por Clase de activo (historia, CAPE, tabla de gestoras), Desacuerdo, antigüedad, cripto y Argentina. Ver bloque 6 |
 | **EO-3** | dec. | Backtest del método con historia y CAPE: es la condición de EO-4. Ver bloque 6 |
 | **EO-4** | dec. | Una Estimación por activo para el Monte Carlo y el optimizador; se borra el haircut global; Escenarios en la UI, también en lugar de «Comparar perfiles». Ver bloque 6 |
@@ -310,18 +311,26 @@ Toda etapa que mueva μ o el Monte Carlo sube `ENGINE_VERSION`.
   —la alerta de deterioro compara sólo la deriva de precios (`data/plan_context.py`)
   y la P50 de cada registro es la del plan al guardarse— y la del track record, que
   pasa a EO-6. `ENGINE_VERSION` no se sube: ningún plan guardado sale de esa pestaña.
-- **EO-1 — El Perfil fuera de la Estimación.** `ars_risk_discount` rige para todos
-  los perfiles (`optimizer.py:512-523` lo saltea en Agresivo) con el 0,85 actual
-  rotulado «pendiente de Fuente» —el valor del riesgo país llega en EO-2; el EMBI no
-  está en FRED—. El δ de Black-Litterman queda fijo en el del mercado
-  (`optimizer.py:828-831` lo toma del perfil; con Π = δ·Σ·w, Conservador era el más
-  optimista). Sin Perfil no hay Postura: el onboarding obliga a elegir y, sin Perfil,
-  la app muestra Estimaciones y no dimensiona (hoy todo cae en Conservador:
-  `preferences.py:65,76`, `config.py:1545-1549,1589,1680`, `ai_analyzer.py:113-138`,
-  `9_Settings.py:416`, `5_Optimizer.py:207`). Exigencia (hoy
-  `GOAL_CARD.success_target_pct`, 80 para todos), margen de seguridad (hoy
-  `STRATEGY`, 10 %) y Escenario de planificación pasan a ser atributos editables del
-  Perfil.
+- **EO-1 — El Perfil fuera de la Estimación**, partido en tres PRs (decisión del
+  usuario, 2026-10-04):
+  - ~~**EO-1a — la Estimación del optimizador.**~~ *cerrada (2026-10-04)*, ver
+    `ROADMAP.md`. `ars_risk_discount` rige para todos
+    los perfiles (`optimizer.py` lo salteaba en Agresivo) con el 0,85 actual rotulado
+    «pendiente de Fuente» —el valor del riesgo país llega en EO-2; el EMBI no está en
+    FRED—. El δ de Black-Litterman queda fijo en el del mercado (con Π = δ·Σ·w,
+    Conservador era el más optimista) y `ProfileConfig.risk_aversion` se borra.
+  - **EO-1b — sin Perfil no hay Postura.** El onboarding obliga a elegir y, sin
+    Perfil, la app muestra Estimaciones y no dimensiona (hoy todo cae en
+    Conservador: `preferences.py:65,76`, `config.py` en `profile_from_name`,
+    `recommended_bond_pct` y `OPTIMIZER.default_profile`, `ai_analyzer.py:113-138`,
+    `9_Settings.py:416`, `5_Optimizer.py:207`).
+  - **EO-1c — la Exigencia en el Perfil.** Hoy `GOAL_CARD.success_target_pct`, 80
+    para todos; pasa a ser atributo editable del Perfil. **Margen de seguridad**
+    (decisión del usuario, 2026-10-04, opción a): la Señal conserva el umbral fijo de
+    `STRATEGY.min_margin_of_safety_pct` (10 %), rotulado como regla del ranking, para
+    que el track record no mezcle señales de perfiles distintos; el margen del Perfil
+    se muestra en la ficha («para tu perfil: esperá una baja»).
+  - El **Escenario de planificación** pasa a EO-4: necesita los Escenarios.
 - **EO-2 — Fuentes.** Por Clase de activo: historia, valuación (CAPE de Shiller) y
   la tabla de proyecciones a 10 años de Vanguard, JPMorgan, BlackRock y Research
   Affiliates, cargada a mano una vez por año con `as_of` y `source` (patrón

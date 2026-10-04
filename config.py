@@ -176,7 +176,14 @@ DB_PATH = Path(os.getenv("RETIREMENT_ADVISOR_DB_PATH") or DB_DIR / "retirement_a
 #                   1 154 422 con 45, la de longevidad 20. Sólo cambian los
 #                   cuatro campos realistic_* con longevidad > horizonte; la
 #                   corrida conservadora y la rama por fases, byte-idénticas.
-ENGINE_VERSION = "2026.10-tier18"
+#   2026.10-tier19 — EO-1a (ADR 0001): el perfil sale del rendimiento esperado del
+#                   optimizador. El prior de Black-Litterman usa el δ de mercado
+#                   (BLACK_LITTERMAN.risk_aversion, 2,5) con cualquier perfil —antes
+#                   4,0 / 2,5 / 1,5, y como Π = δ·Σ·w el 4,0 de Conservador daba el
+#                   equilibrio más optimista— y el descuento por riesgo argentino
+#                   rige también con Agresivo. Moderado (δ 2,5, con descuento) queda
+#                   byte-idéntico; el Monte Carlo de una cartera dada no se mueve.
+ENGINE_VERSION = "2026.10-tier19"
 
 
 @dataclass(frozen=True)
@@ -1418,11 +1425,11 @@ class ProfileConfig:
       return does not depend on who is looking at it. μ now comes from the
       profile-independent ``VIEW_WEIGHTS`` (audit D3).
 
-    Risk appetite:
-      risk_aversion — δ in the Black-Litterman prior Π = δ·Σ·w_market. This is
-                      where the profile legitimately belongs: a conservative
-                      investor demands more return per unit of risk, so the
-                      equilibrium anchor tilts defensive. Higher = more averse.
+    Risk appetite: there is no profile δ (EO-1a, ADR 0001). The profile used
+      to set the δ of the Black-Litterman prior Π = δ·Σ·w_market, but a larger δ
+      *raises* Π, so the conservative 4.0 gave the most optimistic anchor. The
+      prior now uses the market δ (``BLACK_LITTERMAN.risk_aversion``) for every
+      profile; risk appetite lives in the caps below and the SLSQP constraints.
 
     Large-universe controls:
       pre_filter_top_k           — max candidates entering SLSQP after profile-tilt ranking.
@@ -1440,7 +1447,7 @@ class ProfileConfig:
       asset's expected return "does not depend on who is looking at it" — it is
       a property of the asset. A bond glide path is the opposite: a property of
       the *investor*, which is precisely what this dataclass holds. It sits next
-      to ``risk_aversion`` and the concentration caps for the same reason.
+      to the concentration caps for the same reason.
 
       Until U5-7 the offset existed only as a promise in the docstring of
       ``recommended_bond_pct`` and nothing read a profile, so every investor was
@@ -1460,7 +1467,6 @@ class ProfileConfig:
     max_crypto_pct: float = 3.0   # hard cap per crypto ticker (% of portfolio)
     pre_filter_top_k: int = 30    # max candidates into SLSQP (profile-tilt down-select)
     target_max_human_positions: int = 12  # ideal core size for deterministic core selector
-    risk_aversion: float = 2.5    # δ for the Black-Litterman equilibrium prior
     bond_age_offset_pp: float = 0.0  # shifts the "defensive % = age" glide path (U5-7)
 
 
@@ -1479,7 +1485,6 @@ CONSERVATIVE_PROFILE = ProfileConfig(
     max_crypto_pct=3.0,
     pre_filter_top_k=20,       # conservative: smaller, income-tilted pool
     target_max_human_positions=10,
-    risk_aversion=4.0,         # most risk-averse → defensive equilibrium anchor
     bond_age_offset_pp=0.0,    # defensivo % = age (bonos + efectivo)
 )
 
@@ -1497,7 +1502,6 @@ MODERATE_PROFILE = ProfileConfig(
     max_crypto_pct=5.0,
     pre_filter_top_k=30,       # moderate: balanced pool
     target_max_human_positions=12,
-    risk_aversion=2.5,         # textbook default δ
     bond_age_offset_pp=-5.0,   # defensivo % = age - 5, bonos + efectivo (midpoint; the docstring named
                                # only the two ends, and this product has three)
 )
@@ -1516,7 +1520,6 @@ AGGRESSIVE_PROFILE = ProfileConfig(
     max_crypto_pct=10.0,
     pre_filter_top_k=45,       # aggressive: larger pool for growth coverage
     target_max_human_positions=15,
-    risk_aversion=1.5,         # most risk-tolerant → growth-tilted anchor
     bond_age_offset_pp=-10.0,  # defensivo % = age - 10 (bonos + efectivo)
 )
 
@@ -1609,9 +1612,9 @@ class ViewWeightConfig:
 
     These weights build that view. They are deliberately a single global set,
     NOT per-profile: an asset's expected return is a property of the asset, not
-    of the investor looking at it. The investor's profile enters through
-    ``ProfileConfig.risk_aversion`` (δ) and through the SLSQP constraints
-    (max position, max volatility, dividend floor, sector caps).
+    of the investor looking at it. Neither does the prior: Π uses the market δ
+    (EO-1a, ADR 0001). The investor's profile enters through the SLSQP
+    constraints (max position, max volatility, dividend floor, sector caps).
 
     **There is no moat weight, and it is not an omission (U5-6).** A third term
     used to add the moat directly, but ``adjusted_score`` already contains the

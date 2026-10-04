@@ -187,10 +187,13 @@ def test_superseded_and_missing_engine_versions_are_stale():
     on each path's pot: a plan with a strategy and an age ahead moves.
     REALISTIC-TAIL-CLIP (tier18) stops charging the realistic reference for the
     years it does not simulate: only ``realistic_*`` moves, with longevity > horizon.
+    EO-1a (tier19) takes the profile out of the optimizer's expected return —
+    market δ in the Black-Litterman prior, the ARS discount for every profile: a
+    plan's optimizer metrics move, its Monte Carlo does not.
     """
     from config import ENGINE_VERSION
 
-    assert ENGINE_VERSION == "2026.10-tier18"
+    assert ENGINE_VERSION == "2026.10-tier19"
 
     current = PlanSnapshot.from_session(name="actual", opt_result=_fake_opt_result())
     assert current.engine_version == ENGINE_VERSION
@@ -202,7 +205,7 @@ def test_superseded_and_missing_engine_versions_are_stale():
                        "2026.09-tier9", "2026.09-tier10",
                        "2026.09-tier11", "2026.09-tier12", "2026.09-tier13",
                        "2026.09-tier14", "2026.09-tier15", "2026.09-tier16",
-                       "2026.10-tier17"):
+                       "2026.10-tier17", "2026.10-tier18"):
         old = PlanSnapshot.from_session(name="viejo", opt_result=_fake_opt_result())
         old.engine_version = superseded
         assert old.is_engine_stale() is True

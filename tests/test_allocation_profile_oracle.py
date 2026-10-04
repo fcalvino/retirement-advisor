@@ -101,7 +101,7 @@ def test_aggressive_holds_ten_points_more_equity_than_conservative(age):
 @pytest.mark.parametrize("age", AGES)
 def test_moderate_sits_strictly_between_the_two(age):
     """The docstring named two rules for a three-profile product. Moderate is
-    the midpoint — monotone with ``risk_aversion`` (4.0 / 2.5 / 1.5)."""
+    the midpoint, as with the profile's caps."""
     cons = _advise(age, CONSERVATIVE_PROFILE).equity_pct
     mod = _advise(age, MODERATE_PROFILE).equity_pct
     aggr = _advise(age, AGGRESSIVE_PROFILE).equity_pct

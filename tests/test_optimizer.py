@@ -151,11 +151,12 @@ class TestArsDiscount:
         result = opt._apply_ars_discount(tickers)
         assert result[0]["adjusted_score"] < 60.0
 
-    def test_ars_discount_not_applied_aggressive(self):
+    def test_ars_discount_applied_aggressive(self):
+        """EO-1a (ADR 0001): no profile is exempt from the country-risk discount."""
         opt = PortfolioOptimizer("aggressive")
         tickers = [_ticker("YPF", score=70.0, country="Argentina")]
         result = opt._apply_ars_discount(tickers)
-        assert result[0]["adjusted_score"] == 70.0
+        assert result[0]["adjusted_score"] < 70.0
 
     def test_discount_factor_matches_config(self):
         opt = PortfolioOptimizer("conservative")

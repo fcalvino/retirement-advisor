@@ -10,6 +10,18 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## EO-1a — el perfil no toca el rendimiento esperado del optimizador (2026-10-04)
+
+Primera parte de EO-1 (ADR 0001), paso 3 de la decimoquinta repriorización con el ajuste del usuario del 2026-10-04: EO-1 se parte en 1a (esto), 1b (sin Perfil no hay Postura) y 1c (la Exigencia en el Perfil); el Escenario de planificación pasa a EO-4 y el margen de seguridad queda como umbral fijo de la Señal, con el del Perfil sólo en la ficha (opción a).
+
+- **δ de mercado:** `_apply_black_litterman` usa `BLACK_LITTERMAN.risk_aversion` (2,5) con cualquier perfil. `ProfileConfig.risk_aversion` (4,0 / 2,5 / 1,5) se borra con sus docstrings: con Π = δ·Σ·w, el 4,0 de Conservador daba el ancla más optimista de las tres, al revés de su comentario. Revierte la parte de la auditoría D3 que dejó entrar el perfil por δ.
+- **Descuento argentino para todos:** `_apply_ars_discount` ya no saltea a Agresivo. El valor sigue siendo `OPTIMIZER.ars_risk_discount` (0,85), rotulado «pendiente de Fuente» en el aviso de ADRs del Optimizer y en la ayuda del buffer AR; el valor con Fuente llega en EO-2. El aviso de antes ya decía «en perfil Agresivo se aplica un descuento de 15 %» sin que se aplicara.
+- **`ENGINE_VERSION` → `2026.10-tier19`**, con su entrada en `ENGINE_CHANGELOG`. Moderado queda byte-idéntico; el Monte Carlo de una cartera dada no se mueve.
+- **QA en vivo** (universo Default, 39 tickers, `af3d522` contra la rama): Conservador mueve 4,8 pp de peso en total (MA +2,4, MSFT −1,1) y su ratio atractivo/vol pasa de 0,18 a 0,13; Agresivo mueve 10,9 pp, CEPU pasa de 4,1 % a 2,5 % (score 87,9 → 74,7, el ×0,85) y el ratio de 0,14 a 0,16; los demás ADRs argentinos estaban en el piso de 1 %. Moderado movió 0,6 pp por un dato de TEO que cambió entre las dos corridas en vivo (puntaje base 64,0 → 72,9), no por el código.
+- **Oráculo:** `tests/test_eo1a_profile_free_estimate_oracle.py`. Tests que afirmaban lo contrario, actualizados con el ADR: la exención de Agresivo (`test_ars_discount_oracle`, `test_optimizer`) y «el perfil se expresa por δ» (`test_audit_2026_08_repro`, ahora por sus topes).
+
+---
+
 ## EO-0 — la pestaña de metas simula con los supuestos de la principal (2026-10-04)
 
 Primera etapa de la Estimación objetiva (ADR 0001), paso 3 de la decimoquinta repriorización. Alcance reducido por el `/decidir-proyecto` sobre `a175ca8`, con la pestaña «Comparar perfiles» decidida por el usuario (2026-10-04: queda tal cual hasta EO-4).

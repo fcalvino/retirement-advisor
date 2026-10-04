@@ -510,8 +510,9 @@ class PortfolioOptimizer:
         return eligible, excluded
 
     def _apply_ars_discount(self, tickers: List[dict]) -> List[dict]:
-        if self.profile_key == "aggressive":
-            return tickers
+        # EO-1a (ADR 0001): the issuer's country risk does not depend on who is
+        # looking, so every profile gets the discount (aggressive used to skip
+        # it). Its size is still a config number pending a Fuente (EO-2).
         result = []
         for t in tickers:
             t = dict(t)
@@ -741,9 +742,10 @@ class PortfolioOptimizer:
         An asset's expected return is a property of the asset, not of who is
         looking at it. Until the 2026-08 audit this used ``cfg.score_weight``
         et al., so the same ticker "yielded" 5.08% for a conservative investor
-        and 7.72% for an aggressive one (audit D3). The profile now enters
-        through ``cfg.risk_aversion`` (the δ of the BL equilibrium prior) and
-        through the SLSQP constraints, which is where preference belongs.
+        and 7.72% for an aggressive one (audit D3). D3 let the profile back in
+        through the δ of the BL prior; EO-1a (ADR 0001) took it out of there
+        too. The profile enters only through the SLSQP constraints, which is
+        where preference belongs.
 
         The sector-country tailwind (Idea 2) IS a second expression of something
         already inside adjusted_score, and unlike the moat term that is
@@ -825,14 +827,14 @@ class PortfolioOptimizer:
                     [max(0.1, float(t.get("adjusted_score", 0) or 0) / 100.0) for t in tickers],
                     dtype=float,
                 )
-            # δ comes from the PROFILE, not the global BL default: this is the
-            # one place the investor's risk appetite legitimately shapes the
-            # return anchor (audit D3). Falls back to the global when a profile
-            # predates the field.
-            delta = float(getattr(self.cfg, "risk_aversion", 0) or _BL.risk_aversion)
+            # δ is the MARKET's risk aversion, the same for every profile (EO-1a,
+            # ADR 0001). It used to come from the profile (audit D3), but in
+            # Π = δ·Σ·w a larger δ raises the anchor, so the conservative 4.0 gave
+            # the most optimistic equilibrium of the three. The investor's risk
+            # appetite enters through the SLSQP constraints, not through μ.
             posterior = bl_expected_returns(
                 mu, cov, market_weights=market_weights, view_confidence=conf,
-                risk_aversion=delta, tau=_BL.tau,
+                risk_aversion=_BL.risk_aversion, tau=_BL.tau,
             )
             if posterior is not None and len(posterior) == len(mu) and np.all(np.isfinite(posterior)):
                 return np.asarray(posterior, dtype=float)
