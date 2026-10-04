@@ -33,7 +33,9 @@ from tests.test_plan_page_runtime import stores  # noqa: F401  (fixture)
 # la corrida guardada del plan (15 años pero 900.000), así que un valor que no
 # llegó no puede pasar por casualidad.
 PROFILE = dict(onboarded=True, age=41, retirement_age=56,
-               current_capital=333_000.0, monthly_savings=2_000.0)
+               current_capital=333_000.0, monthly_savings=2_000.0,
+               # An onboarded investor chose a tolerance (EO-1b: there is no default).
+               risk_tolerance="moderada")
 SHOWN = {"horizon_years": 15, "initial_value": 333_000}
 
 # El wizard: otro perfil, guardado desde Inicio en la misma sesión.
@@ -95,6 +97,8 @@ def test_the_wizard_refreshes_what_the_browser_shows(stores, tmp_path, key):  # 
         at.number_input(key="home_onb_age").set_value(WIZARD["age"])
         at.number_input(key="home_onb_retage").set_value(WIZARD["retage"])
         at.number_input(key="home_onb_capital").set_value(WIZARD["capital"])
+        # EO-1b (ADR 0001): the wizard does not preselect a tolerance; saving needs one.
+        at.radio(key="home_onb_risk").set_value("moderada")
         next(b for b in at.button if "Guardar mi perfil" in b.label).click()
         at.run()
         assert not at.exception, [e.message for e in at.exception]

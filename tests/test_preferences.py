@@ -32,8 +32,10 @@ def test_defaults_not_onboarded():
     assert prefs.age == 0
     assert prefs.primary_horizon_years == 0
     assert prefs.annual_savings == 0.0
-    assert prefs.profile_key == "conservative"
-    assert prefs.default_profile == "Conservador"
+    # EO-1b (ADR 0001): sin elegir no hay perfil — antes, Conservador en silencio.
+    assert prefs.profile_key is None
+    assert prefs.default_profile == ""
+    assert prefs.chosen_profile_key is None
 
 
 def test_primary_horizon_requires_valid_ages():

@@ -10,6 +10,20 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## EO-1b — sin Perfil no hay Postura: ningún camino cae en Conservador en silencio (2026-10-04)
+
+Segunda parte de EO-1 (ADR 0001), con las decisiones del usuario del 2026-10-04: **D1 (a)** hay Perfil sólo si el inversor lo eligió, con una marca (`UserPreferences.profile_chosen`) que ponen el onboarding, el radio y los presets del Optimizer, y un archivo que ya completó el onboarding cuenta como elegido; **D2 (a)** sin Perfil, lo que dimensiona pide elegir y las simulaciones corren.
+
+- **Preferencias:** `default_profile` y `risk_tolerance` nacen vacíos («sin elegir»), `chosen_profile_key` devuelve el perfil sólo si se eligió, `choose_profile` registra la elección y `_from_raw` migra los archivos viejos (onboarding hecho y un perfil válido → elegido). La plantilla versionada ya no dice Moderado.
+- **Lo que dimensiona pide elegir:** el radio del Optimizer arranca en el perfil elegido o sin selección, con un aviso y sin «Ejecutar»; «Optimizar para mis metas» se deshabilita con el motivo; la Asignación pide elegir en vez de calcular una mezcla Conservadora.
+- **«Mis Metas»** arranca en el perfil elegido. Hallado en el `/decidir-proyecto` sobre `b4655e3`; en la QA en vivo apareció además que el valor sembrado no llegaba al navegador cuando el selector se dibuja recién al agregar la primera meta —el mecanismo de PLAN-LOAD-WIDGETS—, y se re-asigna en la corrida que lo dibuja. AppTest no lo veía: el test nuevo lee lo que dibuja el navegador.
+- **Onboarding y Settings:** el wizard no preselecciona la tolerancia y avisa si se guarda sin ella; el reset deja «sin elegir»; Inicio, el resumen del perfil y Settings dicen «sin elegir» en vez de un nombre.
+- **Config:** `OPTIMIZER.default_profile` («conservative», sin lectores) se borra; `profile_from_name` y `recommended_bond_pct` conservan su fallback, que ya no alcanza ninguna superficie que dimensiona.
+- **QA en vivo** (`b4655e3` contra la rama, preferencias aisladas en cada worktree): sin preferencias, antes Optimizer en Moderado y «Mis Metas» en Conservador, después ambos piden elegir; con las preferencias reales (Agresivo), antes «Mis Metas» en Conservador, después en Agresivo. Hash de la base, el portfolio y las preferencias reales sin cambios.
+- **Oráculo:** `tests/test_eo1b_no_silent_profile_oracle.py`, 13 casos. Tests ajustados: `test_preferences` (el default ya no es Conservador) y los perfiles de prueba de `test_profile_seed_widgets_oracle` y `test_sim_reentry_widgets_oracle` (un inversor con onboarding eligió una tolerancia).
+
+---
+
 ## EO-1a — el perfil no toca el rendimiento esperado del optimizador (2026-10-04)
 
 Primera parte de EO-1 (ADR 0001), paso 3 de la decimoquinta repriorización con el ajuste del usuario del 2026-10-04: EO-1 se parte en 1a (esto), 1b (sin Perfil no hay Postura) y 1c (la Exigencia en el Perfil); el Escenario de planificación pasa a EO-4 y el margen de seguridad queda como umbral fijo de la Señal, con el del Perfil sólo en la ficha (opción a).
