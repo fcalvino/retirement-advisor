@@ -5,7 +5,7 @@ from __future__ import annotations
 import plotly.express as px
 import streamlit as st
 
-from dashboard.shared import get_user_prefs
+from dashboard.shared import get_user_prefs, stop_view
 from data.product_ux import (
     DEFENSIVE_SLEEVE_HELP,
     DEFENSIVE_SLEEVE_LABEL,
@@ -33,6 +33,18 @@ with col1:
     age = st.slider("Tu edad actual", 20, 80, _default_age)
 with col2:
     retirement_age = st.slider("Edad objetivo para el retiro", age + 1, 80, max(age + 1, _default_ret))
+
+# EO-1b (ADR 0001): the stock/bond mix and the concentration limits are the
+# investor's Postura. Without a chosen profile there is none to apply — the
+# page asks instead of computing a Conservador mix nobody chose.
+if not _prefs.chosen_profile_key:
+    st.info(
+        "🧭 **Elegí tu perfil de riesgo** —en el onboarding de Inicio, en ⚙️ Settings o en "
+        "el Optimizer— para ver la mezcla de acciones y bonos y los límites de "
+        "concentración: los dos salen de tu perfil.",
+        icon="🧭",
+    )
+    stop_view()
 
 portfolio: Portfolio = st.session_state.portfolio
 sector_weights   = portfolio.get_sector_weights()   if portfolio.positions else {}

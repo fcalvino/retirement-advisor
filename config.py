@@ -1541,9 +1541,10 @@ def profile_from_name(name: Optional[str]) -> ProfileConfig:
 
     ``UserPreferences.default_profile`` holds "Conservador" / "Moderado" /
     "Agresivo" while ``OPTIMIZER_PROFILES`` is keyed in English, so callers need
-    both doors. An unknown or missing name falls back to conservative, which is
-    also ``UserPreferences``' own default — never guess the investor into more
-    risk than they asked for.
+    both doors. An unknown or missing name falls back to conservative — never
+    guess the investor into more risk than they asked for. Since EO-1b (ADR 0001)
+    no surface that sizes a portfolio gets here without a chosen profile: they ask
+    for one first (``UserPreferences.chosen_profile_key``).
     """
     if not name:
         return CONSERVATIVE_PROFILE
@@ -1559,7 +1560,8 @@ def recommended_bond_pct(age: int, profile: Optional[ProfileConfig] = None) -> f
     below — shifted by
     ``ProfileConfig.bond_age_offset_pp``: age for conservative, age - 5 for
     moderate, age - 10 for aggressive. No profile means conservative, which is
-    what every caller got before U5-7.
+    what every caller got before U5-7; since EO-1b the Allocation page asks for
+    a chosen profile instead of reaching this default.
 
     The offset is applied **first** and the result clamped to [0, 80]. The order
     only matters past 90 (``min(age, 80) - 10`` would give 70 where this gives
@@ -1647,7 +1649,6 @@ class OptimizerConfig:
     """
     Global settings for the portfolio optimizer (profile-independent).
 
-    default_profile       — profile key used when no selection is made
     risk_free_rate        — annual Rf subtracted in the attractiveness/vol ratio
                             (the same rate feeds the historical Sharpe of
                             BacktestConfig, which is a real one)
@@ -1680,7 +1681,6 @@ class OptimizerConfig:
                               in ``MonteCarloResult.median_max_drawdown_pct``
                               (measured on the market series, see U2-2).
     """
-    default_profile: str = "conservative"
     risk_free_rate: float = RISK_FREE.annual_fraction   # U5-10
     price_history_years: int = 2
     frontier_points: int = 300

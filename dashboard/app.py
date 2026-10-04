@@ -337,7 +337,7 @@ def _home_page() -> None:
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Universo activo", _u_meta.get("name", _u_key))
     col2.metric("Tickers en universo", len(st.session_state.universe))
-    col3.metric("Perfil guardado", _prefs_home.default_profile)
+    col3.metric("Perfil guardado", _prefs_home.default_profile or "sin elegir")
     if _prefs_home.is_onboarded:
         col4.metric("Horizonte de retiro", f"{_prefs_home.primary_horizon_years} años")
     else:

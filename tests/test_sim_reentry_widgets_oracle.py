@@ -39,7 +39,9 @@ from tests.test_profile_seed_widgets_oracle import _app, _home_then_simulaciones
 # Perfil de la QA en vivo: 40 → 65 años son 25 de horizonte (una opción exacta) y
 # 150.000 de capital; los dos difieren del default del widget (20, 100.000).
 PROFILE = dict(onboarded=True, age=40, retirement_age=65,
-               current_capital=150_000.0, monthly_savings=2_000.0)
+               current_capital=150_000.0, monthly_savings=2_000.0,
+               # An onboarded investor chose a tolerance (EO-1b: there is no default).
+               risk_tolerance="moderada")
 SHOWN = {"horizon_years": 25, "initial_value": 150_000, "monthly_savings": 2_000}
 
 # Lo editado: cada valor difiere del perfil y del default del widget.

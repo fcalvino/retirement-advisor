@@ -18,6 +18,7 @@ from dashboard.shared import (
     _get_ai_config,
     ensure_session_defaults,
     seed_session_defaults_from_profile,
+    stop_view,
     tailwind_badge,
 )
 from data.preferences import UserPreferences
@@ -161,8 +162,7 @@ def _apply_preset(universe_key: str, profile_key: str) -> None:
     st.session_state["_preset_universe_key"] = universe_key
     st.session_state["_preset_profile_key"]  = profile_key
     _prefs.active_universe = universe_key
-    _prefs.default_profile = OPTIMIZER_PROFILES[profile_key].name
-    _prefs.save()
+    _prefs.choose_profile(OPTIMIZER_PROFILES[profile_key].name)   # a preset is a choice
     for k in [
         "optimizer_scored", "optimizer_universe",
         "optimizer_result", "optimizer_result_key",
@@ -203,20 +203,31 @@ if "_preset_profile_key" in st.session_state:
         st.session_state["optimizer_profile_label"]   = _PROFILE_LABELS[_ppk]
         st.session_state.optimizer_last_saved_profile = OPTIMIZER_PROFILES[_ppk].name
 
-if "optimizer_profile_label" not in st.session_state:
-    _init_key = _PREFS_TO_KEY.get(_prefs.default_profile, "conservative")
-    st.session_state["optimizer_profile_label"] = _PROFILE_LABELS[_init_key]
+# EO-1b (ADR 0001): the radio starts on the profile the investor chose, or on
+# nothing — never on a silent Conservador.
+if "optimizer_profile_label" not in st.session_state and _prefs.chosen_profile_key:
+    st.session_state["optimizer_profile_label"] = _PROFILE_LABELS[_prefs.chosen_profile_key]
 
 profile_label = st.sidebar.radio(
     "Perfil de riesgo",
     list(_PROFILE_LABELS.values()),
     key="optimizer_profile_label",
+    **({} if "optimizer_profile_label" in st.session_state else {"index": None}),
     help=(
         "Conservador: preserva capital con dividendos. "
         "Moderado: balance crecimiento/ingreso. "
         "Agresivo: maximiza crecimiento a largo plazo."
     ),
 )
+if profile_label is None:
+    st.info(
+        "🧭 **Elegí tu perfil de riesgo** en la barra lateral para optimizar. El perfil "
+        "es tu Postura —topes de posición, volatilidad y dividendo—, y sin él la app no "
+        "arma una cartera por vos. También se define en el onboarding de Inicio.",
+        icon="🧭",
+    )
+    stop_view()
+
 profile_key = _PROFILE_KEYS[profile_label]
 prof        = OPTIMIZER_PROFILES[profile_key]
 
@@ -225,9 +236,8 @@ if "optimizer_last_saved_profile" not in st.session_state:
 
 # Detect profile change BEFORE updating last_saved (used to auto-expand constraint card)
 _profile_just_changed = prof.name != st.session_state.optimizer_last_saved_profile
-if _profile_just_changed:
-    _prefs.default_profile = prof.name
-    _prefs.save()
+if _profile_just_changed or not _prefs.profile_chosen:
+    _prefs.choose_profile(prof.name)   # EO-1b: picking on the radio is a choice
     st.session_state.optimizer_last_saved_profile = prof.name
     st.toast(f"Perfil '{prof.name}' guardado", icon="💾")
 

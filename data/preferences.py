@@ -7,8 +7,7 @@ All mutations go through save() so the file is always consistent.
 Usage:
     from data.preferences import UserPreferences
     prefs = UserPreferences.load()
-    prefs.default_profile = "Moderado"
-    prefs.save()
+    prefs.choose_profile("Moderado")
 """
 
 from __future__ import annotations
@@ -59,10 +58,20 @@ DIVIDEND_PREFERENCE_LABELS = {
 }
 
 
+# Stored profile name → optimizer profile key.
+PROFILE_NAME_TO_KEY = {
+    name: RISK_TOLERANCE_TO_PROFILE_KEY[tol]
+    for tol, name in RISK_TOLERANCE_TO_PROFILE_NAME.items()
+}
+
+
 @dataclass
 class UserPreferences:
-    # Optimizer
-    default_profile: str = "Conservador"
+    # Optimizer. EO-1b (ADR 0001): no profile until the investor chooses one —
+    # "" is «sin elegir», not a silent Conservador. ``profile_chosen`` is the
+    # mark; the onboarding and the Optimizer's radio set it.
+    default_profile: str = ""
+    profile_chosen: bool = False
 
     # --------------------------------------------------------------- #
     #  Personal profile (onboarding wizard — Fase A)                   #
@@ -74,7 +83,7 @@ class UserPreferences:
     retirement_age: int = 65
     current_capital: float = 0.0          # USD disponibles hoy para invertir
     monthly_savings: float = 0.0          # USD aportados por mes
-    risk_tolerance: str = "conservadora"  # conservadora | moderada | agresiva
+    risk_tolerance: str = ""              # conservadora | moderada | agresiva ("" = sin elegir)
     primary_goal_type: str = "retiro"     # clave de portfolio.goals.GOAL_TYPE_ICONS
     dividend_preference: str = "balance"  # crecimiento | balance | ingreso
 
@@ -139,9 +148,26 @@ class UserPreferences:
         return float(self.monthly_savings) * 12.0
 
     @property
-    def profile_key(self) -> str:
-        """Optimizer profile key derived from risk tolerance."""
-        return RISK_TOLERANCE_TO_PROFILE_KEY.get(self.risk_tolerance, "conservative")
+    def profile_key(self) -> str | None:
+        """Optimizer profile key derived from risk tolerance (None = sin elegir)."""
+        return RISK_TOLERANCE_TO_PROFILE_KEY.get(self.risk_tolerance)
+
+    @property
+    def chosen_profile_key(self) -> str | None:
+        """The optimizer profile the investor chose, or None (EO-1b).
+
+        Without a choice there is no Postura: the surfaces that size a portfolio
+        ask for one instead of falling back to Conservador.
+        """
+        if not self.profile_chosen:
+            return None
+        return PROFILE_NAME_TO_KEY.get(self.default_profile)
+
+    def choose_profile(self, name: str) -> None:
+        """Record an explicit choice of optimizer profile (by display name)."""
+        self.default_profile = name
+        self.profile_chosen = name in PROFILE_NAME_TO_KEY
+        self.save()
 
     def apply_personal_profile(
         self,
@@ -166,6 +192,7 @@ class UserPreferences:
         self.default_profile = RISK_TOLERANCE_TO_PROFILE_NAME.get(
             risk_tolerance, self.default_profile
         )
+        self.profile_chosen = self.default_profile in PROFILE_NAME_TO_KEY
         self.onboarded = True
         self.save()
 
@@ -173,7 +200,16 @@ class UserPreferences:
     def _from_raw(cls, data: dict) -> "UserPreferences":
         """Build from a raw dict, dropping unknown keys (old/annotated files)."""
         known = {f for f in cls.__dataclass_fields__}
-        return cls(**{k: v for k, v in data.items() if k in known})
+        kept = {k: v for k, v in data.items() if k in known}
+        # EO-1b migration: a file written before ``profile_chosen`` existed
+        # counts as a choice only if the investor completed the onboarding —
+        # the template's «Moderado» was never anyone's choice.
+        if "profile_chosen" not in kept:
+            kept["profile_chosen"] = (
+                bool(kept.get("onboarded"))
+                and kept.get("default_profile") in PROFILE_NAME_TO_KEY
+            )
+        return cls(**kept)
 
     @classmethod
     def load(cls) -> "UserPreferences":

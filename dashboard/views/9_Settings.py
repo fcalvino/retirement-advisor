@@ -404,7 +404,7 @@ with _r1:
             "**¿Confirmar reset?**\n\n"
             "Se restablecerán:\n"
             "- Universo activo → **Default** (38 tickers)\n"
-            "- Perfil del Optimizer → **Conservador**\n"
+            "- Perfil del Optimizer → **sin elegir** (la app te lo pide antes de armar una cartera)\n"
             "- AI en el Screener → **desactivado**\n"
             "- Mi Perfil de retiro (edad, capital, metas) → **sin definir**\n\n"
             "La Watchlist y las alertas de precio **no se modifican**.",
@@ -413,7 +413,8 @@ with _r1:
         if st.button("✅ Sí, resetear preferencias", type="primary", width="stretch"):
             # Reset UserPreferences fields
             _prefs.active_universe        = "default"
-            _prefs.default_profile        = "Conservador"
+            _prefs.default_profile        = ""      # EO-1b: sin elegir, no Conservador
+            _prefs.profile_chosen         = False
             _prefs.ai_enabled_in_screener = False
             _prefs.preferred_currency     = "USD"
             _prefs.last_used_universe     = []
@@ -423,7 +424,7 @@ with _r1:
             _prefs.retirement_age       = 65
             _prefs.current_capital      = 0.0
             _prefs.monthly_savings      = 0.0
-            _prefs.risk_tolerance       = "conservadora"
+            _prefs.risk_tolerance       = ""
             _prefs.primary_goal_type    = "retiro"
             _prefs.dividend_preference  = "balance"
             _prefs.save()
@@ -434,9 +435,10 @@ with _r1:
             st.session_state.universe          = _default_tickers
             st.session_state.active_universe_key = "default"
 
-            # Sync Optimizer profile
-            st.session_state["optimizer_profile_label"]   = "🛡️  Conservador"
-            st.session_state.optimizer_last_saved_profile = "Conservador"
+            # Sync Optimizer profile: no selection until the investor chooses (EO-1b)
+            st.session_state.pop("optimizer_profile_label", None)
+            st.session_state.pop("plan_profile", None)
+            st.session_state.optimizer_last_saved_profile = ""
 
             # Clear optimizer + screener caches
             for _k in [
@@ -455,7 +457,7 @@ with _r2:
     st.caption(
         f"Universo activo: **{UNIVERSE_META.get(st.session_state.get('active_universe_key', 'default'), {}).get('name', 'Default')}** "
         f"({len(st.session_state.get('universe', []))} tickers) · "
-        f"Perfil: **{_prefs.default_profile}** · "
+        f"Perfil: **{_prefs.default_profile or 'sin elegir'}** · "
         f"AI Screener: {'🟢 activo' if _prefs.ai_enabled_in_screener else '⚪ inactivo'}"
     )
 

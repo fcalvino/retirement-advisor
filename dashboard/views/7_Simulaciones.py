@@ -112,6 +112,12 @@ apply_pending_profile_seed(st.session_state)
 # forma de que el navegador los muestre. Después del perfil: el plan gana.
 _loaded_plan_notes = pending_plan_load_notes(st.session_state)   # PLAN-LOAD-SAVINGS
 _loaded_plan_name = apply_pending_plan_load(st.session_state)
+# EO-1b (ADR 0001): «Mis Metas» starts on the profile the investor chose. It is
+# seeded here, not on the selector, because «Optimizar para mis metas» reads it
+# earlier in the same run. Without a choice it stays None (no silent Conservador).
+if "plan_profile" not in st.session_state and _prefs_sim.chosen_profile_key:
+    st.session_state["plan_profile"] = _prefs_sim.chosen_profile_key
+
 if _prefs_sim.is_onboarded and not st.session_state.get("_goal_form_seeded"):
     if _prefs_sim.primary_goal_type in GOAL_TYPE_ICONS:
         st.session_state.setdefault("new_goal_type", _prefs_sim.primary_goal_type)
@@ -1798,20 +1804,22 @@ def _tab_goals_content():
             st.rerun()
 
         _has_scored = bool(st.session_state.get("optimizer_scored"))
+        _profile = st.session_state.get("plan_profile")   # EO-1b: None = sin elegir
         _opt_btn = _col_opt.button(
             "🔬 Optimizar para mis metas",
             key="optimize_for_goals_btn",
-            disabled=not _has_scored,
+            disabled=not (_has_scored and _profile),
             help=(
-                "Optimiza el portafolio considerando el horizonte de cada meta (Glide Path automático)."
-                if _has_scored
-                else "Para optimizar con metas, primero ejecutá el Optimizer en la pestaña 📈 Optimizer."
+                "Para optimizar con metas, primero ejecutá el Optimizer en la pestaña 📈 Optimizer."
+                if not _has_scored
+                else "Elegí el «Perfil de riesgo» de abajo: sin perfil la app no arma una cartera por vos."
+                if not _profile
+                else "Optimiza el portafolio considerando el horizonte de cada meta (Glide Path automático)."
             ),
         )
 
-        if _opt_btn and _has_scored:
+        if _opt_btn and _has_scored and _profile:
             _scored = st.session_state["optimizer_scored"]
-            _profile = st.session_state.get("plan_profile", "conservative")
             _opt_current = st.session_state.get("optimizer_result") or st.session_state.get("optimizer_prev_result")
             _cur_w = (
                 tuple((t.symbol, t.weight_pct) for t in _opt_current.tickers)
@@ -1932,11 +1940,19 @@ def _tab_goals_content():
             value=5_000,
             key="plan_n_sims",
         )
+        # The profile seeded at the top of the page may come from a run in which
+        # this selector did not exist yet (no goals); Streamlit only sends a value
+        # set in the same run that draws the widget (PLAN-LOAD-WIDGETS), so the
+        # browser would show the first option. Re-set it here, in this run.
+        if st.session_state.get("plan_profile") is not None:
+            st.session_state["plan_profile"] = st.session_state["plan_profile"]
         plan_profile = gp3.selectbox(
             "Perfil de riesgo",
             options=["conservative", "moderate", "aggressive"],
             format_func=lambda p: {"conservative": "🛡️ Conservador", "moderate": "⚖️ Moderado", "aggressive": "🚀 Agresivo"}[p],
             key="plan_profile",
+            **({} if "plan_profile" in st.session_state else {"index": None}),
+            placeholder="Elegí tu perfil",
             help=(
                 "Elige el perfil con que «Optimizar para mis metas» arma la cartera y el que "
                 "figura en el PDF. No cambia los supuestos de la simulación: las metas corren "

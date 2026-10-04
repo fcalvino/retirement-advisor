@@ -38,7 +38,7 @@ def render_profile_summary(prefs) -> None:
     cols = st.columns(4)
     cols[0].metric("Edad → retiro", f"{prefs.age} → {prefs.retirement_age}")
     cols[1].metric("Horizonte", f"{prefs.primary_horizon_years} años")
-    cols[2].metric("Perfil", prefs.default_profile)
+    cols[2].metric("Perfil", prefs.default_profile or "sin elegir")
     cols[3].metric("Ahorro/mes", f"${prefs.monthly_savings:,.0f}")
     _goal_icon = GOAL_TYPE_ICONS.get(prefs.primary_goal_type, "💼")
     _goal_lbl = GOAL_TYPE_LABELS.get(prefs.primary_goal_type, "Otro")
@@ -89,7 +89,8 @@ def render_onboarding_wizard(*, key_prefix: str = "onb") -> bool:
             key=f"{key_prefix}_goal",
         )
 
-        _risk_idx = _RISK_OPTIONS.index(prefs.risk_tolerance) if prefs.risk_tolerance in _RISK_OPTIONS else 0
+        # EO-1b (ADR 0001): no preselected tolerance — the profile is a choice.
+        _risk_idx = _RISK_OPTIONS.index(prefs.risk_tolerance) if prefs.risk_tolerance in _RISK_OPTIONS else None
         risk_tolerance = st.radio(
             "Tolerancia al riesgo (define tu perfil del Optimizer)",
             options=_RISK_OPTIONS,
@@ -109,10 +110,22 @@ def render_onboarding_wizard(*, key_prefix: str = "onb") -> bool:
         )
 
         st.caption(
-            f"Tu perfil del Optimizer quedará en **{RISK_TOLERANCE_TO_PROFILE_NAME.get(risk_tolerance, 'Conservador')}**. "
-            "Podés cambiarlo cuando quieras desde el Optimizer o esta página."
+            (
+                f"Tu perfil del Optimizer quedará en **{RISK_TOLERANCE_TO_PROFILE_NAME[risk_tolerance]}**. "
+                if risk_tolerance in RISK_TOLERANCE_TO_PROFILE_NAME
+                else "Elegí tu tolerancia al riesgo: define tu perfil del Optimizer. "
+            )
+            + "Podés cambiarlo cuando quieras desde el Optimizer o esta página."
         )
         submitted = st.form_submit_button("💾 Guardar mi perfil", type="primary")
+
+    if submitted and risk_tolerance not in RISK_TOLERANCE_TO_PROFILE_NAME:
+        st.warning(
+            "Elegí tu **tolerancia al riesgo** para guardar el perfil: sin ella la app no "
+            "sabe qué topes aplicarte.",
+            icon="🧭",
+        )
+        return False
 
     if submitted:
         prefs.apply_personal_profile(

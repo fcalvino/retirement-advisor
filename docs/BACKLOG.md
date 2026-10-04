@@ -19,7 +19,7 @@ ajuste del usuario del 2026-10-04 (EO-1 en tres PRs): la Estimación objetiva
 
 1. ~~**Sincronización** — este orden, el ADR 0001 y el glosario llegan a `main` (sólo docs).~~
 2. ~~**SIM-GAP-PCT + KATEX-DOLLAR-PLAN** — banda 4, un PR: el mismo bloque «Dos escenarios».~~
-3. ~~**EO-0 → EO-1a**~~ **→ EO-1b → EO-1c → EO-2 → EO-3 → EO-4**; EO-4 no entra si EO-3 no pasa.
+3. ~~**EO-0 → EO-1a → EO-1b**~~ **→ EO-1c → EO-2 → EO-3 → EO-4**; EO-4 no entra si EO-3 no pasa.
 4. **EO-5** (después de EO-1b) y **EO-6** (después de EO-1a), en paralelo. Ver bloque 6.
 
 Esperan disparador: U5-1b y COM-*. Sin orden: STREAMLIT-1.65 (sin banda), PORTFOLIO-FX,
@@ -100,7 +100,6 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **IDEA-5 IMPUESTOS** | 5 | Módulo de impuestos personales —bienes personales, retención de dividendos, ganancia de capital— (idea 5 de `DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`; `TaxConfig` sólo modela el impuesto corporativo). Sin alcance ni orden. Ver bloque 4 |
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **GOAL-PRIORITY-TEXT** | 5 | Una meta importada a mano con la prioridad en texto («esencial») llega a `goals_list` sin convertir y «Simular» la pasa por `int()`. Residual declarado de PLAN-GOALS-KEYS (#214); ningún export de la app la escribe así. Anotado el 2026-10-02, **no priorizado**. Ver bloque 4 |
-| **EO-1b** | dec. | Sin Perfil no hay Postura: el onboarding obliga a elegir y, sin Perfil, la app muestra Estimaciones y no dimensiona. Ver bloque 6 |
 | **EO-1c** | dec. | La Exigencia pasa a ser atributo editable del Perfil; el margen del Perfil se muestra en la ficha (la Señal conserva su umbral fijo). Ver bloque 6 |
 | **EO-2** | dec. | Fuentes por Clase de activo (historia, CAPE, tabla de gestoras), Desacuerdo, antigüedad, cripto y Argentina. Ver bloque 6 |
 | **EO-3** | dec. | Backtest del método con historia y CAPE: es la condición de EO-4. Ver bloque 6 |
@@ -319,11 +318,17 @@ Toda etapa que mueva μ o el Monte Carlo sube `ENGINE_VERSION`.
     «pendiente de Fuente» —el valor del riesgo país llega en EO-2; el EMBI no está en
     FRED—. El δ de Black-Litterman queda fijo en el del mercado (con Π = δ·Σ·w,
     Conservador era el más optimista) y `ProfileConfig.risk_aversion` se borra.
-  - **EO-1b — sin Perfil no hay Postura.** El onboarding obliga a elegir y, sin
-    Perfil, la app muestra Estimaciones y no dimensiona (hoy todo cae en
-    Conservador: `preferences.py:65,76`, `config.py` en `profile_from_name`,
-    `recommended_bond_pct` y `OPTIMIZER.default_profile`, `ai_analyzer.py:113-138`,
-    `9_Settings.py:416`, `5_Optimizer.py:207`).
+  - ~~**EO-1b — sin Perfil no hay Postura.**~~ *cerrada (2026-10-04)*, ver
+    `ROADMAP.md`. `UserPreferences.profile_chosen` (D1 a): la ponen el onboarding,
+    el radio y los presets del Optimizer; un archivo que ya hizo el onboarding
+    cuenta como elegido. Sin Perfil (D2 a) el Optimizer, «Optimizar para mis metas»
+    y la Asignación piden elegir; las simulaciones corren. El onboarding ya no
+    preselecciona la tolerancia, el reset de Settings deja «sin elegir» y
+    `OPTIMIZER.default_profile` se borró (no tenía lectores). Sumó un sitio que la
+    fila no tenía: «Mis Metas» de `7_Simulaciones.py` arrancaba en Conservador sin
+    leer las preferencias —un usuario con Agresivo optimizaba por metas como
+    Conservador— y, en vivo, el valor sembrado no llegaba al navegador hasta que
+    el selector existiera (el mecanismo de PLAN-LOAD-WIDGETS).
   - **EO-1c — la Exigencia en el Perfil.** Hoy `GOAL_CARD.success_target_pct`, 80
     para todos; pasa a ser atributo editable del Perfil. **Margen de seguridad**
     (decisión del usuario, 2026-10-04, opción a): la Señal conserva el umbral fijo de
@@ -358,7 +363,10 @@ Toda etapa que mueva μ o el Monte Carlo sube `ENGINE_VERSION`.
   no sesgo) si la agregación es simétrica. `recommended_max_allocation_conservative`
   → `recommended_max_allocation` en prompts, parser, `STRATEGY` y el banco de eval;
   el PM recibe la Postura y el Perfil entra a la clave de caché del comité. Un
-  oráculo barre los prompts como hoy barre los nombres de proveedor.
+  oráculo barre los prompts como hoy barre los nombres de proveedor. Incluye
+  `resolve_optimizer_profile` (`ai_analyzer.py`), que sin nombre de perfil sigue
+  cayendo en Conservador: EO-1b lo dejó para acá (desde EO-1b el Optimizer no
+  produce un resultado sin perfil, así que el fallback ya no se alcanza desde ahí).
 - **EO-6 — Señales.** `ai_action_capped_by_score_ladder` (`config.py:442`) pasa a
   simétrico, un escalón; la asimetría vuelve sólo si el track record muestra que las
   subas de la IA aciertan menos que sus bajas. `missing_data_score` deja el 0 por la
