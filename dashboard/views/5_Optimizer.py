@@ -999,8 +999,10 @@ with tab_cart:
             ars_syms     = ", ".join(a.symbol for a in result.tickers if a.is_ars)
             st.info(
                 f"🇦🇷 **ADRs argentinos ({ars_syms}):** cotizan y liquidan en **USD** en NYSE/NASDAQ. "
-                f"En perfil **{prof.name}** se aplica un descuento de **{discount_pct:.0f}%** al Score "
-                "Ajustado para el cálculo del peso óptimo (no afecta precio ni dividend yield)."
+                f"Con cualquier perfil se aplica un descuento de **{discount_pct:.0f}%** al Score "
+                "Ajustado para el cálculo del peso óptimo (no afecta precio ni dividend yield). "
+                "Ese porcentaje es un supuesto fijo, **pendiente de Fuente**: todavía no sale de "
+                "un dato de riesgo país."
             )
 
     if result.excluded:

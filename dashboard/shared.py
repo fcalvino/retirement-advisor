@@ -1260,8 +1260,8 @@ def render_drags_controls(*, key_prefix: str = "") -> dict:
                 value=float(st.session_state.get("drag_ar_buffer_pct", DRAGS.ar_buffer_pct)),
                 step=0.10, disabled=not enabled, key=f"{key_prefix}drag_ar",
                 help="⚠️ Evitá doble conteo: el Optimizer ya descuenta el riesgo argentino "
-                     f"(−{(1 - OPTIMIZER.ars_risk_discount) * 100:.0f}% al score de ADRs AR en "
-                     "perfiles Conservador/Moderado). Usá este buffer solo para el riesgo país "
+                     f"(−{(1 - OPTIMIZER.ars_risk_discount) * 100:.0f}% al score de ADRs AR, "
+                     "con cualquier perfil). Usá este buffer solo para el riesgo país "
                      "que NO esté ya reflejado en cómo elegiste la cartera (ej. inflación/FX a "
                      "nivel de todo el plan). Si ya ponderaste por ARS, dejalo en 0.",
             )

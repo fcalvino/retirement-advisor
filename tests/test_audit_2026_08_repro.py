@@ -232,13 +232,19 @@ class TestAuditD3MuIsProfileIndependent:
         assert mus[0] == pytest.approx(mus[1], rel=1e-12)
         assert mus[1] == pytest.approx(mus[2], rel=1e-12)
 
-    def test_profile_still_expresses_itself_through_risk_aversion(self):
-        """The profile must still matter — just not through μ."""
-        deltas = [
-            PortfolioOptimizer(p).cfg.risk_aversion
+    def test_profile_still_expresses_itself_through_its_caps(self):
+        """The profile must still matter — just not through μ, and since EO-1a
+        (ADR 0001) not through the δ of the Black-Litterman prior either: it
+        lives in the SLSQP constraints."""
+        cfgs = [
+            PortfolioOptimizer(p).cfg
             for p in ("conservative", "moderate", "aggressive")
         ]
-        assert deltas[0] > deltas[1] > deltas[2]
+        assert not hasattr(cfgs[0], "risk_aversion")
+        caps = [c.max_position_pct for c in cfgs]
+        vols = [c.max_volatility_pct for c in cfgs]
+        assert caps[0] < caps[1] < caps[2]
+        assert vols[0] < vols[1] < vols[2]
 
     def test_profile_preferences_still_drive_candidate_ranking(self):
         """score/dividend/moat weights remain a *preference*, used for ranking."""

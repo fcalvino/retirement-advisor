@@ -2435,6 +2435,16 @@ ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
         "Cambia sólo el escenario realista (mediana, banda y probabilidad de llegar a "
         "la meta); la proyección con la que planificás no se mueve.",
     ),
+    (
+        "2026.10-tier19",
+        "El perfil de riesgo cambiaba el rendimiento esperado de cada activo en el "
+        "Optimizer: el ancla de equilibrio usaba un valor distinto por perfil (y la de "
+        "Conservador salía la más optimista de las tres), y los ADRs argentinos no "
+        "recibían el descuento por riesgo país con Agresivo. Ahora el rendimiento "
+        "esperado es el mismo para cualquier perfil, y tu perfil cuenta en los topes "
+        "de la cartera. Cambian los pesos y las métricas que propone el Optimizer; la "
+        "proyección Monte Carlo de una cartera dada no se mueve.",
+    ),
 )
 
 

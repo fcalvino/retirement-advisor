@@ -21,8 +21,9 @@ It is live in one place and fragile in another:
     keyed the corporate tax rate off it. Two mechanisms for "which country is
     this company exposed to" is one too many.
 
-The discount is unchanged — its size, its config knob and its exemption for the
-aggressive profile all stay. What changes is who it reaches.
+The discount is unchanged — its size and its config knob stay. What changes is
+who it reaches. (Its exemption for the aggressive profile, which this row kept,
+was removed by EO-1a, ADR 0001.)
 
 No network.
 """
@@ -81,9 +82,13 @@ class TestTheDiscountItselfIsUnchanged:
         expected = 80.0 * PortfolioOptimizer("conservative").opt.ars_risk_discount
         assert scored == pytest.approx(expected)
 
-    def test_an_aggressive_profile_is_still_exempt(self):
+    def test_an_aggressive_profile_is_discounted_too(self):
+        """EO-1a (ADR 0001): the exemption is gone — the issuer's country risk
+        does not depend on who is looking. ``test_eo1a_profile_free_estimate_oracle``
+        holds the worked number."""
         (scored,) = self._scores("aggressive", [_row("YPF", country="Argentina")])
-        assert scored == pytest.approx(80.0)
+        expected = 80.0 * PortfolioOptimizer("aggressive").opt.ars_risk_discount
+        assert scored == pytest.approx(expected)
 
     def test_a_non_argentine_company_is_untouched(self):
         (scored,) = self._scores("conservative", [_row("KO")])
