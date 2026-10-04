@@ -86,6 +86,9 @@ class UserPreferences:
     risk_tolerance: str = ""              # conservadora | moderada | agresiva ("" = sin elegir)
     primary_goal_type: str = "retiro"     # clave de portfolio.goals.GOAL_TYPE_ICONS
     dividend_preference: str = "balance"  # crecimiento | balance | ingreso
+    # Postura editable (EO-1c, ADR 0001): None = el valor del perfil elegido.
+    exigencia_pct: float | None = None    # probabilidad que le pedís a una meta
+    margin_pct: float | None = None       # margen de seguridad antes de comprar
 
     # Universes
     active_universe: str = "default"        # key matching data/universes/<key>.json

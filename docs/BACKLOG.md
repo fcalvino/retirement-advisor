@@ -19,7 +19,7 @@ ajuste del usuario del 2026-10-04 (EO-1 en tres PRs): la Estimación objetiva
 
 1. ~~**Sincronización** — este orden, el ADR 0001 y el glosario llegan a `main` (sólo docs).~~
 2. ~~**SIM-GAP-PCT + KATEX-DOLLAR-PLAN** — banda 4, un PR: el mismo bloque «Dos escenarios».~~
-3. ~~**EO-0 → EO-1a → EO-1b**~~ **→ EO-1c → EO-2 → EO-3 → EO-4**; EO-4 no entra si EO-3 no pasa.
+3. ~~**EO-0 → EO-1a → EO-1b → EO-1c**~~ **→ EO-2 → EO-3 → EO-4**; EO-4 no entra si EO-3 no pasa.
 4. **EO-5** (después de EO-1b) y **EO-6** (después de EO-1a), en paralelo. Ver bloque 6.
 
 Esperan disparador: U5-1b y COM-*. Sin orden: STREAMLIT-1.65 (sin banda), PORTFOLIO-FX,
@@ -100,7 +100,6 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **IDEA-5 IMPUESTOS** | 5 | Módulo de impuestos personales —bienes personales, retención de dividendos, ganancia de capital— (idea 5 de `DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`; `TaxConfig` sólo modela el impuesto corporativo). Sin alcance ni orden. Ver bloque 4 |
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **GOAL-PRIORITY-TEXT** | 5 | Una meta importada a mano con la prioridad en texto («esencial») llega a `goals_list` sin convertir y «Simular» la pasa por `int()`. Residual declarado de PLAN-GOALS-KEYS (#214); ningún export de la app la escribe así. Anotado el 2026-10-02, **no priorizado**. Ver bloque 4 |
-| **EO-1c** | dec. | La Exigencia pasa a ser atributo editable del Perfil; el margen del Perfil se muestra en la ficha (la Señal conserva su umbral fijo). Ver bloque 6 |
 | **EO-2** | dec. | Fuentes por Clase de activo (historia, CAPE, tabla de gestoras), Desacuerdo, antigüedad, cripto y Argentina. Ver bloque 6 |
 | **EO-3** | dec. | Backtest del método con historia y CAPE: es la condición de EO-4. Ver bloque 6 |
 | **EO-4** | dec. | Una Estimación por activo para el Monte Carlo y el optimizador; se borra el haircut global; Escenarios en la UI, también en lugar de «Comparar perfiles». Ver bloque 6 |
@@ -329,12 +328,14 @@ Toda etapa que mueva μ o el Monte Carlo sube `ENGINE_VERSION`.
     leer las preferencias —un usuario con Agresivo optimizaba por metas como
     Conservador— y, en vivo, el valor sembrado no llegaba al navegador hasta que
     el selector existiera (el mecanismo de PLAN-LOAD-WIDGETS).
-  - **EO-1c — la Exigencia en el Perfil.** Hoy `GOAL_CARD.success_target_pct`, 80
-    para todos; pasa a ser atributo editable del Perfil. **Margen de seguridad**
-    (decisión del usuario, 2026-10-04, opción a): la Señal conserva el umbral fijo de
-    `STRATEGY.min_margin_of_safety_pct` (10 %), rotulado como regla del ranking, para
-    que el track record no mezcle señales de perfiles distintos; el margen del Perfil
-    se muestra en la ficha («para tu perfil: esperá una baja»).
+  - ~~**EO-1c — la Exigencia en el Perfil.**~~ *cerrada (2026-10-04)*, ver
+    `ROADMAP.md`. `ProfileConfig.exigencia_pct` (90/80/70) y `margin_of_safety_pct`
+    (20/10/5), editables en Settings («Tu Postura»). «Mis Metas» juzga y calcula el
+    ahorro contra la Exigencia del perfil de su selector; sin perfil, muestra la
+    probabilidad sin juicio. `GOAL_CARD.success_target_pct` se borró. La ficha de
+    Análisis dice si el margen del activo alcanza para tu perfil. La Señal conserva
+    `STRATEGY.min_margin_of_safety_pct` (10 %); su rótulo de «regla del ranking» va
+    con EO-6, junto al de «no calibrado».
   - El **Escenario de planificación** pasa a EO-4: necesita los Escenarios.
 - **EO-2 — Fuentes.** Por Clase de activo: historia, valuación (CAPE de Shiller) y
   la tabla de proyecciones a 10 años de Vanguard, JPMorgan, BlackRock y Research

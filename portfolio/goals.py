@@ -481,7 +481,7 @@ def monthly_savings_for_probability(
     planner: "GoalPlanner",
     goal: Goal,
     allocated_capital: float,
-    target_prob_pct: float = GOAL_CARD.success_target_pct,
+    target_prob_pct: float,   # EO-1c: the investor's Exigencia — no silent default
     n_sims: int = GOAL_CARD.advice_n_sims,
     max_iter: int = GOAL_CARD.advice_max_iter,
     vol_scale: float = 1.0,

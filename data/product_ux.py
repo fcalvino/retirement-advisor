@@ -3145,3 +3145,37 @@ def shareable_report_narrative_blocks(
         },
     ]
     return blocks
+
+
+# --------------------------------------------------------------------------- #
+#  Postura del Perfil: Exigencia y margen de seguridad (EO-1c, ADR 0001)       #
+# --------------------------------------------------------------------------- #
+
+def profile_exigencia_pct(profile_key: str | None, override: float | None = None) -> float | None:
+    """The success probability the investor asks of a goal, or None without a profile.
+
+    ``override`` is the user's own value (``UserPreferences.exigencia_pct``) and wins
+    over the profile's. Without a profile there is no Postura to judge with (EO-1b).
+    """
+    from config import OPTIMIZER_PROFILES
+
+    if profile_key not in OPTIMIZER_PROFILES:
+        return None
+    if override:
+        return float(override)
+    return float(OPTIMIZER_PROFILES[profile_key].exigencia_pct)
+
+
+def profile_margin_pct(profile_key: str | None, override: float | None = None) -> float | None:
+    """The margin of safety the investor asks before buying, or None without a profile.
+
+    Postura shown in the Análisis card. The Señal does not read it: it keeps
+    ``STRATEGY.min_margin_of_safety_pct`` for everyone (decision of 2026-10-04).
+    """
+    from config import OPTIMIZER_PROFILES
+
+    if profile_key not in OPTIMIZER_PROFILES:
+        return None
+    if override:
+        return float(override)
+    return float(OPTIMIZER_PROFILES[profile_key].margin_of_safety_pct)
