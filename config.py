@@ -752,6 +752,64 @@ LLM_PRICES = LlmPriceConfig()
 
 
 @dataclass(frozen=True)
+class FuentesConfig:
+    """Fuentes de la Estimación objetiva por Clase de activo (EO-2a, ADR 0001).
+
+    Fields:
+      stale_warn_months — una Fuente con más meses que esto se marca «vieja»
+                          (sigue contando en el central).
+      stale_drop_months — con más meses que esto sale del central y del rango;
+                          sigue en el desglose, marcada. Decisión de la sesión de
+                          diseño del 2026-10-03 (Q22): 12 y 24.
+      data_file         — el archivo curado con las proyecciones citadas.
+      asset_classes     — las seis Clases (decisión del usuario, 2026-10-04): clave
+                          → rótulo. Emergentes incluye Argentina.
+      declared_absent   — Clases sin Fuente externa creíble: no tienen central y la
+                          vista las rotula «sin Fuente externa» (glosario).
+    """
+
+    stale_warn_months: int = 12
+    stale_drop_months: int = 24
+    data_file: str = "data/fuentes/proyecciones.json"
+    asset_classes: Mapping[str, str] = field(default_factory=lambda: {
+        "us_equity":       "Acciones EE.UU.",
+        "developed_ex_us": "Acciones desarrolladas ex-EE.UU.",
+        "emerging":        "Acciones emergentes (incl. Argentina)",
+        "us_bonds":        "Bonos EE.UU.",
+        "reits":           "REITs",
+        "crypto":          "Cripto",
+    })
+    declared_absent: tuple = ("crypto",)
+    # Ticker → Clase. Países por la clasificación de MSCI (desarrollados/emergentes);
+    # Argentina va con emergentes por decisión del usuario (2026-10-04), aunque MSCI
+    # la trate aparte. Un país fuera de las dos listas no tiene Clase: se reporta.
+    developed_countries: FrozenSet[str] = frozenset({
+        "Canada", "United Kingdom", "Germany", "France", "Netherlands", "Switzerland",
+        "Denmark", "Sweden", "Spain", "Italy", "Norway", "Belgium", "Finland", "Ireland",
+        "Austria", "Portugal", "Japan", "Australia", "Hong Kong", "Singapore",
+        "New Zealand", "Israel",
+    })
+    emerging_countries: FrozenSet[str] = frozenset({
+        "China", "Taiwan", "South Korea", "India", "Brazil", "Mexico", "Chile", "Peru",
+        "Colombia", "South Africa", "Indonesia", "Malaysia", "Thailand", "Philippines",
+        "Turkey", "Poland", "Greece", "Saudi Arabia", "United Arab Emirates", "Qatar",
+        "Kuwait", "Hungary", "Czech Republic", "Egypt", "Argentina",
+    })
+    # Los ETFs de los universos (data/universes/), asignados a mano: un fondo no
+    # tiene país ni sector propios que alcancen para clasificarlo.
+    etf_classes: Mapping[str, str] = field(default_factory=lambda: {
+        "SPY": "us_equity", "QQQ": "us_equity", "VTI": "us_equity", "DGRO": "us_equity",
+        "HDV": "us_equity", "NOBL": "us_equity", "SCHD": "us_equity", "VGT": "us_equity",
+        "VYM": "us_equity",
+        "BND": "us_bonds",
+        "EWW": "emerging", "EWZ": "emerging", "ILF": "emerging",
+    })
+
+
+FUENTES = FuentesConfig()
+
+
+@dataclass(frozen=True)
 class GroqTransportConfig:
     """Transporte Groq/gpt-oss. No es un prompt: es el techo y el reasoning.
 

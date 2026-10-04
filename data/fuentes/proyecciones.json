@@ -1,0 +1,186 @@
+{
+  "_doc": [
+    "Proyecciones citadas de gestoras por Clase de activo (EO-2a, ADR 0001). Mantenido a mano: se revisa una vez por año.",
+    "Campos por entrada:",
+    "  name / kind      quién lo publica; kind = gestora | valuacion | historia",
+    "  asset_class      clave de FUENTES.asset_classes (config.py)",
+    "  value_pct        rendimiento anual esperado (%); si la Fuente da un rango, el centro del rango",
+    "  range_pct        [bajo, alto] cuando la Fuente publica un rango",
+    "  basis / currency nominal | real, y moneda",
+    "  as_of            fecha de corte del dato (YYYY-MM-DD); de ella sale la antigüedad",
+    "  edition / source edición y URL citable",
+    "  note             dónde está el número (página, tabla, frase) y sus salvedades",
+    "Regla: sólo números que se pueden citar. Lo que no se pudo citar queda afuera y se lista abajo.",
+    "Fuera de la tabla (2026-10-04): Research Affiliates (ahora Syzygy Asset Management): su Asset Allocation Interactive se dibuja con JavaScript y no expone los números sin sesión; J.P. Morgan bonos agregados de EE.UU.: no figura como número en el informe ni en el resumen, sólo en la matriz interactiva; Vanguard REITs de EE.UU.: sólo en el gráfico interactivo."
+  ],
+  "entries": [
+    {
+      "name": "J.P. Morgan LTCMA 2026",
+      "kind": "gestora",
+      "asset_class": "us_equity",
+      "value_pct": 6.7,
+      "basis": "nominal",
+      "currency": "USD",
+      "as_of": "2025-09-30",
+      "edition": "2026 Long-Term Capital Market Assumptions (30.ª edición, publicada 2025-10-20)",
+      "source": "https://am.jpmorgan.com/us/en/asset-management/institutional/insights/portfolio-insights/ltcma/",
+      "note": "«U.S. large cap equities 6.7%», tabla «Public asset return forecasts (USD)», p. 30 del informe completo; también en el comunicado de prensa. Horizonte 10–15 años. El PDF oficial del informe completo no se pudo descargar del sitio de J.P. Morgan (404); el texto se verificó en una copia del informe completo (bcapital.partners/wp-content/uploads/2025/10/JP-Morgan-2026-Long-Term-Capital-Market-Assumptions.pdf)."
+    },
+    {
+      "name": "J.P. Morgan LTCMA 2026",
+      "kind": "gestora",
+      "asset_class": "developed_ex_us",
+      "value_pct": 7.5,
+      "basis": "nominal",
+      "currency": "USD",
+      "as_of": "2025-09-30",
+      "edition": "2026 Long-Term Capital Market Assumptions (30.ª edición, publicada 2025-10-20)",
+      "source": "https://am.jpmorgan.com/us/en/asset-management/institutional/insights/portfolio-insights/ltcma/",
+      "note": "EAFE, «Total return (USD), 7.5%», Exhibit 5 «Contributions to equity return forecasts for key indices», p. 13. Horizonte 10–15 años. El PDF oficial del informe completo no se pudo descargar del sitio de J.P. Morgan (404); el texto se verificó en una copia del informe completo (bcapital.partners/wp-content/uploads/2025/10/JP-Morgan-2026-Long-Term-Capital-Market-Assumptions.pdf)."
+    },
+    {
+      "name": "J.P. Morgan LTCMA 2026",
+      "kind": "gestora",
+      "asset_class": "emerging",
+      "value_pct": 7.8,
+      "basis": "nominal",
+      "currency": "USD",
+      "as_of": "2025-09-30",
+      "edition": "2026 Long-Term Capital Market Assumptions (30.ª edición, publicada 2025-10-20)",
+      "source": "https://am.jpmorgan.com/us/en/asset-management/institutional/insights/portfolio-insights/ltcma/",
+      "note": "Emerging markets, «Total return (USD), 7.8%», Exhibit 5, p. 13; el comunicado de prensa dice «Emerging markets equities are expected to return 7.8% (USD)». Horizonte 10–15 años. El PDF oficial del informe completo no se pudo descargar del sitio de J.P. Morgan (404); el texto se verificó en una copia del informe completo (bcapital.partners/wp-content/uploads/2025/10/JP-Morgan-2026-Long-Term-Capital-Market-Assumptions.pdf)."
+    },
+    {
+      "name": "J.P. Morgan LTCMA 2026",
+      "kind": "gestora",
+      "asset_class": "reits",
+      "value_pct": 8.8,
+      "basis": "nominal",
+      "currency": "USD",
+      "as_of": "2025-09-30",
+      "edition": "2026 Long-Term Capital Market Assumptions (30.ª edición, publicada 2025-10-20)",
+      "source": "https://am.jpmorgan.com/us/en/asset-management/institutional/insights/portfolio-insights/ltcma/",
+      "note": "«U.S. REITs 8.8», exhibit de activos reales «LTCMA expected returns (leveraged, net of fees, %)», pp. 11 y 32. Horizonte 10–15 años. El PDF oficial del informe completo no se pudo descargar del sitio de J.P. Morgan (404); el texto se verificó en una copia del informe completo (bcapital.partners/wp-content/uploads/2025/10/JP-Morgan-2026-Long-Term-Capital-Market-Assumptions.pdf)."
+    },
+    {
+      "name": "Vanguard VCMM",
+      "kind": "gestora",
+      "asset_class": "us_equity",
+      "value_pct": 5.2,
+      "range_pct": [
+        4.2,
+        6.2
+      ],
+      "basis": "nominal",
+      "currency": "USD",
+      "as_of": "2026-06-30",
+      "edition": "Vanguard Capital Markets Model, pronósticos al 30 de junio de 2026",
+      "source": "https://corporate.vanguard.com/content/corporatesite/us/en/corp/vemo/vemo-return-forecasts.html",
+      "note": "«our 10-year expected annualized return for U.S. equities declined from a range of 4.9%–6.9% to a range of 4.2%–6.2%». El valor es el centro del rango publicado; Vanguard no publica un punto. Nominal, USD, 10 años."
+    },
+    {
+      "name": "Vanguard VCMM",
+      "kind": "gestora",
+      "asset_class": "developed_ex_us",
+      "value_pct": 5.5,
+      "range_pct": [
+        4.5,
+        6.5
+      ],
+      "basis": "nominal",
+      "currency": "USD",
+      "as_of": "2026-06-30",
+      "edition": "Vanguard Capital Markets Model, pronósticos al 30 de junio de 2026",
+      "source": "https://corporate.vanguard.com/content/corporatesite/us/en/corp/vemo/vemo-return-forecasts.html",
+      "note": "«Expected returns for developed markets ex-U.S. fell from a range of 5.4%–7.4% to a range of 4.5%-6.5%». El valor es el centro del rango publicado; Vanguard no publica un punto. Nominal, USD, 10 años."
+    },
+    {
+      "name": "Vanguard VCMM",
+      "kind": "gestora",
+      "asset_class": "emerging",
+      "value_pct": 3.0,
+      "range_pct": [
+        2.0,
+        4.0
+      ],
+      "basis": "nominal",
+      "currency": "USD",
+      "as_of": "2026-06-30",
+      "edition": "Vanguard Capital Markets Model, pronósticos al 30 de junio de 2026",
+      "source": "https://corporate.vanguard.com/content/corporatesite/us/en/corp/vemo/vemo-return-forecasts.html",
+      "note": "«emerging markets expected returns fell from a range of 3.6%–5.6% to a range of 2%–4%». El valor es el centro del rango publicado; Vanguard no publica un punto. Nominal, USD, 10 años."
+    },
+    {
+      "name": "Vanguard VEMO 2026",
+      "kind": "gestora",
+      "asset_class": "us_bonds",
+      "value_pct": 4.0,
+      "basis": "nominal",
+      "currency": "USD",
+      "as_of": "2025-12-01",
+      "edition": "Vanguard economic and market outlook for 2026 (diciembre de 2025)",
+      "source": "https://corporate.vanguard.com/content/dam/corp/research/pdf/isg_vemo_2026.pdf",
+      "note": "«Projected at around 4% over the coming decade, returns on high-quality U.S. bonds…», p. 15. Cifra aproximada en el texto («around»); el documento no da fecha de corte para ella, se usa el mes de publicación. La página de pronósticos de junio 2026 sólo dice que el retorno de bonos agregados «increased modestly», sin número."
+    },
+    {
+      "name": "BlackRock CMA",
+      "kind": "gestora",
+      "asset_class": "us_equity",
+      "value_pct": 8.97,
+      "basis": "nominal",
+      "currency": "USD",
+      "as_of": "2026-06-30",
+      "edition": "BlackRock Capital Market Assumptions, agosto 2026, escenario «Starting point», 10 años",
+      "source": "https://www.blackrock.com/blk-inst-c-assets/images/tools/blackrock-investment-institute/cma/blackrock-capital-market-assumptions.xlsx",
+      "note": "Hoja «Starting point», fila «US large cap equities» (MSCI USA Index), columna «10 year»; «August 2026, data as of 30 June 2026»."
+    },
+    {
+      "name": "BlackRock CMA",
+      "kind": "gestora",
+      "asset_class": "developed_ex_us",
+      "value_pct": 7.77,
+      "basis": "nominal",
+      "currency": "USD",
+      "as_of": "2026-06-30",
+      "edition": "BlackRock Capital Market Assumptions, agosto 2026, escenario «Starting point», 10 años",
+      "source": "https://www.blackrock.com/blk-inst-c-assets/images/tools/blackrock-investment-institute/cma/blackrock-capital-market-assumptions.xlsx",
+      "note": "Hoja «Starting point», fila «Global ex-US large cap equities» (MSCI World ex-US Index), columna «10 year»; «August 2026, data as of 30 June 2026»."
+    },
+    {
+      "name": "BlackRock CMA",
+      "kind": "gestora",
+      "asset_class": "emerging",
+      "value_pct": 8.8,
+      "basis": "nominal",
+      "currency": "USD",
+      "as_of": "2026-06-30",
+      "edition": "BlackRock Capital Market Assumptions, agosto 2026, escenario «Starting point», 10 años",
+      "source": "https://www.blackrock.com/blk-inst-c-assets/images/tools/blackrock-investment-institute/cma/blackrock-capital-market-assumptions.xlsx",
+      "note": "Hoja «Starting point», fila «Emerging large cap equities» (MSCI Emerging Markets Index), columna «10 year»; «August 2026, data as of 30 June 2026»."
+    },
+    {
+      "name": "BlackRock CMA",
+      "kind": "gestora",
+      "asset_class": "us_bonds",
+      "value_pct": 4.88,
+      "basis": "nominal",
+      "currency": "USD",
+      "as_of": "2026-06-30",
+      "edition": "BlackRock Capital Market Assumptions, agosto 2026, escenario «Starting point», 10 años",
+      "source": "https://www.blackrock.com/blk-inst-c-assets/images/tools/blackrock-investment-institute/cma/blackrock-capital-market-assumptions.xlsx",
+      "note": "Hoja «Starting point», fila «US aggregate bond index» (Bloomberg Barclays U.S. Aggregate Index), columna «10 year»; «August 2026, data as of 30 June 2026»."
+    },
+    {
+      "name": "BlackRock CMA",
+      "kind": "gestora",
+      "asset_class": "reits",
+      "value_pct": 7.43,
+      "basis": "nominal",
+      "currency": "USD",
+      "as_of": "2026-06-30",
+      "edition": "BlackRock Capital Market Assumptions, agosto 2026, escenario «Starting point», 10 años",
+      "source": "https://www.blackrock.com/blk-inst-c-assets/images/tools/blackrock-investment-institute/cma/blackrock-capital-market-assumptions.xlsx",
+      "note": "Hoja «Starting point», fila «Listed REITs» (FTSE EPRA Nareit Developed Index (Gross)), columna «10 year»; «August 2026, data as of 30 June 2026». Ojo: el índice es global desarrollado, no sólo EE.UU.; BlackRock no publica REITs de EE.UU. por separado."
+    }
+  ]
+}

@@ -19,7 +19,7 @@ ajuste del usuario del 2026-10-04 (EO-1 en tres PRs): la Estimación objetiva
 
 1. ~~**Sincronización** — este orden, el ADR 0001 y el glosario llegan a `main` (sólo docs).~~
 2. ~~**SIM-GAP-PCT + KATEX-DOLLAR-PLAN** — banda 4, un PR: el mismo bloque «Dos escenarios».~~
-3. ~~**EO-0 → EO-1a → EO-1b → EO-1c**~~ **→ EO-2 → EO-3 → EO-4**; EO-4 no entra si EO-3 no pasa.
+3. ~~**EO-0 → EO-1a → EO-1b → EO-1c → EO-2a**~~ **→ EO-2b → EO-2c → EO-3 → EO-4**; EO-4 no entra si EO-3 no pasa.
 4. **EO-5** (después de EO-1b) y **EO-6** (después de EO-1a), en paralelo. Ver bloque 6.
 
 Esperan disparador: U5-1b y COM-*. Sin orden: STREAMLIT-1.65 (sin banda), PORTFOLIO-FX,
@@ -100,7 +100,8 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **IDEA-5 IMPUESTOS** | 5 | Módulo de impuestos personales —bienes personales, retención de dividendos, ganancia de capital— (idea 5 de `DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`; `TaxConfig` sólo modela el impuesto corporativo). Sin alcance ni orden. Ver bloque 4 |
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **GOAL-PRIORITY-TEXT** | 5 | Una meta importada a mano con la prioridad en texto («esencial») llega a `goals_list` sin convertir y «Simular» la pasa por `int()`. Residual declarado de PLAN-GOALS-KEYS (#214); ningún export de la app la escribe así. Anotado el 2026-10-02, **no priorizado**. Ver bloque 4 |
-| **EO-2** | dec. | Fuentes por Clase de activo (historia, CAPE, tabla de gestoras), Desacuerdo, antigüedad, cripto y Argentina. Ver bloque 6 |
+| **EO-2b** | dec. | Valuación y Fuente «Historia»: CAPE de Shiller, rendimientos de bonos de FRED, la serie más larga por Clase. Ver bloque 6 |
+| **EO-2c** | dec. | Riesgo país desde una fuente automática para el descuento argentino; si no hay una gratuita y estable, queda el 0,85 rotulado. Ver bloque 6 |
 | **EO-3** | dec. | Backtest del método con historia y CAPE: es la condición de EO-4. Ver bloque 6 |
 | **EO-4** | dec. | Una Estimación por activo para el Monte Carlo y el optimizador; se borra el haircut global; Escenarios en la UI, también en lugar de «Comparar perfiles». Ver bloque 6 |
 | **EO-5** | dec. | La IA calibrada: prompts, `recommended_max_allocation`, el PM recibe la Postura, oráculo de postura. Ver bloque 6 |
@@ -337,12 +338,19 @@ Toda etapa que mueva μ o el Monte Carlo sube `ENGINE_VERSION`.
     `STRATEGY.min_margin_of_safety_pct` (10 %); su rótulo de «regla del ranking» va
     con EO-6, junto al de «no calibrado».
   - El **Escenario de planificación** pasa a EO-4: necesita los Escenarios.
-- **EO-2 — Fuentes.** Por Clase de activo: historia, valuación (CAPE de Shiller) y
-  la tabla de proyecciones a 10 años de Vanguard, JPMorgan, BlackRock y Research
-  Affiliates, cargada a mano una vez por año con `as_of` y `source` (patrón
-  `LlmPriceConfig`). Central = mediana; Desacuerdo = rango. Aviso a los 12 meses,
-  fuera del central a los 24 (umbrales en `config.py`). Argentina: emergentes +
-  riesgo país como Fuente del descuento. Cripto: Fuente declarada ausente.
+- **EO-2 — Fuentes**, partido en tres PRs (decisiones del usuario, 2026-10-04): seis
+  Clases —acciones EE.UU., desarrolladas ex-EE.UU., emergentes (incluye Argentina),
+  bonos EE.UU., REITs y cripto (Fuente declarada ausente)—; la tabla de gestoras la
+  investiga la tarea y la valida el usuario antes del merge.
+  - ~~**EO-2a — el modelo y las gestoras.**~~ *cerrada (2026-10-04)*, ver `ROADMAP.md`. `analysis/fuentes.py` (Fuente, mediana y
+    rango por Clase, antigüedad: aviso a los 12 meses, fuera del central a los 24,
+    umbrales en `config.FUENTES`), el mapeo ticker → Clase, el archivo citado
+    `data/fuentes/proyecciones.json` y la vista «Supuestos». No alimenta ningún motor.
+  - **EO-2b — valuación e historia.** CAPE de Shiller (copia fechada en el repo; verificar
+    la licencia de uso), rendimientos de bonos de FRED (ya ingeridos por `macro_rag`) y la
+    Fuente «Historia» con la serie más larga por Clase, rotulada con su período.
+  - **EO-2c — riesgo país.** Desde una fuente automática para `ars_risk_discount`; si no
+    hay una gratuita y estable, queda el 0,85 rotulado «pendiente de Fuente».
 - **EO-3 — Backtest del método.** Con las Fuentes de historia larga (precios y CAPE
   de Shiller), point-in-time como PIT: ¿el rango declarado contiene el resultado a
   10 años con la frecuencia que dice? La tolerancia va en `config.py`. Si falla se

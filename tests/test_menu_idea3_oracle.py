@@ -37,6 +37,9 @@ VISIBLE = {
     "12_Plan.py", "3_Portfolio.py", "5_Optimizer.py",
     "19_Screener_Watchlist.py", "2_Stock_Analysis.py",
     "7_Simulaciones.py", "6_Backtesting.py",
+    # EO-2a (ADR 0001): «Supuestos» muestra las Fuentes y el Desacuerdo de cada Clase,
+    # la base de toda proyección desde EO-4; el ADR pide el Desacuerdo siempre visible.
+    "21_Supuestos.py",
     "20_Seguimiento.py",
     "9_Settings.py",
 }
@@ -61,7 +64,7 @@ def _registered_pages() -> dict[str, str]:
     return pages
 
 
-def test_the_everyday_menu_has_eleven_entries():
+def test_the_everyday_menu_has_twelve_entries():
     pages = _registered_pages()
     visible = {p for p, v in pages.items() if v == "visible" and p not in DEV_ONLY}
     assert visible == VISIBLE

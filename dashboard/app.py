@@ -407,6 +407,8 @@ pg = st.navigation(
         "Proyectar": [
             st.Page(str(_pages_dir / "7_Simulaciones.py"), title="Simulaciones", icon="🎲"),
             st.Page(str(_pages_dir / "6_Backtesting.py"),  title="Backtesting",  icon="📉"),
+            # EO-2a (ADR 0001): las Fuentes y el Desacuerdo de cada Clase de activo.
+            st.Page(str(_pages_dir / "21_Supuestos.py"),   title="Supuestos",    icon="🧭"),
         ],
         "Seguimiento": [
             st.Page(str(_pages_dir / "20_Seguimiento.py"), title="Alertas y Track Record",
