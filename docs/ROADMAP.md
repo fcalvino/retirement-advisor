@@ -10,6 +10,17 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## EO-0 — la pestaña de metas simula con los supuestos de la principal (2026-10-04)
+
+Primera etapa de la Estimación objetiva (ADR 0001), paso 3 de la decimoquinta repriorización. Alcance reducido por el `/decidir-proyecto` sobre `a175ca8`, con la pestaña «Comparar perfiles» decidida por el usuario (2026-10-04: queda tal cual hasta EO-4).
+
+- **El arreglo:** la pestaña de metas de Simulaciones ya no aplica `_PLAN_MC_SCALES`. `cached_goal_simulation` y `cached_goal_savings_target` corren con las escalas de la pestaña principal (1,0 y 1,0; el haircut global de `MONTE_CARLO` sigue hasta EO-4). Antes, con Conservador, rendimiento ×0,70 × 0,80 = ×0,56 y volatilidad ×1,15 × 1,10 = ×1,265; con Moderado, ×0,64 y ×1,21; con Agresivo, ×0,76 y ×1,10.
+- **El selector `plan_profile` se queda:** elige el perfil de «Optimizar para mis metas» y el que nombra el PDF; una ayuda nueva dice que no cambia la simulación.
+- **Lo que salió de EO-0:** la versión en `data/plan_health.py` —la alerta de «plan envejecido» compara sólo la deriva ponderada de precios y la P50 de cada registro es la del plan al guardarse, así que un cambio de método no puede dispararla— y la del track record, que pasa a EO-6 como versión del método de señales. `ENGINE_VERSION` no se sube: `goal_plan_result` vive sólo en la sesión y subirla sin que cambie un plan guardado da un aviso falso de plan desactualizado.
+- **Oráculo:** `tests/test_eo0_plan_tab_scale_oracle.py` (AppTest, historia plana): la corrida de metas y el consejo de ahorro reciben las escalas de la llamada principal, con cada perfil. Los seis fallan en `a175ca8`.
+
+---
+
 ## SIM-GAP-PCT — «Dos escenarios» rotula la baja, no la suba; los montos no se leen como KaTeX (2026-10-03)
 
 Segundo paso de la decimoquinta repriorización (sobre `f8c9e76`; el primero fue la sincronización, #227 `55107b3`), banda 4. Cierra **SIM-GAP-PCT** y **KATEX-DOLLAR-PLAN** en un PR: los dos rompían el mismo bloque «Dos escenarios».
