@@ -1937,14 +1937,16 @@ def _tab_goals_content():
             options=["conservative", "moderate", "aggressive"],
             format_func=lambda p: {"conservative": "🛡️ Conservador", "moderate": "⚖️ Moderado", "aggressive": "🚀 Agresivo"}[p],
             key="plan_profile",
+            help=(
+                "Elige el perfil con que «Optimizar para mis metas» arma la cartera y el que "
+                "figura en el PDF. No cambia los supuestos de la simulación: las metas corren "
+                "con los mismos de la pestaña Monte Carlo."
+            ),
         )
 
-        _PLAN_MC_SCALES = {
-            "conservative": {"vol_scale": 1.15, "return_scale": 0.70},
-            "moderate":     {"vol_scale": 1.10, "return_scale": 0.80},
-            "aggressive":   {"vol_scale": 1.00, "return_scale": 0.95},
-        }
-        plan_scales = _PLAN_MC_SCALES[plan_profile]
+        # EO-0 (ADR 0001): el perfil no escala la simulación. Las metas corren con
+        # los supuestos de la pestaña principal; el perfil sólo elige el del
+        # optimizador por metas y el que nombra el PDF.
 
         # ---- Run simulation ----
         run_plan = st.button("▶ Simular plan completo", type="primary", key="run_goal_plan")
@@ -1967,8 +1969,6 @@ def _tab_goals_content():
                         goals_serialized=goals_serialized,
                         total_capital=float(plan_total_capital),
                         n_sims=plan_n_sims,
-                        vol_scale=plan_scales["vol_scale"],
-                        return_scale=plan_scales["return_scale"],
                     )
                 st.session_state["goal_plan_result"] = plan_result
 
@@ -2318,8 +2318,6 @@ def _tab_goals_content():
                                 allocated_capital=float(gr.allocated_capital),
                                 target_prob_pct=GOAL_CARD.success_target_pct,
                                 n_sims=GOAL_CARD.advice_n_sims,
-                                vol_scale=plan_scales["vol_scale"],
-                                return_scale=plan_scales["return_scale"],
                             )
 
                         _obj = f"{GOAL_CARD.success_target_pct:.0f}%"

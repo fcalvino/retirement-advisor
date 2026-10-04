@@ -75,3 +75,14 @@ sometida a Calibración donde el horizonte lo permite) y la prudencia se vuelve
   comparación entre versiones distintas se anota como cambio de método y no
   dispara la alerta de deterioro.
 - Se implementa en siete etapas (EO-0 a EO-6, `BACKLOG.md`).
+
+## Nota (2026-10-04, EO-0)
+
+La segunda consecuencia supuso un riesgo que el código no tiene. La alerta de
+«plan envejecido» compara sólo la deriva ponderada de precios entre registros
+(`data/plan_context.py`), y la P50 de cada registro de salud es la del plan al
+guardarse: un cambio de método no puede dispararla, así que el historial de salud
+no necesita guardar la versión. El track record sí la necesita, pero no
+`ENGINE_VERSION` —el contrato del motor del Monte Carlo—, sino una versión del
+método de señales, y entra con EO-6, que es la etapa que cambia las señales. La
+decisión no cambia.

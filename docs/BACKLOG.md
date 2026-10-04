@@ -19,7 +19,7 @@ que ya estaba en cola. La decimocuarta cerró WD-PHASED (#226).
 
 1. ~~**Sincronización** — este orden, el ADR 0001 y el glosario llegan a `main` (sólo docs).~~
 2. ~~**SIM-GAP-PCT + KATEX-DOLLAR-PLAN** — banda 4, un PR: el mismo bloque «Dos escenarios».~~
-3. **EO-0 → EO-1 → EO-2 → EO-3 → EO-4**, en orden; EO-4 no entra si EO-3 no pasa.
+3. ~~**EO-0**~~ **→ EO-1 → EO-2 → EO-3 → EO-4**, en orden; EO-4 no entra si EO-3 no pasa.
 4. **EO-5** y **EO-6**, después de EO-1, en paralelo con EO-2…EO-4. Ver bloque 6.
 
 Esperan disparador: U5-1b y COM-*. Sin orden: STREAMLIT-1.65 (sin banda), PORTFOLIO-FX,
@@ -100,13 +100,12 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **IDEA-5 IMPUESTOS** | 5 | Módulo de impuestos personales —bienes personales, retención de dividendos, ganancia de capital— (idea 5 de `DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`; `TaxConfig` sólo modela el impuesto corporativo). Sin alcance ni orden. Ver bloque 4 |
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **GOAL-PRIORITY-TEXT** | 5 | Una meta importada a mano con la prioridad en texto («esencial») llega a `goals_list` sin convertir y «Simular» la pasa por `int()`. Residual declarado de PLAN-GOALS-KEYS (#214); ningún export de la app la escribe así. Anotado el 2026-10-02, **no priorizado**. Ver bloque 4 |
-| **EO-0** | dec. | Estimación objetiva, etapa 0: se borra la escala por perfil de Simulaciones y el historial de salud y el track record guardan `ENGINE_VERSION`, sin alerta de deterioro entre versiones distintas. El ADR, el glosario, X-07 y CONTEXT §1 llegaron con la sincronización. Ver bloque 6 |
 | **EO-1** | dec. | El Perfil deja de tocar la Estimación; sin Perfil no hay Postura; Exigencia, margen de seguridad y Escenario de planificación pasan al Perfil. Ver bloque 6 |
 | **EO-2** | dec. | Fuentes por Clase de activo (historia, CAPE, tabla de gestoras), Desacuerdo, antigüedad, cripto y Argentina. Ver bloque 6 |
 | **EO-3** | dec. | Backtest del método con historia y CAPE: es la condición de EO-4. Ver bloque 6 |
-| **EO-4** | dec. | Una Estimación por activo para el Monte Carlo y el optimizador; se borra el haircut global; Escenarios en la UI. Ver bloque 6 |
+| **EO-4** | dec. | Una Estimación por activo para el Monte Carlo y el optimizador; se borra el haircut global; Escenarios en la UI, también en lugar de «Comparar perfiles». Ver bloque 6 |
 | **EO-5** | dec. | La IA calibrada: prompts, `recommended_max_allocation`, el PM recibe la Postura, oráculo de postura. Ver bloque 6 |
-| **EO-6** | dec. | Señales: tope simétrico, imputación por mediana del sector, atenuación simétrica, rótulo «no calibrado». Ver bloque 6 |
+| **EO-6** | dec. | Señales: tope simétrico, imputación por mediana del sector, atenuación simétrica, rótulo «no calibrado»; el track record guarda la versión del método de señales. Ver bloque 6 |
 
 Las filas cerradas están en [`ROADMAP.md`](ROADMAP.md): una entrada por fila, con su commit.
 
@@ -304,15 +303,13 @@ ser **Postura** del Perfil. El porqué y lo descartado están en
 [`GLOSARIO.md`](GLOSARIO.md). Banda «dec.»: el orden lo fijó el usuario, no las bandas.
 Toda etapa que mueva μ o el Monte Carlo sube `ENGINE_VERSION`.
 
-- **EO-0 — Arranque.** El ADR, el glosario, CONTEXT §1 («en transición») y X-07
-  fuera de «Fuera de alcance» llegaron con la sincronización. Queda: borrar la
-  escala por perfil escrita en `7_Simulaciones.py` (`_PROFILE_MC_SCALES` y
-  `_PLAN_MC_SCALES`, `:134-138` y `:1939-1943` en `f8c9e76`; ×0,56 al rendimiento
-  en la pestaña Plan con el selector en Conservador, mientras la principal usa
-  1,0), que además viola CONTEXT §5. `data/plan_health.py` y el track record guardan
-  `ENGINE_VERSION`; una comparación entre versiones no dispara la alerta de deterioro
-  y se anota «cambio de método, no del plan». La versión entra antes de mover la
-  primera cifra.
+- ~~**EO-0 — Arranque.**~~ *cerrada (2026-10-04)*, ver `ROADMAP.md`. La pestaña de metas
+  de Simulaciones deja de escalar la simulación por perfil (`_PLAN_MC_SCALES`, ×0,56 al
+  rendimiento con Conservador); el selector se queda para el optimizador por metas y el
+  PDF. Salieron de EO-0, verificado en `a175ca8`: la versión en `data/plan_health.py`
+  —la alerta de deterioro compara sólo la deriva de precios (`data/plan_context.py`)
+  y la P50 de cada registro es la del plan al guardarse— y la del track record, que
+  pasa a EO-6. `ENGINE_VERSION` no se sube: ningún plan guardado sale de esa pestaña.
 - **EO-1 — El Perfil fuera de la Estimación.** `ars_risk_discount` rige para todos
   los perfiles (`optimizer.py:512-523` lo saltea en Agresivo) con el 0,85 actual
   rotulado «pendiente de Fuente» —el valor del riesgo país llega en EO-2; el EMBI no
@@ -342,7 +339,9 @@ Toda etapa que mueva μ o el Monte Carlo sube `ENGINE_VERSION`.
   `mean_haircut`. La UI muestra Escenarios (pesimista/central/optimista, cada uno con
   su p10–p90) y retira «Realista» y «Conservador»; la historia cruda queda como la
   Fuente «Historia» en el desglose. Planes, semáforo, ahorro y salud usan el
-  Escenario de planificación del Perfil; cripto, siempre el pesimista.
+  Escenario de planificación del Perfil; cripto, siempre el pesimista. Reemplaza
+  también la pestaña «Comparar perfiles», que hasta acá conserva `_PROFILE_MC_SCALES`
+  con su rótulo (decisión del usuario, 2026-10-04).
 - **EO-5 — IA calibrada.** Fuera «filosofía conservadora» (`committee_prompts.py`),
   «extremadamente… conservador» y «nunca digas esto es genial» (`prompts.py`),
   «asesor… conservador» (`chat_agent.py:138`); la instrucción es decir lo que la
@@ -357,7 +356,9 @@ Toda etapa que mueva μ o el Monte Carlo sube `ENGINE_VERSION`.
   mediana del sector. Con datos parciales la señal se atenúa hacia HOLD en las dos
   direcciones; el tope de confianza se queda. Los umbrales 82/68/55/45 se rotulan
   «ranking relativo, no calibrado» en la ficha; recalibrar cuando haya outcomes a
-  365 días.
+  365 días. Antes de mover la primera señal, el track record guarda la versión del método
+  de señales —no `ENGINE_VERSION`, que es el contrato del motor del Monte Carlo—, para
+  separar los outcomes de una escalera de los de la otra.
 
 ---
 
