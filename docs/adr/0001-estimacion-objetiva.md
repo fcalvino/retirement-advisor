@@ -86,3 +86,11 @@ no necesita guardar la versión. El track record sí la necesita, pero no
 `ENGINE_VERSION` —el contrato del motor del Monte Carlo—, sino una versión del
 método de señales, y entra con EO-6, que es la etapa que cambia las señales. La
 decisión no cambia.
+
+## Nota (2026-10-04, EO-1a)
+
+«Qué se decidió» dice que el Perfil lleva la «aversión al optimizar». En el código
+no queda como número: el objetivo del optimizador maximiza el ratio sin un λ de
+aversión, y el único δ era el del prior de Black-Litterman, que EO-1a fijó en el de
+mercado. La aversión del Perfil entra sólo por sus topes (posición, volatilidad,
+sector, dividendo) y el desplazamiento de bonos por edad. La decisión no cambia.
