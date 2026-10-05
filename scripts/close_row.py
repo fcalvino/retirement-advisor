@@ -104,6 +104,11 @@ def merge_sha_for(title: str, root: Path, ref: str = "origin/main") -> str:
     first-parent chain that contains it. «The latest merge» would be wrong as
     soon as anything else merged in between. A commit made on ``ref`` itself
     (squash, direct push) is its own answer.
+
+    The descendant merges are listed without ``--first-parent`` and then
+    filtered to ``ref``'s chain: combined with ``--ancestry-path``, that flag
+    only follows first parents, so it found the merge only when the row came in
+    the branch's last commit (EO-2a and EO-2b came back empty).
     """
     introduced = _git(root, "log", ref, "--format=%H", f"-S{title}", "--", CONTEXT)
     if not introduced:
@@ -112,15 +117,16 @@ def merge_sha_for(title: str, root: Path, ref: str = "origin/main") -> str:
             "Hacé `git fetch` o pasá --pending-sha"
         )
     commit = introduced[-1]
-    if commit in _git(root, "rev-list", "--first-parent", ref):
+    chain = set(_git(root, "rev-list", "--first-parent", ref))
+    if commit in chain:
         return commit[:7]
     merges = _git(
-        root, "rev-list", "--reverse", "--first-parent", "--merges", "--ancestry-path",
-        f"{commit}..{ref}",
+        root, "rev-list", "--reverse", "--merges", "--ancestry-path", f"{commit}..{ref}",
     )
-    if not merges:
+    on_chain = [m for m in merges if m in chain]
+    if not on_chain:
         raise CloseError(f"no encontré el merge de {commit[:7]} en {ref}; pasá --pending-sha")
-    return merges[0][:7]
+    return on_chain[0][:7]
 
 
 def update_context(
