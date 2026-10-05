@@ -227,3 +227,33 @@ def test_pending_sha_is_the_merge_that_brought_the_row(tmp_path: Path):
 
     with pytest.raises(CloseError, match="no está en main"):
         merge_sha_for("**Nunca (NEVER)**", tmp_path, "main")
+
+
+def test_the_row_can_come_in_a_commit_that_is_not_the_branch_tip(tmp_path: Path):
+    """EO-2a (2de5baa) and EO-2b (49221b7): the row came in the PR's first commit and
+    a second commit followed. ``--first-parent`` with ``--ancestry-path`` only saw a
+    merge whose second parent was the row's commit itself, so the lookup came back
+    empty and ``estado.py`` called a merged PR «una rama abierta»."""
+    (tmp_path / "docs").mkdir()
+    ctx = tmp_path / "docs" / "CONTEXT.md"
+    _git(tmp_path, "init", "-q", "-b", "main")
+    ctx.write_text("| `abc1234` | **Viejo (OLD)**: x. |\n", encoding="utf-8")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-q", "-m", "base")
+    # main moves on its own before the PR merges, so the merge's first parent is
+    # not an ancestor of the row's commit.
+    _git(tmp_path, "switch", "-q", "-c", "pr-1")
+    ctx.write_text("| `(pending)` | **Dos commits (TWO)**: x. |\n" + ctx.read_text(),
+                   encoding="utf-8")
+    _git(tmp_path, "commit", "-q", "-am", "pr 1: la fila")
+    (tmp_path / "fix.txt").write_text("y", encoding="utf-8")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-q", "-m", "pr 1: un arreglo después")
+    _git(tmp_path, "switch", "-q", "main")
+    (tmp_path / "main.txt").write_text("z", encoding="utf-8")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-q", "-m", "otro cambio en main")
+    _git(tmp_path, "merge", "-q", "--no-ff", "pr-1", "-m", "Merge pr-1")
+    expected = _git(tmp_path, "rev-parse", "--short=7", "HEAD")
+
+    assert merge_sha_for("**Dos commits (TWO)**", tmp_path, "main") == expected

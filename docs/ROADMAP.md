@@ -10,6 +10,16 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## CLOSE-ROW-MERGE-SHA — close_row.py y estado.py encuentran el merge aunque la fila no venga en el último commit (2026-10-05)
+
+Tooling, no cierra una fila del BACKLOG (decisión del usuario, 2026-10-05). `merge_sha_for` (`scripts/close_row.py`, también lo usa `scripts/estado.py`) no encontraba el merge de un PR cuya fila `(pending)` de CONTEXT §9 entró en un commit que no era el último de la rama: con `--ancestry-path`, `--first-parent` sólo sigue primeros padres. Pasó con EO-2a (`--pending-sha` a mano) y con EO-2b (`estado.py` lo llamó «rama abierta» ya mergeado).
+
+- **Arreglo:** los merges descendientes se listan sin `--first-parent` y se toma el primero de la cadena de primeros padres de `ref`.
+- **Contra `origin/main`:** EO-1c → `d5938d6`, EO-2a → `9c74a68`, EO-2b → `708dbd2`.
+- **Test:** `tests/test_close_row.py`, una rama de dos commits con la fila en el primero (roja en `708dbd2`).
+
+---
+
 ## EO-2b — la valuación y la Historia por Clase de activo entran a las Fuentes (2026-10-05)
 
 Segunda parte de EO-2 (ADR 0001). Decisiones del usuario (2026-10-05): de Shiller, sólo números derivados (ie_data.xls no trae licencia y el repo es público); CAPE → rendimiento como 1/CAPE + inflación implícita; al central entran todas las Fuentes; la Historia de bonos es VBMFX, no el Tesoro de Shiller.
