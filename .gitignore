@@ -64,3 +64,7 @@ plan.md
 
 # Live eval runs (LLM-4): evidence about a model on a day, not source
 data/eval_runs/
+
+# EO-2b: copia local de ie_data.xls de Shiller (sin licencia; el repo es público).
+# Se versionan sólo los números derivados, en data/fuentes/proyecciones.json.
+data/fuentes/raw/

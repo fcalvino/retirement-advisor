@@ -1,4 +1,4 @@
-"""Supuestos — de dónde salen los rendimientos de cada Clase de activo (EO-2a, ADR 0001).
+"""Supuestos — de dónde salen los rendimientos de cada Clase de activo (EO-2a/2b, ADR 0001).
 
 Muestra, por Clase, la mediana de las Fuentes vigentes (el central), su rango (el
 Desacuerdo) y cada Fuente con su fecha, su antigüedad y su cita. Todavía no alimenta
@@ -15,8 +15,9 @@ from config import FUENTES
 st.title("🧭 Supuestos")
 st.caption(
     "De dónde salen los rendimientos esperados de cada Clase de activo. Cada número es "
-    "de una **Fuente** con fecha y cita; el **central** es la mediana de las Fuentes "
-    "vigentes y el **Desacuerdo**, su rango. 💵 Nominal, en USD, anual, a ~10 años."
+    "de una **Fuente** con fecha y cita —una gestora, la valuación de hoy o la historia "
+    "de la Clase—; el **central** es la mediana de las Fuentes vigentes y el "
+    "**Desacuerdo**, su rango. 💵 Nominal, en USD, anual."
 )
 st.info(
     "Estos supuestos todavía **no alimentan** las proyecciones: Simulaciones y el "
@@ -28,11 +29,17 @@ _today = fuentes.today()
 _summaries = fuentes.summarize_all(fuentes.load_shipped(), today=_today)
 
 
+def _kind_label(f) -> str:
+    if f.kind == "historia" and f.period_start:
+        return f"historia {f.period_start:%Y-%m} → {f.as_of:%Y-%m}"
+    return {"gestora": "gestora", "valuacion": "valuación"}.get(f.kind, f.kind)
+
+
 def _source_line(f, flag: str) -> str:
     rng = f" (rango {f.range_pct[0]:.1f}%–{f.range_pct[1]:.1f}%)" if f.range_pct else ""
     age = fuentes.age_months(f.as_of, _today)
     return (
-        f"**{f.name}**: {f.value_pct:.1f}%{rng} · {f.basis}, {f.currency} · al "
+        f"**{f.name}** ({_kind_label(f)}): {f.value_pct:.1f}%{rng} · {f.basis}, {f.currency} · al "
         f"{f.as_of.isoformat()} ({age} meses){flag} · [cita]({f.source})"
     )
 

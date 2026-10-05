@@ -1,19 +1,25 @@
-"""Fuentes por Clase de activo: central y Desacuerdo (EO-2a, ADR 0001).
+"""Fuentes por Clase de activo: central y Desacuerdo (EO-2a/EO-2b, ADR 0001).
 
 Una Estimación Objetiva sale de Fuentes declaradas —cada una con fecha y
 procedencia— agrupadas por Clase de activo. Este módulo sólo describe: arma, por
 Clase, la mediana de las Fuentes vigentes (el central) y su rango (el Desacuerdo).
 Ningún motor lo consume todavía; eso es EO-4.
+
+Tres tipos de Fuente: ``gestora`` (proyecciones publicadas, a mano), ``valuacion``
+(CAPE de Shiller, Tesoro a 10 años) e ``historia`` (la serie más larga de la Clase).
+Las dos últimas las arma ``scripts/refresh_fuentes.py`` con las funciones puras de
+abajo y las escribe, fechadas, en el archivo curado.
 """
 
 from __future__ import annotations
 
+import calendar
 import json
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from statistics import median
-from typing import List, Optional
+from typing import List, Optional, Sequence, Tuple
 
 from config import FUENTES
 
@@ -33,6 +39,7 @@ class Fuente:
     edition: str = ""    # edición o documento
     range_pct: Optional[tuple] = None   # rango publicado por la Fuente, si da uno
     note: str = ""       # dónde está el número (página, tabla) y sus salvedades
+    period_start: Optional[date] = None  # Historia: desde cuándo (hasta ``as_of``)
 
 
 @dataclass
@@ -75,6 +82,12 @@ def summarize_class(asset_class: str, sources: List[Fuente], *, today: date) -> 
         if age > FUENTES.stale_warn_months:
             summary.stale.append(s)
         summary.used.append(s)
+    bases = {s.basis for s in summary.used}
+    if len(bases) > 1:
+        raise ValueError(
+            f"Fuentes de distinta base en {asset_class} ({', '.join(sorted(bases))}): "
+            "una mediana entre nominal y real no significa nada"
+        )
     values = [s.value_pct for s in summary.used]
     if values:
         summary.central_pct = float(median(values))
@@ -139,6 +152,8 @@ def load_sources(path: Path | str) -> List[Fuente]:
             as_of=date.fromisoformat(e["as_of"]), source=e["source"],
             edition=e.get("edition", ""), range_pct=tuple(rng) if rng else None,
             note=e.get("note", ""),
+            period_start=(date.fromisoformat(e["period_start"])
+                          if e.get("period_start") else None),
         ))
     return out
 
@@ -163,4 +178,127 @@ def summarize_all(sources: List[Fuente], *, today: date) -> dict:
     return {
         cls: summarize_class(cls, [s for s in sources if s.asset_class == cls], today=today)
         for cls in FUENTES.asset_classes
+    }
+
+
+# --------------------------------------------------------------------------- #
+#  Valuación e Historia (EO-2b): aritmética pura                               #
+# --------------------------------------------------------------------------- #
+
+def years_between(start: date, end: date) -> float:
+    """Años entre dos fechas, en días de 365,25."""
+    return (end - start).days / 365.25
+
+
+def annualized_pct(start_value: float, end_value: float, years: float) -> float:
+    """Rendimiento anual compuesto, en %."""
+    return ((end_value / start_value) ** (1.0 / years) - 1.0) * 100.0
+
+
+def real_to_nominal_pct(real_pct: float, inflation_pct: float) -> float:
+    """Un rendimiento real llevado a nominal con la inflación (Fisher, compuesto)."""
+    return ((1 + real_pct / 100.0) * (1 + inflation_pct / 100.0) - 1.0) * 100.0
+
+
+def cape_expected_return_pct(cape: float, breakeven_pct: float) -> float:
+    """Rendimiento esperado nominal desde la valuación: 1/CAPE (real) + inflación implícita.
+
+    El rendimiento de las ganancias ajustadas por ciclo es una estimación del
+    rendimiento real a largo plazo; se lleva a nominal con la inflación que descuenta
+    el mercado de bonos a 10 años (decisión del usuario, 2026-10-05).
+    """
+    return real_to_nominal_pct(100.0 / cape, breakeven_pct)
+
+
+def _month_end(year: int, month: int) -> date:
+    return date(year, month, calendar.monthrange(year, month)[1])
+
+
+def cut_at_month_end(obs: Sequence[Tuple[date, float]], *, today: date) -> List[Tuple[date, float]]:
+    """Las observaciones hasta el último mes completo antes de ``today``."""
+    first_of_month = today.replace(day=1)
+    return [(d, v) for d, v in obs if d < first_of_month]
+
+
+@dataclass(frozen=True)
+class ShillerRow:
+    """Una fila mensual de ie_data.xls: lo que EO-2b usa de ella."""
+
+    year: int
+    month: int
+    cpi: float
+    real_tr_price: float          # «Real Total Return Price»
+    cape: Optional[float]         # «P/E10 or CAPE»; None antes de 1881
+
+
+def shiller_entries(rows: Sequence[ShillerRow], *, breakeven_pct: float,
+                    breakeven_as_of: str, file_note: str) -> List[dict]:
+    """La valuación (CAPE) y la Historia de acciones de EE.UU. desde las filas de Shiller.
+
+    Saltea las ``FUENTES.shiller_provisional_rows`` últimas: Shiller publica el mes en
+    curso con el precio del día 1 y el IPC estimado. La Historia es el rendimiento
+    total real del S&P desde la primera fila, llevado a nominal con el IPC del mismo
+    período.
+    """
+    used = list(rows)[: len(rows) - FUENTES.shiller_provisional_rows]
+    first, last = used[0], used[-1]
+    end = _month_end(last.year, last.month)
+    months = (last.year - first.year) * 12 + (last.month - first.month)
+    years = months / 12.0
+    real = annualized_pct(first.real_tr_price, last.real_tr_price, years)
+    cpi = annualized_pct(first.cpi, last.cpi, years)
+    common = {"asset_class": "us_equity", "basis": "nominal", "currency": "USD",
+              "as_of": end.isoformat(), "source": FUENTES.shiller_page}
+    return [
+        {
+            **common, "name": "CAPE de Shiller", "kind": "valuacion",
+            "value_pct": round(cape_expected_return_pct(last.cape, breakeven_pct), 2),
+            "edition": f"ie_data.xls, CAPE de {last.year}-{last.month:02d}",
+            "note": (f"CAPE {last.cape:.2f} → 1/CAPE = {100 / last.cape:.2f} % real, compuesto "
+                     f"con la inflación implícita a 10 años de FRED ({FUENTES.breakeven_series}) "
+                     f"{breakeven_pct:.2f} % al {breakeven_as_of}. {file_note}"),
+        },
+        {
+            **common, "name": "S&P de Shiller", "kind": "historia",
+            "value_pct": round(real_to_nominal_pct(real, cpi), 2),
+            "period_start": date(first.year, first.month, 1).isoformat(),
+            "edition": f"ie_data.xls, {first.year}-{first.month:02d} a {last.year}-{last.month:02d}",
+            "note": (f"Rendimiento total real {real:.2f} % anual («Real Total Return Price») "
+                     f"e IPC {cpi:.2f} % anual en {years:.1f} años. {file_note}"),
+        },
+    ]
+
+
+def fund_history_entry(symbol: str, asset_class: str, obs: Sequence[Tuple[date, float]],
+                       *, today: date) -> dict:
+    """La Historia de una Clase desde el fondo indexado más viejo, hasta el último mes completo.
+
+    ``obs`` son precios ajustados por dividendos (rendimiento total), netos de las
+    comisiones del fondo.
+    """
+    cut = cut_at_month_end(obs, today=today)
+    (d0, v0), (d1, v1) = cut[0], cut[-1]
+    years = years_between(d0, d1)
+    return {
+        "name": symbol, "kind": "historia", "asset_class": asset_class,
+        "value_pct": round(annualized_pct(v0, v1, years), 2), "basis": "nominal",
+        "currency": "USD", "as_of": d1.isoformat(), "period_start": d0.isoformat(),
+        "source": f"https://finance.yahoo.com/quote/{symbol}/history",
+        "edition": f"precios diarios ajustados de Yahoo Finance, {d0.isoformat()} a {d1.isoformat()}",
+        "note": (f"Rendimiento total anual en {years:.1f} años (precio ajustado por "
+                 "dividendos), neto de las comisiones del fondo."),
+    }
+
+
+def bond_yield_entry(value_pct: float, as_of: str) -> dict:
+    """La valuación de bonos: la tasa del Tesoro a 10 años como rendimiento a 10 años."""
+    sid = FUENTES.bond_yield_series
+    return {
+        "name": f"Tesoro a 10 años (FRED {sid})", "kind": "valuacion",
+        "asset_class": "us_bonds", "value_pct": round(value_pct, 2), "basis": "nominal",
+        "currency": "USD", "as_of": as_of,
+        "source": f"https://fred.stlouisfed.org/series/{sid}",
+        "edition": f"FRED {sid}, observación del {as_of}",
+        "note": ("La tasa inicial de un bono es la mejor estimación de su rendimiento al "
+                 "plazo. Es el Tesoro, no el agregado de las gestoras: sin crédito corporativo."),
     }
