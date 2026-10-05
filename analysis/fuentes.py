@@ -101,6 +101,8 @@ def asset_class_for(
         return "crypto"
     if kind == "fund":
         return FUENTES.etf_classes.get(symbol)
+    if symbol in FUENTES.ticker_classes:
+        return FUENTES.ticker_classes[symbol]
     if country == "United States":
         return "reits" if sector == "Real Estate" else "us_equity"
     if country in FUENTES.developed_countries:

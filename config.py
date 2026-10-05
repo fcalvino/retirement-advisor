@@ -804,6 +804,12 @@ class FuentesConfig:
         "BND": "us_bonds",
         "EWW": "emerging", "EWZ": "emerging", "ILF": "emerging",
     })
+    # Acciones cuyo domicilio no está en las listas de MSCI pero cuyo negocio sí tiene
+    # Clase. MELI (Uruguay) y GLOB (Luxemburgo) operan en América Latina: emergentes,
+    # por decisión del usuario (2026-10-05, al validar EO-2a). El país sigue sin lista.
+    ticker_classes: Mapping[str, str] = field(default_factory=lambda: {
+        "MELI": "emerging", "GLOB": "emerging",
+    })
 
 
 FUENTES = FuentesConfig()

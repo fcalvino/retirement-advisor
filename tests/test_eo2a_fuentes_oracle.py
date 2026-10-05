@@ -231,3 +231,13 @@ def test_the_supuestos_page_shows_central_range_age_and_crypto(monkeypatch):
     assert "fuera del central" in text and "Vencida" in text  # 25 meses
     assert "vieja" in text.lower() and "Vieja" in text        # 13 meses
     assert "sin Fuente externa" in text                       # cripto
+
+
+@pytest.mark.parametrize("symbol, country", [("MELI", "Uruguay"), ("GLOB", "Luxembourg")])
+def test_meli_and_glob_go_to_emerging_by_the_users_decision(symbol, country):
+    """Domicilio fuera de las listas de MSCI, negocio en América Latina: emergentes
+    (decisión del usuario, 2026-10-05, al validar EO-2a). Un país sin lista sigue sin Clase."""
+    from analysis.fuentes import asset_class_for
+
+    assert asset_class_for(symbol, country=country, sector="Technology", kind="equity") == "emerging"
+    assert asset_class_for("OTRA", country=country, sector="Technology", kind="equity") is None

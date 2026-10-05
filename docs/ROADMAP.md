@@ -17,8 +17,9 @@ Primera parte de EO-2 (ADR 0001). Decisiones del usuario (2026-10-04): seis Clas
 - **Modelo** (`analysis/fuentes.py`, `config.FUENTES`): `Fuente`, `summarize_class`/`summarize_all` (mediana y rango de las vigentes; aviso a los 12 meses, fuera del central a los 24, marcada), `asset_class_for`/`unmapped` y `load_sources`.
 - **Gestoras** (`data/fuentes/proyecciones.json`, nominal en USD, ~10 años): J.P. Morgan LTCMA 2026 al 2025-09-30 (EE.UU. 6,7; EAFE 7,5; emergentes 7,8; REITs de EE.UU. 8,8; horizonte 10–15 años); Vanguard VCMM al 2026-06-30 (EE.UU. 4,2–6,2; desarrolladas 4,5–6,5; emergentes 2–4: el valor es el centro del rango) y VEMO 2026 (bonos de alta calidad «around 4%»); BlackRock CMA agosto 2026 al 2026-06-30, escenario «Starting point» (EE.UU. 8,97; World ex-US 7,77; emergentes 8,80; agregado de EE.UU. 4,88; REITs desarrollados globales 7,43). Fuera: Research Affiliates/Syzygy (la herramienta no expone números sin sesión), bonos agregados de J.P. Morgan (sólo en la matriz interactiva) y REITs de Vanguard (sólo en el gráfico interactivo). El PDF oficial del informe completo de J.P. Morgan dio 404; el texto se verificó en una copia del mismo informe, y el archivo lo dice.
 - **Vista «Supuestos»** en «Proyectar», visible: con EO-4 es la base de toda proyección y el ADR pide el Desacuerdo siempre visible; el contrato del menú pasa a 12 entradas. Muestra central, Desacuerdo y cada Fuente con fecha, antigüedad y cita; cripto «sin Fuente externa»; la clasificación del universo va detrás de un botón.
-- **QA en vivo** (copia de la base): centrales 6,7 / 7,5 / 7,8 / 4,4 / 8,1, iguales a las medianas hechas a mano; el universo Default se clasifica entero salvo MELI y GLOB, que se nombran sin Clase.
-- **Oráculo:** `tests/test_eo2a_fuentes_oracle.py`, 26 casos.
+- **QA en vivo** (copia de la base): centrales 6,7 / 7,5 / 7,8 / 4,4 / 8,1, iguales a las medianas hechas a mano; el universo Default se clasificaba entero salvo MELI (Uruguay) y GLOB (Luxemburgo), que se nombraron sin Clase; al validar la tabla, el usuario los mandó a emergentes (2026-10-05) con una excepción por ticker, sin sumar sus países a las listas.
+- **Validación del usuario (2026-10-05):** la tabla tal cual, incluido el 4 % aproximado de Vanguard para bonos.
+- **Oráculo:** `tests/test_eo2a_fuentes_oracle.py`, 28 casos.
 
 ---
 
