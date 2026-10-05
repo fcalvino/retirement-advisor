@@ -232,7 +232,7 @@
       "period_start": "1999-08-17",
       "source": "https://finance.yahoo.com/quote/VTMGX/history",
       "edition": "precios diarios ajustados de Yahoo Finance, 1999-08-17 a 2026-09-30",
-      "note": "Rendimiento total anual en 27.1 años (precio ajustado por dividendos), neto de las comisiones del fondo."
+      "note": "Rendimiento total anual en 27.1 años (precio ajustado por dividendos), neto de las comisiones del fondo. El índice cambió en el período: MSCI EAFE hasta 2013-05-28, FTSE Developed ex North America hasta 2015-12-20 y FTSE Developed All Cap ex US (incluye Canadá) desde 2016-05-31; antes de 2014-04-04 es el Vanguard Tax-Managed International Fund (fact sheet de Vanguard)."
     },
     {
       "name": "VEIEX",

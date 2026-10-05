@@ -285,8 +285,11 @@ def fund_history_entry(symbol: str, asset_class: str, obs: Sequence[Tuple[date, 
         "currency": "USD", "as_of": d1.isoformat(), "period_start": d0.isoformat(),
         "source": f"https://finance.yahoo.com/quote/{symbol}/history",
         "edition": f"precios diarios ajustados de Yahoo Finance, {d0.isoformat()} a {d1.isoformat()}",
-        "note": (f"Rendimiento total anual en {years:.1f} años (precio ajustado por "
-                 "dividendos), neto de las comisiones del fondo."),
+        "note": " ".join(filter(None, (
+            f"Rendimiento total anual en {years:.1f} años (precio ajustado por "
+            "dividendos), neto de las comisiones del fondo.",
+            FUENTES.history_notes.get(symbol, ""),
+        ))),
     }
 
 

@@ -172,6 +172,14 @@ def test_the_history_proxies_are_the_users():
     }
 
 
+def test_the_vtmgx_history_cites_its_index_changes():
+    """VTMGX siguió el MSCI EAFE hasta 2013 y después índices FTSE: la Historia lo dice."""
+    from analysis.fuentes import load_shipped
+
+    (vtmgx,) = [f for f in load_shipped() if f.name == "VTMGX"]
+    assert "MSCI EAFE hasta 2013-05-28" in vtmgx.note
+
+
 def test_no_copy_of_the_shiller_file_is_versioned():
     """Sin licencia y con el repo público: el .xls queda en una carpeta ignorada."""
     import subprocess

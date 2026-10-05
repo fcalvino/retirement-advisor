@@ -18,7 +18,7 @@ Segunda parte de EO-2 (ADR 0001). Decisiones del usuario (2026-10-05): de Shille
 - **Datos** (`data/fuentes/proyecciones.json`, escritos por `scripts/refresh_fuentes.py`): CAPE de Shiller 4,85 % (CAPE 41,1 de 2026-08, T10YIE 2,36); Tesoro a 10 años 5,24 % (DGS10 al 2026-10-01); Historia: S&P de Shiller 1871-01 → 2026-08 9,41 %, VTMGX 1999-08 → 2026-09 5,80 %, VEIEX 1994-05 → 2026-09 6,65 %, VBMFX 1986-12 → 2026-09 4,88 %, VGSIX 1996-05 → 2026-09 8,72 %.
 - **Vista «Supuestos»**: cada Fuente rotulada con su tipo y la Historia con su período. Centrales 6,7 / 6,65 / 7,2 / 4,88 / 8,72.
 - **QA en vivo** (copia de la base): centrales y Desacuerdos iguales a las medianas hechas a mano; cripto sigue «sin Fuente externa»; la clasificación del universo, sin cambios.
-- **Oráculo:** `tests/test_eo2b_valuacion_historia_oracle.py`, 13 casos.
+- **Oráculo:** `tests/test_eo2b_valuacion_historia_oracle.py`, 14 casos. VTMGX cita sus cambios de índice (MSCI EAFE hasta 2013, FTSE después; `FUENTES.history_notes`).
 
 ---
 

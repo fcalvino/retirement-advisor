@@ -834,6 +834,13 @@ class FuentesConfig:
         "us_equity": "shiller", "developed_ex_us": "VTMGX", "emerging": "VEIEX",
         "us_bonds": "VBMFX", "reits": "VGSIX",
     })
+    # Lo que la serie de un fondo no dice sola y su Historia tiene que citar.
+    history_notes: Mapping[str, str] = field(default_factory=lambda: {
+        "VTMGX": ("El índice cambió en el período: MSCI EAFE hasta 2013-05-28, FTSE "
+                  "Developed ex North America hasta 2015-12-20 y FTSE Developed All Cap "
+                  "ex US (incluye Canadá) desde 2016-05-31; antes de 2014-04-04 es el "
+                  "Vanguard Tax-Managed International Fund (fact sheet de Vanguard)."),
+    })
 
 
 FUENTES = FuentesConfig()
