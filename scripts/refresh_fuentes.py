@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refresca la valuación y la Historia del archivo curado de Fuentes (EO-2b, ADR 0001).
+"""Refresca la valuación, la Historia y el riesgo país del archivo curado (EO-2b/2c, ADR 0001).
 
 Reemplaza en ``FUENTES.data_file`` las entradas de tipo ``valuacion`` e ``historia``;
 las de las gestoras no se tocan (se cargan a mano). Lo que baja:
@@ -12,10 +12,14 @@ las de las gestoras no se tocan (se cargan a mano). Lo que baja:
   y la tasa del Tesoro a 10 años, como valuación de los bonos.
 - **Yahoo Finance**: la Historia del resto de las Clases (``FUENTES.history_proxies``),
   por ``data.fetcher.get_history``: queda en la caché de la base, como cualquier precio.
+- **ArgentinaDatos** (``FUENTES.country_risk_url``, sin clave): el riesgo país de
+  Argentina, la última observación. Va en ``country_risk``, aparte de ``entries``: es
+  un spread en pb, no un rendimiento esperado (EO-2c).
 
 Correr una vez por año, junto con la tabla de gestoras:
     ./venv/bin/python3 scripts/refresh_fuentes.py           # muestra las entradas
     ./venv/bin/python3 scripts/refresh_fuentes.py --write   # y las escribe
+    ./venv/bin/python3 scripts/refresh_fuentes.py --country-risk-only --write
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ import hashlib
 import json
 import re
 import sys
+from datetime import date
 from pathlib import Path
 
 _root = Path(__file__).resolve().parent.parent
@@ -104,6 +109,17 @@ def _fund_history(symbol: str, asset_class: str) -> dict:
     return fuentes.fund_history_entry(symbol, asset_class, obs, today=fuentes.today())
 
 
+def _country_risk() -> dict:
+    import requests
+
+    resp = requests.get(FUENTES.country_risk_url, timeout=30)
+    resp.raise_for_status()
+    obs = [(date.fromisoformat(o["fecha"]), float(o["valor"])) for o in resp.json()]
+    if not obs:
+        raise SystemExit(f"{FUENTES.country_risk_url} no devolvió observaciones")
+    return fuentes.country_risk_entry(obs, today=fuentes.today())
+
+
 def build_entries() -> list[dict]:
     path, sha = _download_shiller(_root / FUENTES.raw_dir)
     breakeven = _fred(FUENTES.breakeven_series)
@@ -123,22 +139,29 @@ def build_entries() -> list[dict]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--write", action="store_true", help="escribir el archivo curado")
+    parser.add_argument("--country-risk-only", action="store_true",
+                        help="refrescar sólo el riesgo país (no toca valuación ni Historia)")
     args = parser.parse_args()
 
     target = _root / FUENTES.data_file
     data = json.loads(target.read_text(encoding="utf-8"))
-    derived = build_entries()
-    for e in derived:
-        span = f"{e['period_start']} → " if e.get("period_start") else ""
-        logger.info(f"{e['asset_class']:<16} {e['kind']:<9} {e['value_pct']:>6.2f} %  "
-                    f"{span}{e['as_of']}  {e['name']}")
-    gestoras = [e for e in data["entries"] if e["kind"] == "gestora"]
-    data["entries"] = gestoras + derived
+    if not args.country_risk_only:
+        derived = build_entries()
+        for e in derived:
+            span = f"{e['period_start']} → " if e.get("period_start") else ""
+            logger.info(f"{e['asset_class']:<16} {e['kind']:<9} {e['value_pct']:>6.2f} %  "
+                        f"{span}{e['as_of']}  {e['name']}")
+        gestoras = [e for e in data["entries"] if e["kind"] == "gestora"]
+        data["entries"] = gestoras + derived
+    risk = _country_risk()
+    logger.info(f"riesgo país {risk['country']}: {risk['value_bp']} pb al {risk['as_of']}")
+    data["country_risk"] = [risk]
     if args.write:
         target.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        fuentes.load_sources(target)   # lo escrito tiene que volver a leerse
-        logger.info(f"escrito {target.relative_to(_root)}: {len(gestoras)} de gestoras + "
-                    f"{len(derived)} derivadas")
+        fuentes.load_sources(target)        # lo escrito tiene que volver a leerse
+        fuentes.load_country_risk(target)
+        logger.info(f"escrito {target.relative_to(_root)}: {len(data['entries'])} entradas "
+                    "y el riesgo país")
     return 0
 
 

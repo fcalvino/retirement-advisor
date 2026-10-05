@@ -3179,3 +3179,32 @@ def profile_margin_pct(profile_key: str | None, override: float | None = None) -
     if override:
         return float(override)
     return float(OPTIMIZER_PROFILES[profile_key].margin_of_safety_pct)
+
+
+# --------------------------------------------------------------------------- #
+#  Descuento argentino del Optimizer: qué es supuesto y qué es dato (EO-2c)    #
+# --------------------------------------------------------------------------- #
+
+def ars_discount_note(discount: float, ars_syms: str, country_risk: Any = None) -> str:
+    """El aviso del Optimizer sobre el descuento a los ADRs argentinos.
+
+    El descuento es un multiplicador fijo del score (``OPTIMIZER.ars_risk_discount``),
+    pendiente de Fuente. El riesgo país ya es un dato fechado en «Supuestos»
+    (``country_risk``, un ``analysis.fuentes.CountryRisk``), pero no hay Fuente para
+    convertir un spread en un multiplicador de score: eso llega con EO-4. Sin el
+    dato, el aviso no muestra un número.
+    """
+    pct = (1 - discount) * 100
+    if country_risk is not None:
+        dato = (f"el riesgo país ya está en «Supuestos» ({country_risk.value_bp} pb al "
+                f"{country_risk.as_of.isoformat()}), ")
+    else:
+        dato = "el riesgo país todavía no está cargado en «Supuestos», "
+    return (
+        f"🇦🇷 **ADRs argentinos ({ars_syms}):** cotizan y liquidan en **USD** en NYSE/NASDAQ. "
+        f"Con cualquier perfil se aplica un descuento de **{pct:.0f}%** al Score "
+        "Ajustado para el cálculo del peso óptimo (no afecta precio ni dividend yield). "
+        f"Ese porcentaje es un supuesto fijo, **pendiente de Fuente**: {dato}pero no hay "
+        "una Fuente para convertir ese spread en un descuento de score. La conversión "
+        "llega con EO-4, cuando la Estimación de cada ADR argentino use el riesgo país."
+    )

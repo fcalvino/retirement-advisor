@@ -10,6 +10,18 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## EO-2c — el riesgo país de Argentina entra como dato fechado, aparte de las Fuentes (2026-10-05)
+
+Tercera y última parte de EO-2 (ADR 0001). Decisiones del usuario (2026-10-05): el riesgo país entra como dato, no como Fuente de rendimiento; el 0,85 sigue rotulado y la conversión pasa a EO-4; antigüedad con las reglas 12/24 de `FUENTES`.
+
+- **Dato** (`data/fuentes/proyecciones.json`, clave `country_risk`): Argentina 655 pb al 2026-10-02. EMBI de J.P. Morgan que publica Ámbito; lo lee ArgentinaDatos (`api.argentinadatos.com/v1/finanzas/indices/riesgo-pais`, cron diario sobre `mercados.ambito.com/riesgopais`), porque Ámbito responde 403 a un acceso directo.
+- **Modelo** (`analysis/fuentes.py`): `CountryRisk`, `load_country_risk`, `country_risk_status` y `country_risk_entry`; `config.FUENTES.country_risk_url` y `country_risk_upstream`. `scripts/refresh_fuentes.py --country-risk-only`.
+- **Superficies:** «Supuestos» lo muestra bajo emergentes, fuera del central; el aviso del Optimizer cita el dato y deja el 0,85 «pendiente de Fuente» hasta EO-4.
+- **QA en vivo** (copia de la base): los centrales no cambian (6,7 / 6,7 / 7,2 / 4,9 / 8,7); el aviso del Optimizer con Agresivo nombra TEO, CEPU, YPF, PAM, EDN y LOMA y el dato de 655 pb.
+- **Oráculo:** `tests/test_eo2c_riesgo_pais_oracle.py`, 12 casos.
+
+---
+
 ## CLOSE-ROW-MERGE-SHA — close_row.py y estado.py encuentran el merge aunque la fila no venga en el último commit (2026-10-05)
 
 Tooling, no cierra una fila del BACKLOG (decisión del usuario, 2026-10-05). `merge_sha_for` (`scripts/close_row.py`, también lo usa `scripts/estado.py`) no encontraba el merge de un PR cuya fila `(pending)` de CONTEXT §9 entró en un commit que no era el último de la rama: con `--ancestry-path`, `--first-parent` sólo sigue primeros padres. Pasó con EO-2a (`--pending-sha` a mano) y con EO-2b (`estado.py` lo llamó «rama abierta» ya mergeado).

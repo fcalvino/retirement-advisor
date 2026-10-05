@@ -19,7 +19,7 @@ ajuste del usuario del 2026-10-04 (EO-1 en tres PRs): la Estimación objetiva
 
 1. ~~**Sincronización** — este orden, el ADR 0001 y el glosario llegan a `main` (sólo docs).~~
 2. ~~**SIM-GAP-PCT + KATEX-DOLLAR-PLAN** — banda 4, un PR: el mismo bloque «Dos escenarios».~~
-3. ~~**EO-0 → EO-1a → EO-1b → EO-1c → EO-2a → EO-2b**~~ **→ EO-2c → EO-3 → EO-4**; EO-4 no entra si EO-3 no pasa.
+3. ~~**EO-0 → EO-1a → EO-1b → EO-1c → EO-2a → EO-2b → EO-2c**~~ **→ EO-3 → EO-4**; EO-4 no entra si EO-3 no pasa.
 4. **EO-5** (después de EO-1b) y **EO-6** (después de EO-1a), en paralelo. Ver bloque 6.
 
 Esperan disparador: U5-1b y COM-*. Sin orden: STREAMLIT-1.65 (sin banda), PORTFOLIO-FX,
@@ -100,7 +100,6 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **IDEA-5 IMPUESTOS** | 5 | Módulo de impuestos personales —bienes personales, retención de dividendos, ganancia de capital— (idea 5 de `DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`; `TaxConfig` sólo modela el impuesto corporativo). Sin alcance ni orden. Ver bloque 4 |
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **GOAL-PRIORITY-TEXT** | 5 | Una meta importada a mano con la prioridad en texto («esencial») llega a `goals_list` sin convertir y «Simular» la pasa por `int()`. Residual declarado de PLAN-GOALS-KEYS (#214); ningún export de la app la escribe así. Anotado el 2026-10-02, **no priorizado**. Ver bloque 4 |
-| **EO-2c** | dec. | Riesgo país desde una fuente automática para el descuento argentino; si no hay una gratuita y estable, queda el 0,85 rotulado. Ver bloque 6 |
 | **EO-3** | dec. | Backtest del método con historia y CAPE: es la condición de EO-4. Ver bloque 6 |
 | **EO-4** | dec. | Una Estimación por activo para el Monte Carlo y el optimizador; se borra el haircut global; Escenarios en la UI, también en lugar de «Comparar perfiles». Ver bloque 6 |
 | **EO-5** | dec. | La IA calibrada: prompts, `recommended_max_allocation`, el PM recibe la Postura, oráculo de postura. Ver bloque 6 |
@@ -351,8 +350,11 @@ Toda etapa que mueva μ o el Monte Carlo sube `ENGINE_VERSION`.
     con `scripts/refresh_fuentes.py`. Shiller no trae licencia y el repo es público: se
     versionan sólo números derivados. Todas las Fuentes entran al central (decisiones del
     usuario, 2026-10-05).
-  - **EO-2c — riesgo país.** Desde una fuente automática para `ars_risk_discount`; si no
-    hay una gratuita y estable, queda el 0,85 rotulado «pendiente de Fuente».
+  - ~~**EO-2c — riesgo país.**~~ *cerrada (2026-10-05)*, ver `ROADMAP.md`. El riesgo país
+    de Argentina (EMBI de J.P. Morgan que publica Ámbito, vía ArgentinaDatos) es un dato
+    fechado en pb, aparte de las Fuentes, visible en «Supuestos»; no entra al central de
+    emergentes. El 0,85 sigue rotulado «pendiente de Fuente»: convertir un spread en un
+    multiplicador de score no tiene Fuente (decisiones del usuario, 2026-10-05).
 - **EO-3 — Backtest del método.** Con las Fuentes de historia larga (precios y CAPE
   de Shiller; la serie completa no está en el repo —sin licencia—: `refresh_fuentes.py`
   la deja en `data/fuentes/raw/`), point-in-time como PIT: ¿el rango declarado contiene el resultado a
@@ -367,7 +369,9 @@ Toda etapa que mueva μ o el Monte Carlo sube `ENGINE_VERSION`.
   Fuente «Historia» en el desglose. Planes, semáforo, ahorro y salud usan el
   Escenario de planificación del Perfil; cripto, siempre el pesimista. Reemplaza
   también la pestaña «Comparar perfiles», que hasta acá conserva `_PROFILE_MC_SCALES`
-  con su rótulo (decisión del usuario, 2026-10-04).
+  con su rótulo (decisión del usuario, 2026-10-04). Acá entra también el riesgo país
+  de EO-2c a la Estimación de los ADRs argentinos, en términos de rendimiento, y con
+  eso se va `OPTIMIZER.ars_risk_discount` del score (decisión del usuario, 2026-10-05).
 - **EO-5 — IA calibrada.** Fuera «filosofía conservadora» (`committee_prompts.py`),
   «extremadamente… conservador» y «nunca digas esto es genial» (`prompts.py`),
   «asesor… conservador» (`chat_agent.py:138`); la instrucción es decir lo que la

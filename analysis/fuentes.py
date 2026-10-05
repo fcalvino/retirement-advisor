@@ -1,4 +1,4 @@
-"""Fuentes por Clase de activo: central y Desacuerdo (EO-2a/EO-2b, ADR 0001).
+"""Fuentes por Clase de activo: central y Desacuerdo (EO-2a/2b/2c, ADR 0001).
 
 Una Estimación Objetiva sale de Fuentes declaradas —cada una con fecha y
 procedencia— agrupadas por Clase de activo. Este módulo sólo describe: arma, por
@@ -9,6 +9,9 @@ Tres tipos de Fuente: ``gestora`` (proyecciones publicadas, a mano), ``valuacion
 (CAPE de Shiller, Tesoro a 10 años) e ``historia`` (la serie más larga de la Clase).
 Las dos últimas las arma ``scripts/refresh_fuentes.py`` con las funciones puras de
 abajo y las escribe, fechadas, en el archivo curado.
+
+Aparte, el riesgo país de Argentina (EO-2c): un dato fechado en puntos básicos, no
+un rendimiento esperado, así que no entra al central de ninguna Clase.
 """
 
 from __future__ import annotations
@@ -304,4 +307,66 @@ def bond_yield_entry(value_pct: float, as_of: str) -> dict:
         "edition": f"FRED {sid}, observación del {as_of}",
         "note": ("La tasa inicial de un bono es la mejor estimación de su rendimiento al "
                  "plazo. Es el Tesoro, no el agregado de las gestoras: sin crédito corporativo."),
+    }
+
+
+# --------------------------------------------------------------------------- #
+#  Riesgo país (EO-2c): un dato aparte, no un rendimiento esperado             #
+# --------------------------------------------------------------------------- #
+
+@dataclass(frozen=True)
+class CountryRisk:
+    """El riesgo país de un emisor: el spread de su deuda soberana en USD, en pb."""
+
+    country: str
+    value_bp: int        # puntos básicos sobre el Tesoro de EE.UU.
+    as_of: date
+    source: str
+    edition: str = ""
+    note: str = ""
+
+
+def load_country_risk(path: Path | str) -> List[CountryRisk]:
+    """El riesgo país del archivo curado (clave ``country_risk``, aparte de ``entries``)."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    out: List[CountryRisk] = []
+    for e in data.get("country_risk", []):
+        if e.get("unit") != "pb":
+            raise ValueError(f"Riesgo país en {path} sin unidad pb: {e.get('unit')!r}")
+        out.append(CountryRisk(
+            country=e["country"], value_bp=int(e["value_bp"]),
+            as_of=date.fromisoformat(e["as_of"]), source=e["source"],
+            edition=e.get("edition", ""), note=e.get("note", ""),
+        ))
+    return out
+
+
+def load_shipped_country_risk() -> List[CountryRisk]:
+    """El riesgo país del archivo curado del repo (``FUENTES.data_file``)."""
+    root = Path(__file__).resolve().parents[1]
+    return load_country_risk(root / FUENTES.data_file)
+
+
+def country_risk_status(cr: CountryRisk, *, today: date) -> str:
+    """«vigente», «vieja» o «fuera», con las mismas reglas que una Fuente."""
+    age = age_months(cr.as_of, today)
+    if age > FUENTES.stale_drop_months:
+        return "fuera"
+    if age > FUENTES.stale_warn_months:
+        return "vieja"
+    return "vigente"
+
+
+def country_risk_entry(obs: Sequence[Tuple[date, float]], *, today: date) -> dict:
+    """El riesgo país de Argentina: la última observación hasta ``today``, en pb."""
+    d, v = max((o for o in obs if o[0] <= today), key=lambda o: o[0])
+    return {
+        "country": "Argentina", "value_bp": int(round(v)), "unit": "pb",
+        "as_of": d.isoformat(), "source": FUENTES.country_risk_url,
+        "edition": f"ArgentinaDatos, observación del {d.isoformat()}",
+        "note": ("EMBI de J.P. Morgan para Argentina (spread de la deuda soberana en USD "
+                 "sobre el Tesoro de EE.UU.) que publica Ámbito "
+                 f"({FUENTES.country_risk_upstream}); ArgentinaDatos lo extrae de Ámbito a "
+                 "diario (API comunitaria, no oficial; Ámbito bloquea el acceso directo). "
+                 "No es un rendimiento esperado: no entra al central de emergentes."),
     }
