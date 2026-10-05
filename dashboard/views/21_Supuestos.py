@@ -1,4 +1,4 @@
-"""Supuestos — de dónde salen los rendimientos de cada Clase de activo (EO-2a/2b, ADR 0001).
+"""Supuestos — de dónde salen los rendimientos de cada Clase de activo (EO-2a/2b/2c, ADR 0001).
 
 Muestra, por Clase, la mediana de las Fuentes vigentes (el central), su rango (el
 Desacuerdo) y cada Fuente con su fecha, su antigüedad y su cita. Todavía no alimenta
@@ -27,6 +27,7 @@ st.info(
 
 _today = fuentes.today()
 _summaries = fuentes.summarize_all(fuentes.load_shipped(), today=_today)
+_country_risk = fuentes.load_shipped_country_risk()
 
 
 def _kind_label(f) -> str:
@@ -69,6 +70,21 @@ for _cls, _label in FUENTES.asset_classes.items():
         st.caption(_source_line(
             f, f" · ⛔ fuera del central (más de {FUENTES.stale_drop_months} meses)"
         ))
+    if _cls == "emerging":
+        for _cr in _country_risk:
+            _status = fuentes.country_risk_status(_cr, today=_today)
+            _cr_flag = {
+                "vieja": f" · ⚠️ vieja (más de {FUENTES.stale_warn_months} meses)",
+                "fuera": f" · ⛔ vencida (más de {FUENTES.stale_drop_months} meses)",
+            }.get(_status, "")
+            st.caption(
+                f"🇦🇷 **Riesgo país {_cr.country}:** {_cr.value_bp} pb al "
+                f"{_cr.as_of.isoformat()} ({fuentes.age_months(_cr.as_of, _today)} meses)"
+                f"{_cr_flag} · EMBI de J.P. Morgan que publica Ámbito, vía ArgentinaDatos · "
+                f"[cita]({_cr.source}). Es un spread sobre el Tesoro, no un rendimiento "
+                "esperado: no entra al central. La Estimación de los ADRs argentinos lo va "
+                "a usar con EO-4."
+            )
 
 st.divider()
 with st.expander("🗂️ Tu universo por Clase de activo", expanded=False):

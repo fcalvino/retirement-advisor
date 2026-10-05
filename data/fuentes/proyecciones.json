@@ -1,6 +1,6 @@
 {
   "_doc": [
-    "Fuentes citadas por Clase de activo (EO-2a/EO-2b, ADR 0001). Las de gestoras se cargan a mano; las de valuación e historia las escribe scripts/refresh_fuentes.py. Se revisa una vez por año.",
+    "Fuentes citadas por Clase de activo (EO-2a/2b/2c, ADR 0001). Las de gestoras se cargan a mano; las de valuación e historia, y el riesgo país, las escribe scripts/refresh_fuentes.py. Se revisa una vez por año.",
     "Campos por entrada:",
     "  name / kind      quién lo publica; kind = gestora | valuacion | historia",
     "  asset_class      clave de FUENTES.asset_classes (config.py)",
@@ -13,7 +13,8 @@
     "  note             dónde está el número (página, tabla, frase) y sus salvedades",
     "Regla: sólo números que se pueden citar. Lo que no se pudo citar queda afuera y se lista abajo.",
     "Fuera de la tabla (2026-10-04): Research Affiliates (ahora Syzygy Asset Management): su Asset Allocation Interactive se dibuja con JavaScript y no expone los números sin sesión; J.P. Morgan bonos agregados de EE.UU.: no figura como número en el informe ni en el resumen, sólo en la matriz interactiva; Vanguard REITs de EE.UU.: sólo en el gráfico interactivo.",
-    "Valuación e historia (EO-2b, 2026-10-05, decisiones del usuario): de ie_data.xls de Shiller se versionan sólo números derivados —el archivo no trae licencia y el repo es público—, citados con la fecha de descarga y su sha256; la copia queda en data/fuentes/raw/ (ignorado). Al central entran todas las Fuentes."
+    "Valuación e historia (EO-2b, 2026-10-05, decisiones del usuario): de ie_data.xls de Shiller se versionan sólo números derivados —el archivo no trae licencia y el repo es público—, citados con la fecha de descarga y su sha256; la copia queda en data/fuentes/raw/ (ignorado). Al central entran todas las Fuentes.",
+    "Riesgo país (EO-2c, 2026-10-05, decisiones del usuario): va en country_risk, aparte de entries —country, value_bp, unit (siempre pb), as_of, source, edition, note—. Es un spread sobre el Tesoro, no un rendimiento esperado: no entra al central de emergentes. Antigüedad con las mismas reglas (12/24 meses). La conversión a la Estimación de los ADRs argentinos es de EO-4."
   ],
   "entries": [
     {
@@ -272,6 +273,17 @@
       "source": "https://finance.yahoo.com/quote/VGSIX/history",
       "edition": "precios diarios ajustados de Yahoo Finance, 1996-05-13 a 2026-09-30",
       "note": "Rendimiento total anual en 30.4 años (precio ajustado por dividendos), neto de las comisiones del fondo."
+    }
+  ],
+  "country_risk": [
+    {
+      "country": "Argentina",
+      "value_bp": 655,
+      "unit": "pb",
+      "as_of": "2026-10-02",
+      "source": "https://api.argentinadatos.com/v1/finanzas/indices/riesgo-pais",
+      "edition": "ArgentinaDatos, observación del 2026-10-02",
+      "note": "EMBI de J.P. Morgan para Argentina (spread de la deuda soberana en USD sobre el Tesoro de EE.UU.) que publica Ámbito (https://www.ambito.com/contenidos/riesgo-pais.html); ArgentinaDatos lo extrae de Ámbito a diario (API comunitaria, no oficial; Ámbito bloquea el acceso directo). No es un rendimiento esperado: no entra al central de emergentes."
     }
   ]
 }

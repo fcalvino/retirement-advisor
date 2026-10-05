@@ -1005,15 +1005,13 @@ with tab_cart:
 
         # ARS disclaimer
         if any(a.is_ars for a in result.tickers):
-            discount_pct = (1 - OPTIMIZER.ars_risk_discount) * 100
-            ars_syms     = ", ".join(a.symbol for a in result.tickers if a.is_ars)
-            st.info(
-                f"🇦🇷 **ADRs argentinos ({ars_syms}):** cotizan y liquidan en **USD** en NYSE/NASDAQ. "
-                f"Con cualquier perfil se aplica un descuento de **{discount_pct:.0f}%** al Score "
-                "Ajustado para el cálculo del peso óptimo (no afecta precio ni dividend yield). "
-                "Ese porcentaje es un supuesto fijo, **pendiente de Fuente**: todavía no sale de "
-                "un dato de riesgo país."
-            )
+            from analysis.fuentes import load_shipped_country_risk
+            from data.product_ux import ars_discount_note
+
+            ars_syms = ", ".join(a.symbol for a in result.tickers if a.is_ars)
+            _ar_risk = next((c for c in load_shipped_country_risk()
+                             if c.country == "Argentina"), None)
+            st.info(ars_discount_note(OPTIMIZER.ars_risk_discount, ars_syms, _ar_risk))
 
     if result.excluded:
         with st.expander(f"Tickers excluidos de la optimización ({len(result.excluded)})"):

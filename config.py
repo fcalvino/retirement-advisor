@@ -768,6 +768,8 @@ class FuentesConfig:
                           vista las rotula «sin Fuente externa» (glosario).
       shiller_page … history_proxies — EO-2b: de dónde salen la valuación y la
                           Historia que escribe scripts/refresh_fuentes.py (ver abajo).
+      country_risk_url / country_risk_upstream — EO-2c: el riesgo país de
+                          Argentina, un dato aparte que no entra al central.
     """
 
     stale_warn_months: int = 12
@@ -835,6 +837,13 @@ class FuentesConfig:
         "us_bonds": "VBMFX", "reits": "VGSIX",
     })
     # Lo que la serie de un fondo no dice sola y su Historia tiene que citar.
+    # EO-2c — riesgo país de Argentina (decisiones del usuario, 2026-10-05). Es el EMBI
+    # de J.P. Morgan que publica Ámbito; Ámbito bloquea el acceso directo, así que se
+    # lee por ArgentinaDatos (API comunitaria, MIT, que lo extrae de Ámbito a diario).
+    # No es un rendimiento esperado: va aparte en el archivo curado y no toca el
+    # central de emergentes. Su antigüedad sigue ``stale_warn_months``/``stale_drop_months``.
+    country_risk_url: str = "https://api.argentinadatos.com/v1/finanzas/indices/riesgo-pais"
+    country_risk_upstream: str = "https://www.ambito.com/contenidos/riesgo-pais.html"
     history_notes: Mapping[str, str] = field(default_factory=lambda: {
         "VTMGX": ("El índice cambió en el período: MSCI EAFE hasta 2013-05-28, FTSE "
                   "Developed ex North America hasta 2015-12-20 y FTSE Developed All Cap "
@@ -1770,8 +1779,13 @@ class OptimizerConfig:
     frontier_points       — Monte Carlo portfolios rendered on the Efficient Frontier
     min_weight_pct        — minimum per-ticker allocation (avoids dust positions)
     min_score_threshold   — tickers below this adjusted_score are excluded
-    ars_risk_discount     — composite-score multiplier for Argentine ADR tickers
-                            in conservative/moderate profiles (reflects currency risk)
+    ars_risk_discount     — composite-score multiplier for Argentine ADR tickers,
+                            with every profile since EO-1a (the issuer's country
+                            risk does not depend on who is looking). A fixed
+                            number pending a Fuente: the riesgo país itself is in
+                            ``FUENTES`` since EO-2c, but turning a spread into a
+                            score multiplier has no Fuente; the conversion to the
+                            Estimación of an Argentine ADR is EO-4's
     max_ai_screener_tickers — when the selected universe has more than this many tickers,
                               the dashboard auto-disables AI in the screener and shows a
                               banner. AI bulk scoring N>this adds latency/cost without
