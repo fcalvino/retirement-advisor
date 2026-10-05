@@ -10,6 +10,18 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## EO-3 — el backtest del método: acciones EE.UU. pasa, bonos EE.UU. no (2026-10-05)
+
+Condición de EO-4 (ADR 0001). Decisiones del usuario (2026-10-05): se prueba el p10–p90 de la Estimación central en términos reales; acciones y bonos de EE.UU. (el resto, no calibrable); bonos con GS10 menos la inflación de los 10 años previos; Azar con los 120 meses previos, como el Monte Carlo; recentrado compuesto; pasa si el 80 % cae en el intervalo de Clopper-Pearson al 90 % de las ventanas sin superposición.
+
+- **Módulo** (`analysis/backtest_metodo.py`, puro): `central_at`, `azar_band`, `realized_real_pct`, `coverage`, `evaluation_indexes`, `non_overlapping`, `run_backtest`. Config `BACKTEST_METODO`.
+- **Script** (`scripts/backtest_metodo.py`): lee `ie_data.xls` (no versionado) y escribe `data/fuentes/backtest_metodo.json`.
+- **Resultado** (Shiller hasta 2026-08, sha256 `044196da…`): acciones 9/14 sin superposición, [39 %, 85 %] → **pasa**; bonos 6/14, [21 %, 68 %] → **no pasa** (ancho medio 4,3 pp, sesgo −1,05 pp, fallos abajo 3 a 1). Variantes medidas para bonos, ninguna pasa: bloques de 12/24/60 meses (5, 4, 2 de 14), toda la historia previa (6 de 14).
+- **Verificación independiente:** acciones 1881-01 (central 9,24, realizado 4,54) y bonos 1971-01 (2,84, −4,01) recalculados a mano desde el `.xls`.
+- **Oráculo:** `tests/test_eo3_backtest_metodo_oracle.py`, 13 casos.
+
+---
+
 ## EO-2c — el riesgo país de Argentina entra como dato fechado, aparte de las Fuentes (2026-10-05)
 
 Tercera y última parte de EO-2 (ADR 0001). Decisiones del usuario (2026-10-05): el riesgo país entra como dato, no como Fuente de rendimiento; el 0,85 sigue rotulado y la conversión pasa a EO-4; antigüedad con las reglas 12/24 de `FUENTES`.

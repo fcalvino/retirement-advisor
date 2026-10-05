@@ -1,0 +1,297 @@
+{
+  "_doc": "EO-3 (ADR 0001): ¿el p10–p90 de la Estimación central contiene el rendimiento real a 10 años el 80 % de las veces? Todo en % real anual. Lo escribe scripts/backtest_metodo.py; sólo números derivados de ie_data.xls.",
+  "source": {
+    "file": "ie_data.xls",
+    "page": "https://shillerdata.com/",
+    "sha256": "044196dafe44c3030b2facbdea023975b3f6aa68b4e52f8f9bafc403e19589c1",
+    "last_month": "2026-08",
+    "generated": "2026-10-05"
+  },
+  "method": {
+    "central": "mediana de las Fuentes conocidas en t. Acciones: 1/CAPE y la Historia real del S&P desde 1871. Bonos: GS10 menos la inflación de los 120 meses previos (Fisher; supuesto del backtest) y la Historia real de los bonos desde 1871",
+    "azar": "bootstrap por bloques de 1 mes de los 120 meses previos, recentrado compuesto en el central (la mediana de los caminos rinde el central); 2000 caminos por fecha; semilla 20261005",
+    "horizon_months": 120,
+    "rule": "pasa si 80% cae dentro del intervalo de Clopper-Pearson al 90% de la cobertura en ventanas sin superposición"
+  },
+  "classes": {
+    "us_equity": {
+      "verdict": "pasa",
+      "non_overlapping": {
+        "n": 14,
+        "k": 9,
+        "rate": 0.6429,
+        "low": 0.3904,
+        "high": 0.8473,
+        "passes": true,
+        "windows": [
+          {
+            "date": "1881-01",
+            "central": 9.24,
+            "p10": 4.49,
+            "p90": 14.09,
+            "realized": 4.54,
+            "hit": true
+          },
+          {
+            "date": "1891-01",
+            "central": 7.6,
+            "p10": 3.71,
+            "p90": 12.35,
+            "realized": 8.55,
+            "hit": true
+          },
+          {
+            "date": "1901-01",
+            "central": 6.71,
+            "p10": 2.21,
+            "p90": 11.64,
+            "realized": 5.54,
+            "hit": true
+          },
+          {
+            "date": "1911-01",
+            "central": 7.5,
+            "p10": 2.11,
+            "p90": 13.38,
+            "realized": -3.75,
+            "hit": false
+          },
+          {
+            "date": "1921-01",
+            "central": 12.48,
+            "p10": 7.19,
+            "p90": 17.99,
+            "realized": 16.31,
+            "hit": true
+          },
+          {
+            "date": "1931-01",
+            "central": 6.58,
+            "p10": -0.43,
+            "p90": 13.74,
+            "realized": 2.72,
+            "hit": true
+          },
+          {
+            "date": "1941-01",
+            "central": 6.86,
+            "p10": -4.54,
+            "p90": 19.77,
+            "realized": 7.08,
+            "hit": true
+          },
+          {
+            "date": "1951-01",
+            "central": 7.5,
+            "p10": 1.94,
+            "p90": 13.32,
+            "realized": 14.18,
+            "hit": false
+          },
+          {
+            "date": "1961-01",
+            "central": 6.42,
+            "p10": 2.11,
+            "p90": 10.63,
+            "realized": 4.89,
+            "hit": true
+          },
+          {
+            "date": "1971-01",
+            "central": 6.62,
+            "p10": 1.81,
+            "p90": 11.82,
+            "realized": -0.17,
+            "hit": false
+          },
+          {
+            "date": "1981-01",
+            "central": 8.64,
+            "p10": 3.2,
+            "p90": 14.7,
+            "realized": 9.0,
+            "hit": true
+          },
+          {
+            "date": "1991-01",
+            "central": 6.54,
+            "p10": 1.21,
+            "p90": 12.21,
+            "realized": 14.65,
+            "hit": false
+          },
+          {
+            "date": "2001-01",
+            "central": 4.99,
+            "p10": 0.83,
+            "p90": 9.35,
+            "realized": -0.82,
+            "hit": false
+          },
+          {
+            "date": "2011-01",
+            "central": 5.51,
+            "p10": -0.71,
+            "p90": 11.94,
+            "realized": 11.74,
+            "hit": true
+          }
+        ]
+      },
+      "overlapping": {
+        "n": 1628,
+        "k": 1194,
+        "rate": 0.7334,
+        "low": 0.7148,
+        "high": 0.7514,
+        "passes": false,
+        "first": "1881-01",
+        "last": "2016-08"
+      },
+      "mean_bias_pp": -0.44,
+      "mean_width_pp": 11.69
+    },
+    "us_bonds": {
+      "verdict": "no pasa",
+      "non_overlapping": {
+        "n": 14,
+        "k": 6,
+        "rate": 0.4286,
+        "low": 0.2061,
+        "high": 0.675,
+        "passes": false,
+        "windows": [
+          {
+            "date": "1881-01",
+            "central": 7.95,
+            "p10": 5.16,
+            "p90": 10.95,
+            "realized": 5.65,
+            "hit": true
+          },
+          {
+            "date": "1891-01",
+            "central": 6.51,
+            "p10": 4.51,
+            "p90": 8.55,
+            "realized": 4.08,
+            "hit": false
+          },
+          {
+            "date": "1901-01",
+            "central": 4.77,
+            "p10": 1.97,
+            "p90": 7.49,
+            "realized": 1.01,
+            "hit": false
+          },
+          {
+            "date": "1911-01",
+            "central": 3.54,
+            "p10": 1.51,
+            "p90": 5.67,
+            "realized": -3.68,
+            "hit": false
+          },
+          {
+            "date": "1921-01",
+            "central": 0.47,
+            "p10": -1.42,
+            "p90": 2.45,
+            "realized": 7.25,
+            "hit": false
+          },
+          {
+            "date": "1931-01",
+            "central": 4.52,
+            "p10": 3.33,
+            "p90": 5.73,
+            "realized": 5.35,
+            "hit": true
+          },
+          {
+            "date": "1941-01",
+            "central": 3.62,
+            "p10": 2.54,
+            "p90": 4.67,
+            "realized": -4.0,
+            "hit": false
+          },
+          {
+            "date": "1951-01",
+            "central": -0.14,
+            "p10": -1.37,
+            "p90": 1.15,
+            "realized": 0.5,
+            "hit": true
+          },
+          {
+            "date": "1961-01",
+            "central": 2.46,
+            "p10": 1.02,
+            "p90": 3.94,
+            "realized": 0.19,
+            "hit": false
+          },
+          {
+            "date": "1971-01",
+            "central": 2.84,
+            "p10": 1.16,
+            "p90": 4.51,
+            "realized": -4.01,
+            "hit": false
+          },
+          {
+            "date": "1981-01",
+            "central": 2.98,
+            "p10": 0.01,
+            "p90": 5.99,
+            "realized": 8.9,
+            "hit": false
+          },
+          {
+            "date": "1991-01",
+            "central": 2.95,
+            "p10": -0.81,
+            "p90": 6.87,
+            "realized": 5.98,
+            "hit": true
+          },
+          {
+            "date": "2001-01",
+            "central": 2.57,
+            "p10": 0.13,
+            "p90": 4.95,
+            "realized": 3.25,
+            "hit": true
+          },
+          {
+            "date": "2011-01",
+            "central": 1.89,
+            "p10": -1.09,
+            "p90": 4.93,
+            "realized": 2.46,
+            "hit": true
+          }
+        ]
+      },
+      "overlapping": {
+        "n": 1628,
+        "k": 661,
+        "rate": 0.406,
+        "low": 0.3858,
+        "high": 0.4265,
+        "passes": false,
+        "first": "1881-01",
+        "last": "2016-08"
+      },
+      "mean_bias_pp": -1.05,
+      "mean_width_pp": 4.34
+    }
+  },
+  "not_calibrable": {
+    "developed_ex_us": "VTMGX desde 1999: unas 2 ventanas de 10 años independientes",
+    "emerging": "VEIEX desde 1994: unas 3 ventanas de 10 años independientes",
+    "reits": "VGSIX desde 1996: unas 3 ventanas de 10 años independientes"
+  }
+}

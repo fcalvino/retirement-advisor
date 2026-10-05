@@ -855,6 +855,51 @@ class FuentesConfig:
 FUENTES = FuentesConfig()
 
 
+@dataclass
+class BacktestMetodoConfig:
+    """Backtest point-in-time del método de Estimación (EO-3, ADR 0001).
+
+    La pregunta: ¿el p10–p90 de la Estimación central contiene el rendimiento real a
+    10 años con la frecuencia que declara? Decisiones del usuario (2026-10-05):
+
+      horizon_months       — el horizonte que se juzga (10 años).
+      azar_window_months   — los meses previos que se sortean para el Azar: los mismos
+                             10 años que ``MonteCarloSimulator.HISTORY_PERIOD``.
+      block_months         — el bloque del bootstrap: 1 mes es lo más cerca de las
+                             4 semanas de ``MONTE_CARLO.block_size_weeks`` con datos
+                             mensuales.
+      n_sims               — caminos por fecha.
+      coverage_target      — la frecuencia que declara el p10–p90.
+      confidence           — el nivel del intervalo de Clopper-Pearson: pasa si
+                             ``coverage_target`` cae adentro, sobre las ventanas sin
+                             superposición. Las superpuestas se informan, sin juzgar.
+      inflation_proxy_months — la inflación esperada de los bonos es la de estos meses
+                             previos (antes de 2003 no hay una citable): supuesto del
+                             backtest, no de la app.
+      seed                 — semilla fija: el informe se reproduce.
+      report_file          — el informe versionado (sólo números derivados).
+      not_calibrable       — Clases sin historia larga, con el porqué; van al ADR.
+    """
+
+    horizon_months: int = 120
+    azar_window_months: int = 120
+    block_months: int = 1
+    n_sims: int = 2000
+    coverage_target: float = 0.80
+    confidence: float = 0.90
+    inflation_proxy_months: int = 120
+    seed: int = 20261005
+    report_file: str = "data/fuentes/backtest_metodo.json"
+    not_calibrable: Mapping[str, str] = field(default_factory=lambda: {
+        "developed_ex_us": "VTMGX desde 1999: unas 2 ventanas de 10 años independientes",
+        "emerging": "VEIEX desde 1994: unas 3 ventanas de 10 años independientes",
+        "reits": "VGSIX desde 1996: unas 3 ventanas de 10 años independientes",
+    })
+
+
+BACKTEST_METODO = BacktestMetodoConfig()
+
+
 @dataclass(frozen=True)
 class GroqTransportConfig:
     """Transporte Groq/gpt-oss. No es un prompt: es el techo y el reasoning.
