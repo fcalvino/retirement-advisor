@@ -94,3 +94,44 @@ no queda como número: el objetivo del optimizador maximiza el ratio sin un λ d
 aversión, y el único δ era el del prior de Black-Litterman, que EO-1a fijó en el de
 mercado. La aversión del Perfil entra sólo por sus topes (posición, volatilidad,
 sector, dividendo) y el desplazamiento de bonos por edad. La decisión no cambia.
+
+## Nota (2026-10-05, EO-3)
+
+El backtest que condiciona EO-4 corrió point-in-time sobre la serie de Shiller
+(`ie_data.xls`, sha256 `044196da…`, hasta 2026-08). En cada mes desde 1881, sólo con lo
+que se sabía entonces, el central es la mediana de las Fuentes con historia larga y el
+p10–p90 sale del mismo mecanismo del Monte Carlo (bootstrap de los 120 meses previos)
+recentrado de forma compuesta en ese central; se compara con el rendimiento real de
+los 10 años siguientes. Decisiones del usuario (2026-10-05): términos reales; pasa si
+el 80 % cae en el intervalo de Clopper-Pearson al 90 % de la cobertura en las ventanas
+sin superposición.
+
+| Clase | Fuentes del central | Sin superposición | Intervalo 90 % | Superpuestas | Veredicto |
+|---|---|---|---|---|---|
+| Acciones EE.UU. | 1/CAPE · Historia real del S&P | 9/14 (64 %) | 39 %–85 % | 73 % | pasa |
+| Bonos EE.UU. | GS10 − inflación de 10 años previos · Historia real | 6/14 (43 %) | 21 %–68 % | 41 % | no pasa |
+| Ex-EE.UU., emergentes, REITs | — | — | — | — | no calibrables (unas 2–3 ventanas independientes) |
+
+La regla es de dos colas: una banda que contiene el resultado siempre (14/14) también
+falla, porque declara 80 % y sobre-cubre.
+
+Acciones pasa con poca potencia: con 14 ventanas el intervalo es ancho, las
+superpuestas (73 %) quedan algo debajo del 80 % y el veredicto depende del mes en que
+arrancan las ventanas: corriendo la regla sobre las 120 fases posibles, acciones pasa
+en 93 (k entre 5 y 13) y bonos en 4 (k entre 3 y 8). Se juzga con la primera fase, la
+que eligió el usuario; las demás se informan. Bonos no pasa por el método, no por la
+muestra: la banda es angosta (4,3 pp de ancho medio, contra 11,7 en acciones) porque
+sortear meses de los últimos 10 años no reproduce los regímenes de inflación que
+mueven 10 años de bonos reales, y el central queda alto (los fallos caen debajo del
+p10 tres veces más que arriba del p90; la Historia real de bonos se pasa 1,87 pp en
+promedio). Ninguna variante medida pasa (bloques de 12/24/60 meses; toda la historia
+previa), y probar hasta que una pase sobre las mismas ventanas sería ajustar al test.
+El proxy de inflación de los bonos es un supuesto del backtest, no de la app. El
+«Long Interest Rate GS10» de Shiller arranca en 1871, antes de que existiera un Tesoro
+a 10 años: es una serie de tasas largas empalmada, y ni la página ni el archivo
+documentan el empalme, así que la parte temprana de bonos es la más débil.
+
+Consecuencia: EO-4 recentra el Monte Carlo de forma compuesta y sólo tiene evidencia
+para borrar el haircut en acciones de EE.UU.; qué hacer con bonos es una decisión
+pendiente del usuario. La decisión de fondo no cambia.
+

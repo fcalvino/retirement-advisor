@@ -19,7 +19,7 @@ ajuste del usuario del 2026-10-04 (EO-1 en tres PRs): la Estimación objetiva
 
 1. ~~**Sincronización** — este orden, el ADR 0001 y el glosario llegan a `main` (sólo docs).~~
 2. ~~**SIM-GAP-PCT + KATEX-DOLLAR-PLAN** — banda 4, un PR: el mismo bloque «Dos escenarios».~~
-3. ~~**EO-0 → EO-1a → EO-1b → EO-1c → EO-2a → EO-2b → EO-2c**~~ **→ EO-3 → EO-4**; EO-4 no entra si EO-3 no pasa.
+3. ~~**EO-0 → EO-1a → EO-1b → EO-1c → EO-2a → EO-2b → EO-2c → EO-3**~~ **→ EO-4**; EO-4 no entra si EO-3 no pasa: acciones EE.UU. pasó y bonos EE.UU. no (bloque 6), así que antes de EO-4 el usuario decide qué hacer con el método de bonos.
 4. **EO-5** (después de EO-1b) y **EO-6** (después de EO-1a), en paralelo. Ver bloque 6.
 
 Esperan disparador: U5-1b y COM-*. Sin orden: STREAMLIT-1.65 (sin banda), PORTFOLIO-FX,
@@ -100,7 +100,6 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **IDEA-5 IMPUESTOS** | 5 | Módulo de impuestos personales —bienes personales, retención de dividendos, ganancia de capital— (idea 5 de `DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`; `TaxConfig` sólo modela el impuesto corporativo). Sin alcance ni orden. Ver bloque 4 |
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **GOAL-PRIORITY-TEXT** | 5 | Una meta importada a mano con la prioridad en texto («esencial») llega a `goals_list` sin convertir y «Simular» la pasa por `int()`. Residual declarado de PLAN-GOALS-KEYS (#214); ningún export de la app la escribe así. Anotado el 2026-10-02, **no priorizado**. Ver bloque 4 |
-| **EO-3** | dec. | Backtest del método con historia y CAPE: es la condición de EO-4. Ver bloque 6 |
 | **EO-4** | dec. | Una Estimación por activo para el Monte Carlo y el optimizador; se borra el haircut global; Escenarios en la UI, también en lugar de «Comparar perfiles». Ver bloque 6 |
 | **EO-5** | dec. | La IA calibrada: prompts, `recommended_max_allocation`, el PM recibe la Postura, oráculo de postura. Ver bloque 6 |
 | **EO-6** | dec. | Señales: tope simétrico, imputación por mediana del sector, atenuación simétrica, rótulo «no calibrado»; el track record guarda la versión del método de señales. Ver bloque 6 |
@@ -355,11 +354,15 @@ Toda etapa que mueva μ o el Monte Carlo sube `ENGINE_VERSION`.
     fechado en pb, aparte de las Fuentes, visible en «Supuestos»; no entra al central de
     emergentes. El 0,85 sigue rotulado «pendiente de Fuente»: convertir un spread en un
     multiplicador de score no tiene Fuente (decisiones del usuario, 2026-10-05).
-- **EO-3 — Backtest del método.** Con las Fuentes de historia larga (precios y CAPE
-  de Shiller; la serie completa no está en el repo —sin licencia—: `refresh_fuentes.py`
-  la deja en `data/fuentes/raw/`), point-in-time como PIT: ¿el rango declarado contiene el resultado a
-  10 años con la frecuencia que dice? La tolerancia va en `config.py`. Si falla se
-  corrige el método, no la tolerancia; si no puede calibrar, se anota en el ADR.
+- ~~**EO-3 — Backtest del método.**~~ *cerrada (2026-10-05)*, ver `ROADMAP.md` y la nota
+  EO-3 del ADR. ¿El p10–p90 de la Estimación central contiene el rendimiento real a
+  10 años el 80 % de las veces? Point-in-time sobre Shiller, 1881–2016, con
+  `analysis/backtest_metodo.py` y el informe `data/fuentes/backtest_metodo.json`.
+  **Acciones EE.UU. pasa** (9/14 ventanas sin superposición, 64 %, Clopper-Pearson al
+  90 % [39 %, 85 %]; superpuestas 73 %); **bonos EE.UU. no pasa** (6/14, 43 %,
+  [21 %, 68 %]; superpuestas 41 %): la banda es angosta (4,3 pp de ancho medio) y el
+  central queda alto (sesgo −1,05 pp; los fallos caen abajo 3 a 1). Ex-EE.UU.,
+  emergentes y REITs: no calibrables (unas 2–3 ventanas independientes).
 - **EO-4 — Una Estimación, dos motores.** La Estimación de cada activo se contrae
   hacia la de su Clase según su evidencia (el score, con el peso que respalde U6-1);
   la usan el optimizador y el Monte Carlo, que sigue sorteando de la historia
@@ -372,6 +375,15 @@ Toda etapa que mueva μ o el Monte Carlo sube `ENGINE_VERSION`.
   con su rótulo (decisión del usuario, 2026-10-04). Acá entra también el riesgo país
   de EO-2c a la Estimación de los ADRs argentinos, en términos de rendimiento, y con
   eso se va `OPTIMIZER.ars_risk_discount` del score (decisión del usuario, 2026-10-05).
+  Lo que deja EO-3 (2026-10-05): (1) el recentrado del Monte Carlo pasa a ser
+  **compuesto** —se fija el promedio de los log-rendimientos, así la mediana rinde la
+  Estimación—, el mismo que pasó el backtest; (2) con la evidencia de EO-3 el haircut
+  sólo se puede borrar para acciones EE.UU.; para bonos el método no pasó y las
+  correcciones medidas tampoco (bloques de 12/24/60 meses: 5, 4 y 2 de 14; toda la
+  historia previa como Azar: 6 de 14). **Decide el usuario** qué hacer con bonos antes
+  de EO-4 (corregir el método con otro mecanismo de Azar, o dejarlos fuera de la
+  Estimación objetiva con el haircut rotulado); probar variantes hasta que una pase
+  sobre las mismas 14 ventanas sería ajustar al test.
 - **EO-5 — IA calibrada.** Fuera «filosofía conservadora» (`committee_prompts.py`),
   «extremadamente… conservador» y «nunca digas esto es genial» (`prompts.py`),
   «asesor… conservador» (`chat_agent.py:138`); la instrucción es decir lo que la

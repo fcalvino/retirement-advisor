@@ -66,16 +66,22 @@ def _download_shiller(raw_dir: Path) -> tuple[Path, str]:
     return path, hashlib.sha256(resp.content).hexdigest()
 
 
-def _read_shiller(path: Path) -> list[fuentes.ShillerRow]:
+def open_shiller(path: Path, cols: dict):
+    """La hoja «Data» de ie_data.xls, después de verificar el rótulo de cada columna."""
     try:
         import xlrd
     except ImportError:
         raise SystemExit("Falta xlrd: ./venv/bin/pip install -r requirements-dev.txt")
     sheet = xlrd.open_workbook(str(path)).sheet_by_name("Data")
-    for key, (col, label) in _SHILLER_COLS.items():
+    for key, (col, label) in cols.items():
         header = " ".join(str(sheet.cell_value(r, col)).strip() for r in range(4, 8))
         if label not in " ".join(header.split()):
             raise SystemExit(f"ie_data.xls cambió: la columna {col} ya no es «{label}» ({header!r})")
+    return sheet
+
+
+def _read_shiller(path: Path) -> list[fuentes.ShillerRow]:
+    sheet = open_shiller(path, _SHILLER_COLS)
     rows = []
     for r in range(_SHILLER_FIRST_ROW, sheet.nrows):
         stamp = sheet.cell_value(r, 0)
