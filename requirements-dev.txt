@@ -6,3 +6,6 @@
 # Pinned so a new ruff release cannot turn CI red without a change in the repo.
 # 0.16.8: the version that passes `ruff check .` on this tree (2026-09-26).
 ruff==0.16.8
+# Lee ie_data.xls de Shiller en scripts/refresh_fuentes.py (EO-2b), el refresco anual
+# de las Fuentes; la app no lo importa.
+xlrd==2.0.1

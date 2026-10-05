@@ -1,6 +1,6 @@
 {
   "_doc": [
-    "Proyecciones citadas de gestoras por Clase de activo (EO-2a, ADR 0001). Mantenido a mano: se revisa una vez por año.",
+    "Fuentes citadas por Clase de activo (EO-2a/EO-2b, ADR 0001). Las de gestoras se cargan a mano; las de valuación e historia las escribe scripts/refresh_fuentes.py. Se revisa una vez por año.",
     "Campos por entrada:",
     "  name / kind      quién lo publica; kind = gestora | valuacion | historia",
     "  asset_class      clave de FUENTES.asset_classes (config.py)",
@@ -8,10 +8,12 @@
     "  range_pct        [bajo, alto] cuando la Fuente publica un rango",
     "  basis / currency nominal | real, y moneda",
     "  as_of            fecha de corte del dato (YYYY-MM-DD); de ella sale la antigüedad",
+    "  period_start     historia: desde cuándo (la serie va hasta as_of)",
     "  edition / source edición y URL citable",
     "  note             dónde está el número (página, tabla, frase) y sus salvedades",
     "Regla: sólo números que se pueden citar. Lo que no se pudo citar queda afuera y se lista abajo.",
-    "Fuera de la tabla (2026-10-04): Research Affiliates (ahora Syzygy Asset Management): su Asset Allocation Interactive se dibuja con JavaScript y no expone los números sin sesión; J.P. Morgan bonos agregados de EE.UU.: no figura como número en el informe ni en el resumen, sólo en la matriz interactiva; Vanguard REITs de EE.UU.: sólo en el gráfico interactivo."
+    "Fuera de la tabla (2026-10-04): Research Affiliates (ahora Syzygy Asset Management): su Asset Allocation Interactive se dibuja con JavaScript y no expone los números sin sesión; J.P. Morgan bonos agregados de EE.UU.: no figura como número en el informe ni en el resumen, sólo en la matriz interactiva; Vanguard REITs de EE.UU.: sólo en el gráfico interactivo.",
+    "Valuación e historia (EO-2b, 2026-10-05, decisiones del usuario): de ie_data.xls de Shiller se versionan sólo números derivados —el archivo no trae licencia y el repo es público—, citados con la fecha de descarga y su sha256; la copia queda en data/fuentes/raw/ (ignorado). Al central entran todas las Fuentes."
   ],
   "entries": [
     {
@@ -181,6 +183,95 @@
       "edition": "BlackRock Capital Market Assumptions, agosto 2026, escenario «Starting point», 10 años",
       "source": "https://www.blackrock.com/blk-inst-c-assets/images/tools/blackrock-investment-institute/cma/blackrock-capital-market-assumptions.xlsx",
       "note": "Hoja «Starting point», fila «Listed REITs» (FTSE EPRA Nareit Developed Index (Gross)), columna «10 year»; «August 2026, data as of 30 June 2026». Ojo: el índice es global desarrollado, no sólo EE.UU.; BlackRock no publica REITs de EE.UU. por separado."
+    },
+    {
+      "asset_class": "us_equity",
+      "basis": "nominal",
+      "currency": "USD",
+      "as_of": "2026-08-31",
+      "source": "https://shillerdata.com/",
+      "name": "CAPE de Shiller",
+      "kind": "valuacion",
+      "value_pct": 4.85,
+      "edition": "ie_data.xls, CAPE de 2026-08",
+      "note": "CAPE 41.12 → 1/CAPE = 2.43 % real, compuesto con la inflación implícita a 10 años de FRED (T10YIE) 2.36 % al 2026-10-02. ie_data.xls de https://shillerdata.com/, descargado el 2026-10-05 (sha256 044196dafe44c3030b2facbdea023975b3f6aa68b4e52f8f9bafc403e19589c1); se versiona sólo este número derivado: el archivo no trae licencia."
+    },
+    {
+      "asset_class": "us_equity",
+      "basis": "nominal",
+      "currency": "USD",
+      "as_of": "2026-08-31",
+      "source": "https://shillerdata.com/",
+      "name": "S&P de Shiller",
+      "kind": "historia",
+      "value_pct": 9.41,
+      "period_start": "1871-01-01",
+      "edition": "ie_data.xls, 1871-01 a 2026-08",
+      "note": "Rendimiento total real 7.12 % anual («Real Total Return Price») e IPC 2.14 % anual en 155.6 años. ie_data.xls de https://shillerdata.com/, descargado el 2026-10-05 (sha256 044196dafe44c3030b2facbdea023975b3f6aa68b4e52f8f9bafc403e19589c1); se versiona sólo este número derivado: el archivo no trae licencia."
+    },
+    {
+      "name": "Tesoro a 10 años (FRED DGS10)",
+      "kind": "valuacion",
+      "asset_class": "us_bonds",
+      "value_pct": 5.24,
+      "basis": "nominal",
+      "currency": "USD",
+      "as_of": "2026-10-01",
+      "source": "https://fred.stlouisfed.org/series/DGS10",
+      "edition": "FRED DGS10, observación del 2026-10-01",
+      "note": "La tasa inicial de un bono es la mejor estimación de su rendimiento al plazo. Es el Tesoro, no el agregado de las gestoras: sin crédito corporativo."
+    },
+    {
+      "name": "VTMGX",
+      "kind": "historia",
+      "asset_class": "developed_ex_us",
+      "value_pct": 5.8,
+      "basis": "nominal",
+      "currency": "USD",
+      "as_of": "2026-09-30",
+      "period_start": "1999-08-17",
+      "source": "https://finance.yahoo.com/quote/VTMGX/history",
+      "edition": "precios diarios ajustados de Yahoo Finance, 1999-08-17 a 2026-09-30",
+      "note": "Rendimiento total anual en 27.1 años (precio ajustado por dividendos), neto de las comisiones del fondo. El índice cambió en el período: MSCI EAFE hasta 2013-05-28, FTSE Developed ex North America hasta 2015-12-20 y FTSE Developed All Cap ex US (incluye Canadá) desde 2016-05-31; antes de 2014-04-04 es el Vanguard Tax-Managed International Fund (fact sheet de Vanguard)."
+    },
+    {
+      "name": "VEIEX",
+      "kind": "historia",
+      "asset_class": "emerging",
+      "value_pct": 6.65,
+      "basis": "nominal",
+      "currency": "USD",
+      "as_of": "2026-09-30",
+      "period_start": "1994-05-04",
+      "source": "https://finance.yahoo.com/quote/VEIEX/history",
+      "edition": "precios diarios ajustados de Yahoo Finance, 1994-05-04 a 2026-09-30",
+      "note": "Rendimiento total anual en 32.4 años (precio ajustado por dividendos), neto de las comisiones del fondo."
+    },
+    {
+      "name": "VBMFX",
+      "kind": "historia",
+      "asset_class": "us_bonds",
+      "value_pct": 4.88,
+      "basis": "nominal",
+      "currency": "USD",
+      "as_of": "2026-09-30",
+      "period_start": "1986-12-11",
+      "source": "https://finance.yahoo.com/quote/VBMFX/history",
+      "edition": "precios diarios ajustados de Yahoo Finance, 1986-12-11 a 2026-09-30",
+      "note": "Rendimiento total anual en 39.8 años (precio ajustado por dividendos), neto de las comisiones del fondo."
+    },
+    {
+      "name": "VGSIX",
+      "kind": "historia",
+      "asset_class": "reits",
+      "value_pct": 8.72,
+      "basis": "nominal",
+      "currency": "USD",
+      "as_of": "2026-09-30",
+      "period_start": "1996-05-13",
+      "source": "https://finance.yahoo.com/quote/VGSIX/history",
+      "edition": "precios diarios ajustados de Yahoo Finance, 1996-05-13 a 2026-09-30",
+      "note": "Rendimiento total anual en 30.4 años (precio ajustado por dividendos), neto de las comisiones del fondo."
     }
   ]
 }

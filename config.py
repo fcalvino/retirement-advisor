@@ -766,6 +766,8 @@ class FuentesConfig:
                           → rótulo. Emergentes incluye Argentina.
       declared_absent   — Clases sin Fuente externa creíble: no tienen central y la
                           vista las rotula «sin Fuente externa» (glosario).
+      shiller_page … history_proxies — EO-2b: de dónde salen la valuación y la
+                          Historia que escribe scripts/refresh_fuentes.py (ver abajo).
     """
 
     stale_warn_months: int = 12
@@ -809,6 +811,35 @@ class FuentesConfig:
     # por decisión del usuario (2026-10-05, al validar EO-2a). El país sigue sin lista.
     ticker_classes: Mapping[str, str] = field(default_factory=lambda: {
         "MELI": "emerging", "GLOB": "emerging",
+    })
+    # EO-2b — valuación e Historia (decisiones del usuario, 2026-10-05). Los escribe
+    # scripts/refresh_fuentes.py en el archivo curado, con fecha; la app no los baja.
+    #
+    # Shiller (ie_data.xls) no trae licencia y el repo es público: se versionan sólo
+    # números derivados, citados con la fecha de descarga y el sha256 del archivo; la
+    # copia queda en ``raw_dir`` (ignorado por git). Su última fila es provisoria
+    # (precio del día 1 del mes, IPC estimado): ``shiller_provisional_rows`` la saltea.
+    shiller_page: str = "https://shillerdata.com/"
+    shiller_provisional_rows: int = 1
+    raw_dir: str = "data/fuentes/raw"
+    # CAPE → rendimiento esperado: 1/CAPE (real) compuesto con la inflación implícita
+    # a 10 años. Bonos: la tasa del Tesoro a 10 años como rendimiento a 10 años; es la
+    # misma serie que fija macro_rag (``MACRO_RAG.fred_series``).
+    breakeven_series: str = "T10YIE"
+    bond_yield_series: str = "DGS10"
+    # Historia: la serie más larga por Clase. EE.UU. es el S&P de Shiller (desde 1871);
+    # el resto, el fondo indexado más viejo de la Clase, neto de comisiones. Bonos:
+    # el agregado (VBMFX), como las gestoras, y no el Tesoro de Shiller.
+    history_proxies: Mapping[str, str] = field(default_factory=lambda: {
+        "us_equity": "shiller", "developed_ex_us": "VTMGX", "emerging": "VEIEX",
+        "us_bonds": "VBMFX", "reits": "VGSIX",
+    })
+    # Lo que la serie de un fondo no dice sola y su Historia tiene que citar.
+    history_notes: Mapping[str, str] = field(default_factory=lambda: {
+        "VTMGX": ("El índice cambió en el período: MSCI EAFE hasta 2013-05-28, FTSE "
+                  "Developed ex North America hasta 2015-12-20 y FTSE Developed All Cap "
+                  "ex US (incluye Canadá) desde 2016-05-31; antes de 2014-04-04 es el "
+                  "Vanguard Tax-Managed International Fund (fact sheet de Vanguard)."),
     })
 
 
