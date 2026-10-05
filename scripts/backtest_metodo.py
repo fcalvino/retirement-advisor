@@ -18,6 +18,7 @@ Sin ``--xls`` usa el ie_data más nuevo de ``FUENTES.raw_dir`` (lo deja ahí
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
 import json
 import sys
@@ -30,7 +31,7 @@ if str(_root) not in sys.path:
 
 from loguru import logger  # noqa: E402
 
-from analysis.backtest_metodo import MonthlyRow, run_backtest  # noqa: E402
+from analysis.backtest_metodo import MonthlyRow, phase_sensitivity, run_backtest  # noqa: E402
 from config import BACKTEST_METODO, FUENTES  # noqa: E402
 from scripts.refresh_fuentes import open_shiller  # noqa: E402
 
@@ -91,6 +92,7 @@ def build_report(path: Path) -> dict:
                             "first": res.windows[0].date, "last": res.windows[-1].date},
             "mean_bias_pp": _r(res.mean_bias_pp),
             "mean_width_pp": _r(res.mean_width_pp),
+            "phase_sensitivity": dataclasses.asdict(phase_sensitivity(res)),
         }
         logger.info(f"{asset}: sin superposición {nov.k}/{nov.n} = {nov.rate:.1%} "
                     f"[{nov.low:.1%}, {nov.high:.1%}] → {classes[asset]['verdict']}; "

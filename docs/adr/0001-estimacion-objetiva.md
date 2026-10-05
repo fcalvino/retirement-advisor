@@ -112,15 +112,24 @@ sin superposición.
 | Bonos EE.UU. | GS10 − inflación de 10 años previos · Historia real | 6/14 (43 %) | 21 %–68 % | 41 % | no pasa |
 | Ex-EE.UU., emergentes, REITs | — | — | — | — | no calibrables (unas 2–3 ventanas independientes) |
 
-Acciones pasa con poca potencia: con 14 ventanas el intervalo es ancho, y las
-superpuestas (73 %) quedan algo debajo del 80 %. Bonos no pasa por el método, no por la
+La regla es de dos colas: una banda que contiene el resultado siempre (14/14) también
+falla, porque declara 80 % y sobre-cubre.
+
+Acciones pasa con poca potencia: con 14 ventanas el intervalo es ancho, las
+superpuestas (73 %) quedan algo debajo del 80 % y el veredicto depende del mes en que
+arrancan las ventanas: corriendo la regla sobre las 120 fases posibles, acciones pasa
+en 93 (k entre 5 y 13) y bonos en 4 (k entre 3 y 8). Se juzga con la primera fase, la
+que eligió el usuario; las demás se informan. Bonos no pasa por el método, no por la
 muestra: la banda es angosta (4,3 pp de ancho medio, contra 11,7 en acciones) porque
 sortear meses de los últimos 10 años no reproduce los regímenes de inflación que
 mueven 10 años de bonos reales, y el central queda alto (los fallos caen debajo del
 p10 tres veces más que arriba del p90; la Historia real de bonos se pasa 1,87 pp en
 promedio). Ninguna variante medida pasa (bloques de 12/24/60 meses; toda la historia
 previa), y probar hasta que una pase sobre las mismas ventanas sería ajustar al test.
-El proxy de inflación de los bonos es un supuesto del backtest, no de la app.
+El proxy de inflación de los bonos es un supuesto del backtest, no de la app. El
+«Long Interest Rate GS10» de Shiller arranca en 1871, antes de que existiera un Tesoro
+a 10 años: es una serie de tasas largas empalmada, y ni la página ni el archivo
+documentan el empalme, así que la parte temprana de bonos es la más débil.
 
 Consecuencia: EO-4 recentra el Monte Carlo de forma compuesta y sólo tiene evidencia
 para borrar el haircut en acciones de EE.UU.; qué hacer con bonos es una decisión

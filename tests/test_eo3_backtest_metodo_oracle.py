@@ -189,6 +189,22 @@ def test_the_backtest_is_reproducible_and_reports_both_coverages():
     assert all(w.p10 < w.p90 for w in a.windows)
 
 
+def test_phase_sensitivity_runs_the_rule_on_every_starting_month():
+    from analysis.backtest_metodo import BacktestResult, CoverageResult, Window, phase_sensitivity
+
+    # 4 fases (step=4) sobre 16 ventanas: la fase 0 acierta 4/4, las demás 0/4.
+    ws = tuple(Window(index=10 + j, date="x", central=0, p10=0, p90=0, realized=0,
+                      hit=(j % 4 == 0)) for j in range(16))
+    dummy = CoverageResult(n=0, k=0, rate=0, low=0, high=0, passes=False)
+    res = BacktestResult(asset="us_equity", windows=ws, overlapping=dummy,
+                         non_overlapping=dummy, non_overlapping_windows=(),
+                         mean_bias_pp=0, mean_width_pp=0)
+    ps = phase_sensitivity(res, step=4)
+    # 4/4: el bajo de Clopper-Pearson es 0,05^(1/4) = 0,47 ≤ 0,80 ≤ 1 → pasa;
+    # 0/4: el alto es 1 − 0,05^(1/4) = 0,53 < 0,80 → no pasa.
+    assert (ps.phases, ps.passing, ps.k_min, ps.k_max) == (4, 1, 0, 4)
+
+
 # --------------------------------------------------------------------------- #
 #  Config y el informe versionado                                              #
 # --------------------------------------------------------------------------- #
@@ -216,6 +232,8 @@ def test_the_shipped_report_has_a_verdict_per_class_and_no_raw_series():
         nov = r["non_overlapping"]
         assert nov["n"] == len(nov["windows"]) and 0 <= nov["low"] <= nov["high"] <= 1
         assert {"date", "central", "p10", "p90", "realized", "hit"} <= set(nov["windows"][0])
+        ps = r["phase_sensitivity"]
+        assert ps["phases"] == 120 and 0 <= ps["passing"] <= 120 and ps["k_min"] <= nov["k"] <= ps["k_max"]
     assert set(report["not_calibrable"]) == {"developed_ex_us", "emerging", "reits"}
     text = path.read_text(encoding="utf-8")
     assert "real_tr_price" not in text and "cpi" not in text.lower().replace("ipc", "")

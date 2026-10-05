@@ -220,3 +220,27 @@ def run_backtest(rows: Sequence[MonthlyRow], asset: str, *, seed: Optional[int] 
         mean_bias_pp=float(np.mean([w.realized - w.central for w in windows])),
         mean_width_pp=float(np.mean([w.p90 - w.p10 for w in windows])),
     )
+
+
+@dataclass(frozen=True)
+class PhaseSensitivity:
+    """Cuánto depende el veredicto del mes en que arrancan las ventanas sin superposición."""
+
+    phases: int     # fases posibles (= el horizonte en meses)
+    passing: int    # cuántas pasan la regla
+    k_min: int
+    k_max: int
+
+
+def phase_sensitivity(result: BacktestResult, step: Optional[int] = None) -> PhaseSensitivity:
+    """La regla sobre cada una de las ``step`` fases posibles; el veredicto usa la primera.
+
+    Se informa, no se juzga: con unas 14 ventanas un mes de corrimiento puede cambiar
+    k, y eso dice cuánta potencia tiene el backtest.
+    """
+    step = step or BACKTEST_METODO.horizon_months
+    first = result.windows[0].index
+    covs = [coverage([w.hit for w in result.windows if (w.index - first) % step == ph])
+            for ph in range(step)]
+    return PhaseSensitivity(phases=step, passing=sum(c.passes for c in covs),
+                            k_min=min(c.k for c in covs), k_max=max(c.k for c in covs))

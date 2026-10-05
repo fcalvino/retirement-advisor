@@ -149,7 +149,13 @@
         "last": "2016-08"
       },
       "mean_bias_pp": -0.44,
-      "mean_width_pp": 11.69
+      "mean_width_pp": 11.69,
+      "phase_sensitivity": {
+        "phases": 120,
+        "passing": 93,
+        "k_min": 5,
+        "k_max": 13
+      }
     },
     "us_bonds": {
       "verdict": "no pasa",
@@ -286,7 +292,13 @@
         "last": "2016-08"
       },
       "mean_bias_pp": -1.05,
-      "mean_width_pp": 4.34
+      "mean_width_pp": 4.34,
+      "phase_sensitivity": {
+        "phases": 120,
+        "passing": 4,
+        "k_min": 3,
+        "k_max": 8
+      }
     }
   },
   "not_calibrable": {
