@@ -10,6 +10,19 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## EO-2a — las Fuentes por Clase de activo, la tabla de gestoras y la vista «Supuestos» (2026-10-04)
+
+Primera parte de EO-2 (ADR 0001). Decisiones del usuario (2026-10-04): seis Clases; la tabla de gestoras la investiga la tarea y la valida el usuario antes del merge; EO-2 en tres PRs (2a: modelo, gestoras y vista; 2b: valuación e historia; 2c: riesgo país desde una fuente automática).
+
+- **Modelo** (`analysis/fuentes.py`, `config.FUENTES`): `Fuente`, `summarize_class`/`summarize_all` (mediana y rango de las vigentes; aviso a los 12 meses, fuera del central a los 24, marcada), `asset_class_for`/`unmapped` y `load_sources`.
+- **Gestoras** (`data/fuentes/proyecciones.json`, nominal en USD, ~10 años): J.P. Morgan LTCMA 2026 al 2025-09-30 (EE.UU. 6,7; EAFE 7,5; emergentes 7,8; REITs de EE.UU. 8,8; horizonte 10–15 años); Vanguard VCMM al 2026-06-30 (EE.UU. 4,2–6,2; desarrolladas 4,5–6,5; emergentes 2–4: el valor es el centro del rango) y VEMO 2026 (bonos de alta calidad «around 4%»); BlackRock CMA agosto 2026 al 2026-06-30, escenario «Starting point» (EE.UU. 8,97; World ex-US 7,77; emergentes 8,80; agregado de EE.UU. 4,88; REITs desarrollados globales 7,43). Fuera: Research Affiliates/Syzygy (la herramienta no expone números sin sesión), bonos agregados de J.P. Morgan (sólo en la matriz interactiva) y REITs de Vanguard (sólo en el gráfico interactivo). El PDF oficial del informe completo de J.P. Morgan dio 404; el texto se verificó en una copia del mismo informe, y el archivo lo dice.
+- **Vista «Supuestos»** en «Proyectar», visible: con EO-4 es la base de toda proyección y el ADR pide el Desacuerdo siempre visible; el contrato del menú pasa a 12 entradas. Muestra central, Desacuerdo y cada Fuente con fecha, antigüedad y cita; cripto «sin Fuente externa»; la clasificación del universo va detrás de un botón.
+- **QA en vivo** (copia de la base): centrales 6,7 / 7,5 / 7,8 / 4,4 / 8,1, iguales a las medianas hechas a mano; el universo Default se clasificaba entero salvo MELI (Uruguay) y GLOB (Luxemburgo), que se nombraron sin Clase; al validar la tabla, el usuario los mandó a emergentes (2026-10-05) con una excepción por ticker, sin sumar sus países a las listas.
+- **Validación del usuario (2026-10-05):** la tabla tal cual, incluido el 4 % aproximado de Vanguard para bonos.
+- **Oráculo:** `tests/test_eo2a_fuentes_oracle.py`, 28 casos.
+
+---
+
 ## EO-1c — la Exigencia y el margen de seguridad son Postura del Perfil (2026-10-04)
 
 Tercera y última parte de EO-1 (ADR 0001). Decisiones del usuario (2026-10-04): Exigencia 90/80/70 por perfil, editable; sin perfil, «Mis Metas» muestra la probabilidad sin juicio; margen del Perfil 20/10/5, sólo en la ficha, con la Señal en su 10 % fijo (opción a de la víspera).
