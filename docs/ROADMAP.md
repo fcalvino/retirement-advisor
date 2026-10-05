@@ -18,7 +18,8 @@ Condición de EO-4 (ADR 0001). Decisiones del usuario (2026-10-05): se prueba el
 - **Script** (`scripts/backtest_metodo.py`): lee `ie_data.xls` (no versionado) y escribe `data/fuentes/backtest_metodo.json`.
 - **Resultado** (Shiller hasta 2026-08, sha256 `044196da…`): acciones 9/14 sin superposición, [39 %, 85 %] → **pasa**; bonos 6/14, [21 %, 68 %] → **no pasa** (ancho medio 4,3 pp, sesgo −1,05 pp, fallos abajo 3 a 1). Variantes medidas para bonos, ninguna pasa: bloques de 12/24/60 meses (5, 4, 2 de 14), toda la historia previa (6 de 14).
 - **Verificación independiente:** acciones 1881-01 (central 9,24, realizado 4,54) y bonos 1971-01 (2,84, −4,01) recalculados a mano desde el `.xls`.
-- **Oráculo:** `tests/test_eo3_backtest_metodo_oracle.py`, 13 casos.
+- **Sensibilidad a la fase:** sobre las 120 fases posibles de las ventanas sin superposición, acciones pasa en 93 (k 5–13) y bonos en 4 (k 3–8).
+- **Oráculo:** `tests/test_eo3_backtest_metodo_oracle.py`, 14 casos.
 
 ---
 
