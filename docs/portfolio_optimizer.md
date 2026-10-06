@@ -51,6 +51,20 @@ scored_tickers (de Screener/Stock Analysis)
 
 ---
 
+## Desde EO-4b: la Estimación objetiva
+
+Con las Clases de los activos —la app siempre las pasa— el μ de cada activo es la
+Estimación objetiva de su Clase (`analysis.estimacion`), la misma del Monte Carlo:
+acciones EE.UU. calibrada; ex-EE.UU., emergentes y REITs «no calibrable»; cripto 0 %
+real; bonos EE.UU. y tickers sin Clase, su historia semanal ×0,80, compuesta. No hay
+contracción por score ni posterior de Black-Litterman en ese camino, así que el
+rendimiento de la cartera es el promedio ponderado de las Estimaciones y se muestra
+como **«Estimación objetiva (anual)»**, una tasa, con su ratio **«Ratio
+estimación/vol»**, que tampoco es un ratio de Sharpe histórico: el numerador mira
+hacia adelante y el denominador hacia atrás. `OptimizationResult.return_basis` dice qué es el número; un plan guardado
+antes de EO-4b no lo tiene y se sigue mostrando como índice. Lo de abajo describe el
+camino sin Clases, que queda byte-idéntico al de antes.
+
 ## Atractivo estimado (proxy)
 
 El atractivo estimado (proxy) de cada ticker es una combinación ponderada de tres componentes:
