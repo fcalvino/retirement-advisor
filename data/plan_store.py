@@ -285,6 +285,9 @@ class PlanSnapshot:
                 # N8b: the savings' own growth assumption; absent in older plans (= 0).
                 "contribution_growth_pct": mc_params.get("contribution_growth_pct"),
                 "target_value":     mc_params.get("target_value"),
+                # EO-4c: con qué Escenario se proyectó. Un plan anterior no lo
+                # tiene y se proyectó con el central (o el haircut, antes de EO-4a).
+                "scenario":         getattr(mc_result, "scenario", None),
                 "median_terminal":  round(float(getattr(mc_result, "median_terminal", 0.0)), 0),
                 "p10_terminal":     round(float(getattr(mc_result, "p10_terminal", 0.0)), 0),
                 "p90_terminal":     round(float(getattr(mc_result, "p90_terminal", 0.0)), 0),

@@ -9,6 +9,7 @@ import streamlit as st
 
 from config import (
     CLAUDE_MODEL_CATALOG,
+    ESTIMACION,
     GROQ_MODEL_CATALOG,
     OPTIMIZER_PROFILES,
     SCREENER,
@@ -21,6 +22,7 @@ from dashboard.shared import (
     usd_ars_quote,
 )
 from data.preferences import UserPreferences
+from data.product_ux import profile_planning_scenario
 from data.universe_loader import UNIVERSE_META, load_universe
 
 # ------------------------------------------------------------------ #
@@ -64,7 +66,7 @@ _chosen = _prefs.chosen_profile_key
 if _chosen:
     _prof_cfg = OPTIMIZER_PROFILES[_chosen]
     st.markdown("##### 🎯 Tu Postura")
-    _pc1, _pc2 = st.columns(2)
+    _pc1, _pc2, _pc3 = st.columns(3)
     _exig = _pc1.number_input(
         "Exigencia: probabilidad que le pedís a cada meta (%)",
         min_value=50, max_value=99, step=1, key="settings_exigencia",
@@ -79,15 +81,27 @@ if _chosen:
         help=f"El de tu perfil ({_prof_cfg.name}) es {_prof_cfg.margin_of_safety_pct:.0f}%. "
              "Se muestra en la ficha de Análisis; la Señal usa su propia regla fija.",
     )
+    _scen_opts = list(ESTIMACION.scenarios)
+    _scen = _pc3.selectbox(
+        "Escenario con el que planificás",
+        _scen_opts, key="settings_planning_scenario",
+        index=_scen_opts.index(profile_planning_scenario(_chosen, _prefs.planning_scenario)),
+        format_func=str.capitalize,
+        help=f"El de tu perfil ({_prof_cfg.name}) es el {_prof_cfg.planning_scenario}. "
+             "Pesimista y optimista ponen cada Clase de activo en la Fuente más baja o "
+             "más alta de las que la estiman (ver «Supuestos»); el central, en su mediana. "
+             "Simulaciones, tus metas y el ahorro necesario se proyectan con este.",
+    )
     if st.button("💾 Guardar mi Postura", key="settings_postura_save"):
         _prefs.exigencia_pct = None if _exig == _prof_cfg.exigencia_pct else float(_exig)
         _prefs.margin_pct = None if _marg == _prof_cfg.margin_of_safety_pct else float(_marg)
+        _prefs.planning_scenario = None if _scen == _prof_cfg.planning_scenario else _scen
         _prefs.save()
         st.toast("✅ Postura guardada", icon="🎯")
 else:
     st.caption(
-        "🎯 Tu Postura —la Exigencia de tus metas y el margen de seguridad— sale de tu "
-        "perfil de riesgo: elegilo arriba para ajustarla."
+        "🎯 Tu Postura —la Exigencia de tus metas, el margen de seguridad y el Escenario "
+        "con el que planificás— sale de tu perfil de riesgo: elegilo arriba para ajustarla."
     )
 
 st.divider()

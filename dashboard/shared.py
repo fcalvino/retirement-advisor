@@ -577,6 +577,7 @@ def _sensitivity_run_fn(params: dict):
         withdrawal_tuple=params.get("withdrawal_tuple"),
         longevity_years=params.get("longevity_years"),
         years_to_retirement=params.get("years_to_retirement"),
+        scenario=str(params.get("scenario") or "central"),   # EO-4c
     )
 
 
@@ -1633,6 +1634,8 @@ def cached_monte_carlo(
     include_realistic_reference: bool = True,  # EO-4a: the raw recent history next to the Estimación
     contribution_growth_rate: float = 0.0, # N8b: yearly raise of the savings, not inflation
     years_to_retirement: int | None = None,  # WD-PHASED: save until then, then the strategy
+    scenario: str = "central",             # EO-4c: the planning Escenario (profile_planning_scenario)
+    include_scenarios: bool = False,       # EO-4c: terminal stats of the three Escenarios
 ):
     """Cache Monte Carlo runs for 30 min — same params = instant re-render.
 
@@ -1651,7 +1654,8 @@ def cached_monte_carlo(
     w_np = np.array(weights_tuple) if weights_tuple else None
     sim  = MonteCarloSimulator(list(symbols), w_np, seed=seed,
                                vol_scale=vol_scale, return_scale=return_scale,
-                               asset_classes=dict(cached_asset_classes(tuple(symbols))))
+                               asset_classes=dict(cached_asset_classes(tuple(symbols))),
+                               scenario=scenario)
     drags = dict(drags_tuple) if drags_tuple else None
     withdrawal_strategy = dict(withdrawal_tuple) if withdrawal_tuple else None
     return sim.run(
@@ -1668,6 +1672,7 @@ def cached_monte_carlo(
         include_realistic_reference=include_realistic_reference,
         contribution_growth_rate=contribution_growth_rate,
         years_to_retirement=years_to_retirement,
+        include_scenarios=include_scenarios,
     )
 
 
@@ -1682,6 +1687,7 @@ def cached_goal_simulation(
     return_scale: float = 1.0,
     seed: int = 42,
     engine_version: str = ENGINE_VERSION,
+    scenario: str = "central",   # EO-4c: the planning Escenario
 ):
     """Cache multi-goal simulation results for 30 min.
 
@@ -1696,7 +1702,8 @@ def cached_goal_simulation(
 
     w_np = np.array(weights_tuple) if weights_tuple else None
     planner = GoalPlanner(list(symbols), w_np, seed=seed,
-                          asset_classes=dict(cached_asset_classes(tuple(symbols))))
+                          asset_classes=dict(cached_asset_classes(tuple(symbols))),
+                          scenario=scenario)
 
     goals = [
         Goal(
@@ -1734,6 +1741,7 @@ def cached_goal_savings_target(
     return_scale: float = 1.0,
     seed: int = 42,
     engine_version: str = ENGINE_VERSION,
+    scenario: str = "central",   # EO-4c: the planning Escenario
 ):
     """TOTAL monthly contribution that lifts a goal to ``target_prob_pct``.
 
@@ -1750,7 +1758,8 @@ def cached_goal_savings_target(
 
     w_np = np.array(weights_tuple) if weights_tuple else None
     planner = GoalPlanner(list(symbols), w_np, seed=seed,
-                          asset_classes=dict(cached_asset_classes(tuple(symbols))))
+                          asset_classes=dict(cached_asset_classes(tuple(symbols))),
+                          scenario=scenario)
     g = dict(goal_serialized)
 
     goal = Goal(

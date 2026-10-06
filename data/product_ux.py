@@ -2567,6 +2567,14 @@ ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
         "esperado de la cartera vuelve a ser una tasa anual. Cambian los pesos y las "
         "métricas que propone el Optimizer; la proyección de una cartera dada no se mueve.",
     ),
+    (
+        "2026.10-tier22",
+        "La proyección usa ahora el Escenario de tu Postura: cada Clase de activo en la "
+        "Fuente más baja (pesimista), la mediana (central) o la más alta (optimista). El "
+        "perfil Conservador planifica con el pesimista, así que sus planes proyectan "
+        "menos; con Moderado o Agresivo (central) los números no cambian. Lo podés cambiar "
+        "en Settings.",
+    ),
 )
 
 
@@ -3286,6 +3294,33 @@ def profile_exigencia_pct(profile_key: str | None, override: float | None = None
     if override:
         return float(override)
     return float(OPTIMIZER_PROFILES[profile_key].exigencia_pct)
+
+
+def profile_planning_scenario(profile_key: str | None, override: str | None = None) -> str | None:
+    """The Escenario the investor plans with (EO-4c), or None without a profile.
+
+    ``override`` is the user's own choice (``UserPreferences.planning_scenario``); an
+    unknown value falls back to the profile's. Without a profile there is no Postura:
+    the caller projects with ``ESTIMACION.default_scenario`` and says so.
+    """
+    from config import ESTIMACION, OPTIMIZER_PROFILES
+
+    if profile_key not in OPTIMIZER_PROFILES:
+        return None
+    if override in ESTIMACION.scenarios:
+        return str(override)
+    return OPTIMIZER_PROFILES[profile_key].planning_scenario
+
+
+def scenario_caption(scenario: str | None, profile_key: str | None) -> str:
+    """Con qué Escenario se proyectó y por qué (EO-4c): Postura del Perfil, o sin Perfil."""
+    from config import OPTIMIZER_PROFILES
+
+    name = scenario or "central"
+    if profile_key not in OPTIMIZER_PROFILES:
+        return f"Escenario **{name}**: sin Perfil elegido no hay Postura, se proyecta con el central."
+    return (f"Escenario **{name}**, el de tu Postura (perfil "
+            f"{OPTIMIZER_PROFILES[profile_key].name}; se cambia en ⚙️ Settings).")
 
 
 def profile_margin_pct(profile_key: str | None, override: float | None = None) -> float | None:

@@ -21,6 +21,8 @@ from typing import Callable, Dict, List, Optional
 
 from loguru import logger
 
+from config import ESTIMACION
+
 
 @dataclass
 class Tool:
@@ -160,8 +162,16 @@ def _tool_retirement_projection(args: dict) -> dict:
         w = w / w.sum() if w.sum() > 0 else None
 
         from analysis.estimacion import classes_for
+        from data.product_ux import profile_planning_scenario
 
-        sim = MonteCarloSimulator(symbols, weights=w, asset_classes=classes_for(symbols))
+        # EO-4c: the plan is re-projected with its own Escenario —the one it was
+        # saved with, else its profile's—; a plan with neither gets the central.
+        _saved = str((getattr(snap, "mc_summary", None) or {}).get("scenario") or "")
+        scenario = (_saved if _saved in ESTIMACION.scenarios else
+                    profile_planning_scenario(getattr(snap, "profile_key", "") or None)
+                    or ESTIMACION.default_scenario)
+        sim = MonteCarloSimulator(symbols, weights=w, asset_classes=classes_for(symbols),
+                                  scenario=scenario)
         res = sim.run(
             horizon_years=horizon_years,
             n_sims=2000,
@@ -177,6 +187,7 @@ def _tool_retirement_projection(args: dict) -> dict:
             "initial_value": round(initial_value, 0),
             "annual_withdrawal": round(annual_withdrawal, 0),
             "annual_contribution": round(annual_contribution, 0),
+            "scenario": scenario,
             "median_terminal": round(float(res.median_terminal), 0),
             "p10_terminal": round(float(res.p10_terminal), 0),
             "p90_terminal": round(float(res.p90_terminal), 0),

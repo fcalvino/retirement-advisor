@@ -240,4 +240,4 @@ def test_every_app_optimizer_passes_asset_classes():
 def test_engine_version_moves():
     from config import ENGINE_VERSION
 
-    assert ENGINE_VERSION == "2026.10-tier21"
+    assert ENGINE_VERSION >= "2026.10-tier21"
