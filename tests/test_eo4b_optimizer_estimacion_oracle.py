@@ -197,6 +197,13 @@ def test_the_label_follows_the_basis():
     assert "Índice" in expected_return_label("proxy")
 
 
+def test_a_missing_ratio_is_nd_not_zero():
+    from data.product_ux import ratio_prompt_line
+
+    assert ": n/d —" in ratio_prompt_line(None, "estimacion")
+    assert ": 0.15 —" in ratio_prompt_line(0.15, "estimacion")
+
+
 def test_a_saved_plan_carries_its_basis():
     from types import SimpleNamespace
 

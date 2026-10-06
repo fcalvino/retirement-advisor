@@ -712,7 +712,7 @@ class InvestmentPlanReport:
         # Allocation table
         elements.append(Paragraph("Asignación detallada", st["h2"]))
         headers = ["Ticker", "Empresa", "Peso %",
-                   "Estim. %" if is_estimation_basis(_basis(opt_result)) else "Atract.",
+                   "Estim." if is_estimation_basis(_basis(opt_result)) else "Atract.",
                    "Vol %", "Div %", "Moat", "Sector"]
         col_w = [1.6, 4.0, 1.5, 2.0, 1.5, 1.3, 1.8, 3.5]
         col_w = [w * cm for w in col_w]

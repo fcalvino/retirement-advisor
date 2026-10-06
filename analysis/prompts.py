@@ -1172,7 +1172,7 @@ Incluso si el total de la optimización matemática es 27 (o 30-40), un humano n
 
 2. Recomendá un número pertinente de posiciones para el núcleo humano (típicamente 7-15 según la concentración de convicción/moat/scores que ves; decidí vos el número exacto para este caso, no lo hardcodees). Esto aplica aunque el total sea 27 o más.
 
-3. Propone una "cartera núcleo" (core holdings) más manejable: selecciona el subconjunto de tickers que aportan la mayor parte del beneficio (ratio atractivo/vol, yield, moat, atractivo estimado). Para cada uno da un peso sugerido (ajustado, que sume cerca de 100%) y un "why" corto y concreto de por qué lo mantuviste o ajustaste.
+3. Propone una "cartera núcleo" (core holdings) más manejable: selecciona el subconjunto de tickers que aportan la mayor parte del beneficio (el ratio de la cartera, yield, moat, el rendimiento de las métricas de arriba). Para cada uno da un peso sugerido (ajustado, que sume cerca de 100%) y un "why" corto y concreto de por qué lo mantuviste o ajustaste.
 
 4. Lista breve de los que "dropearías" de la versión humana y por qué (para que el usuario entienda el trade-off de concentración vs. diversificación completa).
 

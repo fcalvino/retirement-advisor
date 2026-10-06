@@ -207,8 +207,10 @@ def expected_return_prompt_line(expected_return_pct, basis: Optional[str]) -> st
 
 
 def ratio_prompt_line(sharpe, basis: Optional[str]) -> str:
+    """Un ratio que falta es «n/d», no 0,00 (un None no es un cero, N5)."""
     num = "Estimación" if is_estimation_basis(basis) else "atractivo"
-    return (f"{ratio_label(basis)}: {float(sharpe or 0):.2f} — ({num} − tasa libre de "
+    value = "n/d" if sharpe is None else f"{float(sharpe):.2f}"
+    return (f"{ratio_label(basis)}: {value} — ({num} − tasa libre de "
             "riesgo) / volatilidad histórica, no es un Sharpe")
 
 

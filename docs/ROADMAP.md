@@ -18,7 +18,7 @@ Segunda parte de EO-4 (ADR 0001). Decisiones del usuario (2026-10-06): sin contr
 - **Por qué sin Black-Litterman:** el equilibrio Π sería un segundo ancla sin Fuente y la confianza de cada view salía del score, una contracción que el usuario no eligió.
 - **Rótulos:** `return_basis` en el resultado y en el plan; un plan guardado antes sigue como índice 0–100. Optimizer, Mi Plan, Simulaciones, PDF, prompts, comité y comparación de planes.
 - **QA en vivo** (Growth con Moat, Agresivo): 6,7 %/año, volatilidad 20,1 % → 14,3 %; los pesos pasan a COST, NKE, BRK-B y UNH. Los planes guardados siguen mostrando «Atractivo 69».
-- **Oráculo:** `tests/test_eo4b_optimizer_estimacion_oracle.py`, 12 casos; los contratos de rótulo (`test_return_label_contract`, `test_proxy_ordinal_oracle`) pasan a exigir el rótulo por base.
+- **Oráculo:** `tests/test_eo4b_optimizer_estimacion_oracle.py`, 13 casos; los contratos de rótulo (`test_return_label_contract`, `test_proxy_ordinal_oracle`) pasan a exigir el rótulo por base.
 
 ---
 

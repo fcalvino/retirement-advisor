@@ -156,7 +156,8 @@ su Clase según el score queda para EO-4b. La decisión no cambia.
 El Optimizer toma como μ de cada activo la misma Estimación que el Monte Carlo: el
 central de su Clase (cripto, 0 % real); bonos de EE.UU., tickers sin Clase y Clases sin
 Fuentes vigentes, su historia semanal con el mismo haircut del Monte Carlo,
-compuesto. Con eso el rendimiento esperado de la cartera es el promedio ponderado de
+compuesto, pero sobre la ventana del Optimizer (`OPTIMIZER.price_history_years`, 2
+años), no los 10 del Monte Carlo. Con eso el rendimiento esperado de la cartera es el promedio ponderado de
 las Estimaciones, el número en el que EO-4a recentra la proyección.
 
 «Qué se decidió» dice que la Estimación de cada activo se contrae hacia la de su Clase

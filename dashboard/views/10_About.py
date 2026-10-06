@@ -262,6 +262,13 @@ y la tabla "vs Benchmarks" titula esa columna "Sharpe hist. / ratio proxy" — l
 y las de SPY / 60-40 / BND no miden lo mismo. El Sharpe **realizado** de Portfolio y Backtesting sí
 es un Sharpe, sale de la curva de equity real, y no cambió.
 
+**Desde octubre de 2026 los dos comparten el modelo.** El Optimizer usa como rendimiento de
+cada activo la misma Estimación objetiva por Clase que la proyección (ver «Supuestos»), así que
+la pantalla vuelve a mostrar una tasa anual: **"Estimación objetiva"** y **"ratio
+estimación/vol"**. Dos acciones de la misma Clase tienen la misma Estimación; el score elige
+los candidatos. Los planes que guardaste antes siguen mostrando el índice de atractivo con que
+se calcularon.
+
 **Si estabas en fase de acumulación (sin retiros), tus números no cambiaron:** la corrección sólo
 actúa cuando hay retiros en la proyección.
 """)

@@ -973,8 +973,12 @@ with tab_cart:
             )
             st.caption(
                 f"🌬️ **Colas de viento estructurales sector-país (curadas):** {_tw_txt}. "
-                "El factor ya está incluido en los scores y en el atractivo estimado "
-                "(tilt configurable) — outlook a la fecha de curaduría, no garantía."
+                + ("El factor está en los scores, que eligen los candidatos; la "
+                   "Estimación de cada activo es la de su Clase y no lo incluye"
+                   if is_estimation_basis(result.return_basis) else
+                   "El factor ya está incluido en los scores y en el atractivo estimado "
+                   "(tilt configurable)")
+                + " — outlook a la fecha de curaduría, no garantía."
             )
 
         # ---- CSV export ----
