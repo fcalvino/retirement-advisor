@@ -52,23 +52,27 @@ from data.product_ux import (
     GUARDRAILS_OMISSIONS,
     POT_CAGR_LABEL,
     POT_GROWTH_LABEL,
-    PROXY_INDEX_LABEL,
-    PROXY_RATIO_LABEL,
     decumulation_span_text,
     depletion_text,
+    expected_return_label,
+    fmt_expected_return,
+    is_estimation_basis,
     mc_has_cash_flows,
-    proxy_attractiveness_index,
+    ratio_label,
     strategy_ignored_savings_note,
 )
 from reports.pdf_utils import chart_to_image as _chart_to_image
 from reports.pdf_utils import make_header_footer
 
 
-def _fmt_idx(expected_return_pct) -> str:
-    """El proxy como índice 0–100 (U6-1). «—» cuando no hay optimización corrida:
-    un plan sin correr no tiene atractivo 0, no tiene atractivo."""
-    idx = proxy_attractiveness_index(expected_return_pct)
-    return "—" if idx is None else f"{idx:.0f}"
+def _basis(opt_result) -> str:
+    return getattr(opt_result, "return_basis", "proxy") or "proxy"
+
+
+def _fmt_ret(expected_return_pct, opt_result) -> str:
+    """La Estimación como tasa, o el proxy como índice 0–100 (U6-1) si la
+    optimización no tuvo Clases (EO-4b). «—» cuando no hay optimización corrida."""
+    return fmt_expected_return(expected_return_pct, _basis(opt_result))
 
 # ------------------------------------------------------------------ #
 #  Brand colours — same palette as alerts/reporter.py                  #
@@ -419,10 +423,12 @@ class InvestmentPlanReport:
         n_goals = len(goal_plan.goal_results) if goal_plan else 0
         plan_score = f"{goal_plan.plan_feasibility_score:.0f}/100" if goal_plan else "—"
         n_tickers = len(opt_result.tickers) if opt_result else 0
-        exp_ret = _fmt_idx(opt_result.expected_return_pct) if opt_result else "—"
+        exp_ret = _fmt_ret(opt_result.expected_return_pct, opt_result) if opt_result else "—"
+        ret_head = ("Estimación (anual)" if opt_result and is_estimation_basis(_basis(opt_result))
+                    else "Atractivo (proxy)")
 
         kpi_data = [
-            ["Metas planificadas", "Score del plan", "Tickers en cartera", "Atractivo (proxy)"],
+            ["Metas planificadas", "Score del plan", "Tickers en cartera", ret_head],
             [str(n_goals), plan_score, str(n_tickers), exp_ret],
         ]
         kpi_tbl = Table(kpi_data, colWidths=[4.3 * cm] * 4)
@@ -481,9 +487,10 @@ class InvestmentPlanReport:
             rows.append(["Retiro anual", f"${withdrawal:,.0f}"])
         rows.append(["Inflación estimada", f"{inflation:.1f}%"])
         if opt_result:
-            rows.append([PROXY_INDEX_LABEL, _fmt_idx(opt_result.expected_return_pct)])
+            rows.append([expected_return_label(_basis(opt_result)),
+                         _fmt_ret(opt_result.expected_return_pct, opt_result)])
             rows.append(["Volatilidad estimada",       f"{opt_result.volatility_pct:.1f}%"])
-            rows.append([PROXY_RATIO_LABEL,            f"{opt_result.sharpe_ratio:.2f}"])
+            rows.append([ratio_label(_basis(opt_result)), f"{opt_result.sharpe_ratio:.2f}"])
             rows.append(["Dividend yield",             f"{opt_result.dividend_yield_pct:.1f}%"])
         if mc_result:
             rows.append(["Proyección mediana (P50)", f"${mc_result.median_terminal:,.0f}"])
@@ -660,9 +667,12 @@ class InvestmentPlanReport:
 
         # Portfolio stats KPI bar
         kpi_rows = [
-            ["Atractivo (proxy)", "Volatilidad", "Ratio atr./vol", "Div. Yield", "Moat Avg", "Tickers"],
+            [("Estimación (anual)" if is_estimation_basis(_basis(opt_result)) else "Atractivo (proxy)"),
+             "Volatilidad",
+             ("Ratio est./vol" if is_estimation_basis(_basis(opt_result)) else "Ratio atr./vol"),
+             "Div. Yield", "Moat Avg", "Tickers"],
             [
-                _fmt_idx(opt_result.expected_return_pct),
+                _fmt_ret(opt_result.expected_return_pct, opt_result),
                 f"{opt_result.volatility_pct:.1f}%",
                 f"{opt_result.sharpe_ratio:.2f}",
                 f"{opt_result.dividend_yield_pct:.1f}%",
@@ -701,7 +711,9 @@ class InvestmentPlanReport:
 
         # Allocation table
         elements.append(Paragraph("Asignación detallada", st["h2"]))
-        headers = ["Ticker", "Empresa", "Peso %", "Atract. %", "Vol %", "Div %", "Moat", "Sector"]
+        headers = ["Ticker", "Empresa", "Peso %",
+                   "Estim. %" if is_estimation_basis(_basis(opt_result)) else "Atract.",
+                   "Vol %", "Div %", "Moat", "Sector"]
         col_w = [1.6, 4.0, 1.5, 2.0, 1.5, 1.3, 1.8, 3.5]
         col_w = [w * cm for w in col_w]
 
@@ -727,7 +739,7 @@ class InvestmentPlanReport:
                 t.symbol,
                 (t.symbol[:28]),
                 f"{t.weight_pct:.1f}%",
-                _fmt_idx(t.expected_return_pct),
+                _fmt_ret(t.expected_return_pct, opt_result),
                 f"{t.volatility_pct:.1f}%",
                 f"{t.dividend_yield_pct:.1f}%",
                 getattr(t, "moat_classification", "—") or "—",
@@ -1150,6 +1162,7 @@ class InvestmentPlanReport:
                 "tickers":         [t.symbol for t in opt_result.tickers],
                 "weights":         [t.weight_pct / 100 for t in opt_result.tickers],
                 "expected_return": opt_result.expected_return_pct,
+                "return_basis":    _basis(opt_result),
                 "volatility":      opt_result.volatility_pct,
                 "sharpe":          opt_result.sharpe_ratio,
                 "dividend_yield":  opt_result.dividend_yield_pct,

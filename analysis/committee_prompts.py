@@ -42,9 +42,8 @@ from data.product_ux import (
     DOWNSIDE_RATIO_LABEL,
     POT_CAGR_LABEL,
     POT_GROWTH_LABEL,
-    PROXY_INDEX_LABEL,
-    PROXY_RATIO_LABEL,
-    proxy_attractiveness_index,
+    expected_return_prompt_line,
+    ratio_prompt_line,
 )
 
 # El contrato de salida vive en `analysis.prompts`: esta redacción era la única de
@@ -64,13 +63,6 @@ AGENT_JSON_SCHEMA = (
 )
 
 
-
-
-def _fmt_idx(expected_return_pct) -> str:
-    """El proxy como índice 0–100 (U6-1). «—» cuando no hay optimización corrida:
-    un plan sin correr no tiene atractivo 0, no tiene atractivo."""
-    idx = proxy_attractiveness_index(expected_return_pct)
-    return "—" if idx is None else f"{idx:.0f}"
 
 def _eps_growth_label(fund) -> str:
     """Honest name for the earnings-growth figure (see analysis/fundamental.py)."""
@@ -637,11 +629,9 @@ def portfolio_committee_context_block(ctx: dict) -> str:
         lines += [
             "",
             "--- Riesgo/retorno del MODELO (proyección de un plan propuesto) ---",
-            f"{PROXY_INDEX_LABEL}: {_fmt_idx(g('expected_return_pct'))} — índice relativo de "
-            "score + dividendo + moat, no un pronóstico de retorno.",
-            f"Volatilidad: {_fmt_pct(g('volatility_pct'))} · {PROXY_RATIO_LABEL}: "
-            f"{_num(g('sharpe_ratio'))} — (atractivo − tasa libre de riesgo) / volatilidad "
-            "histórica, no es un Sharpe.",
+            expected_return_prompt_line(g("expected_return_pct"), g("return_basis")) + ".",
+            f"Volatilidad: {_fmt_pct(g('volatility_pct'))} · "
+            + ratio_prompt_line(g("sharpe_ratio"), g("return_basis")) + ".",
             f"Probabilidad de alcanzar la meta: {_fmt_pct(g('prob_target_pct'))} · "
             f"Pesimista (p10): ${_num(g('p10_terminal'))} · {_growth_label} mediano: "
             f"{_fmt_pct(g('median_cagr_pct'))}{_growth_caveat}",

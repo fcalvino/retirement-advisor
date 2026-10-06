@@ -323,6 +323,7 @@ class AIAnalyzer:
             prob_ruin=context.get("prob_ruin", 0),
             prob_target=context.get("prob_target", 0),
             target_value=context.get("target_value", 0),
+            return_basis=context.get("return_basis", "proxy"),
         )
 
         try:
@@ -501,6 +502,7 @@ class AIAnalyzer:
             profile_name=profile_name or pcfg.name,
             holdings=holdings_for_prompt,
             expected_return_pct=float(getattr(opt_result, "expected_return_pct", 0.0) or 0.0),
+            return_basis=str(getattr(opt_result, "return_basis", "proxy") or "proxy"),
             volatility_pct=float(getattr(opt_result, "volatility_pct", 0.0) or 0.0),
             sharpe=float(getattr(opt_result, "sharpe_ratio", 0.0) or 0.0),
             dividend_yield_pct=float(getattr(opt_result, "dividend_yield_pct", 0.0) or 0.0),

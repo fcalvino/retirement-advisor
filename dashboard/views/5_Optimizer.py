@@ -16,6 +16,7 @@ from config import AI_FALLBACK, OPTIMIZER, OPTIMIZER_PROFILES, PORTFOLIO, UNIVER
 from dashboard.shared import (
     _fetch_universe_parallel,
     _get_ai_config,
+    cached_asset_classes,
     ensure_session_defaults,
     seed_session_defaults_from_profile,
     stop_view,
@@ -24,12 +25,14 @@ from dashboard.shared import (
 from data.preferences import UserPreferences
 from data.product_ux import (
     MAX_DD_ESTIMATE_LABEL,
-    PROXY_INDEX_LABEL,
-    PROXY_RATIO_HELP,
-    PROXY_RATIO_LABEL,
-    PROXY_RETURN_HELP,
-    fmt_attractiveness_index,
+    estimation_caption,
+    expected_return_help,
+    expected_return_label,
+    fmt_expected_return,
+    is_estimation_basis,
     max_dd_estimate_help,
+    ratio_help,
+    ratio_label,
 )
 from data.universe_loader import UNIVERSE_META, list_universes, load_universe
 from portfolio.optimizer import PortfolioOptimizer
@@ -531,8 +534,11 @@ if run_now or not has_valid_result:
     else:
         scored = st.session_state.optimizer_scored
 
-    with st.spinner(f"⚙️ Generando portafolio {prof.name} · Maximizando el ratio atractivo/vol…"):
-        opt = PortfolioOptimizer(profile=profile_key)
+    with st.spinner(f"⚙️ Generando portafolio {prof.name} · Maximizando el ratio rendimiento/vol…"):
+        opt = PortfolioOptimizer(
+            profile=profile_key,
+            asset_classes=dict(cached_asset_classes(tuple(t["symbol"] for t in scored))),
+        )
         try:
             current_weights = portfolio.get_position_weights()
         except Exception:
@@ -564,7 +570,9 @@ if run_now and "optimizer_prev_result" in st.session_state:
     prev_name = OPTIMIZER_PROFILES.get(prev_key[0], prof).name if prev_key[0] else "—"
 
     if prev_name != prof.name:
-        d_ret = result.expected_return_pct - prev.expected_return_pct
+        # A rate minus an index is not a delta (EO-4b): compare like with like.
+        _same_basis = getattr(prev, "return_basis", "proxy") == result.return_basis
+        d_ret = (result.expected_return_pct - prev.expected_return_pct) if _same_basis else 0.0
         d_vol = result.volatility_pct      - prev.volatility_pct
         d_sh  = result.sharpe_ratio        - prev.sharpe_ratio
         d_div = result.dividend_yield_pct  - prev.dividend_yield_pct
@@ -576,9 +584,9 @@ if run_now and "optimizer_prev_result" in st.session_state:
 
         st.markdown(
             f"**Cambio de perfil:** {prev_name} → **{prof.name}** &nbsp;|&nbsp; "
-            f"Atractivo {_delta_str(d_ret)} &nbsp; "
+            f"{expected_return_label(result.return_basis, short=True)} {_delta_str(d_ret)} &nbsp; "
             f"Volatilidad {_delta_str(d_vol, positive_good=False)} &nbsp; "
-            f"Ratio atractivo/vol {_delta_str(d_sh)} &nbsp; "
+            f"{ratio_label(result.return_basis)} {_delta_str(d_sh)} &nbsp; "
             f"Div Yield {_delta_str(d_div)}",
             unsafe_allow_html=True,
         )
@@ -614,6 +622,8 @@ else:
     )
 for w in result.warnings:
     st.warning(w, icon="⚠️")
+if result.estimations:
+    st.caption(estimation_caption(result.estimations, vol_adjusted=False))
 _converted = getattr(result, "converted_currencies", {}) or {}
 if _converted:
     st.caption(
@@ -625,10 +635,16 @@ if _converted:
 
 # Plain-language conclusion up top, before the detailed stats below.
 st.markdown(
-    f"#### 🎯 En una frase\n"
-    f"Esta cartera **{result.profile_name}** tiene un atractivo estimado de "
-    f"**{fmt_attractiveness_index(result.expected_return_pct)} de atractivo** (índice relativo 0–100, no una tasa) "
-    f"asumiendo una volatilidad de "
+    "#### 🎯 En una frase\n"
+    + (
+        f"Esta cartera **{result.profile_name}** tiene una Estimación objetiva de "
+        f"**{fmt_expected_return(result.expected_return_pct, result.return_basis)}** "
+        if is_estimation_basis(result.return_basis) else
+        f"Esta cartera **{result.profile_name}** tiene un atractivo estimado de "
+        f"**{fmt_expected_return(result.expected_return_pct, result.return_basis)} de atractivo** "
+        f"(índice relativo 0–100, no una tasa) "
+    )
+    + f"asumiendo una volatilidad de "
     f"**~{result.volatility_pct:.1f}%** (cuánto puede subir y bajar en el camino). "
     f"El detalle de pesos, métricas y cumplimiento de límites está más abajo."
 )
@@ -758,10 +774,11 @@ mc1.metric(
     help="Promedio ponderado del Score Ajustado (fundamentals + moat + dividendo) de todos los activos.",
 )
 mc2.metric(
-    PROXY_INDEX_LABEL, fmt_attractiveness_index(result.expected_return_pct),
+    expected_return_label(result.return_basis),
+    fmt_expected_return(result.expected_return_pct, result.return_basis),
     help=(
-        PROXY_RETURN_HELP
-        + " Desde agosto 2026 este número ya no depende del perfil de riesgo elegido."
+        expected_return_help(result.return_basis)
+        + " No depende del perfil de riesgo elegido."
     ),
 )
 mc3.metric(
@@ -775,8 +792,8 @@ mc4.metric(
     help="Volatilidad anual estimada de la cartera (desviación estándar de retornos).",
 )
 mc5.metric(
-    PROXY_RATIO_LABEL, f"{result.sharpe_ratio:.2f}",
-    help=PROXY_RATIO_HELP,
+    ratio_label(result.return_basis), f"{result.sharpe_ratio:.2f}",
+    help=ratio_help(result.return_basis),
 )
 mc6.metric(
     MAX_DD_ESTIMATE_LABEL, f"{result.max_drawdown_estimate_pct:.1f}%",
@@ -1033,8 +1050,9 @@ with tab_front:
             color_continuous_scale="RdYlGn",
             labels={
                 "x": "Volatilidad % (anual)",
-                "y": "Atractivo estimado % (anual)",
-                "color": "Ratio atractivo/vol",
+                "y": ("Estimación objetiva % (anual)" if is_estimation_basis(result.return_basis)
+                      else "Atractivo estimado % (anual)"),
+                "color": ratio_label(result.return_basis),
             },
             title=f"Frontera Eficiente — Monte Carlo ({OPTIMIZER.frontier_points} carteras)",
         )
@@ -1089,9 +1107,9 @@ with tab_metrics:
 | Métrica | Valor |
 |---|---|
 | Universo | **{_display_universe}** |
-| {PROXY_INDEX_LABEL} | **{fmt_attractiveness_index(result.expected_return_pct)}** |
+| {expected_return_label(result.return_basis)} | **{fmt_expected_return(result.expected_return_pct, result.return_basis)}** |
 | Volatilidad | **{result.volatility_pct:.1f}%** anual |
-| Ratio atractivo/vol | **{result.sharpe_ratio:.2f}** |
+| {ratio_label(result.return_basis)} | **{result.sharpe_ratio:.2f}** |
 | {MAX_DD_ESTIMATE_LABEL} | **{_dd_str}** (1 año) |
 | Dividend Yield | **{result.dividend_yield_pct:.2f}%** |
 | Score promedio | **{result.adjusted_score_avg:.0f}**/100 |
@@ -1158,10 +1176,12 @@ with tab_metrics:
     st.caption(
         "Referencia histórica anualizada 2014–2024. ⚠️ La fila de tu cartera **no es comparable "
         "cabeza a cabeza**: los benchmarks muestran retorno histórico realizado, mientras que tu "
-        "cartera muestra el atractivo estimado por el modelo (proxy de score + dividendo + moat). "
-        "Lo mismo vale para el drawdown: los benchmarks traen el máximo realizado y tu cartera, "
+        + ("cartera muestra la Estimación objetiva de los próximos años (por Clase de activo). "
+           if is_estimation_basis(result.return_basis) else
+           "cartera muestra el atractivo estimado por el modelo (proxy de score + dividendo + moat). ")
+        + "Lo mismo vale para el drawdown: los benchmarks traen el máximo realizado y tu cartera, "
         "una regla empírica sobre su volatilidad. "
-        "Para proyectar patrimonio usá Simulaciones, que sí parte de la historia de precios."
+        "Para proyectar patrimonio usá Simulaciones."
     )
 
     # The row for the user's portfolio and the benchmark rows are not the same
@@ -1169,8 +1189,9 @@ with tab_metrics:
     # The drawdown column is the third of them: the benchmarks hold *realized*
     # historical drawdowns (the constants in `_BENCHMARKS`) while the portfolio
     # row holds the rule of thumb −multiple × vol.
-    _BENCH_RET_COL = "Retorno hist. / atractivo %"
-    _BENCH_RATIO_COL = "Sharpe hist. / ratio proxy"
+    _est = is_estimation_basis(result.return_basis)
+    _BENCH_RET_COL = "Retorno hist. / Estimación %" if _est else "Retorno hist. / atractivo %"
+    _BENCH_RATIO_COL = "Sharpe hist. / ratio estimación" if _est else "Sharpe hist. / ratio proxy"
     _BENCH_DD_COL = "Max DD hist. / regla %"
 
     _bench_rows = [
@@ -1366,7 +1387,11 @@ with tab_compare:
             _u_scored = [_to_scored_dict(sym, fund, t, d) for sym, fund, t, d in _u_raw]
             if _u_scored:
                 try:
-                    _u_result = PortfolioOptimizer(profile=profile_key).optimize(_u_scored)
+                    _u_result = PortfolioOptimizer(
+                        profile=profile_key,
+                        asset_classes=dict(cached_asset_classes(
+                            tuple(t["symbol"] for t in _u_scored))),
+                    ).optimize(_u_scored)
                     _comp_results[_uk] = _u_result
                 except Exception:
                     pass
@@ -1384,15 +1409,20 @@ with tab_compare:
         and st.session_state.get("optimizer_comparison_profile") == profile_key
     ):
         _comp_rows = []
+        # Every run of this table passes Clases, so they share a basis (EO-4b).
+        _comp_basis = next(iter(st.session_state.optimizer_comparison_results.values())).return_basis \
+            if st.session_state.optimizer_comparison_results else "proxy"
+        _COMP_RET = "Estimación %" if is_estimation_basis(_comp_basis) else "Atractivo %"
+        _COMP_RATIO = ratio_label(_comp_basis)
         for _uk, _ures in st.session_state.optimizer_comparison_results.items():
             _u_meta = UNIVERSE_META.get(_uk, {})
             _comp_rows.append({
                 "Universo":      _u_meta.get("name", _uk),
                 "Tickers base":  _u_meta.get("count", "?"),
                 "Posiciones":    len(_ures.tickers),
-                "Atractivo %":   round(_ures.expected_return_pct, 1),
+                _COMP_RET:       round(_ures.expected_return_pct, 1),
                 "Volatilidad %": round(_ures.volatility_pct, 1),
-                PROXY_RATIO_LABEL: round(_ures.sharpe_ratio, 2),
+                _COMP_RATIO: round(_ures.sharpe_ratio, 2),
                 "Div Yield %":   round(_ures.dividend_yield_pct, 2),
                 "Score Avg":     round(_ures.adjusted_score_avg, 0),
                 "Método":        _ures.method,
@@ -1405,16 +1435,16 @@ with tab_compare:
                 width="stretch",
                 hide_index=True,
                 column_config={
-                    "Atractivo %":   st.column_config.NumberColumn("Atractivo %", format="%.1f%%"),
+                    _COMP_RET:       st.column_config.NumberColumn(_COMP_RET, format="%.1f%%"),
                     "Volatilidad %": st.column_config.NumberColumn("Vol %",      format="%.1f%%"),
-                    PROXY_RATIO_LABEL: st.column_config.NumberColumn(PROXY_RATIO_LABEL, format="%.2f"),
+                    _COMP_RATIO: st.column_config.NumberColumn(_COMP_RATIO, format="%.2f"),
                     "Div Yield %":   st.column_config.NumberColumn("Div %",      format="%.2f%%"),
                     "Score Avg":     st.column_config.NumberColumn("Score",      format="%.0f"),
                 },
             )
 
             _fig_comp = go.Figure()
-            for _metric in ["Atractivo %", "Volatilidad %", "Div Yield %"]:
+            for _metric in [_COMP_RET, "Volatilidad %", "Div Yield %"]:
                 _fig_comp.add_trace(go.Bar(
                     name=_metric,
                     x=_comp_df["Universo"],
@@ -1424,7 +1454,7 @@ with tab_compare:
                 ))
             _fig_comp.update_layout(
                 barmode="group",
-                title=f"Atractivo · Volatilidad · Div Yield — perfil {prof.name} (top {_COMPARE_CAP} tickers)",
+                title=f"{_COMP_RET[:-2]} · Volatilidad · Div Yield — perfil {prof.name} (top {_COMPARE_CAP} tickers)",
                 height=420,
                 yaxis_title="%",
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
@@ -1432,11 +1462,11 @@ with tab_compare:
             st.plotly_chart(_fig_comp, width="stretch")
 
             _fig_sharpe = px.bar(
-                _comp_df.sort_values(PROXY_RATIO_LABEL),
-                x=PROXY_RATIO_LABEL, y="Universo", orientation="h",
-                color=PROXY_RATIO_LABEL, color_continuous_scale="RdYlGn",
-                text=PROXY_RATIO_LABEL,
-                title=f"{PROXY_RATIO_LABEL} por universo — perfil {prof.name}",
+                _comp_df.sort_values(_COMP_RATIO),
+                x=_COMP_RATIO, y="Universo", orientation="h",
+                color=_COMP_RATIO, color_continuous_scale="RdYlGn",
+                text=_COMP_RATIO,
+                title=f"{_COMP_RATIO} por universo — perfil {prof.name}",
             )
             _fig_sharpe.update_traces(texttemplate="%{text:.2f}", textposition="inside")
             _fig_sharpe.update_layout(height=300, coloraxis_showscale=False)

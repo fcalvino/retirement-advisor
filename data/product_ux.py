@@ -132,6 +132,94 @@ PROXY_RATIO_HELP = (
 
 MC_RETURN_LABEL = "retorno histórico"
 
+# --------------------------------------------------------------------------- #
+#  Desde EO-4b el μ del Optimizer es la Estimación objetiva                   #
+# --------------------------------------------------------------------------- #
+#  Con Clases, ``expected_return_pct`` es el promedio ponderado de la
+#  Estimación de cada activo —el mismo número en el que se recentra el Monte
+#  Carlo— y vuelve a ser una tasa. Sin Clases, y en todo plan guardado antes de
+#  EO-4b, sigue siendo el proxy: un índice para ordenar. Cada superficie lo
+#  rotula por ``return_basis`` (del resultado o de las métricas del plan), nunca
+#  por cuál es el motor de hoy.
+
+ESTIMATION_BASIS = "estimacion"
+ESTIMATION_RETURN_LABEL = "Estimación objetiva (anual)"
+ESTIMATION_RETURN_SHORT = "Estimación"
+ESTIMATION_RETURN_HELP = (
+    "El promedio ponderado de la Estimación objetiva de la Clase de cada activo "
+    "(gestoras, valuación e historia; ver «Supuestos»), el mismo en el que se "
+    "recentra la proyección Monte Carlo. Bonos EE.UU. y activos sin Clase usan su "
+    "historia con el ajuste de −20 %. No distingue entre dos acciones de la misma "
+    "Clase: el score ordena los candidatos, no cotiza su rendimiento."
+)
+ESTIMATION_RATIO_LABEL = "Ratio estimación/vol"
+ESTIMATION_RATIO_HELP = (
+    "(Estimación − tasa libre de riesgo) / volatilidad histórica. No es un Sharpe "
+    "realizado: el numerador mira hacia adelante y el denominador hacia atrás."
+)
+
+
+def is_estimation_basis(basis: Optional[str]) -> bool:
+    """«estimacion» es una tasa; cualquier otra cosa —o nada, un plan viejo— es el proxy."""
+    return basis == ESTIMATION_BASIS
+
+
+def expected_return_label(basis: Optional[str], *, short: bool = False) -> str:
+    if is_estimation_basis(basis):
+        return ESTIMATION_RETURN_SHORT if short else ESTIMATION_RETURN_LABEL
+    return PROXY_INDEX_SHORT if short else PROXY_INDEX_LABEL
+
+
+def expected_return_help(basis: Optional[str]) -> str:
+    return ESTIMATION_RETURN_HELP if is_estimation_basis(basis) else PROXY_INDEX_HELP
+
+
+def ratio_label(basis: Optional[str]) -> str:
+    return ESTIMATION_RATIO_LABEL if is_estimation_basis(basis) else PROXY_RATIO_LABEL
+
+
+def ratio_help(basis: Optional[str]) -> str:
+    return ESTIMATION_RATIO_HELP if is_estimation_basis(basis) else PROXY_RATIO_HELP
+
+
+def expected_return_delta(a, a_basis: Optional[str], b, b_basis: Optional[str]) -> Optional[str]:
+    """«a − b vs base» en la unidad de su base; None si falta uno o las bases difieren
+    (una tasa menos un índice no es un delta)."""
+    if a is None or b is None or is_estimation_basis(a_basis) != is_estimation_basis(b_basis):
+        return None
+    if is_estimation_basis(a_basis):
+        return f"{float(a) - float(b):+.1f} pp vs base"
+    ia, ib = proxy_attractiveness_index(a), proxy_attractiveness_index(b)
+    if ia is None or ib is None:
+        return None
+    return f"{ia - ib:+.0f} vs base"
+
+
+def expected_return_prompt_line(expected_return_pct, basis: Optional[str]) -> str:
+    """La línea que un prompt de IA lee: el número y qué es, sin ambigüedad de unidad."""
+    value = fmt_expected_return(expected_return_pct, basis)
+    if is_estimation_basis(basis):
+        return (f"{ESTIMATION_RETURN_LABEL}: {value} — promedio ponderado de la "
+                "Estimación de la Clase de cada activo (gestoras, valuación, historia); "
+                "no distingue entre activos de la misma Clase")
+    return (f"{PROXY_INDEX_LABEL}: {value} — índice relativo de score + dividendo. NO es "
+            "una tasa: no se capitaliza ni se compara contra un rendimiento")
+
+
+def ratio_prompt_line(sharpe, basis: Optional[str]) -> str:
+    num = "Estimación" if is_estimation_basis(basis) else "atractivo"
+    return (f"{ratio_label(basis)}: {float(sharpe or 0):.2f} — ({num} − tasa libre de "
+            "riesgo) / volatilidad histórica, no es un Sharpe")
+
+
+def fmt_expected_return(expected_return_pct, basis: Optional[str]) -> str:
+    """La tasa si es Estimación, el índice 0–100 si es el proxy; «—» sin optimización."""
+    if expected_return_pct is None:
+        return "—"
+    if is_estimation_basis(basis):
+        return f"{float(expected_return_pct):.1f} %/año"
+    return fmt_attractiveness_index(expected_return_pct)
+
 
 # --------------------------------------------------------------------------- #
 #  Canonical labels for the weekly moving averages (U1-3)                     #
@@ -1328,6 +1416,7 @@ def _plan_field_map(snap: Any) -> Dict[str, Any]:
         "profile": str(getattr(snap, "profile_name", "") or getattr(snap, "profile_key", "") or ""),
         "n_positions": int(getattr(snap, "n_positions", 0) or 0),
         "expected_return_pct": _safe_float(metrics.get("expected_return_pct")),
+        "return_basis": metrics.get("return_basis"),
         "volatility_pct": _safe_float(metrics.get("volatility_pct")),
         "sharpe_ratio": _safe_float(metrics.get("sharpe_ratio")),
         "dividend_yield_pct": _safe_float(metrics.get("dividend_yield_pct")),
@@ -1372,8 +1461,22 @@ def deep_compare_plans(plan_a: Any, plan_b: Any) -> dict:
     rows: List[dict] = []
     diffs: List[str] = []
 
+    same_basis = is_estimation_basis(a.get("return_basis")) == is_estimation_basis(b.get("return_basis"))
     for key, label in _COMPARE_LABELS.items():
         va, vb = a.get(key), b.get(key)
+        if key in ("expected_return_pct", "sharpe_ratio"):
+            # EO-4b: a rate and an ordering index are not one field. Same basis →
+            # its own label; mixed → both shown, no delta.
+            if same_basis:
+                label = (expected_return_label if key == "expected_return_pct"
+                         else ratio_label)(a.get("return_basis"))
+            else:
+                rows.append({"field": key, "label": f"{label} / Estimación (no comparables: "
+                             "uno de los planes es anterior a EO-4b)",
+                             "a": va if va is not None else "—",
+                             "b": vb if vb is not None else "—",
+                             "differs": True, "delta": None})
+                continue
         row = {
             "field": key,
             "label": label,
@@ -2454,6 +2557,14 @@ ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
         "Los bonos, los activos sin Clase y cripto se proyectan aparte, rotulados. "
         "Cambian la mediana, el rango y la probabilidad de éxito del plan.",
     ),
+    (
+        "2026.10-tier21",
+        "El Optimizer armaba la cartera con un índice de atractivo hecho con el score "
+        "y el dividendo, que servía para ordenar pero no era un rendimiento. Ahora usa "
+        "la misma Estimación objetiva por Clase que la proyección, y el rendimiento "
+        "esperado de la cartera vuelve a ser una tasa anual. Cambian los pesos y las "
+        "métricas que propone el Optimizer; la proyección de una cartera dada no se mueve.",
+    ),
 )
 
 
@@ -3223,11 +3334,14 @@ def ars_discount_note(discount: float, ars_syms: str, country_risk: Any = None) 
 #  De dónde sale la proyección (EO-4a)                                         #
 # --------------------------------------------------------------------------- #
 
-def estimation_caption(estimations: Sequence[Mapping[str, Any]]) -> str:
+def estimation_caption(estimations: Sequence[Mapping[str, Any]], *,
+                       vol_adjusted: bool = True) -> str:
     """Una línea por Clase con su Estimación y su rótulo, y los activos con ajuste histórico.
 
-    ``estimations`` es ``MonteCarloResult.estimations``. Vacío —una corrida sin
-    Clases— da un texto vacío: el aviso de ``warnings`` ya lo dice.
+    ``estimations`` es ``MonteCarloResult.estimations`` u ``OptimizationResult.estimations``.
+    Vacío —una corrida sin Clases— da un texto vacío: el aviso de ``warnings`` ya
+    lo dice. El Optimizer pasa ``vol_adjusted=False``: su covarianza es la
+    histórica para todos, el +10 % es del Monte Carlo.
     """
     if not estimations:
         return ""
@@ -3241,8 +3355,9 @@ def estimation_caption(estimations: Sequence[Mapping[str, Any]]) -> str:
     parts = [f"{label} ({', '.join(syms)})" for label, syms in objective.items()]
     text = "Estimación por Clase: " + " · ".join(parts) if parts else ""
     if haircut:
+        adj = ("−20 % al rendimiento, +10 % a la volatilidad" if vol_adjusted
+               else "−20 % al rendimiento")
         text += ("; " if text else "") + (
-            f"con el ajuste histórico (−20 % al rendimiento, +10 % a la volatilidad): "
-            f"{', '.join(haircut)}"
+            f"con el ajuste histórico ({adj}): {', '.join(haircut)}"
         )
     return text + ". De dónde sale cada número: «Supuestos»."

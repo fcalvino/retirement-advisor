@@ -1790,7 +1790,9 @@ def cached_goal_optimization(
     current_weights = dict(current_weights_tuple) if current_weights_tuple else None
     goals = list(goals_serialized)
 
-    optimizer = PortfolioOptimizer(profile=profile_key)
+    symbols = tuple(str(t.get("symbol", "")) for t in scored_tickers)
+    optimizer = PortfolioOptimizer(profile=profile_key,
+                                   asset_classes=dict(cached_asset_classes(symbols)))
     return optimizer.optimize_for_goals(scored_tickers, goals, current_weights)
 
 

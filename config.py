@@ -190,7 +190,13 @@ DB_PATH = Path(os.getenv("RETIREMENT_ADVISOR_DB_PATH") or DB_DIR / "retirement_a
 #                   Clases sin Fuentes vigentes conservan el haircut; cripto proyecta
 #                   0 % real. Una corrida sin Clases (tests, el respaldo SPY) queda
 #                   byte-idéntica a tier19.
-ENGINE_VERSION = "2026.10-tier20"
+#   2026.10-tier21 — EO-4b (ADR 0001): el μ del Optimizer deja el proxy de score +
+#                   dividendo (y el posterior de Black-Litterman) y pasa a ser la
+#                   Estimación de la Clase de cada activo, la misma del Monte Carlo;
+#                   bonos EE.UU. y tickers sin Clase, su historia ×0,80. Sin
+#                   contracción por score. Mueve los pesos y las métricas del
+#                   Optimizer que guarda un plan; el Monte Carlo no se mueve.
+ENGINE_VERSION = "2026.10-tier21"
 
 
 @dataclass(frozen=True)

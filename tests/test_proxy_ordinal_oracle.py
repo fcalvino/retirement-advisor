@@ -161,11 +161,24 @@ class TestLaEtiquetaNoPrometeUnaTasaAnual:
 class TestNingunaSuperficieLoImprimeComoTasa:
 
     def test_ninguna_pantalla_interpola_el_proxy_con_un_porcentaje(self):
-        malos = _offenders(USER_FACING)
+        # EO-4b: el único sitio que lo imprime como tasa es el formateador por
+        # base, y sólo cuando la base es la Estimación (test de abajo).
+        permitido = 'return f"{float(expected_return_pct):.1f} %/año"'
+        malos = [m for m in _offenders(USER_FACING)
+                 if not (m.startswith("data/product_ux.py:")
+                         and m.split(":", 2)[2].strip() == permitido)]
         assert not malos, (
             "el proxy sigue renderizándose como una tasa anual — es la forma "
             "exacta que U6-1 elimina:\n  " + "\n  ".join(malos)
         )
+
+    def test_el_proxy_nunca_sale_como_tasa_del_formateador_por_base(self):
+        """EO-4b: con base «proxy» —o sin base, un plan anterior— sale el índice."""
+        from data.product_ux import fmt_expected_return
+
+        for basis in ("proxy", None, "", "otra"):
+            assert "%" not in fmt_expected_return(7.0, basis), basis
+        assert fmt_expected_return(7.0, "estimacion").endswith("%/año")
 
     def test_el_barrido_detecta_la_forma_que_dice_detectar(self):
         """Guarda sobre la guarda: un regex que no matchea nada da un verde
