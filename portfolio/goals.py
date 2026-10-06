@@ -314,10 +314,14 @@ class GoalPlanner:
         symbols: List[str],
         weights: Optional[np.ndarray] = None,
         seed: int = 42,
+        asset_classes: Optional[dict] = None,
     ) -> None:
         self.symbols = symbols
         self.weights = weights
         self.seed = seed
+        # EO-4a: the Clase of each symbol, so «Mis Metas» projects with the same
+        # Estimación as the main simulation (EO-0). None keeps the old haircut.
+        self.asset_classes = asset_classes
 
     def run(
         self,
@@ -409,6 +413,7 @@ class GoalPlanner:
             seed=self.seed,
             vol_scale=vol_scale,
             return_scale=return_scale,
+            asset_classes=self.asset_classes,
         )
 
     def _simulate_goal(

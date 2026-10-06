@@ -320,7 +320,7 @@ def _render_getting_started() -> None:
         st.markdown("""
         1. Tocá **🎁 Cargar plan de ejemplo** arriba (o en Mi Plan).
         2. Mirá **¿cómo viene tu plan?** y **qué hacer este año**.
-        3. En **Simulaciones**, revisá realista vs conservador y las palancas si no llegás.
+        3. En **Simulaciones**, compará la Estimación con la historia reciente y mirá las palancas si no llegás.
         4. Exportá el **PDF para compartir** y un **respaldo JSON**.
         5. Cuando quieras lo tuyo: perfil → Optimizer → guardar como plan nuevo.
         """)

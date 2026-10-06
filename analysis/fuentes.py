@@ -370,3 +370,31 @@ def country_risk_entry(obs: Sequence[Tuple[date, float]], *, today: date) -> dic
                  "diario (API comunitaria, no oficial; Ámbito bloquea el acceso directo). "
                  "No es un rendimiento esperado: no entra al central de emergentes."),
     }
+
+
+# --------------------------------------------------------------------------- #
+#  Inflación implícita (EO-4a): el 0 % real de cripto, en nominal              #
+# --------------------------------------------------------------------------- #
+
+def load_inflation(path: Path | str) -> dict:
+    """La inflación implícita del archivo curado (clave ``inflation``): serie, %, fecha, cita."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    infl = data.get("inflation")
+    if not infl:
+        raise ValueError(f"{path} no trae la inflación implícita (clave inflation)")
+    return {**infl, "value_pct": float(infl["value_pct"])}
+
+
+def load_shipped_inflation() -> dict:
+    """La inflación implícita del archivo curado del repo (``FUENTES.data_file``)."""
+    root = Path(__file__).resolve().parents[1]
+    return load_inflation(root / FUENTES.data_file)
+
+
+def inflation_entry(value_pct: float, as_of: str) -> dict:
+    """La inflación implícita a 10 años de FRED, como la escribe ``refresh_fuentes.py``."""
+    sid = FUENTES.breakeven_series
+    return {"series": sid, "value_pct": round(value_pct, 2), "as_of": as_of,
+            "source": f"https://fred.stlouisfed.org/series/{sid}",
+            "note": ("Inflación que descuenta el mercado de bonos a 10 años. Lleva a "
+                     "nominal el 0 % real de cripto (EO-4a) y el 1/CAPE (EO-2b).")}

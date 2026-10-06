@@ -2445,6 +2445,15 @@ ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
         "de la cartera. Cambian los pesos y las métricas que propone el Optimizer; la "
         "proyección Monte Carlo de una cartera dada no se mueve.",
     ),
+    (
+        "2026.10-tier20",
+        "La proyección Monte Carlo le restaba un 20 % al rendimiento histórico y le "
+        "sumaba un 10 % a la volatilidad de toda la cartera, sin una fuente que lo "
+        "respaldara. Ahora cada activo se proyecta con la Estimación objetiva de su "
+        "Clase (lo que dicen las gestoras, la valuación y la historia; ver «Supuestos»). "
+        "Los bonos, los activos sin Clase y cripto se proyectan aparte, rotulados. "
+        "Cambian la mediana, el rango y la probabilidad de éxito del plan.",
+    ),
 )
 
 
@@ -3138,9 +3147,9 @@ def shareable_report_narrative_blocks(
         {
             "heading": "Cómo leer los números",
             "body": (
-                "Las proyecciones usan un sesgo conservador a propósito (más volatilidad, "
-                "menor retorno histórico). Cuando veas «realista vs conservador», planificá "
-                "con el conservador. Los sellos 📊 son cálculos; 🤖 es interpretación de IA."
+                "Las proyecciones usan la Estimación objetiva de cada Clase (ver «Supuestos»), "
+                "no la historia reciente. Cuando veas «Estimación vs historia reciente», "
+                "planificá con la Estimación. Los sellos 📊 son cálculos; 🤖 es interpretación de IA."
             ),
         },
     ]
@@ -3208,3 +3217,32 @@ def ars_discount_note(discount: float, ars_syms: str, country_risk: Any = None) 
         "una Fuente para convertir ese spread en un descuento de score. La conversión "
         "llega con EO-4, cuando la Estimación de cada ADR argentino use el riesgo país."
     )
+
+
+# --------------------------------------------------------------------------- #
+#  De dónde sale la proyección (EO-4a)                                         #
+# --------------------------------------------------------------------------- #
+
+def estimation_caption(estimations: Sequence[Mapping[str, Any]]) -> str:
+    """Una línea por Clase con su Estimación y su rótulo, y los activos con ajuste histórico.
+
+    ``estimations`` es ``MonteCarloResult.estimations``. Vacío —una corrida sin
+    Clases— da un texto vacío: el aviso de ``warnings`` ya lo dice.
+    """
+    if not estimations:
+        return ""
+    objective: Dict[str, List[str]] = {}
+    haircut: List[str] = []
+    for e in estimations:
+        if e.get("mode") == "objetiva":
+            objective.setdefault(e["label"], []).append(e["symbol"])
+        else:
+            haircut.append(e["symbol"])
+    parts = [f"{label} ({', '.join(syms)})" for label, syms in objective.items()]
+    text = "Estimación por Clase: " + " · ".join(parts) if parts else ""
+    if haircut:
+        text += ("; " if text else "") + (
+            f"con el ajuste histórico (−20 % al rendimiento, +10 % a la volatilidad): "
+            f"{', '.join(haircut)}"
+        )
+    return text + ". De dónde sale cada número: «Supuestos»."

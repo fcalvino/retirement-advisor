@@ -292,8 +292,8 @@ else:
             )
             if getattr(mc_result, "realistic_reference_applied", False):
                 st.caption(
-                    f"📊 Conservador (piso prudente) vs realista: mediana realista "
-                    f"\\${getattr(mc_result, 'realistic_median_terminal', 0):,.0f}."
+                    f"📊 Estimación objetiva vs historia reciente: mediana con la historia "
+                    f"de los últimos 10 años \\${getattr(mc_result, 'realistic_median_terminal', 0):,.0f}."
                 )
             # WD-PLAN-PDF: the note Simulaciones shows travels with the figure.
             _savings_note = strategy_ignored_savings_note(mc_result)

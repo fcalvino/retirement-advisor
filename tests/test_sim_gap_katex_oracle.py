@@ -69,8 +69,10 @@ def _two_scenarios_block() -> str:
     )
     at.run()
     assert not at.exception, [str(e)[:400] for e in at.exception]
-    blocks = [i.value for i in at.info if "Dos escenarios" in (i.value or "")]
-    assert len(blocks) == 1, "el bloque «Dos escenarios» no se dibujó"
+    # EO-4a renombró el bloque: «Dos referencias» (Estimación objetiva vs historia
+    # reciente). La cuenta del porcentaje sigue siendo la de SIM-GAP-PCT.
+    blocks = [i.value for i in at.info if "Dos referencias" in (i.value or "")]
+    assert len(blocks) == 1, "el bloque «Dos referencias» no se dibujó"
     return blocks[0]
 
 
@@ -164,3 +166,18 @@ def test_the_suggested_shares_caption_escapes_its_amounts(monkeypatch, tmp_path)
     captions = [c.value for c in at.caption if "Sugerido por la IA" in (c.value or "")]
     assert len(captions) == 1, "el caption de acciones sugeridas no se dibujó"
     _assert_no_raw_dollar(captions[0])
+
+
+def test_the_gap_levers_escape_their_amounts():
+    """EO-4a, QA en vivo: con la probabilidad bajo 70 % las palancas dicen «Sumá
+    ~$307/mes ($3,681/año)», y ese par de `$` se veía como fórmula."""
+    at = AppTest.from_file(str(SIM_PAGE), default_timeout=120)
+    mc = _fake_mc(median_terminal=356_192.0)
+    mc.target_value = 500_000.0
+    mc.prob_achieve_target_pct = 38.2
+    at.session_state["mc_result"] = mc
+    at.run()
+    assert not at.exception, [str(e)[:400] for e in at.exception]
+    levers = [m.value for m in at.markdown if "Aportar más por mes" in (m.value or "")]
+    assert len(levers) == 1, "la palanca de aporte no se dibujó"
+    _assert_no_raw_dollar(levers[0])

@@ -98,6 +98,9 @@ def stores(tmp_path, monkeypatch):
         provider="none", model="", enabled=False, api_key="",
     ))
     monkeypatch.setattr(shared_mod, "track_record_home_line", lambda: "Sin track record aún.")
+    # EO-4a: las simulaciones piden la ficha de cada ticker para saber su Clase;
+    # sin red, ningún ticker tiene Clase y el MC proyecta con el ajuste histórico.
+    monkeypatch.setattr("analysis.estimacion.classes_for", lambda syms: {s: None for s in syms})
     return SimpleNamespace(plans=ps_mod.plan_store, health=ph_mod.plan_health_store)
 
 

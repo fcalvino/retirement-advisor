@@ -13,14 +13,15 @@
 
 ## Orden actual
 
-Decimoquinta repriorización (sesión de diseño sobre `f8c9e76`, 2026-10-03), con el
-ajuste del usuario del 2026-10-04 (EO-1 en tres PRs): la Estimación objetiva
-([ADR 0001](adr/0001-estimacion-objetiva.md)) entra detrás de lo que ya estaba en cola.
+Decimosexta repriorización (2026-10-05, sobre `3c76cab`): EO-3 cerró con acciones EE.UU.
+calibradas y bonos EE.UU. no; el usuario decidió el alcance de EO-4 y lo partió en cuatro
+PRs. Bonos conservan el haircut, rotulado «no calibrado»; ex-EE.UU., emergentes y REITs
+usan la Estimación objetiva rotulada «no calibrable» (decisiones del usuario, 2026-10-05).
 
 1. ~~**Sincronización** — este orden, el ADR 0001 y el glosario llegan a `main` (sólo docs).~~
 2. ~~**SIM-GAP-PCT + KATEX-DOLLAR-PLAN** — banda 4, un PR: el mismo bloque «Dos escenarios».~~
-3. ~~**EO-0 → EO-1a → EO-1b → EO-1c → EO-2a → EO-2b → EO-2c → EO-3**~~ **→ EO-4**; EO-4 no entra si EO-3 no pasa: acciones EE.UU. pasó y bonos EE.UU. no (bloque 6), así que antes de EO-4 el usuario decide qué hacer con el método de bonos.
-4. **EO-5** (después de EO-1b) y **EO-6** (después de EO-1a), en paralelo. Ver bloque 6.
+3. ~~**EO-0 → EO-1a → EO-1b → EO-1c → EO-2a → EO-2b → EO-2c → EO-3 → EO-4a**~~ **→ EO-4b → EO-4c → EO-4d**: el Optimizer, la UI de Escenarios y el riesgo país argentino (EO-4a, el Monte Carlo, cerrado). Ver bloque 6.
+4. **EO-6** después de EO-4a; **EO-5** después de EO-6. Ver bloque 6.
 
 Esperan disparador: U5-1b y COM-*. Sin orden: STREAMLIT-1.65 (sin banda), PORTFOLIO-FX,
 COM-LOG-TESTS, IDEA-4, IDEA-5, PIT-TOOLS y GOAL-PRIORITY-TEXT.
@@ -100,7 +101,9 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **IDEA-5 IMPUESTOS** | 5 | Módulo de impuestos personales —bienes personales, retención de dividendos, ganancia de capital— (idea 5 de `DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`; `TaxConfig` sólo modela el impuesto corporativo). Sin alcance ni orden. Ver bloque 4 |
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **GOAL-PRIORITY-TEXT** | 5 | Una meta importada a mano con la prioridad en texto («esencial») llega a `goals_list` sin convertir y «Simular» la pasa por `int()`. Residual declarado de PLAN-GOALS-KEYS (#214); ningún export de la app la escribe así. Anotado el 2026-10-02, **no priorizado**. Ver bloque 4 |
-| **EO-4** | dec. | Una Estimación por activo para el Monte Carlo y el optimizador; se borra el haircut global; Escenarios en la UI, también en lugar de «Comparar perfiles». Ver bloque 6 |
+| **EO-4b** | dec. | El Optimizer usa la misma Estimación por Clase; la contracción de cada activo hacia su Clase según el score (U6-1). Ver bloque 6 |
+| **EO-4c** | dec. | La UI de Escenarios (pesimista/central/optimista, cada uno con su p10–p90) reemplaza «Comparar perfiles» y sus escalas sin Fuente; Escenario de planificación del Perfil. Ver bloque 6 |
+| **EO-4d** | dec. | El riesgo país de EO-2c entra a la Estimación de los ADRs argentinos y se va `OPTIMIZER.ars_risk_discount`. Ver bloque 6 |
 | **EO-5** | dec. | La IA calibrada: prompts, `recommended_max_allocation`, el PM recibe la Postura, oráculo de postura. Ver bloque 6 |
 | **EO-6** | dec. | Señales: tope simétrico, imputación por mediana del sector, atenuación simétrica, rótulo «no calibrado»; el track record guarda la versión del método de señales. Ver bloque 6 |
 
@@ -363,7 +366,19 @@ Toda etapa que mueva μ o el Monte Carlo sube `ENGINE_VERSION`.
   [21 %, 68 %]; superpuestas 41 %): la banda es angosta (4,3 pp de ancho medio) y el
   central queda alto (sesgo −1,05 pp; los fallos caen abajo 3 a 1). Ex-EE.UU.,
   emergentes y REITs: no calibrables (unas 2–3 ventanas independientes).
-- **EO-4 — Una Estimación, dos motores.** La Estimación de cada activo se contrae
+- **EO-4 — Una Estimación, dos motores**, partido en cuatro PRs (decisión del usuario,
+  2026-10-05): EO-4a el Monte Carlo, EO-4b el Optimizer (y la contracción por score),
+  EO-4c la UI de Escenarios, EO-4d el riesgo país argentino. Bonos EE.UU. conservan el
+  haircut rotulado «no calibrado»; ex-EE.UU., emergentes y REITs, la Estimación rotulada
+  «no calibrable»; cripto proyecta 0 % real (el pesimista); un ticker sin Clase conserva
+  el haircut y se lo nombra (decisiones del usuario, 2026-10-05).
+  - ~~**EO-4a — el Monte Carlo.**~~ *cerrada (2026-10-06)*, ver `ROADMAP.md`. El recentrado
+    compuesto va a nivel cartera —el promedio ponderado de las Estimaciones, con la
+    volatilidad propia de los activos—: recentrar cada acción en el central del índice
+    con su propia volatilidad la proyectaba arriba de la Estimación (QA en vivo: 8,3 %
+    sobre 6,7 %).
+
+  El diseño original, que las cuatro partes implementan: la Estimación de cada activo se contrae
   hacia la de su Clase según su evidencia (el score, con el peso que respalde U6-1);
   la usan el optimizador y el Monte Carlo, que sigue sorteando de la historia
   recentrada en ella. Cierra la opción B de D3. Se borra `vol_adjustment` /

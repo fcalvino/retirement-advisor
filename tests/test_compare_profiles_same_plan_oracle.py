@@ -46,6 +46,9 @@ def calls(monkeypatch):
     monkeypatch.setattr(shared, "cached_monte_carlo", recorder)
     monkeypatch.setattr(shared, "get_user_prefs", lambda: UserPreferences())
     monkeypatch.setattr(shared, "seed_session_defaults_from_profile", lambda *a, **k: None)
+    # EO-4a: las simulaciones piden la ficha de cada ticker para saber su Clase;
+    # sin red, ningún ticker tiene Clase y el MC proyecta con el ajuste histórico.
+    monkeypatch.setattr("analysis.estimacion.classes_for", lambda syms: {s: None for s in syms})
     with patch("portfolio.monte_carlo.get_history",
                side_effect=lambda *a, **k: _flat_history(0.06)):
         yield recorded

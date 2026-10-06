@@ -1006,8 +1006,9 @@ class InvestmentPlanReport:
                 f"<b>SUPUESTOS APLICADOS:</b> Las proyecciones incluyen una capa de "
                 f"<i>drags económicos</i> de aproximadamente {_drag_total:.2f}% anual "
                 f"(fees, impuesto a dividendos, costo de rebalanceo y/o buffer AR) sobre "
-                f"el crecimiento, además de los ajustes conservadores del motor (+10% "
-                f"volatilidad, −20% retorno histórico). Los datos provienen de historia de "
+                f"el crecimiento. Cada activo se proyecta con la Estimación objetiva de su "
+                f"Clase; los bonos y los activos sin Clase, con el ajuste histórico del motor "
+                f"(+10% volatilidad, −20% retorno). Los datos provienen de historia de "
                 f"precios pura (yfinance). No se modelan tax lots ni inflación estocástica."
             )
         else:
@@ -1015,9 +1016,10 @@ class InvestmentPlanReport:
                 "<b>SUPUESTOS APLICADOS:</b> Salvo indicación contraria, las proyecciones "
                 "asumen <b>0% de fees, 0% de impuestos sobre dividendos y 0% de costo de "
                 "rebalanceo</b>, y no modelan fricciones locales argentinas (cepo, brecha, "
-                "diferencial de inflación). Parten de historia de precios pura (yfinance) con "
-                "ajustes conservadores (+10% volatilidad, −20% retorno histórico). Los números "
-                "reales tras costos serán menores."
+                "diferencial de inflación). Parten de historia de precios pura (yfinance), "
+                "recentrada en la Estimación objetiva de cada Clase; los bonos y los activos "
+                "sin Clase conservan el ajuste histórico (+10% volatilidad, −20% retorno). Los "
+                "números reales tras costos serán menores."
             )
         return [
             Spacer(1, 0.5 * cm),

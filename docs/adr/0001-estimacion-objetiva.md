@@ -135,3 +135,19 @@ Consecuencia: EO-4 recentra el Monte Carlo de forma compuesta y sólo tiene evid
 para borrar el haircut en acciones de EE.UU.; qué hacer con bonos es una decisión
 pendiente del usuario. La decisión de fondo no cambia.
 
+## Nota (2026-10-06, EO-4a)
+
+El Monte Carlo deja el haircut global. Recentra la **cartera** de forma compuesta en el
+promedio ponderado de las Estimaciones de sus activos, con la volatilidad propia de esos
+activos: la mediana de los caminos rinde la Estimación. Es el mismo contrato que EO-3
+probó sobre el S&P, que también es una cartera. La primera versión recentraba cada
+activo en el central de su Clase, y la QA en vivo mostró por qué no: una acción sola
+recibía el rendimiento compuesto del índice con su propia volatilidad, o sea un
+rendimiento aritmético mayor que el del índice, y tres acciones con rebalanceo semanal
+proyectaban 8,3 %/año sobre una Estimación de 6,7 %.
+
+Lo que el haircut sigue cubriendo, con su rótulo (decisiones del usuario, 2026-10-05):
+bonos de EE.UU. (EO-3 no pasó), los tickers sin Clase y las Clases sin Fuentes vigentes.
+Cripto proyecta 0 % real, el Escenario pesimista. La contracción de cada activo hacia
+su Clase según el score queda para EO-4b. La decisión no cambia.
+

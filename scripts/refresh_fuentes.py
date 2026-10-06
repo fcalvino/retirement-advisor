@@ -126,7 +126,8 @@ def _country_risk() -> dict:
     return fuentes.country_risk_entry(obs, today=fuentes.today())
 
 
-def build_entries() -> list[dict]:
+def build_entries() -> tuple[list[dict], dict]:
+    """Las entradas de valuación e Historia, y la inflación implícita que usó el CAPE."""
     path, sha = _download_shiller(_root / FUENTES.raw_dir)
     breakeven = _fred(FUENTES.breakeven_series)
     bond = _fred(FUENTES.bond_yield_series)
@@ -139,7 +140,7 @@ def build_entries() -> list[dict]:
     for cls, symbol in FUENTES.history_proxies.items():
         if symbol != "shiller":
             entries.append(_fund_history(symbol, cls))
-    return entries
+    return entries, fuentes.inflation_entry(breakeven.value, breakeven.as_of)
 
 
 def main() -> int:
@@ -152,13 +153,14 @@ def main() -> int:
     target = _root / FUENTES.data_file
     data = json.loads(target.read_text(encoding="utf-8"))
     if not args.country_risk_only:
-        derived = build_entries()
+        derived, inflation = build_entries()
         for e in derived:
             span = f"{e['period_start']} → " if e.get("period_start") else ""
             logger.info(f"{e['asset_class']:<16} {e['kind']:<9} {e['value_pct']:>6.2f} %  "
                         f"{span}{e['as_of']}  {e['name']}")
         gestoras = [e for e in data["entries"] if e["kind"] == "gestora"]
         data["entries"] = gestoras + derived
+        data["inflation"] = inflation
     risk = _country_risk()
     logger.info(f"riesgo país {risk['country']}: {risk['value_bp']} pb al {risk['as_of']}")
     data["country_risk"] = [risk]
@@ -166,6 +168,7 @@ def main() -> int:
         target.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         fuentes.load_sources(target)        # lo escrito tiene que volver a leerse
         fuentes.load_country_risk(target)
+        fuentes.load_inflation(target)
         logger.info(f"escrito {target.relative_to(_root)}: {len(data['entries'])} entradas "
                     "y el riesgo país")
     return 0
