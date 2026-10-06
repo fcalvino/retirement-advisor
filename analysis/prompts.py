@@ -35,15 +35,14 @@ from analysis.currency_metric_text import currency_metric_text
 from data.product_ux import (
     GUARDRAILS_OMISSIONS,
     MAX_DD_ESTIMATE_SHORT,
-    PROXY_INDEX_LABEL,
-    PROXY_RATIO_LABEL,
     TREND_MA_LABEL,
     decumulation_span_text,
     depletion_text,
+    expected_return_prompt_line,
     format_dividend_score,
     market_cap_currency,
     max_dd_estimate_help,
-    proxy_attractiveness_index,
+    ratio_prompt_line,
     strategy_ignored_savings_note,
     technical_signal_label,
     with_currency,
@@ -985,6 +984,7 @@ def long_term_plan_narrative_prompt(
     prob_ruin: float,
     prob_target: float,
     target_value: float,
+    return_basis: str = "proxy",
 ) -> str:
     """
     Generate a human, conservative narrative explaining the current long-term plan
@@ -1008,7 +1008,8 @@ IDIOMA OBLIGATORIO: Responde SIEMPRE en español. Toda la narrativa, explicacion
 
 **PORTAFOLIO ACTUAL (perfil {profile_name})**
 Activos: {holdings_str}
-{PROXY_INDEX_LABEL}: {proxy_attractiveness_index(expected_return):.0f} | Volatilidad: {volatility:.1f}% | {PROXY_RATIO_LABEL}: {sharpe:.2f}
+{expected_return_prompt_line(expected_return, return_basis)}
+Volatilidad: {volatility:.1f}% | {ratio_prompt_line(sharpe, return_basis)}
 Dividend Yield: {dividend_yield:.1f}%
 
 **PARÁMETROS DE LA SIMULACIÓN MONTE CARLO (block bootstrap 10 años historia real + ajustes conservadores)**
@@ -1080,6 +1081,7 @@ def portfolio_optimizer_advice_prompt(
     rebalance_rationale: str = "",
     warnings: list[str] | None = None,
     holdings_note: str = "",
+    return_basis: str = "proxy",
 ) -> str:
     """
     Build the LLM prompt to give voice + human-scale concentration advice
@@ -1140,9 +1142,9 @@ Rebalance rationale (actual): {rebalance_rationale or "N/D"}
 Alertas/warnings: {warn_str}
 
 **MÉTRICAS DE LA CARTERA OPTIMIZADA (matemática completa)**
-{PROXY_INDEX_LABEL}: {proxy_attractiveness_index(expected_return_pct):.0f} — índice relativo de score + dividendo. NO es una tasa: no se capitaliza ni se compara contra un rendimiento
+{expected_return_prompt_line(expected_return_pct, return_basis)}
 Volatilidad: {volatility_pct:.1f}%
-{PROXY_RATIO_LABEL}: {sharpe:.2f} — (atractivo − tasa libre de riesgo) / volatilidad histórica, no es un Sharpe
+{ratio_prompt_line(sharpe, return_basis)}
 Div Yield: {dividend_yield_pct:.2f}%
 Moat promedio: {moat_avg:.1f}
 Pesos por sector: {sector_str}
@@ -1170,7 +1172,7 @@ Incluso si el total de la optimización matemática es 27 (o 30-40), un humano n
 
 2. Recomendá un número pertinente de posiciones para el núcleo humano (típicamente 7-15 según la concentración de convicción/moat/scores que ves; decidí vos el número exacto para este caso, no lo hardcodees). Esto aplica aunque el total sea 27 o más.
 
-3. Propone una "cartera núcleo" (core holdings) más manejable: selecciona el subconjunto de tickers que aportan la mayor parte del beneficio (ratio atractivo/vol, yield, moat, atractivo estimado). Para cada uno da un peso sugerido (ajustado, que sume cerca de 100%) y un "why" corto y concreto de por qué lo mantuviste o ajustaste.
+3. Propone una "cartera núcleo" (core holdings) más manejable: selecciona el subconjunto de tickers que aportan la mayor parte del beneficio (el ratio de la cartera, yield, moat, el rendimiento de las métricas de arriba). Para cada uno da un peso sugerido (ajustado, que sume cerca de 100%) y un "why" corto y concreto de por qué lo mantuviste o ajustaste.
 
 4. Lista breve de los que "dropearías" de la versión humana y por qué (para que el usuario entienda el trade-off de concentración vs. diversificación completa).
 
@@ -1432,7 +1434,8 @@ Estás explicando un **plan de retiro guardado** llamado «{plan_name}» (perfil
 Sectores: {sect_str}
 
 **MÉTRICAS DEL PLAN**
-{PROXY_INDEX_LABEL} {proxy_attractiveness_index(float(metrics.get('expected_return_pct', 0))):.0f} | Volatilidad {float(metrics.get('volatility_pct', 0)):.1f}% | {PROXY_RATIO_LABEL} {float(metrics.get('sharpe_ratio', 0)):.2f}
+{expected_return_prompt_line(float(metrics.get('expected_return_pct', 0)), metrics.get('return_basis'))}
+Volatilidad {float(metrics.get('volatility_pct', 0)):.1f}% | {ratio_prompt_line(metrics.get('sharpe_ratio', 0), metrics.get('return_basis'))}
 Dividend yield {float(metrics.get('dividend_yield_pct', 0)):.2f}% | Score prom. {float(metrics.get('adjusted_score_avg', 0)):.0f}/100 | {MAX_DD_ESTIMATE_SHORT} {float(metrics.get('max_drawdown_estimate_pct', 0)):.1f}% ({max_dd_estimate_help()})
 
 **COLAS DE VIENTO ESTRUCTURALES SECTOR-PAÍS (curadas)**

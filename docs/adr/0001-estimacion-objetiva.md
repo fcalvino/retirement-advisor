@@ -151,3 +151,22 @@ bonos de EE.UU. (EO-3 no pasó), los tickers sin Clase y las Clases sin Fuentes 
 Cripto proyecta 0 % real, el Escenario pesimista. La contracción de cada activo hacia
 su Clase según el score queda para EO-4b. La decisión no cambia.
 
+## Nota (2026-10-06, EO-4b)
+
+El Optimizer toma como μ de cada activo la misma Estimación que el Monte Carlo: el
+central de su Clase (cripto, 0 % real); bonos de EE.UU., tickers sin Clase y Clases sin
+Fuentes vigentes, su historia semanal con el mismo haircut del Monte Carlo,
+compuesto, pero sobre la ventana del Optimizer (`OPTIMIZER.price_history_years`, 2
+años), no los 10 del Monte Carlo. Con eso el rendimiento esperado de la cartera es el promedio ponderado de
+las Estimaciones, el número en el que EO-4a recentra la proyección.
+
+«Qué se decidió» dice que la Estimación de cada activo se contrae hacia la de su Clase
+según el score. El usuario decidió no hacerlo todavía (2026-10-06): U6-1 midió que el
+score ordena el rendimiento pero no lo cotiza, así que un peso de contracción sería un
+número sin Fuente. Dos acciones de la misma Clase reciben el mismo μ y el score sólo
+elige el grupo de candidatos. Por la misma razón el posterior de Black-Litterman no
+corre sobre la Estimación: el equilibrio Π sería un segundo ancla sin Fuente y la
+confianza de cada view salía del score. La covarianza sigue siendo la histórica, con
+Ledoit-Wolf. La contracción queda como fila aparte del BACKLOG (SCORE-CONTRACCION).
+Hasta EO-4d, el descuento por riesgo argentino sólo baja el score de los ADRs, sin
+llegar a μ. La decisión no cambia.

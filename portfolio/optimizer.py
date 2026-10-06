@@ -24,7 +24,7 @@ from __future__ import annotations
 import math
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -35,6 +35,8 @@ from scipy.optimize import minimize
 from analysis.moat import classify_moat, moat_scale_max
 from config import (
     ARS_RISK,
+    ESTIMACION,
+    MONTE_CARLO,
     OPTIMIZER,
     OPTIMIZER_PROFILES,
     TAILWINDS,
@@ -255,6 +257,15 @@ class OptimizationResult:
     # MonteCarloResult.median_max_drawdown_pct, a different figure.
     max_drawdown_estimate_pct: float = 0.0
 
+    # EO-4b: what ``expected_return_pct`` is. "estimacion" — the Estimación
+    # objetiva of each asset's Clase (a rate, %/año); "proxy" — the score view of
+    # before, an ordering index (U6-1). Plans saved before EO-4b carry no basis
+    # and read as "proxy".
+    return_basis: str = "proxy"
+    #: One ``analysis.estimacion.AssetEstimation`` (as dict) per optimized asset;
+    #: empty on the proxy path.
+    estimations: List[dict] = field(default_factory=list)
+
     # ------------------------------------------------------------------
     # Instrumentation fields (populated by the optimizer for diagnostics)
     # ------------------------------------------------------------------
@@ -308,8 +319,12 @@ class PortfolioOptimizer:
     never calls AI and always produces the full mathematical result.
     """
 
-    def __init__(self, profile: str = "conservative"):
+    def __init__(self, profile: str = "conservative", *,
+                 asset_classes: Optional[Dict[str, Optional[str]]] = None):
         self.profile_key = profile
+        # EO-4b: symbol → Clase, resolved by the caller (``shared.cached_asset_classes``)
+        # so the optimizer stays off the network. None → the score proxy of before.
+        self._asset_classes = dict(asset_classes) if asset_classes is not None else None
         self.cfg: ProfileConfig = OPTIMIZER_PROFILES.get(profile, OPTIMIZER_PROFILES["conservative"])
         self.opt = OPTIMIZER
         self._converted: Dict[str, str] = {}
@@ -396,7 +411,15 @@ class PortfolioOptimizer:
             )
 
         # 4 — Expected returns & covariance
-        mu = self._expected_returns(eligible_filtered)
+        if self._asset_classes is None:
+            mu = self._expected_returns(eligible_filtered)
+            result.warnings.append(
+                "μ es el proxy de score + dividendo (un índice para ordenar, no una "
+                "tasa): no se pasaron las Clases de los activos, así que no hay "
+                "Estimación objetiva (sin Clases)."
+            )
+        else:
+            mu = self._estimation_returns(eligible_filtered, price_matrix, result)
 
         if len(usable_symbols) >= 2 and price_matrix.shape[1] >= 2:
             cov = self._covariance_matrix(price_matrix[usable_symbols])
@@ -408,7 +431,10 @@ class PortfolioOptimizer:
         # 4b — Black-Litterman posterior (Fase 5): blend the score-derived views
         # with the market equilibrium. Opt-in (config) + guarded; on any mismatch
         # or failure it returns the original proxy so the path stays valid.
-        mu = self._apply_black_litterman(mu, cov, eligible_filtered, cov_available)
+        # EO-4b: not on the Estimación — Π would be a second, unsourced anchor and
+        # the score-driven view confidence a contraction the user declined.
+        if self._asset_classes is None:
+            mu = self._apply_black_litterman(mu, cov, eligible_filtered, cov_available)
 
         # 5 — Optimize
         weights = None
@@ -779,6 +805,60 @@ class PortfolioOptimizer:
                 composite = min(composite, cap)
             mu.append(composite)
         return np.array(mu)
+
+    def _estimation_returns(self, tickers: List[dict], price_matrix: pd.DataFrame,
+                            result: Optional[OptimizationResult] = None) -> np.ndarray:
+        """μ per asset from the Estimación objetiva of its Clase (EO-4b, ADR 0001).
+
+        The same rules as the Monte Carlo (EO-4a, ``analysis.estimacion``): the
+        central of the Clase, or 0 % real for crypto. Bonds EE.UU., a ticker without
+        Clase and a Clase without current Fuentes keep the haircut on their own
+        history, compounded the way the Monte Carlo compounds it:
+        ``(1 + weekly mean × MONTE_CARLO.mean_haircut)^52 − 1``. Σ stays historical
+        for every asset (the haircut's +10 % vol is a Monte Carlo device).
+
+        No contraction toward the score (user decision, 2026-10-06): two US stocks
+        get the same μ, and the score only ranks the candidate pool. The ARS
+        discount and the tailwind tilt act on the score, so they no longer reach μ
+        until EO-4d puts the country risk into the Estimación.
+        """
+        from analysis.estimacion import OBJETIVA, asset_estimations
+
+        symbols = [t["symbol"] for t in tickers]
+        ests = asset_estimations(symbols, self._asset_classes or {})
+        periods = ESTIMACION.periods_per_year
+        mu, no_history = [], []
+        for e in ests:
+            if e.mode == OBJETIVA:
+                mu.append(e.annual_pct / 100.0)
+                continue
+            if e.symbol in price_matrix.columns:
+                weekly = float(price_matrix[e.symbol].pct_change().dropna().mean())
+                mu.append((1.0 + weekly * MONTE_CARLO.mean_haircut) ** periods - 1.0)
+            else:
+                mu.append(0.0)
+                no_history.append(e.symbol)
+        if result is not None:
+            result.return_basis = "estimacion"
+            result.estimations = [asdict(e) for e in ests]
+            unclassed = [e.symbol for e in ests if e.asset_class is None]
+            if unclassed:
+                result.warnings.append(
+                    f"{', '.join(unclassed)} sin Clase: μ con el ajuste histórico "
+                    "(−20 %) sobre su propia historia."
+                )
+            if no_history:
+                result.warnings.append(
+                    f"{', '.join(no_history)}: sin historia de precios no hay ajuste "
+                    "histórico; su μ queda en 0 %."
+                )
+            ars = [t["symbol"] for t in tickers if is_ars_exposed(t)]
+            if ars:
+                result.warnings.append(
+                    f"{', '.join(ars)}: el descuento por riesgo argentino todavía no "
+                    "entra a la Estimación (llega con EO-4d); hoy sólo baja su score."
+                )
+        return np.array(mu, dtype=float)
 
     def _covariance_matrix(self, price_matrix: pd.DataFrame) -> np.ndarray:
         """Annualised covariance from weekly returns. Adds small regularisation diagonal.

@@ -63,6 +63,24 @@ def unique_plan_id(base_id: str, taken: Callable[[str], bool]) -> str:
 #  PlanSnapshot                                                        #
 # ------------------------------------------------------------------ #
 
+
+def optimizer_metrics(opt_result) -> dict:
+    """The optimizer figures a plan keeps, with what ``expected_return_pct`` is (EO-4b).
+
+    ``return_basis`` is "estimacion" (a rate) or "proxy" (an ordering index); a
+    plan saved before EO-4b has no key and reads as "proxy".
+    """
+    return {
+        "expected_return_pct":       round(float(getattr(opt_result, "expected_return_pct", 0.0)), 2),
+        "return_basis":              str(getattr(opt_result, "return_basis", "proxy") or "proxy"),
+        "volatility_pct":            round(float(getattr(opt_result, "volatility_pct", 0.0)), 2),
+        "sharpe_ratio":              round(float(getattr(opt_result, "sharpe_ratio", 0.0)), 3),
+        "dividend_yield_pct":        round(float(getattr(opt_result, "dividend_yield_pct", 0.0)), 2),
+        "adjusted_score_avg":        round(float(getattr(opt_result, "adjusted_score_avg", 0.0)), 1),
+        "moat_score_avg":            round(float(getattr(opt_result, "moat_score_avg", 0.0)), 2),
+        "max_drawdown_estimate_pct": round(float(getattr(opt_result, "max_drawdown_estimate_pct", 0.0)), 2),
+    }
+
 @dataclass
 class PlanSnapshot:
     """A persisted, JSON-serializable summary of a retirement plan."""
@@ -256,15 +274,7 @@ class PlanSnapshot:
             for c in core_src
         ]
 
-        metrics = {
-            "expected_return_pct":       round(float(getattr(opt_result, "expected_return_pct", 0.0)), 2),
-            "volatility_pct":            round(float(getattr(opt_result, "volatility_pct", 0.0)), 2),
-            "sharpe_ratio":              round(float(getattr(opt_result, "sharpe_ratio", 0.0)), 3),
-            "dividend_yield_pct":        round(float(getattr(opt_result, "dividend_yield_pct", 0.0)), 2),
-            "adjusted_score_avg":        round(float(getattr(opt_result, "adjusted_score_avg", 0.0)), 1),
-            "moat_score_avg":            round(float(getattr(opt_result, "moat_score_avg", 0.0)), 2),
-            "max_drawdown_estimate_pct": round(float(getattr(opt_result, "max_drawdown_estimate_pct", 0.0)), 2),
-        }
+        metrics = optimizer_metrics(opt_result)
 
         mc_summary = None
         if mc_result is not None:

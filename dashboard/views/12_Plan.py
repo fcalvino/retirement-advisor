@@ -43,17 +43,17 @@ from dashboard.shared import (
 )
 from data.env_provenance import format_drift
 from data.plan_context import activate_plan, compute_alignment_trades, deactivate_plan
-from data.plan_store import PlanSnapshot, _slugify, plan_store, unique_plan_id
+from data.plan_store import PlanSnapshot, _slugify, optimizer_metrics, plan_store, unique_plan_id
 from data.product_ux import (
     MAX_DD_ESTIMATE_SHORT,
-    PROXY_INDEX_SHORT,
-    PROXY_RATIO_HELP,
-    PROXY_RATIO_LABEL,
-    PROXY_RETURN_HELP,
     decumulation_span_text,
     depletion_text,
+    expected_return_help,
+    expected_return_label,
+    fmt_expected_return,
     max_dd_estimate_help,
-    proxy_attractiveness_index,
+    ratio_help,
+    ratio_label,
     strategy_ignored_savings_note,
 )
 from data.universe_loader import UNIVERSE_META
@@ -74,11 +74,11 @@ st.caption(
 )
 
 
-def _fmt_idx(expected_return_pct) -> str:
-    """El proxy como índice 0–100 (U6-1). «—» cuando no hay optimización corrida:
-    un plan sin correr no tiene atractivo 0, no tiene atractivo."""
-    idx = proxy_attractiveness_index(expected_return_pct)
-    return "—" if idx is None else f"{idx:.0f}"
+def _fmt_ret(metrics: dict) -> str:
+    """La Estimación como tasa, o el proxy de un plan anterior a EO-4b como índice
+    0–100 (U6-1). «—» cuando no hay optimización corrida: un plan sin correr no
+    tiene rendimiento 0, no tiene."""
+    return fmt_expected_return(metrics.get("expected_return_pct"), metrics.get("return_basis"))
 
 render_assumptions_disclaimer()   # Item 1: radical transparency of assumptions
 st.caption(f"📒 {track_record_home_line()}")  # backlog 15
@@ -143,11 +143,12 @@ def _session_mc_params() -> dict:
 
 def _metrics_row(metrics: dict) -> None:
     c = st.columns(6)
-    c[0].metric(PROXY_INDEX_SHORT, _fmt_idx(metrics.get('expected_return_pct')),
-                help=PROXY_RETURN_HELP)
+    basis = metrics.get("return_basis")
+    c[0].metric(expected_return_label(basis, short=True), _fmt_ret(metrics),
+                help=expected_return_help(basis))
     c[1].metric("Volatilidad", f"{metrics.get('volatility_pct', 0):.1f}%")
-    c[2].metric(PROXY_RATIO_LABEL, f"{metrics.get('sharpe_ratio', 0):.2f}",
-                help=PROXY_RATIO_HELP)
+    c[2].metric(ratio_label(basis), f"{metrics.get('sharpe_ratio', 0):.2f}",
+                help=ratio_help(basis))
     c[3].metric("Div. Yield", f"{metrics.get('dividend_yield_pct', 0):.2f}%")
     c[4].metric("Score prom.", f"{metrics.get('adjusted_score_avg', 0):.0f}/100")
     c[5].metric(MAX_DD_ESTIMATE_SHORT, f"{metrics.get('max_drawdown_estimate_pct', 0):.1f}%",
@@ -245,14 +246,7 @@ if not (opt_result and getattr(opt_result, "tickers", [])):
                 except Exception as exc:
                     st.error(f"No se pudo cargar el ejemplo: {exc}")
 else:
-    _live_metrics = {
-        "expected_return_pct":       getattr(opt_result, "expected_return_pct", 0.0),
-        "volatility_pct":            getattr(opt_result, "volatility_pct", 0.0),
-        "sharpe_ratio":              getattr(opt_result, "sharpe_ratio", 0.0),
-        "dividend_yield_pct":        getattr(opt_result, "dividend_yield_pct", 0.0),
-        "adjusted_score_avg":        getattr(opt_result, "adjusted_score_avg", 0.0),
-        "max_drawdown_estimate_pct": getattr(opt_result, "max_drawdown_estimate_pct", 0.0),
-    }
+    _live_metrics = optimizer_metrics(opt_result)
     st.caption(
         f"Universo **{_active_name}** · perfil **{getattr(opt_result, 'profile_name', '—')}** · "
         f"{len(opt_result.tickers)} posiciones"
@@ -1156,7 +1150,8 @@ else:
                 st.markdown(f"**🗺️ {p.name}**" + ("  🎯 _Activo_" if _is_active else ""))
                 st.caption(
                     f"{p.profile_name or '—'} · {p.n_positions} pos · "
-                    f"Atractivo {_fmt_idx(p.metrics.get('expected_return_pct'))} · "
+                    f"{expected_return_label(p.metrics.get('return_basis'), short=True)} "
+                    f"{_fmt_ret(p.metrics)} · "
                     f"Ratio {p.metrics.get('sharpe_ratio', 0):.2f} · "
                     f"{p.updated_at[:10]}"
                 )

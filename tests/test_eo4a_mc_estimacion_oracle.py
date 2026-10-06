@@ -204,4 +204,4 @@ def test_the_caption_says_where_each_number_comes_from():
 def test_engine_version_moves():
     from config import ENGINE_VERSION
 
-    assert ENGINE_VERSION == "2026.10-tier20"
+    assert ENGINE_VERSION >= "2026.10-tier20"

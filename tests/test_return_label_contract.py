@@ -189,7 +189,9 @@ def test_plan_pdf_and_prompts_use_the_canonical_return_label():
     canónica y no un string suelto. Cambió cuál es la constante."""
     plan = _src("dashboard/views/12_Plan.py")
     assert '"Retorno esp."' not in plan
-    assert "PROXY_INDEX_SHORT" in plan
+    # EO-4b: el rótulo sale de la base del plan (Estimación o índice), por la
+    # función canónica que elige entre las dos constantes.
+    assert "expected_return_label(" in plan
 
     ux = _src("data/product_ux.py")
     assert '"Retorno esperado %"' not in ux
@@ -200,6 +202,7 @@ def test_plan_pdf_and_prompts_use_the_canonical_return_label():
         src = _src(rel)
         assert (
             "índice de atractivo" in src.lower() or "PROXY_INDEX_LABEL" in src
+            or "expected_return_label(" in src or "expected_return_prompt_line(" in src
         ), rel
 
 
@@ -240,10 +243,10 @@ def test_the_sweep_still_catches_a_bare_sharpe_ratio():
 
 
 def test_proxy_ratio_label_reaches_every_proxy_surface():
-    assert "PROXY_RATIO_LABEL" in _src("dashboard/views/12_Plan.py")
-    assert "PROXY_RATIO_LABEL" in _src("dashboard/views/5_Optimizer.py")
-    assert "PROXY_RATIO_LABEL" in _src("dashboard/views/7_Simulaciones.py")
-    assert "PROXY_RATIO_LABEL" in _src("reports/investment_plan.py")
+    # EO-4b: cada superficie elige el rótulo del ratio por la base del resultado.
+    for rel in ("dashboard/views/12_Plan.py", "dashboard/views/5_Optimizer.py",
+                "dashboard/views/7_Simulaciones.py", "reports/investment_plan.py"):
+        assert "ratio_label(" in _src(rel), rel
     assert '"Sharpe Ratio"' not in _src("dashboard/views/5_Optimizer.py")
 
 

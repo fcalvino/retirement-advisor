@@ -40,10 +40,6 @@ from dashboard.shared import (
 from data.product_ux import (
     CONTRIBUTION_GROWTH_HELP,
     LOADED_PLAN_RETIREMENT_KEY,
-    PROXY_INDEX_LABEL,
-    PROXY_RATIO_HELP,
-    PROXY_RATIO_LABEL,
-    PROXY_RETURN_HELP,
     STRATEGY_IGNORES_SAVINGS_CAPTION,
     apply_pending_plan_load,
     apply_pending_profile_seed,
@@ -52,7 +48,10 @@ from data.product_ux import (
     decumulation_span_text,
     depletion_text,
     estimation_caption,
-    fmt_attractiveness_index,
+    expected_return_delta,
+    expected_return_help,
+    expected_return_label,
+    fmt_expected_return,
     indexation_help,
     loaded_plan_saving_years_note,
     mc_has_cash_flows,
@@ -62,7 +61,8 @@ from data.product_ux import (
     pot_growth_help,
     pot_growth_pct,
     profile_exigencia_pct,
-    proxy_attractiveness_index,
+    ratio_help,
+    ratio_label,
     remember_sim_sidebar,
     sim_sidebar_value,
 )
@@ -91,12 +91,6 @@ st.caption(
 
 
 
-def _fmt_idx_delta(a, b) -> str | None:
-    """Delta entre dos índices de atractivo, en puntos de índice."""
-    ia, ib = proxy_attractiveness_index(a), proxy_attractiveness_index(b)
-    if ia is None or ib is None:
-        return None
-    return f"{ia - ib:+.0f} vs base"
 
 # ------------------------------------------------------------------ #
 #  Personal profile → smart defaults (onboarding — Fase A)            #
@@ -849,6 +843,7 @@ En resumen: el modelo no está diciendo "siempre vas a ganar mucho". Está dicie
                     "tickers": tickers,
                     "weights": narrative_weights,
                     "expected_return": getattr(opt_for_narrative, "expected_return_pct", 0.0) if opt_for_narrative else 0.0,
+                    "return_basis": getattr(opt_for_narrative, "return_basis", "proxy") if opt_for_narrative else "proxy",
                     "volatility": getattr(opt_for_narrative, "volatility_pct", 0.0) if opt_for_narrative else 0.0,
                     "sharpe": getattr(opt_for_narrative, "sharpe_ratio", 0.0) if opt_for_narrative else 0.0,
                     "dividend_yield": getattr(opt_for_narrative, "dividend_yield_pct", 0.0) if opt_for_narrative else 0.0,
@@ -1874,16 +1869,21 @@ def _tab_goals_content():
                 delta_color="inverse",
             )
             _mc2.metric(
-                PROXY_INDEX_LABEL,
-                fmt_attractiveness_index(_goal_res.expected_return_pct),
-                delta=_fmt_idx_delta(_goal_res.expected_return_pct, _base_res.expected_return_pct) if _base_res else None,
-                help=PROXY_RETURN_HELP,
+                expected_return_label(_goal_res.return_basis),
+                fmt_expected_return(_goal_res.expected_return_pct, _goal_res.return_basis),
+                delta=expected_return_delta(
+                    _goal_res.expected_return_pct, _goal_res.return_basis,
+                    _base_res.expected_return_pct, getattr(_base_res, "return_basis", "proxy"),
+                ) if _base_res else None,
+                help=expected_return_help(_goal_res.return_basis),
             )
+            _same_basis = _base_res is not None and (
+                getattr(_base_res, "return_basis", "proxy") == _goal_res.return_basis)
             _mc3.metric(
-                PROXY_RATIO_LABEL,
+                ratio_label(_goal_res.return_basis),
                 f"{_goal_res.sharpe_ratio:.2f}",
-                delta=f"{_goal_res.sharpe_ratio - _base_res.sharpe_ratio:+.2f} vs base" if _base_res else None,
-                help=PROXY_RATIO_HELP,
+                delta=f"{_goal_res.sharpe_ratio - _base_res.sharpe_ratio:+.2f} vs base" if _same_basis else None,
+                help=ratio_help(_goal_res.return_basis),
             )
             _mc4.metric(
                 "Div Yield",

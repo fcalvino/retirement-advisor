@@ -747,6 +747,7 @@ def build_portfolio_committee_context(
         "horizon_years": horizon_years,
         "target_value": target_value,
         "expected_return_pct": getattr(opt_result, "expected_return_pct", None),
+        "return_basis": getattr(opt_result, "return_basis", "proxy"),
         "volatility_pct": getattr(opt_result, "volatility_pct", None),
         "sharpe_ratio": getattr(opt_result, "sharpe_ratio", None),
         "dividend_yield_pct": getattr(opt_result, "dividend_yield_pct", None),

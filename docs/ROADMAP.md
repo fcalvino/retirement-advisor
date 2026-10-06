@@ -10,6 +10,18 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## EO-4b — el Optimizer usa la Estimación objetiva de cada Clase (2026-10-06)
+
+Segunda parte de EO-4 (ADR 0001). Decisiones del usuario (2026-10-06): sin contracción por score (pasa a SCORE-CONTRACCION); los rótulos cambian en todas las superficies, por la base del número; el descuento argentino y el tilt de tailwind dejan de mover μ hasta EO-4d, avisado.
+
+- **Motor** (`portfolio/optimizer.py`): `PortfolioOptimizer(asset_classes=)`; con Clases, μ = la Estimación de la Clase (cripto 0 % real); bonos EE.UU. y sin Clase, historia ×0,80 compuesta. Sin Black-Litterman en ese camino. Sin Clases, byte-idéntico. `ENGINE_VERSION` → tier21.
+- **Por qué sin Black-Litterman:** el equilibrio Π sería un segundo ancla sin Fuente y la confianza de cada view salía del score, una contracción que el usuario no eligió.
+- **Rótulos:** `return_basis` en el resultado y en el plan; un plan guardado antes sigue como índice 0–100. Optimizer, Mi Plan, Simulaciones, PDF, prompts, comité y comparación de planes.
+- **QA en vivo** (Growth con Moat, Agresivo): 6,7 %/año, volatilidad 20,1 % → 14,3 %; los pesos pasan a COST, NKE, BRK-B y UNH. Los planes guardados siguen mostrando «Atractivo 69».
+- **Oráculo:** `tests/test_eo4b_optimizer_estimacion_oracle.py`, 13 casos; los contratos de rótulo (`test_return_label_contract`, `test_proxy_ordinal_oracle`) pasan a exigir el rótulo por base.
+
+---
+
 ## EO-4a — el Monte Carlo se recentra en la Estimación objetiva de cada Clase (2026-10-06)
 
 Primera parte de EO-4 (ADR 0001). Decisiones del usuario (2026-10-05): EO-4 en cuatro PRs (Monte Carlo, Optimizer, UI de Escenarios, riesgo país); bonos conservan el haircut rotulado; ex-EE.UU., emergentes y REITs objetivos y rotulados «no calibrable»; cripto a 0 % real; un ticker sin Clase conserva el haircut y se lo nombra; la contracción por score queda para EO-4b; los textos que describían el haircut se corrigen acá.

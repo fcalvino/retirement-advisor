@@ -20,11 +20,11 @@ usan la Estimación objetiva rotulada «no calibrable» (decisiones del usuario,
 
 1. ~~**Sincronización** — este orden, el ADR 0001 y el glosario llegan a `main` (sólo docs).~~
 2. ~~**SIM-GAP-PCT + KATEX-DOLLAR-PLAN** — banda 4, un PR: el mismo bloque «Dos escenarios».~~
-3. ~~**EO-0 → EO-1a → EO-1b → EO-1c → EO-2a → EO-2b → EO-2c → EO-3 → EO-4a**~~ **→ EO-4b → EO-4c → EO-4d**: el Optimizer, la UI de Escenarios y el riesgo país argentino (EO-4a, el Monte Carlo, cerrado). Ver bloque 6.
+3. ~~**EO-0 → EO-1a → EO-1b → EO-1c → EO-2a → EO-2b → EO-2c → EO-3 → EO-4a → EO-4b**~~ **→ EO-4c → EO-4d**: la UI de Escenarios y el riesgo país argentino (EO-4a el Monte Carlo y EO-4b el Optimizer, cerrados). Ver bloque 6.
 4. **EO-6** después de EO-4a; **EO-5** después de EO-6. Ver bloque 6.
 
 Esperan disparador: U5-1b y COM-*. Sin orden: STREAMLIT-1.65 (sin banda), PORTFOLIO-FX,
-COM-LOG-TESTS, IDEA-4, IDEA-5, PIT-TOOLS y GOAL-PRIORITY-TEXT.
+COM-LOG-TESTS, IDEA-4, IDEA-5, PIT-TOOLS y GOAL-PRIORITY-TEXT. Espera Fuente: SCORE-CONTRACCION.
 
 ---
 
@@ -101,9 +101,9 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **IDEA-5 IMPUESTOS** | 5 | Módulo de impuestos personales —bienes personales, retención de dividendos, ganancia de capital— (idea 5 de `DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`; `TaxConfig` sólo modela el impuesto corporativo). Sin alcance ni orden. Ver bloque 4 |
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **GOAL-PRIORITY-TEXT** | 5 | Una meta importada a mano con la prioridad en texto («esencial») llega a `goals_list` sin convertir y «Simular» la pasa por `int()`. Residual declarado de PLAN-GOALS-KEYS (#214); ningún export de la app la escribe así. Anotado el 2026-10-02, **no priorizado**. Ver bloque 4 |
-| **EO-4b** | dec. | El Optimizer usa la misma Estimación por Clase; la contracción de cada activo hacia su Clase según el score (U6-1). Ver bloque 6 |
 | **EO-4c** | dec. | La UI de Escenarios (pesimista/central/optimista, cada uno con su p10–p90) reemplaza «Comparar perfiles» y sus escalas sin Fuente; Escenario de planificación del Perfil. Ver bloque 6 |
-| **EO-4d** | dec. | El riesgo país de EO-2c entra a la Estimación de los ADRs argentinos y se va `OPTIMIZER.ars_risk_discount`. Ver bloque 6 |
+| **EO-4d** | dec. | El riesgo país de EO-2c entra a la Estimación de los ADRs argentinos y se va `OPTIMIZER.ars_risk_discount`. Desde EO-4b el descuento sólo baja el score (el down-select), no μ: el resultado lo avisa. Ver bloque 6 |
+| **SCORE-CONTRACCION** | ? | La contracción de la Estimación de cada activo hacia la de su Clase según el score, que el ADR 0001 prevé y EO-4b no hizo (decisión del usuario, 2026-10-06): U6-1 midió que el score ordena el rendimiento (p<0,0001) pero no lo cotiza, así que hoy un peso sería un número sin Fuente. Con la contracción en 0, dos acciones de la misma Clase tienen el mismo μ y el score sólo elige los candidatos. **Reabrir** con una medición point-in-time que dé un peso con su banda (no recalibrar sobre la misma historia que U6-1). Anotado el 2026-10-06, **sin banda** |
 | **EO-5** | dec. | La IA calibrada: prompts, `recommended_max_allocation`, el PM recibe la Postura, oráculo de postura. Ver bloque 6 |
 | **EO-6** | dec. | Señales: tope simétrico, imputación por mediana del sector, atenuación simétrica, rótulo «no calibrado»; el track record guarda la versión del método de señales. Ver bloque 6 |
 
@@ -377,6 +377,10 @@ Toda etapa que mueva μ o el Monte Carlo sube `ENGINE_VERSION`.
     volatilidad propia de los activos—: recentrar cada acción en el central del índice
     con su propia volatilidad la proyectaba arriba de la Estimación (QA en vivo: 8,3 %
     sobre 6,7 %).
+  - ~~**EO-4b — el Optimizer.**~~ *cerrada (2026-10-06)*, ver `ROADMAP.md`. μ = la
+    Estimación de la Clase (bonos y sin Clase, su historia ×0,80), sin contracción por
+    score (pasa a SCORE-CONTRACCION) y sin Black-Litterman en ese camino; el número se
+    rotula por `return_basis`.
 
   El diseño original, que las cuatro partes implementan: la Estimación de cada activo se contrae
   hacia la de su Clase según su evidencia (el score, con el peso que respalde U6-1);

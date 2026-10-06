@@ -191,11 +191,13 @@ def test_superseded_and_missing_engine_versions_are_stale():
     market δ in the Black-Litterman prior, the ARS discount for every profile: a
     plan's optimizer metrics move, its Monte Carlo does not. EO-4a (tier20) drops
     the Monte Carlo's global haircut and recentres each asset on the Estimación of
-    its Clase: every plan's projection moves.
+    its Clase: every plan's projection moves. EO-4b (tier21) gives the optimizer
+    that same Estimación as μ: a plan's optimizer metrics move, its Monte Carlo
+    does not.
     """
     from config import ENGINE_VERSION
 
-    assert ENGINE_VERSION == "2026.10-tier20"
+    assert ENGINE_VERSION == "2026.10-tier21"
 
     current = PlanSnapshot.from_session(name="actual", opt_result=_fake_opt_result())
     assert current.engine_version == ENGINE_VERSION
@@ -207,7 +209,8 @@ def test_superseded_and_missing_engine_versions_are_stale():
                        "2026.09-tier9", "2026.09-tier10",
                        "2026.09-tier11", "2026.09-tier12", "2026.09-tier13",
                        "2026.09-tier14", "2026.09-tier15", "2026.09-tier16",
-                       "2026.10-tier17", "2026.10-tier18", "2026.10-tier19"):
+                       "2026.10-tier17", "2026.10-tier18", "2026.10-tier19",
+                       "2026.10-tier20"):
         old = PlanSnapshot.from_session(name="viejo", opt_result=_fake_opt_result())
         old.engine_version = superseded
         assert old.is_engine_stale() is True

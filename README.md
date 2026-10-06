@@ -322,7 +322,7 @@ Bloqueos automáticos (override): D/E > 3, patrimonio negativo, RSI semanal > 80
 
 ### Portfolio Optimizer (Mean-Variance)
 
-Scipy SLSQP minimizando el **ratio atractivo/vol** negativo — `(atractivo estimado − Rf) / σ histórica`, que no es un Sharpe — sujeto a constraints por posición, sector, volatilidad y dividend yield:
+Scipy SLSQP minimizando el **ratio estimación/vol** negativo — `(Estimación objetiva − Rf) / σ histórica`, que no es un Sharpe — sujeto a constraints por posición, sector, volatilidad y dividend yield. Desde EO-4b el μ de cada activo es la Estimación objetiva de su Clase, la misma del Monte Carlo (ver `docs/portfolio_optimizer.md`, «Desde EO-4b»); sin Clases queda el proxy de score (**ratio atractivo/vol**):
 
 | Perfil | Max Vol | Min Div | Max Pos | Max Crypto |
 |--------|---------|---------|---------|------------|
