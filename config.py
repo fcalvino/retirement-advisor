@@ -183,7 +183,14 @@ DB_PATH = Path(os.getenv("RETIREMENT_ADVISOR_DB_PATH") or DB_DIR / "retirement_a
 #                   equilibrio más optimista— y el descuento por riesgo argentino
 #                   rige también con Agresivo. Moderado (δ 2,5, con descuento) queda
 #                   byte-idéntico; el Monte Carlo de una cartera dada no se mueve.
-ENGINE_VERSION = "2026.10-tier19"
+#   2026.10-tier20 — EO-4a (ADR 0001): el Monte Carlo deja el haircut global
+#                   (rendimiento ×0,80, desvíos ×1,10 sobre la cartera entera) y
+#                   recentra cada activo, de forma compuesta, en la Estimación de su
+#                   Clase (``analysis.estimacion``). Bonos EE.UU., tickers sin Clase y
+#                   Clases sin Fuentes vigentes conservan el haircut; cripto proyecta
+#                   0 % real. Una corrida sin Clases (tests, el respaldo SPY) queda
+#                   byte-idéntica a tier19.
+ENGINE_VERSION = "2026.10-tier20"
 
 
 @dataclass(frozen=True)
@@ -898,6 +905,33 @@ class BacktestMetodoConfig:
 
 
 BACKTEST_METODO = BacktestMetodoConfig()
+
+
+@dataclass
+class EstimacionConfig:
+    """Qué Estimación usa el Monte Carlo para cada Clase (EO-4a, ADR 0001).
+
+    Decisiones del usuario (2026-10-05), sobre el resultado de EO-3:
+
+      calibrated_classes — Clases cuyo p10–p90 pasó el backtest: se proyectan con su
+                           Estimación objetiva y se rotulan «calibrada».
+      haircut_classes    — Clases que no pasaron: conservan ``MONTE_CARLO.vol_adjustment``
+                           / ``mean_haircut`` sobre su propia historia, rotuladas «no
+                           calibrado». Hoy, bonos EE.UU.
+      El resto de las Clases con central usa la Estimación objetiva rotulada «no
+      calibrable». Cripto (Fuente declarada ausente) proyecta 0 % real —el Escenario
+      pesimista—, es decir, la inflación implícita del archivo de Fuentes. Un ticker sin
+      Clase, o una Clase sin Fuentes vigentes, conserva el haircut y se lo nombra.
+      periods_per_year   — semanas por año del bootstrap: el recentrado suma
+                           ``log(1 + E) / periods_per_year`` a cada semana.
+    """
+
+    calibrated_classes: tuple = ("us_equity",)
+    haircut_classes: tuple = ("us_bonds",)
+    periods_per_year: int = 52
+
+
+ESTIMACION = EstimacionConfig()
 
 
 @dataclass(frozen=True)
@@ -2228,11 +2262,14 @@ class MonteCarloConfig:
     """
     Monte Carlo simulation parameters.
 
-    Conservative adjustments applied to historical returns before simulation:
+    The historical haircut — since EO-4a (ADR 0001) only for bonds of EE.UU. (the
+    EO-3 backtest did not pass), tickers without a Clase, Clases without current
+    Fuentes and runs without ``asset_classes``. Every other asset is recentred on the
+    Estimación of its Clase (``analysis.estimacion``, ``config.ESTIMACION``):
       vol_adjustment  — multiply deviations by this factor (>1 = more volatile)
       mean_haircut    — multiply expected return by this factor (<1 = lower return)
-    These reflect two realities: (1) future volatility tends to exceed historical,
-    (2) future expected returns for equities are likely lower than 2010-2024 history.
+    Neither number has a Fuente; that is why EO-4a took them off the assets that
+    have an Estimación.
 
     min_history_weeks — minimum weeks of history required to run simulation.
     default_n_sims    — simulation count shown in the dashboard by default.

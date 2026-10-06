@@ -159,7 +159,9 @@ def _tool_retirement_projection(args: dict) -> dict:
         w = np.array([weights_pct[s] for s in symbols], dtype=float)
         w = w / w.sum() if w.sum() > 0 else None
 
-        sim = MonteCarloSimulator(symbols, weights=w)
+        from analysis.estimacion import classes_for
+
+        sim = MonteCarloSimulator(symbols, weights=w, asset_classes=classes_for(symbols))
         res = sim.run(
             horizon_years=horizon_years,
             n_sims=2000,

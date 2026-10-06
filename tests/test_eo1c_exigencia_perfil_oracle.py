@@ -100,6 +100,9 @@ def _goals_tab(prefs, monkeypatch):
     monkeypatch.setattr(shared, "cached_goal_savings_target", _advice)
     monkeypatch.setattr(shared, "get_user_prefs", lambda: prefs)
     monkeypatch.setattr(shared, "seed_session_defaults_from_profile", lambda *a, **k: None)
+    # EO-4a: las simulaciones piden la ficha de cada ticker para saber su Clase;
+    # sin red, ningún ticker tiene Clase y el MC proyecta con el ajuste histórico.
+    monkeypatch.setattr("analysis.estimacion.classes_for", lambda syms: {s: None for s in syms})
     page = Path(__file__).resolve().parents[1] / "dashboard/views/7_Simulaciones.py"
     with patch("portfolio.monte_carlo.get_history", side_effect=lambda *a, **k: _flat_history(0.06)):
         at = AppTest.from_file(str(page), default_timeout=180)

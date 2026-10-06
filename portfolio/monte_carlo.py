@@ -4,8 +4,13 @@ Monte Carlo Simulation for retirement portfolio projections.
 Methodology: Block bootstrap over historical weekly portfolio returns.
   - Samples blocks of 4 consecutive weeks from real history (preserves
     short-term autocorrelation and fat tails — no Gaussian assumption).
-  - Conservative adjustments: +10% volatility, -20% expected return
-    (future returns expected to be lower than historical).
+  - Each asset is recentred, compound-wise, on the Estimación of its Clase
+    (EO-4a, ADR 0001; ``analysis.estimacion``): its weekly log-returns are
+    demeaned and shifted to ``log(1 + E) / 52``, so the median path earns E.
+    Bonds, tickers without a Clase and Clases without current Fuentes keep the
+    old haircut (+10% volatility, -20% return) on their own history. A run
+    without ``asset_classes`` uses that haircut on the whole portfolio, exactly
+    as before EO-4a, and says so in ``warnings``.
   - Fully vectorised with NumPy — 10 000 sims complete in < 2 seconds.
 
 Usage:
@@ -21,14 +26,14 @@ Usage:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from dataclasses import asdict, dataclass, field
+from typing import Dict, List, Mapping, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 from loguru import logger
 
-from config import MONTE_CARLO, WITHDRAWAL
+from config import ESTIMACION, MONTE_CARLO, WITHDRAWAL
 from data.fetcher import get_history
 from data.fx import fx_pair_symbol, to_base_or_reason
 from portfolio.decumulation import (
@@ -134,14 +139,17 @@ class MonteCarloResult:
     base_prob_achieve_target_pct: float = 0.0
 
     # ------------------------------------------------------------------ #
-    #  Realistic (no-haircut) reference — transparency of the conservative #
-    #  bias. Populated ONLY when run(include_realistic_reference=True).     #
-    #  These remove the conservative haircut (vol_adjustment / mean_haircut)#
-    #  so the UI can show the "realistic" median (future ≈ historical) next  #
-    #  to the conservative "planning floor". Drags and withdrawals are kept  #
-    #  identical, so the two scenarios differ by EXACTLY the haircut. When   #
-    #  the flag is off, every metric above is byte-identical to before.      #
+    #  Recent-history reference (the "realistic_*" fields). Populated ONLY  #
+    #  when run(include_realistic_reference=True): the same draws on the    #
+    #  RAW returns, with no Estimación and no haircut, so the UI can show    #
+    #  the Estimación next to "if the future looks like the last 10 years".  #
+    #  Drags and withdrawals are kept identical. Flag off → byte-identical.  #
     # ------------------------------------------------------------------ #
+    #: EO-4a: with what each asset was projected —``asdict`` of
+    #: ``analysis.estimacion.AssetEstimation`` (symbol, asset_class, mode,
+    #: annual_pct, label)— so the UI can say where the projection comes from.
+    #: Empty for a run without ``asset_classes``.
+    estimations: List[dict] = field(default_factory=list)
     realistic_reference_applied: bool = False
     realistic_median_terminal: float = 0.0
     realistic_p10_terminal: float = 0.0
@@ -196,8 +204,16 @@ class MonteCarloSimulator:
         vol_scale: float = 1.0,
         return_scale: float = 1.0,
         currencies: Optional[Dict[str, str]] = None,
+        asset_classes: Optional[Mapping[str, Optional[str]]] = None,
     ) -> None:
         self.symbols = symbols
+        # EO-4a: the Clase of each symbol (``analysis.estimacion.classes_for``),
+        # resolved by the caller so the simulator never goes to the network. None
+        # keeps the pre-EO-4a haircut on the whole portfolio, and says so.
+        self._asset_classes = dict(asset_classes) if asset_classes is not None else None
+        self._asset_hist: Optional[np.ndarray] = None
+        self._asset_weights: Optional[np.ndarray] = None
+        self._asset_symbols: List[str] = []
         # #154: quote currency per symbol. Whatever is not given is resolved by
         # ``data.fx.quote_currency`` — none of the six places that build a simulator
         # knows it, and a Tokyo listing projected in yen is the defect.
@@ -346,8 +362,8 @@ class MonteCarloSimulator:
                 result.warnings.append("Simulación cancelada — datos insuficientes.")
                 return result
 
-        # 2 — Apply conservative adjustments
-        port_hist_adj = self._conservative_adjustment(port_hist)
+        # 2 — EO-4a: recentre each asset on its Estimación (or keep the haircut)
+        port_hist_adj = self._estimation_adjustment(port_hist, result)
 
         # 3 — Simulate paths
         # U4-4: la simulación cubre lo que se le pregunte. `longevity_years` es
@@ -721,6 +737,10 @@ class MonteCarloSimulator:
 
         weekly_returns = price_df.pct_change().dropna().values
         port_returns   = weekly_returns @ weights
+        # EO-4a: the per-asset matrix, so each column can be recentred on its own
+        # Estimación before it is weighted into the portfolio.
+        self._asset_hist, self._asset_weights = weekly_returns, weights
+        self._asset_symbols = symbols_used
 
         return port_returns, len(port_returns), symbols_used, warnings
 
@@ -738,12 +758,74 @@ class MonteCarloSimulator:
         return np.array([]), 0, [], ["Imposible obtener datos históricos."]
 
     # ------------------------------------------------------------------ #
-    #  Conservative adjustment                                             #
+    #  Estimación (EO-4a)                                                  #
+    # ------------------------------------------------------------------ #
+
+    def _estimation_adjustment(self, port_hist: np.ndarray, result: "MonteCarloResult") -> np.ndarray:
+        """The portfolio series the bootstrap draws from (EO-4a).
+
+        Compound recentring at the **portfolio** level —the contract EO-3 tested on
+        the S&P, which is itself a portfolio—: the weekly deviations are the
+        assets' own (weighted), and the portfolio's mean log-return is moved to
+        ``log(1 + E) / 52``, so the median path earns ``E``. ``E`` is the weighted
+        average of each asset's target: its Estimación, or —for bonds, tickers
+        without a Clase and Clases without current Fuentes— its own history under
+        the old haircut, whose deviations also keep the ×1,10.
+
+        Recentring each asset on its Clase's central instead would hand a single
+        stock the index's compound return with the stock's own volatility, i.e. a
+        higher arithmetic return than the index; three of them rebalanced weekly
+        projected 8,3 %/yr on a 6,7 % Estimación (live QA, 2026-10-06).
+
+        Without ``asset_classes`` (or on the SPY fallback, which has no assets)
+        this is ``_conservative_adjustment`` on the whole portfolio — byte-identical
+        to the engine before EO-4a — and ``warnings`` says so.
+        """
+        if self._asset_classes is None:
+            result.warnings.append(
+                "Proyección con el ajuste histórico (−20 % al rendimiento, +10 % a la "
+                "volatilidad): no se pasaron las Clases de los activos, así que no hay "
+                "Estimación objetiva (sin Clases)."
+            )
+            return self._conservative_adjustment(port_hist)
+        if self._asset_hist is None:
+            return self._conservative_adjustment(port_hist)
+        from analysis.estimacion import OBJETIVA, asset_estimations
+
+        ests = asset_estimations(self._asset_symbols, self._asset_classes)
+        result.estimations = [asdict(e) for e in ests]
+        unclassed = [e.symbol for e in ests if e.asset_class is None]
+        if unclassed:
+            result.warnings.append(
+                f"{', '.join(unclassed)} sin Clase: se proyecta(n) con el ajuste histórico "
+                "(−20 % / +10 %) sobre su propia historia."
+            )
+        periods = ESTIMACION.periods_per_year
+        deviations, targets = [], []
+        for j, e in enumerate(ests):
+            r = self._asset_hist[:, j]
+            m = r.mean()
+            if e.mode == OBJETIVA:
+                deviations.append((r - m) * self.vol_scale)
+                targets.append(np.expm1(np.log1p(e.annual_pct / 100.0) * self.return_scale))
+            else:
+                deviations.append((r - m) * MONTE_CARLO.vol_adjustment * self.vol_scale)
+                weekly = m * MONTE_CARLO.mean_haircut * self.return_scale
+                targets.append((1.0 + weekly) ** periods - 1.0)
+        w = self._asset_weights
+        port_dev = np.column_stack(deviations) @ w
+        port_target = float(np.dot(w, targets))
+        logr = np.log1p(port_dev)
+        return np.expm1(logr - logr.mean() + np.log1p(port_target) / periods)
+
+    # ------------------------------------------------------------------ #
+    #  Conservative adjustment (bonds, no Clase, runs without Clases)      #
     # ------------------------------------------------------------------ #
 
     def _conservative_adjustment(self, returns: np.ndarray) -> np.ndarray:
         """
-        Apply conservative bias to historical returns:
+        The pre-EO-4a haircut, still used for bonds (EO-3 did not pass), tickers
+        without a Clase and runs without ``asset_classes``:
           - Inflate volatility by vol_adjustment × vol_scale
           - Reduce expected return by mean_haircut × return_scale
         vol_scale / return_scale are profile-specific overrides (default 1.0 = no extra adjustment).

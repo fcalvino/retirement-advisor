@@ -14,7 +14,8 @@
     "Regla: sólo números que se pueden citar. Lo que no se pudo citar queda afuera y se lista abajo.",
     "Fuera de la tabla (2026-10-04): Research Affiliates (ahora Syzygy Asset Management): su Asset Allocation Interactive se dibuja con JavaScript y no expone los números sin sesión; J.P. Morgan bonos agregados de EE.UU.: no figura como número en el informe ni en el resumen, sólo en la matriz interactiva; Vanguard REITs de EE.UU.: sólo en el gráfico interactivo.",
     "Valuación e historia (EO-2b, 2026-10-05, decisiones del usuario): de ie_data.xls de Shiller se versionan sólo números derivados —el archivo no trae licencia y el repo es público—, citados con la fecha de descarga y su sha256; la copia queda en data/fuentes/raw/ (ignorado). Al central entran todas las Fuentes.",
-    "Riesgo país (EO-2c, 2026-10-05, decisiones del usuario): va en country_risk, aparte de entries —country, value_bp, unit (siempre pb), as_of, source, edition, note—. Es un spread sobre el Tesoro, no un rendimiento esperado: no entra al central de emergentes. Antigüedad con las mismas reglas (12/24 meses). La conversión a la Estimación de los ADRs argentinos es de EO-4."
+    "Riesgo país (EO-2c, 2026-10-05, decisiones del usuario): va en country_risk, aparte de entries —country, value_bp, unit (siempre pb), as_of, source, edition, note—. Es un spread sobre el Tesoro, no un rendimiento esperado: no entra al central de emergentes. Antigüedad con las mismas reglas (12/24 meses). La conversión a la Estimación de los ADRs argentinos es de EO-4.",
+    "Inflación implícita (EO-4a, 2026-10-05): clave inflation, la misma observación de FRED T10YIE que cita la entrada del CAPE; la escribe scripts/refresh_fuentes.py. Es el 0 % real de cripto en nominal."
   ],
   "entries": [
     {
@@ -285,5 +286,12 @@
       "edition": "ArgentinaDatos, observación del 2026-10-02",
       "note": "EMBI de J.P. Morgan para Argentina (spread de la deuda soberana en USD sobre el Tesoro de EE.UU.) que publica Ámbito (https://www.ambito.com/contenidos/riesgo-pais.html); ArgentinaDatos lo extrae de Ámbito a diario (API comunitaria, no oficial; Ámbito bloquea el acceso directo). No es un rendimiento esperado: no entra al central de emergentes."
     }
-  ]
+  ],
+  "inflation": {
+    "series": "T10YIE",
+    "value_pct": 2.36,
+    "as_of": "2026-10-02",
+    "source": "https://fred.stlouisfed.org/series/T10YIE",
+    "note": "Inflación que descuenta el mercado de bonos a 10 años. Lleva a nominal el 0 % real de cripto (EO-4a) y el 1/CAPE (EO-2b)."
+  }
 }

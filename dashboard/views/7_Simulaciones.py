@@ -51,6 +51,7 @@ from data.product_ux import (
     contribution_inputs,
     decumulation_span_text,
     depletion_text,
+    estimation_caption,
     fmt_attractiveness_index,
     indexation_help,
     loaded_plan_saving_years_note,
@@ -482,8 +483,9 @@ def _tab_mc_content():
         st.info(
             "Configurá los parámetros en el sidebar (horizonte, capital inicial, retiro anual, meta, inflación) "
             "y hacé clic en **▶ Ejecutar simulación Monte Carlo** para comenzar.\n\n"
-            "Las simulaciones usan block-bootstrap sobre historia real de 10 años con ajustes conservadores "
-            "— ideales para evaluar planes de inversión a 10-30 años.",
+            "Las simulaciones sortean bloques de la historia real de 10 años de cada activo, "
+            "recentrada en la Estimación objetiva de su Clase (ver «Supuestos») — ideales "
+            "para evaluar planes de inversión a 10-30 años.",
             icon="🎲",
         )
         return
@@ -596,21 +598,26 @@ def _tab_mc_content():
             help="Casos en los que el portafolio llega a cero o negativo antes del final del horizonte.",
         )
 
-    # ---- Realista vs Conservador: no engañar con un solo número ----
+    # ---- Estimación vs historia reciente: no engañar con un solo número ----
     if getattr(mc, "realistic_reference_applied", False) and mc.realistic_median_terminal > 0:
-        # SIM-GAP-PCT: cuánto más baja es la conservadora, sobre la realista (no
-        # cuánto más alta es la realista, que pasa del 100 %).
+        # SIM-GAP-PCT: la diferencia se mide sobre la historia reciente. EO-4a: la
+        # proyección principal ya no es «conservadora» —es la Estimación objetiva— y
+        # puede quedar arriba o abajo de la historia, así que se dice de qué lado.
         _gap_pct = (1 - mc.median_terminal / mc.realistic_median_terminal) * 100
+        _side = "más baja" if _gap_pct >= 0 else "más alta"
         st.info(escape_dollars(   # KATEX-DOLLAR-PLAN
-            "📊 **Dos escenarios para no engañarte con un solo número:**  \n"
-            f"• **Realista** (si el futuro se parece al historial): mediana **${mc.realistic_median_terminal:,.0f}** "
-            f"· pesimista ${mc.realistic_p10_terminal:,.0f}  \n"
-            f"• **Conservador** (piso prudente, los números de arriba): mediana **${mc.median_terminal:,.0f}** "
-            f"· pesimista ${mc.p10_terminal:,.0f}  \n"
-            f"Planificá con el conservador (mediana ~{_gap_pct:.0f}% más baja que el realista a propósito): "
-            "asume rendimientos futuros más bajos y más volatilidad, así que también baja el piso pesimista. "
-            "El realista es la referencia de cuánto podrías terminar si todo sale como el pasado reciente."
+            "📊 **Dos referencias para no engañarte con un solo número:**  \n"
+            f"• **Estimación objetiva** (los números de arriba; sale de las Fuentes de cada "
+            f"Clase): mediana **${mc.median_terminal:,.0f}** · pesimista ${mc.p10_terminal:,.0f}  \n"
+            f"• **Historia reciente** (los últimos 10 años de tus activos, sin ajuste): mediana "
+            f"**${mc.realistic_median_terminal:,.0f}** · pesimista ${mc.realistic_p10_terminal:,.0f}  \n"
+            f"Planificá con la Estimación (mediana ~{abs(_gap_pct):.0f}% {_side} que la historia "
+            "reciente): sale de lo que publican las gestoras, la valuación de hoy y la historia "
+            "larga de cada Clase, no de un período bueno o malo."
         ), icon="📊")
+    _est_caption = estimation_caption(getattr(mc, "estimations", []) or [])
+    if _est_caption:
+        st.caption(_est_caption)
 
     # From "no llegás" to "hacé esto" with *numbers* (backlog 3).
     if target_value > 0 and mc.prob_achieve_target_pct < 70:
@@ -646,7 +653,11 @@ def _tab_mc_content():
         )
         if _levers:
             for _lv in _levers:
-                st.markdown(f"- **{_lv['label']}:** {_lv['detail']}  \n  → _{_lv['cta_hint']}_")
+                # KATEX-DOLLAR: «Sumá ~$307/mes ($3,681/año)» es un par de `$`: KaTeX
+                # lo dibujaba como fórmula (visto en la QA en vivo de EO-4a).
+                st.markdown(escape_dollars(
+                    f"- **{_lv['label']}:** {_lv['detail']}  \n  → _{_lv['cta_hint']}_"
+                ))
         else:
             st.markdown(
                 "- 💵 Aportar más · ⏳ más años · 🎯 bajar meta · ⚖️ más riesgo (Optimizer)"
@@ -785,7 +796,7 @@ def _tab_mc_content():
 Aunque el escenario pesimista nominal (\\${mc.p10_terminal:,.0f}) parece "ganar", tené en cuenta:
 
 - En **poder de compra real** (después de inflación), en el peor 10% de los casos solo terminás con **\\${real_p10:,.0f}** de los dólares de hoy. Eso es un crecimiento real bastante modesto en {horizon_years} años.
-- El modelo ya está siendo conservador (le saca 20% al retorno histórico). Aun así, el período que usamos como base fue bueno. El futuro puede ser peor.
+- La proyección no extrapola el período reciente: usa la Estimación objetiva de cada Clase (ver «Supuestos»). Aun así, el futuro puede ser peor que el central.
 - Estos son solo valores **al final** de los {horizon_years} años. Durante el camino podés haber tenido caídas del 50% o más. Si en ese momento sacás plata o te asustás y vendés, el resultado final puede ser mucho peor que el P10 que ves acá.
 - Si en algún momento empezás a retirar plata (aunque sea poco), el riesgo de que el "caso malo" sea realmente malo sube mucho (riesgo de secuencia de retornos).
 
@@ -793,7 +804,7 @@ En resumen: el modelo no está diciendo "siempre vas a ganar mucho". Está dicie
 """)
         else:
             st.markdown(f"""
-- El modelo ya está siendo conservador (le saca 20% al retorno histórico). Aun así, el futuro puede ser peor que el pasado reciente.
+- La proyección usa la Estimación objetiva de cada Clase, no la historia reciente. Aun así, el futuro puede ser peor que el central.
 - Estos son solo valores **al final** de los {horizon_years} años. Durante el camino podés haber tenido caídas del 50% o más.
 - Si en algún momento empezás a retirar plata, el riesgo de que el "caso malo" sea realmente malo sube mucho (riesgo de secuencia de retornos).
 """)
@@ -961,7 +972,8 @@ En resumen: el modelo no está diciendo "siempre vas a ganar mucho". Está dicie
             "Las bandas muestran el rango de resultados posibles según la historia real de los mercados. "
             "Azul = caso más probable | Rojo = mal caso (1 de cada 10) | Verde = muy buen caso (1 de cada 10). "
             + _real_note
-            + " Los números usan un ajuste conservador (+10% volatilidad y −20% retorno histórico respecto al pasado)."
+            + " Cada activo se proyecta con la Estimación objetiva de su Clase; los bonos y los "
+            "activos sin Clase, con el ajuste histórico (+10% volatilidad, −20% retorno)."
         )
 
     # ---- Histogram of terminal values ----
@@ -1056,12 +1068,16 @@ En resumen: el modelo no está diciendo "siempre vas a ganar mucho". Está dicie
 **Metodología:** Block Bootstrap ({mc.n_weeks_history} semanas de historia real, bloques de 4 semanas).
 No asume distribución normal — captura fat tails y autocorrelación de corto plazo.
 
-**Ajuste conservador aplicado:**
-- Volatilidad histórica × **{MONTE_CARLO.vol_adjustment:.0%}** (+10%)
-- Retorno histórico × **{MONTE_CARLO.mean_haircut:.0%}** (−20%)
+**Estimación por Clase:** cada activo se recentra —de forma compuesta, así la mediana
+rinde la Estimación— en la Estimación objetiva de su Clase: la mediana de sus Fuentes
+(gestoras, valuación e historia larga; ver «Supuestos»). Las acciones de EE.UU. están
+calibradas: en el backtest histórico, el rango p10–p90 contuvo el resultado a 10 años
+con la frecuencia que declara. Ex-EE.UU., emergentes y REITs no tienen historia
+suficiente para calibrarse. Cripto se proyecta a 0 % real, el escenario pesimista.
 
-**Por qué ser conservador:** Los retornos de 2010-2024 fueron excepcionales.
-La prima de riesgo histórica del S&P 500 (~7% real) probablemente no se repita a la misma tasa.
+**Donde sigue el ajuste histórico** (bonos de EE.UU., que no pasaron el backtest, y
+activos sin Clase): volatilidad × **{MONTE_CARLO.vol_adjustment:.0%}**, retorno
+× **{MONTE_CARLO.mean_haircut:.0%}**.
 
 **Sobre la inflación:** El ajuste de inflación ({inflation_rate:.1f}%) ahora tiene dos efectos:
 1. Visual: muestra el poder adquisitivo real (línea naranja punteada).
@@ -1436,9 +1452,9 @@ def _tab_compare_content():
     st.caption(
         "Compara Conservador / Moderado / Agresivo con **tu mismo plan** —activos, "
         "ahorro, drags y estrategia de retiro de la pestaña Monte Carlo— "
-        "pero con distintos supuestos de retorno y volatilidad. "
-        "Conservador = más haircut al retorno histórico y más volatilidad simulada; "
-        "Agresivo = menos penalización."
+        "pero escalando por perfil el rendimiento y la volatilidad simulados. "
+        "Conservador = menos rendimiento y más volatilidad; Agresivo = lo contrario. "
+        "Estas escalas no tienen Fuente: se quedan rotuladas hasta que lleguen los Escenarios."
     )
 
     run_compare = st.button("▶ Comparar los 3 perfiles", type="primary", key="run_compare_profiles")

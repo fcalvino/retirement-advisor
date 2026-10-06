@@ -1178,9 +1178,10 @@ def format_drags_badge(drags: dict | None) -> str:
 # Canonical "what we model / what we don't" text — single source of truth for
 # the assumptions disclaimer shown across pages (Plan, About, Home, PDF).
 ASSUMPTIONS_TEXT = (
-    "**Qué modela esta herramienta y qué no.** Las proyecciones (Optimizer, "
-    "Monte Carlo, Plan) parten de historia de precios **pura** de yfinance, con "
-    "ajustes conservadores (+10% volatilidad, −20% retorno histórico). Salvo que "
+    "**Qué modela esta herramienta y qué no.** El Monte Carlo (Simulaciones, Plan) "
+    "sortea la historia de precios de yfinance de cada activo, recentrada en la "
+    "Estimación objetiva de su Clase (ver «Supuestos»); los bonos y los activos sin "
+    "Clase conservan un ajuste histórico (+10% volatilidad, −20% retorno). Salvo que "
     "actives la capa de *drags económicos*, los números asumen **0% de fees, 0% "
     "de impuestos sobre dividendos, 0% de costo de rebalanceo** y **no** modelan "
     "fricciones locales argentinas (cepo, brecha cambiaria, diferencial de "
@@ -1600,6 +1601,18 @@ def cached_personal_book_analysis(
     return analyze_personal_book(positions, convictions, enrich_fn=_enrich)
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_asset_classes(symbols: tuple[str, ...]) -> tuple:
+    """La Clase de cada símbolo (EO-4a), como pares ordenados: hashable y cacheada.
+
+    Las simulaciones la necesitan para proyectar cada activo con la Estimación de
+    su Clase; resolverla acá mantiene al Monte Carlo sin red.
+    """
+    from analysis.estimacion import classes_for
+
+    return tuple(sorted(classes_for(symbols).items()))
+
+
 @st.cache_data(ttl=1800, show_spinner=False)
 def cached_monte_carlo(
     symbols: tuple[str, ...],
@@ -1617,13 +1630,13 @@ def cached_monte_carlo(
     drags_tuple: tuple | None = None,      # Item 1: hashable drags (None = base behavior)
     withdrawal_tuple: tuple | None = None, # Fase H.1: hashable withdrawal strategy (None = base)
     longevity_years: int | None = None,    # Fase H.1: horizon for "income lasts" metric
-    include_realistic_reference: bool = True,  # show realistic (no-haircut) next to conservative
+    include_realistic_reference: bool = True,  # EO-4a: the raw recent history next to the Estimación
     contribution_growth_rate: float = 0.0, # N8b: yearly raise of the savings, not inflation
     years_to_retirement: int | None = None,  # WD-PHASED: save until then, then the strategy
 ):
     """Cache Monte Carlo runs for 30 min — same params = instant re-render.
 
-    vol_scale / return_scale: applied on top of the global conservative adjustment.
+    vol_scale / return_scale: applied on top of each asset's Estimación (EO-4a).
     Used by the profile-comparison tab to show Conservador/Moderado/Agresivo on one chart.
     drags_tuple: hashable form of the economic-drags dict (see ``drags_to_tuple``).
     withdrawal_tuple: hashable form of the withdrawal-strategy dict (see
@@ -1637,7 +1650,8 @@ def cached_monte_carlo(
 
     w_np = np.array(weights_tuple) if weights_tuple else None
     sim  = MonteCarloSimulator(list(symbols), w_np, seed=seed,
-                               vol_scale=vol_scale, return_scale=return_scale)
+                               vol_scale=vol_scale, return_scale=return_scale,
+                               asset_classes=dict(cached_asset_classes(tuple(symbols))))
     drags = dict(drags_tuple) if drags_tuple else None
     withdrawal_strategy = dict(withdrawal_tuple) if withdrawal_tuple else None
     return sim.run(
@@ -1681,7 +1695,8 @@ def cached_goal_simulation(
     from portfolio.goals import Goal, GoalPlanner
 
     w_np = np.array(weights_tuple) if weights_tuple else None
-    planner = GoalPlanner(list(symbols), w_np, seed=seed)
+    planner = GoalPlanner(list(symbols), w_np, seed=seed,
+                          asset_classes=dict(cached_asset_classes(tuple(symbols))))
 
     goals = [
         Goal(
@@ -1734,7 +1749,8 @@ def cached_goal_savings_target(
     from portfolio.goals import Goal, GoalPlanner, monthly_savings_for_probability
 
     w_np = np.array(weights_tuple) if weights_tuple else None
-    planner = GoalPlanner(list(symbols), w_np, seed=seed)
+    planner = GoalPlanner(list(symbols), w_np, seed=seed,
+                          asset_classes=dict(cached_asset_classes(tuple(symbols))))
     g = dict(goal_serialized)
 
     goal = Goal(

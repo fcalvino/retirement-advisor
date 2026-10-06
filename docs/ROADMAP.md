@@ -10,6 +10,19 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## EO-4a — el Monte Carlo se recentra en la Estimación objetiva de cada Clase (2026-10-06)
+
+Primera parte de EO-4 (ADR 0001). Decisiones del usuario (2026-10-05): EO-4 en cuatro PRs (Monte Carlo, Optimizer, UI de Escenarios, riesgo país); bonos conservan el haircut rotulado; ex-EE.UU., emergentes y REITs objetivos y rotulados «no calibrable»; cripto a 0 % real; un ticker sin Clase conserva el haircut y se lo nombra; la contracción por score queda para EO-4b; los textos que describían el haircut se corrigen acá.
+
+- **Motor** (`portfolio/monte_carlo.py`, `analysis/estimacion.py`, `config.ESTIMACION`): recentrado compuesto de la cartera en el promedio ponderado de las Estimaciones, con la volatilidad de sus activos; los activos con haircut aportan su historia ×0,80 y desvíos ×1,10. Sin `asset_classes`, byte-idéntico a tier19. `ENGINE_VERSION` → tier20.
+- **Por qué a nivel cartera:** recentrar cada acción en el central del índice con su propia volatilidad le daba un rendimiento aritmético mayor que el del índice; en la QA en vivo, tres acciones proyectaban 8,3 %/año sobre 6,7 %. Es lo que EO-3 probó: el S&P es una cartera.
+- **Datos:** el archivo de Fuentes suma `inflation` (T10YIE 2,36 % al 2026-10-02), que escribe `refresh_fuentes.py`.
+- **Textos:** Simulaciones («Dos referencias», la Estimación por Clase, metodología), Mi Plan, el PDF, el onboarding y `ASSUMPTIONS_TEXT`. Las palancas de «no llegás» escapan sus `$`.
+- **QA en vivo** con la cartera real (GOOGL, INTU, ADBE; pesos iguales; 20 años): mediana $796.891 → $356.192, p10 $160.374 → $82.671, p90 $3.901.867 → $1.511.154.
+- **Oráculo:** `tests/test_eo4a_mc_estimacion_oracle.py`, 13 casos; y `tests/test_sim_gap_katex_oracle.py` suma las palancas.
+
+---
+
 ## EO-3 — el backtest del método: acciones EE.UU. pasa, bonos EE.UU. no (2026-10-05)
 
 Condición de EO-4 (ADR 0001). Decisiones del usuario (2026-10-05): se prueba el p10–p90 de la Estimación central en términos reales; acciones y bonos de EE.UU. (el resto, no calibrable); bonos con GS10 menos la inflación de los 10 años previos; Azar con los 120 meses previos, como el Monte Carlo; recentrado compuesto; pasa si el 80 % cae en el intervalo de Clopper-Pearson al 90 % de las ventanas sin superposición.
