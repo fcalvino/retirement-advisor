@@ -170,8 +170,10 @@ def test_every_app_simulator_passes_asset_classes():
         for path in (ROOT / folder).rglob("*.py"):
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
                 name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
-                if (isinstance(node, ast.Call) and name == "MonteCarloSimulator"
+                if (name == "MonteCarloSimulator"
                         and "asset_classes" not in {k.arg for k in node.keywords}):
                     missing.append(f"{path.relative_to(ROOT)}:{node.lineno}")
     assert missing == []
