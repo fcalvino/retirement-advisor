@@ -58,6 +58,7 @@ from data.product_ux import (
     fmt_expected_return,
     is_estimation_basis,
     mc_has_cash_flows,
+    projection_scenario_label,
     ratio_label,
     strategy_ignored_savings_note,
 )
@@ -493,6 +494,7 @@ class InvestmentPlanReport:
             rows.append([ratio_label(_basis(opt_result)), f"{opt_result.sharpe_ratio:.2f}"])
             rows.append(["Dividend yield",             f"{opt_result.dividend_yield_pct:.1f}%"])
         if mc_result:
+            rows.append(["Proyectado con", projection_scenario_label(getattr(mc_result, "scenario", None))])
             rows.append(["Proyección mediana (P50)", f"${mc_result.median_terminal:,.0f}"])
             rows.append(["Escenario pesimista (P10)", f"${mc_result.p10_terminal:,.0f}"])
             rows.append(["Escenario optimista (P90)", f"${mc_result.p90_terminal:,.0f}"])

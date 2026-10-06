@@ -155,7 +155,7 @@ class MonteCarloResult:
     #: planning one), and —with ``run(include_scenarios=True)``— the terminal
     #: stats of the three, same draws: {name: {median_terminal, p10_terminal,
     #: p90_terminal, prob_achieve_target_pct}}.
-    scenario: str = "central"
+    scenario: str = ESTIMACION.default_scenario
     scenarios: Dict[str, Dict[str, float]] = field(default_factory=dict)
     realistic_reference_applied: bool = False
     realistic_median_terminal: float = 0.0

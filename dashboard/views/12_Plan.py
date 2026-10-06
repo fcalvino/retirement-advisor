@@ -52,6 +52,7 @@ from data.product_ux import (
     expected_return_label,
     fmt_expected_return,
     max_dd_estimate_help,
+    projection_scenario_label,
     ratio_help,
     ratio_label,
     strategy_ignored_savings_note,
@@ -280,6 +281,7 @@ else:
         if mc_result is not None:
             st.markdown("**🎲 Proyección Monte Carlo**")
             st.caption(
+                f"{projection_scenario_label(getattr(mc_result, 'scenario', None))} · "
                 f"Mediana \\${getattr(mc_result, 'median_terminal', 0):,.0f} · "
                 f"P10 \\${getattr(mc_result, 'p10_terminal', 0):,.0f} · "
                 f"P90 \\${getattr(mc_result, 'p90_terminal', 0):,.0f}"
@@ -516,6 +518,7 @@ def _render_snapshot(snap: PlanSnapshot) -> None:
         m = snap.mc_summary
         st.markdown("**🎲 Monte Carlo**")
         st.caption(
+            f"{projection_scenario_label(m.get('scenario'))} · "
             f"Horizonte {m.get('horizon_years', '—')}a · Mediana \\${m.get('median_terminal', 0):,.0f} · "
             f"P10 \\${m.get('p10_terminal', 0):,.0f} · P90 \\${m.get('p90_terminal', 0):,.0f}"
             + (f" · Prob. meta {m.get('prob_target_pct', 0):.0f}%" if m.get("target_value") else "")

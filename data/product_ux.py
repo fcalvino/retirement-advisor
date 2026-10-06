@@ -3312,6 +3312,13 @@ def profile_planning_scenario(profile_key: str | None, override: str | None = No
     return OPTIMIZER_PROFILES[profile_key].planning_scenario
 
 
+def projection_scenario_label(scenario: str | None) -> str:
+    """El Escenario con que se proyectó un número; un plan anterior a EO-4c no lo guarda."""
+    if not scenario:
+        return "Escenario central (plan anterior a EO-4c)"
+    return f"Escenario {scenario}"
+
+
 def scenario_caption(scenario: str | None, profile_key: str | None) -> str:
     """Con qué Escenario se proyectó y por qué (EO-4c): Postura del Perfil, o sin Perfil."""
     from config import OPTIMIZER_PROFILES

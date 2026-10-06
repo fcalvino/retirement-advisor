@@ -19,7 +19,7 @@ Primera parte de EO-4c (ADR 0001), partido en dos PRs (decisión del usuario, 20
 - **Postura**: `ProfileConfig.planning_scenario` (Conservador pesimista; Moderado y Agresivo central), override en Settings; Simulaciones, metas, ahorro, sensibilidad y chat lo pasan; el plan lo guarda. El Optimizer sigue en el central.
 - **QA en vivo** (Agresivo): central byte-idéntico (mediana $1.469.077); pesimista $1.126.852, meta 95,1 % → 89,9 %.
 - **Para EO-4c-2:** la tarjeta «Escenario pesimista (P10)» choca con el Escenario pesimista de la Postura en la misma pantalla.
-- **Oráculo:** `tests/test_eo4c_escenarios_oracle.py`, 16 casos.
+- **Oráculo:** `tests/test_eo4c_escenarios_oracle.py`, 17 casos.
 
 ---
 

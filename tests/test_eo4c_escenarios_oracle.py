@@ -200,6 +200,13 @@ def test_a_saved_plan_carries_its_scenario():
     assert snap.mc_summary["scenario"] == "pesimista"
 
 
+def test_a_projection_names_its_scenario_and_an_old_plan_says_so():
+    from data.product_ux import projection_scenario_label
+
+    assert projection_scenario_label("pesimista") == "Escenario pesimista"
+    assert "anterior a EO-4c" in projection_scenario_label(None)
+
+
 # --------------------------------------------------------------------------- #
 #  Contratos                                                                   #
 # --------------------------------------------------------------------------- #

@@ -32,7 +32,7 @@ from loguru import logger
 
 from analysis.groq_pacing import GroqTpmPacer
 from analysis.strategy import full_analysis
-from config import COMMITTEE, ENGINE_VERSION, MONTE_CARLO, SCREENER, AIConfig
+from config import COMMITTEE, ENGINE_VERSION, ESTIMACION, MONTE_CARLO, SCREENER, AIConfig
 from data.product_ux import (
     DRAG_WIDGET_RANGES,
     GUARDRAILS_LABEL,
@@ -577,7 +577,7 @@ def _sensitivity_run_fn(params: dict):
         withdrawal_tuple=params.get("withdrawal_tuple"),
         longevity_years=params.get("longevity_years"),
         years_to_retirement=params.get("years_to_retirement"),
-        scenario=str(params.get("scenario") or "central"),   # EO-4c
+        scenario=str(params.get("scenario") or ESTIMACION.default_scenario),   # EO-4c
     )
 
 
@@ -1634,7 +1634,7 @@ def cached_monte_carlo(
     include_realistic_reference: bool = True,  # EO-4a: the raw recent history next to the Estimación
     contribution_growth_rate: float = 0.0, # N8b: yearly raise of the savings, not inflation
     years_to_retirement: int | None = None,  # WD-PHASED: save until then, then the strategy
-    scenario: str = "central",             # EO-4c: the planning Escenario (profile_planning_scenario)
+    scenario: str = ESTIMACION.default_scenario,   # EO-4c: the planning Escenario
     include_scenarios: bool = False,       # EO-4c: terminal stats of the three Escenarios
 ):
     """Cache Monte Carlo runs for 30 min — same params = instant re-render.
@@ -1687,7 +1687,7 @@ def cached_goal_simulation(
     return_scale: float = 1.0,
     seed: int = 42,
     engine_version: str = ENGINE_VERSION,
-    scenario: str = "central",   # EO-4c: the planning Escenario
+    scenario: str = ESTIMACION.default_scenario,   # EO-4c: the planning Escenario
 ):
     """Cache multi-goal simulation results for 30 min.
 
@@ -1741,7 +1741,7 @@ def cached_goal_savings_target(
     return_scale: float = 1.0,
     seed: int = 42,
     engine_version: str = ENGINE_VERSION,
-    scenario: str = "central",   # EO-4c: the planning Escenario
+    scenario: str = ESTIMACION.default_scenario,   # EO-4c: the planning Escenario
 ):
     """TOTAL monthly contribution that lifts a goal to ``target_prob_pct``.
 
