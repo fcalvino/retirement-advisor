@@ -170,3 +170,18 @@ confianza de cada view salía del score. La covarianza sigue siendo la históric
 Ledoit-Wolf. La contracción queda como fila aparte del BACKLOG (SCORE-CONTRACCION).
 Hasta EO-4d, el descuento por riesgo argentino sólo baja el score de los ADRs, sin
 llegar a μ. La decisión no cambia.
+
+## Nota (2026-10-06, EO-4c-1)
+
+Los Escenarios toman, para cada Clase, la Fuente vigente más baja (pesimista), la
+mediana (central) o la más alta (optimista); una Fuente de más de 24 meses sale del
+rango igual que del central. El haircut de bonos EE.UU. y de los tickers sin Clase, y el
+0 % real de cripto, son iguales en los tres: el ADR pide para cripto «Escenarios de
+0 % real a su historia», y el usuario eligió dejarlo en 0 % real en los tres
+(2026-10-06). El Escenario de planificación es Postura: Conservador planifica con el
+pesimista, Moderado y Agresivo con el central, y el usuario lo puede cambiar. El
+Monte Carlo proyecta con él; el Optimizer no lo lee, así que la igualdad de EO-4b (el
+rendimiento de la cartera es el promedio ponderado de las Estimaciones) vale en el
+central, y un plan Conservador proyecta debajo de la cifra del Optimizer por el
+Desacuerdo, a propósito. La UI que muestra los tres Escenarios es EO-4c-2. La
+decisión no cambia.
