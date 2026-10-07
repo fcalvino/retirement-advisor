@@ -183,6 +183,13 @@ def test_a_saved_plan_keeps_the_three():
                                      mc_params={"horizon_years": 20})
     assert set(snap.mc_summary["scenarios"]) == {"pesimista", "central", "optimista"}
     assert snap.mc_summary["scenarios"]["central"]["median_terminal"] == 1_200_000.0
+    # Exportar e importar el plan no los pierde.
+    from dataclasses import asdict
+
+    from data.plan_context import import_plan_from_dict
+
+    back = import_plan_from_dict({"snapshot": {**asdict(snap), "id": "x", "name": "x"}})
+    assert back.mc_summary["scenarios"] == snap.mc_summary["scenarios"]
 
 
 # --------------------------------------------------------------------------- #

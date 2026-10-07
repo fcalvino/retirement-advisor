@@ -52,6 +52,12 @@ La variación de resultados que existe aunque la Estimación sea correcta: el
 rango de futuros posibles de una misma Estimación.
 _Evitar_: escenario, riesgo (a secas)
 
+**Mala racha** / **Buena racha**:
+El p10 y el p90 de una proyección: el Azar dentro de un mismo Escenario, 1 de cada
+10 caminos termina debajo / arriba. En pantalla, «Mala racha (p10)» y «Buena racha
+(p90)» (`BAD_RUN_LABEL` / `GOOD_RUN_LABEL`, EO-4c-2).
+_Evitar_: escenario pesimista / optimista (eso es Desacuerdo entre Fuentes)
+
 **Escenario**:
 Una Estimación tomada desde la Fuente más pesimista, la central o la más
 optimista. Los Escenarios expresan Desacuerdo, no Azar; cada uno tiene el suyo.

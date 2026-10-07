@@ -385,6 +385,7 @@ Toda etapa que mueva μ o el Monte Carlo sube `ENGINE_VERSION`.
     vigente más baja / mediana / más alta; haircut y cripto (0 % real) iguales en los
     tres. Planificación por defecto: Conservador pesimista, Moderado y Agresivo central,
     editable en Settings. La historia reciente deja de ser una proyección.
+    ~~EO-4c-1~~ *cerrada (2026-10-06)* y ~~EO-4c-2~~ *cerrada (2026-10-07)*, ver `ROADMAP.md`.
 
   El diseño original, que las cuatro partes implementan: la Estimación de cada activo se contrae
   hacia la de su Clase según su evidencia (el score, con el peso que respalde U6-1);

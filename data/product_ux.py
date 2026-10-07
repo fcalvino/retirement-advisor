@@ -3345,7 +3345,7 @@ def scenarios_block_text(scenarios: Mapping[str, Mapping[str, float]], planning:
 
     if not scenarios:
         return ""
-    lines = ["📊 **Tres Escenarios** — el Desacuerdo entre las Fuentes de cada Clase:"]
+    lines = ["**Tres Escenarios** — el Desacuerdo entre las Fuentes de cada Clase:"]
     for name in ESTIMACION.scenarios:
         s = scenarios.get(name)
         if not s:
