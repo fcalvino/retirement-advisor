@@ -1918,6 +1918,26 @@ def decision_provenance_labels(*, has_ai: bool, has_calc: bool = True) -> List[d
 # --------------------------------------------------------------------------- #
 
 
+def signal_thresholds_note(is_crypto: bool = False) -> str:
+    """El rótulo de los umbrales de la escalera de señales (EO-6b-1, ADR 0001).
+
+    Los cortes de score (82/68/55/45 en equity) se fijaron contra la distribución de
+    scores, no contra outcomes: ordenan, no cotizan. Se leen de ``ladder_for`` para que
+    el texto no repita un literal que config.py puede mover.
+    """
+    from analysis.strategy import ladder_for
+
+    ld = ladder_for(is_crypto)
+
+    def cut(v: float) -> str:      # la escalera cripto no alcanza los peldaños de compra
+        return f"{v:.0f}" if v != float("inf") else "—"
+
+    return (
+        f"Umbrales de señal {cut(ld.strong_buy)}/{cut(ld.buy)}/{cut(ld.hold)}/{cut(ld.reduce)}: "
+        "ranking relativo, no calibrado. Se recalibran cuando haya outcomes a 365 días."
+    )
+
+
 def decision_explanation(decision: Any, *, max_headline: int = 90) -> dict:
     """The "why" behind an action, shaped for a table cell plus a detail panel.
 

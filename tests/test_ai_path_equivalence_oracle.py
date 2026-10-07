@@ -225,23 +225,93 @@ def test_el_camino_ai_nunca_mejora_la_accion_del_rule_based_en_equity(score, sig
     assert _RANK[ai.action] <= _RANK[rule.action]
 
 
+def _techo_de_la_escalera(score: float) -> str:
+    """El peldaño más alto que el score alcanza, escrito a mano con los umbrales de config."""
+    for umbral, accion in ((S.strong_buy_score, "STRONG BUY"), (S.buy_score, "BUY"),
+                           (S.hold_score, "HOLD"), (S.reduce_score, "REDUCE")):
+        if score >= umbral:
+            return accion
+    return "SELL"
+
+
+def _rango_permitido(rule_action: str, score: float) -> tuple[int, int]:
+    """EO-6b-1: [mínimo, máximo] de la acción de la IA, en rango de ``_RANK``.
+
+    A lo sumo un escalón del motor para los dos lados. Subir sólo si el motor ya está
+    en el techo de la escalera (si lo bajó un veto, la IA no lo levanta) y nunca más
+    arriba de BUY: STRONG BUY exige margen de seguridad y confirmación técnica.
+    """
+    r = _RANK[rule_action]
+    bajo = max(r - 1, 0)
+    alto = r
+    if rule_action == _techo_de_la_escalera(score):
+        alto = max(r, min(r + 1, _RANK["BUY"]))
+    return bajo, alto
+
+
 @pytest.mark.parametrize("score,signal,dq,neg", GRID)
 @pytest.mark.parametrize("accion_del_llm", ["STRONG BUY", "BUY", "HOLD", "REDUCE", "SELL"])
-def test_ninguna_accion_del_llm_supera_al_motor(accion_del_llm, score, signal, dq, neg):
-    """La propiedad completa (SIGNAL-6): el test de arriba parte de `rule.action`, así
-    que sólo prueba que el overlay no *mejora* una acción ya correcta. Acá la entrada
-    es cualquier acción del LLM, que es lo que el pipeline real recibe.
-
-    El piso de `apply_safety_overlay` la hace verdadera por construcción — no por
-    enumerar las reglas de la matriz, que es lo que dejaba afuera el margen de
-    seguridad y el cap crypto de volatilidad."""
+def test_la_accion_del_llm_queda_a_un_escalon_del_motor(accion_del_llm, score, signal, dq, neg):
+    """EO-6b-1 (reemplaza «ninguna acción del LLM supera al motor», SIGNAL-6): el tope
+    es simétrico, un escalón. La IA no queda más de un escalón por debajo del motor ni
+    por encima; por encima sólo cuando el motor está en el techo de su escalera, y sin
+    pasar de BUY. Las políticas de data quality y patrimonio negativo y los vetos de
+    `decide()` siguen valiendo: si bajaron al motor del techo, la IA no los levanta."""
     fund = _fund(score, dq={"level": dq, "missing_fields": ["roe"]}, negative_equity=neg)
     tech = _tech(signal)
     rule = RetirementStrategy().decide(fund, tech)
     ai = apply_safety_overlay(_llm(accion_del_llm, score, signal), fund, tech)
-    assert _RANK[ai.action] <= _RANK[rule.action], (
-        f"el LLM pidió {accion_del_llm} y salió {ai.action}; el motor emite {rule.action}"
+    if rule.blocked:
+        assert ai.action == "AVOID"
+        return
+    bajo, alto = _rango_permitido(rule.action, score)
+    assert bajo <= _RANK[ai.action] <= alto, (
+        f"el LLM pidió {accion_del_llm} y salió {ai.action}; el motor emite {rule.action} "
+        f"(rango permitido {bajo}..{alto})"
     )
+
+
+def test_la_ia_sube_un_escalon_cuando_el_motor_esta_en_su_techo():
+    """El caso nuevo, a mano: score de HOLD, sin vetos, el motor da HOLD y la IA pide BUY."""
+    from analysis.strategy import AI_LESS_PRUDENT_REASON
+
+    score = S.hold_score + 1
+    fund, tech = _fund(score, dq={"level": "good"}), _tech("BULLISH")
+    rule = RetirementStrategy().decide(fund, tech)
+    ai = apply_safety_overlay(_llm("BUY", score), fund, tech)
+    assert (rule.action, ai.action) == ("HOLD", "BUY")
+    assert ai.decisive_reason == AI_LESS_PRUDENT_REASON
+    assert ai.confidence != "HIGH"
+    uno = (ai.action, ai.decisive_reason)
+    dos = apply_safety_overlay(ai, fund, tech)
+    assert (dos.action, dos.decisive_reason) == uno          # idempotente
+
+
+def test_la_ia_no_levanta_un_veto_ni_pasa_de_buy():
+    # Un veto BEARISH baja al motor del techo (BUY → HOLD): la IA no lo levanta.
+    score = S.buy_score + 1
+    fund, tech = _fund(score, dq={"level": "good"}), _tech("BEARISH")
+    rule = RetirementStrategy().decide(fund, tech)
+    assert rule.action != "BUY"
+    assert apply_safety_overlay(_llm("BUY", score, "BEARISH"), fund, tech).action == rule.action
+    # En el techo BUY, STRONG BUY no se alcanza: el tope de subida es BUY.
+    fund, tech = _fund(score, dq={"level": "good"}), _tech("BULLISH")
+    assert apply_safety_overlay(_llm("STRONG BUY", score), fund, tech).action == "BUY"
+
+
+def test_un_cripto_no_sube_sobre_el_motor():
+    fund = _fund(STRONG, is_crypto=True, dq={"level": "good"})
+    tech = _tech("BULLISH")
+    rule = RetirementStrategy().decide(fund, tech)
+    assert apply_safety_overlay(_llm("STRONG BUY", STRONG), fund, tech).action == rule.action
+
+
+def test_la_ia_no_baja_mas_de_un_escalon():
+    """Más prudente que el motor, a lo sumo un escalón: SELL sobre un BUY queda en HOLD."""
+    fund, tech = _fund(S.buy_score + 1, dq={"level": "good"}), _tech("BULLISH")
+    rule = RetirementStrategy().decide(fund, tech)
+    ai = apply_safety_overlay(_llm("SELL", S.buy_score + 1), fund, tech)
+    assert (rule.action, ai.action) == ("BUY", "HOLD")
 
 
 # --------------------------------------------------------------------------- #
@@ -346,7 +416,8 @@ class TestElMotivoDescribeLaAccionEmitida:
         score = S.reduce_score - 10
         fund = _fund(score, dq={"level": "partial", "missing_fields": ["roe"]})
         ai = apply_safety_overlay(_llm("STRONG BUY", score), fund, _tech())
-        assert ai.action == "SELL"
+        # EO-6b-1: con datos parciales el motor atenúa SELL a REDUCE, y es su acción.
+        assert ai.action == "REDUCE"
         assert "capado a BUY" not in ai.decisive_reason
 
     def test_el_llm_mas_prudente_tiene_motivo_propio(self):
@@ -362,7 +433,8 @@ class TestElMotivoDescribeLaAccionEmitida:
         tech = _tech("BULLISH")
         rule = RetirementStrategy().decide(fund, tech)
         ai = apply_safety_overlay(_llm("SELL", STRONG), fund, tech)
-        assert (rule.action, ai.action) == ("BUY", "SELL")   # precondición del caso
+        # EO-6b-1: un escalón por debajo del motor como mucho, así que SELL queda en HOLD.
+        assert (rule.action, ai.action) == ("BUY", "HOLD")   # precondición del caso
         assert ai.decisive_reason == AI_MORE_PRUDENT_REASON
         assert ai.confidence != "HIGH", (
             "una acción que no se sigue del score no puede salir con confianza alta"
@@ -450,7 +522,7 @@ class TestIdempotencia:
         fund = _fund(score, dq={"level": "partial", "missing_fields": ["roe"]})
         uno, dos = self._dos_pasadas(_llm("STRONG BUY", score), fund, _tech())
         assert uno == dos
-        assert uno[0] == "SELL"
+        assert uno[0] == "REDUCE"      # EO-6b-1: SELL atenuado a REDUCE con datos parciales
 
     def test_el_llm_mas_prudente(self):
         """El motivo propio del caso «más prudente» tampoco se re-escribe en cadena."""

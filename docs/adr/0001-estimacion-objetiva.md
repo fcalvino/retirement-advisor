@@ -222,3 +222,12 @@ track record con la versión del método de señales (`SIGNAL_METHOD_VERSION`, p
 es `ENGINE_VERSION` ni `COMMITTEE.prompt_version`) y 6b cambia la escalera. Las filas
 escritas antes quedan sin versión, rotuladas «anterior a EO-6». 6a no mueve ninguna
 señal. La decisión no cambia.
+
+## Nota (2026-10-07, EO-6b-1)
+
+El tope de la IA contra la escalera de score pasa a ser simétrico, a un escalón del motor,
+y la atenuación con datos parciales también (STRONG BUY → BUY, SELL → REDUCE). Subir sobre
+el motor sólo vale desde el techo de la escalera, sin pasar de BUY ni para un cripto: los
+vetos de `decide()` (BEARISH, margen de seguridad, techo cripto, data quality) siguen
+siendo duros. Los umbrales de señal se rotulan «ranking relativo, no calibrado». La
+imputación de faltantes por la mediana del sector queda para EO-6b-2. La decisión no cambia.

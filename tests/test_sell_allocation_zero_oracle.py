@@ -51,12 +51,14 @@ class TestSalirEsCero:
                                  _fund(SELL_ZONE, dq={"level": "good"}), _tech("BEARISH"))
         assert (d.action, d.recommended_max_allocation_pct) == ("SELL", 0.0)
 
-    def test_compra_que_el_piso_baja_a_sell(self):
-        """El modelo pensó el 8 % para un BUY; el motor lo bajó a SELL."""
+    def test_compra_que_el_tope_baja_a_reduce_conserva_el_tope_del_modelo(self):
+        """EO-6b-1: el modelo pensó el 8 % para un BUY; el tope lo baja a REDUCE (un
+        escalón sobre el SELL del motor). REDUCE no es una salida: reducir no es salir,
+        así que el tope del modelo no se pone en 0 (`ai_allocation_zero_actions`)."""
         d = apply_safety_overlay(_with_alloc("BUY", SELL_ZONE, 8.0),
                                  _fund(SELL_ZONE, dq={"level": "good"}), _tech())
-        assert d.action == "SELL"
-        assert d.recommended_max_allocation_pct == 0.0
+        assert d.action == "REDUCE"
+        assert d.recommended_max_allocation_pct == 8.0
 
     def test_compra_bloqueada_a_avoid(self):
         fund = _fund(STRONG, debt_equity=S.max_debt_equity + 1, dq={"level": "good"})

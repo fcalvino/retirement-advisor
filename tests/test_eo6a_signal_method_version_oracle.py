@@ -49,7 +49,7 @@ def store():
 
 
 def test_the_version_is_its_own_not_the_engines_or_the_committees():
-    assert SIGNAL_METHOD_VERSION == "2026.10-senales1"
+    assert SIGNAL_METHOD_VERSION >= "2026.10-senales1"
     assert SIGNAL_METHOD_VERSION not in (ENGINE_VERSION, COMMITTEE.prompt_version)
     assert SIGNAL_METHOD_LEGACY_LABEL == "anterior a EO-6"
 

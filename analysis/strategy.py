@@ -44,6 +44,9 @@ _BUY_ACTIONS = ("STRONG BUY", "BUY")
 #: El motivo de la única fila que el motor no sabe explicar: la IA eligió una acción
 #: más prudente que la que la matriz sostiene. Vive acá, con los demás literales de
 #: motivo, y no en ``ai_analyzer`` — el copy de la celda «Motivo» tiene un solo dueño.
+AI_LESS_PRUDENT_REASON = (
+    "La IA fue un escalón más optimista que las reglas — se respeta su acción"
+)
 AI_MORE_PRUDENT_REASON = (
     "La IA fue más cauta que las reglas — se respeta su acción"
 )
@@ -85,6 +88,33 @@ def ladder_for(is_crypto: bool) -> ScoreLadder:
 def _rank(action: str) -> int:
     """Posición de una acción en la escalera; lo desconocido se lee como HOLD."""
     return _ACTION_RANK.get(str(action or "").upper(), _ACTION_RANK["HOLD"])
+
+
+def _clamp_to_ladder(ai_action: str, rule: "Decision") -> str:
+    """EO-6b-1: la acción de la IA, a lo sumo ``ai_ladder_step_tolerance`` escalones de la del motor.
+
+    Simétrico: la IA puede ser más prudente o más optimista que el motor, no más que
+    la tolerancia. Subir tiene una condición más: sólo si el motor ya está en el techo
+    de la escalera de score (``max_action_for_score``). Si el motor quedó por debajo de
+    ese techo es porque un veto lo bajó —BEARISH, margen de seguridad, techo cripto,
+    data quality, patrimonio negativo—, y SIGNAL-6 existe para que un STRONG BUY no
+    sobreviva a eso. Tampoco sube a STRONG BUY ni un cripto. Idempotente: el overlay corre dos veces sobre el mismo objeto.
+    """
+    rank, rule_rank = _rank(ai_action), _rank(rule.action)
+    if rank < 0:   # AVOID es un veredicto de bloqueo, no un peldaño: no se acota
+        return ai_action
+    tol = CFG.ai_ladder_step_tolerance
+    # Cripto no sube nunca: su escalera topa en HOLD a propósito (#149) y su techo de
+    # volatilidad extrema vive en ``decide()``, no en el score.
+    at_ceiling = not rule.is_crypto and rule_rank == _rank(
+        max_action_for_score(rule.fundamental_score)
+    )
+    lowest = max(rule_rank - tol, 0)
+    # Subir se frena en BUY: STRONG BUY exige margen de seguridad y confirmación técnica
+    # (``decide()``), y la IA no puede sacarlo del score.
+    highest = max(rule_rank, min(rule_rank + tol, _ACTION_RANK["BUY"])) if at_ceiling else rule_rank
+    clamped = min(max(rank, lowest), highest)
+    return next(a for a, r in _ACTION_RANK.items() if r == clamped)
 
 
 def max_action_for_score(effective_score: float, *, is_crypto: bool = False) -> str:
@@ -306,8 +336,7 @@ def apply_safety_overlay(
     # monótona y por lo tanto idempotente — el overlay corre dos veces sobre el
     # mismo objeto en el pipeline real (`ai_analyzer.py` y `full_analysis`).
     if not decision.blocked and CFG.ai_action_capped_by_score_ladder:
-        if _rank(decision.action) > _rank(rule.action):
-            decision.action = rule.action
+        decision.action = _clamp_to_ladder(decision.action, rule)
 
     # SIGNAL-4 + SIGNAL-6: el motivo es uno solo, lo escribe el motor, y siempre
     # describe la acción **emitida**. El camino AI llega sin `decisive_reason`
@@ -327,6 +356,10 @@ def apply_safety_overlay(
             # motor la explica, y el texto de banda de `decision_explanation` sale
             # de la acción, no del score, así que tampoco: hace falta nombrar la causa.
             decision.decisive_reason = AI_MORE_PRUDENT_REASON
+        elif CFG.ai_action_capped_by_score_ladder:
+            # EO-6b-1: la IA quedó un escalón por encima del motor, que ya estaba en
+            # el techo de la escalera. Tampoco la explica ningún motivo del motor.
+            decision.decisive_reason = AI_LESS_PRUDENT_REASON
         # `>` sólo es alcanzable con `ai_action_capped_by_score_ladder` apagado: el
         # motivo del motor no describe esa acción, así que no se adopta ninguno.
 
@@ -363,7 +396,8 @@ def apply_data_quality_policy(
 
     Policy (P0 — from ``DATA_QUALITY``, never rewrites scores):
       - ``poor``: STRONG BUY / BUY → HOLD, confidence LOW
-      - ``partial``: STRONG BUY → BUY (optional), confidence capped
+      - ``partial``: STRONG BUY → BUY and SELL → REDUCE (EO-6b-1; each optional),
+        confidence capped
       - risks already annotated by decide() for missing fields; this helper
         focuses on action/confidence demotions
     """
@@ -386,6 +420,14 @@ def apply_data_quality_policy(
         if getattr(config, "partial_caps_strong_buy", True) and decision.action == "STRONG BUY":
             decision.action = "BUY"
             note = "STRONG BUY capado a BUY: data quality partial"
+            decision.decisive_reason = note
+            if note not in (decision.rationale or []):
+                decision.rationale = [note] + list(decision.rationale or [])
+        elif getattr(config, "partial_lifts_sell", True) and decision.action == "SELL":
+            # EO-6b-1: la atenuación hacia HOLD es simétrica. Con datos parciales un
+            # SELL no se sostiene más que un STRONG BUY: sube un escalón, a REDUCE.
+            decision.action = "REDUCE"
+            note = "SELL atenuado a REDUCE: data quality partial"
             decision.decisive_reason = note
             if note not in (decision.rationale or []):
                 decision.rationale = [note] + list(decision.rationale or [])

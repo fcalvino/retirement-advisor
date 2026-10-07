@@ -176,10 +176,13 @@ class TestNingunaCompraPorDebajoDeSuBanda:
     def test_el_overlay_no_deja_una_compra_sin_banda(self, action):
         fund, tech = _fund(SELL_ZONE), _tech("BEARISH")
         out = apply_safety_overlay(_ai_decision(action, SELL_ZONE, "BEARISH"), fund, tech)
-        assert oracle_action_is_defensible(out.action, SELL_ZONE), (
+        # EO-6b-1: el tope es de un escalón sobre el motor, que en esta zona da SELL, así
+        # que la IA llega como mucho a REDUCE. Una compra por debajo de su banda no vive.
+        assert out.action in ("SELL", "REDUCE"), (
             f"score {SELL_ZONE} salió como {out.action!r}: por debajo de "
             f"{oracle_min_score_for(action)} el motor recomienda comprar sin sustento"
         )
+        assert out.action not in BUY_ACTIONS
 
     def test_strong_buy_del_llm_se_capa_a_la_banda_que_el_score_alcanza(self):
         score = S.buy_score + 1          # alcanza BUY, no STRONG BUY
@@ -209,7 +212,8 @@ class TestNingunaCompraPorDebajoDeSuBanda:
         fund = _fund(SELL_ZONE, dq={"level": "partial", "missing_fields": ["roe"]})
         out = apply_safety_overlay(_ai_decision("STRONG BUY", SELL_ZONE), fund, _tech())
         headline = decision_explanation(out)["full_headline"]
-        assert out.action == "SELL"
+        # EO-6b-1: con datos parciales el motor atenúa SELL a REDUCE; es la acción de la fila.
+        assert out.action == "REDUCE"
         assert "capado a BUY" not in headline, (
             f"la fila salió {out.action} con el motivo {headline!r}"
         )

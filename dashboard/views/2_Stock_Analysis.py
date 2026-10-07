@@ -39,6 +39,7 @@ from data.product_ux import (
     market_cap_currency,
     profile_margin_pct,
     roic_sustained_help,
+    signal_thresholds_note,
     technical_signal_label,
     with_currency,
 )
@@ -295,6 +296,7 @@ if symbol:
         unsafe_allow_html=True,
     )
     render_calc_badge("score fundamental y señal calculados con fórmulas (sin IA)")
+    st.caption(signal_thresholds_note(bool(getattr(decision, "is_crypto", False))))
     st.caption(
         track_record_log_caption(
             symbol, decision.action, _track_source,
