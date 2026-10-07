@@ -76,6 +76,7 @@ def calls(monkeypatch):
     import analysis.estimacion as est
 
     monkeypatch.setattr(est, "classes_for", lambda symbols: {s: None for s in symbols})
+    monkeypatch.setattr(est, "countries_for", lambda symbols: {s: None for s in symbols})
     with patch("portfolio.monte_carlo.get_history",
                side_effect=lambda *a, **k: _flat_history(0.06)):
         yield recorded

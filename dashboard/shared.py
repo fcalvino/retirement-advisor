@@ -1212,7 +1212,7 @@ def render_drags_controls(*, key_prefix: str = "") -> dict:
     tune the drag components for the current session, seeding from config.DRAGS.
     Returns the active drags dict (also retrievable via ``get_economic_drags``).
     """
-    from config import DRAGS, OPTIMIZER
+    from config import DRAGS
 
     with st.expander("📊 Supuestos y drags económicos aplicados", expanded=False):
         st.caption(
@@ -1261,11 +1261,11 @@ def render_drags_controls(*, key_prefix: str = "") -> dict:
                 max_value=DRAG_WIDGET_RANGES["ar_buffer_pct"][1],
                 value=float(st.session_state.get("drag_ar_buffer_pct", DRAGS.ar_buffer_pct)),
                 step=0.10, disabled=not enabled, key=f"{key_prefix}drag_ar",
-                help="⚠️ Evitá doble conteo: el Optimizer ya descuenta el riesgo argentino "
-                     f"(−{(1 - OPTIMIZER.ars_risk_discount) * 100:.0f}% al score de ADRs AR, "
-                     "con cualquier perfil). Usá este buffer solo para el riesgo país "
-                     "que NO esté ya reflejado en cómo elegiste la cartera (ej. inflación/FX a "
-                     "nivel de todo el plan). Si ya ponderaste por ARS, dejalo en 0.",
+                help="⚠️ Evitá doble conteo: la Estimación de los ADRs argentinos ya resta "
+                     "el riesgo país a su rendimiento (el spread en pp, sin bajar del 0 % real; "
+                     "el Optimizer y el Monte Carlo usan el mismo número). Usá este buffer solo "
+                     "para el riesgo que NO esté ya en ese rendimiento (ej. inflación/FX a "
+                     "nivel de todo el plan). Si tenés ADRs argentinos, dejalo en 0.",
             )
             st.session_state["drag_ar_buffer_pct"] = _ar
         # S17: build from the fresh widget values, not from the session_state
@@ -1614,6 +1614,18 @@ def cached_asset_classes(symbols: tuple[str, ...]) -> tuple:
     return tuple(sorted(classes_for(symbols).items()))
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_countries(symbols: tuple[str, ...]) -> tuple:
+    """El país del emisor de cada símbolo (EO-4d), como pares ordenados.
+
+    Activa el descuento por riesgo país de la Estimación; se resuelve acá para que el
+    Monte Carlo no salga a la red.
+    """
+    from analysis.estimacion import countries_for
+
+    return tuple(sorted(countries_for(symbols).items()))
+
+
 @st.cache_data(ttl=1800, show_spinner=False)
 def cached_monte_carlo(
     symbols: tuple[str, ...],
@@ -1654,7 +1666,8 @@ def cached_monte_carlo(
     sim  = MonteCarloSimulator(list(symbols), w_np, seed=seed,
                                vol_scale=vol_scale, return_scale=return_scale,
                                asset_classes=dict(cached_asset_classes(tuple(symbols))),
-                               scenario=scenario)
+                               scenario=scenario,
+                               countries=dict(cached_countries(tuple(symbols))))
     drags = dict(drags_tuple) if drags_tuple else None
     withdrawal_strategy = dict(withdrawal_tuple) if withdrawal_tuple else None
     return sim.run(
@@ -1701,7 +1714,8 @@ def cached_goal_simulation(
     w_np = np.array(weights_tuple) if weights_tuple else None
     planner = GoalPlanner(list(symbols), w_np, seed=seed,
                           asset_classes=dict(cached_asset_classes(tuple(symbols))),
-                          scenario=scenario)
+                          scenario=scenario,
+                          countries=dict(cached_countries(tuple(symbols))))
 
     goals = [
         Goal(
@@ -1757,7 +1771,8 @@ def cached_goal_savings_target(
     w_np = np.array(weights_tuple) if weights_tuple else None
     planner = GoalPlanner(list(symbols), w_np, seed=seed,
                           asset_classes=dict(cached_asset_classes(tuple(symbols))),
-                          scenario=scenario)
+                          scenario=scenario,
+                          countries=dict(cached_countries(tuple(symbols))))
     g = dict(goal_serialized)
 
     goal = Goal(

@@ -95,7 +95,7 @@ Fuente: `portfolio/optimizer.py`.
 |--------|----------------|--------------------|
 | `_ETF_TICKERS` | Excluidos de SLSQP (“sin fundamentals”) | SPY, QQQ, VTI, BND fuera del core optimizado |
 | `min_score_threshold` (`OPTIMIZER` = 30) | Score &lt; 30 → excluido | Depende del screener en runtime |
-| `_ARS_TICKERS` + `ars_risk_discount` (0.85) | En perfiles conservador/moderado | YPF, PAM, CEPU, LOMA, TEO, EDN (×0.85). **MELI/GLOB no** están en el set ARS |
+| `is_ars_exposed` (país Argentina) + riesgo país en la Estimación (EO-4d) | Todos los perfiles | YPF, PAM, CEPU, LOMA, TEO, EDN: μ = Clase − riesgo país, piso 0 % real. **MELI/GLOB no** están en el set ARS |
 | `is_crypto` + `max_crypto_pct` | Cap por perfil 3% / 5% / 10% | Solo BTC-USD en default |
 | `pre_filter_top_k` | 20 / 30 / 45 por perfil | Universos grandes se recortan antes de SLSQP |
 | `max_sector_pct` | 20% / 25% / 30% | Diversificación sectorial hard-constraint |

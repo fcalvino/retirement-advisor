@@ -2575,6 +2575,14 @@ ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
         "menos; con Moderado o Agresivo (central) los números no cambian. Lo podés cambiar "
         "en Settings.",
     ),
+    (
+        "2026.10-tier23",
+        "Los ADRs argentinos ahora llevan el riesgo país en su rendimiento esperado: la "
+        "Estimación de su Clase menos el riesgo país, sin bajar del 0 % real. Antes el "
+        "Optimizer sólo les bajaba el score un 15 % y la proyección no lo veía. Cambian "
+        "los pesos del Optimizer y la proyección de los planes que tienen ADRs "
+        "argentinos; el resto no se mueve.",
+    ),
 )
 
 
@@ -3399,31 +3407,27 @@ def profile_margin_pct(profile_key: str | None, override: float | None = None) -
 
 
 # --------------------------------------------------------------------------- #
-#  Descuento argentino del Optimizer: qué es supuesto y qué es dato (EO-2c)    #
+#  Riesgo país de los ADRs argentinos en la Estimación (EO-4d)                 #
 # --------------------------------------------------------------------------- #
 
-def ars_discount_note(discount: float, ars_syms: str, country_risk: Any = None) -> str:
-    """El aviso del Optimizer sobre el descuento a los ADRs argentinos.
+def ars_country_risk_note(ars_syms: str, country_risk: Any = None) -> str:
+    """El aviso del Optimizer sobre los ADRs argentinos.
 
-    El descuento es un multiplicador fijo del score (``OPTIMIZER.ars_risk_discount``),
-    pendiente de Fuente. El riesgo país ya es un dato fechado en «Supuestos»
-    (``country_risk``, un ``analysis.fuentes.CountryRisk``), pero no hay Fuente para
-    convertir un spread en un multiplicador de score: eso llega con EO-4. Sin el
-    dato, el aviso no muestra un número.
+    Desde EO-4d el riesgo país (``country_risk``, un ``analysis.fuentes.CountryRisk``)
+    se resta del rendimiento esperado del ADR: la Estimación de su Clase menos el
+    spread en pp, sin bajar del 0 % real (decisión del usuario, 2026-10-07). Ya no es
+    un multiplicador del score. Sin el dato, el aviso no muestra un número.
     """
-    pct = (1 - discount) * 100
     if country_risk is not None:
-        dato = (f"el riesgo país ya está en «Supuestos» ({country_risk.value_bp} pb al "
-                f"{country_risk.as_of.isoformat()}), ")
+        dato = (f"el riesgo país es {country_risk.value_bp} pb al "
+                f"{country_risk.as_of.isoformat()} (ver «Supuestos»)")
     else:
-        dato = "el riesgo país todavía no está cargado en «Supuestos», "
+        dato = "el riesgo país todavía no está cargado en «Supuestos»"
     return (
         f"🇦🇷 **ADRs argentinos ({ars_syms}):** cotizan y liquidan en **USD** en NYSE/NASDAQ. "
-        f"Con cualquier perfil se aplica un descuento de **{pct:.0f}%** al Score "
-        "Ajustado para el cálculo del peso óptimo (no afecta precio ni dividend yield). "
-        f"Ese porcentaje es un supuesto fijo, **pendiente de Fuente**: {dato}pero no hay "
-        "una Fuente para convertir ese spread en un descuento de score. La conversión "
-        "llega con EO-4, cuando la Estimación de cada ADR argentino use el riesgo país."
+        "Su rendimiento esperado es la Estimación de su Clase **menos el riesgo país**, "
+        f"sin bajar del 0 % real: {dato}. El score ya no se descuenta por ser argentino; "
+        "el descuento está en el rendimiento. Es el mismo número que usa el Monte Carlo."
     )
 
 

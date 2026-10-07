@@ -201,7 +201,6 @@ class OptimizerConfig:
     frontier_points: int = 300           # carteras Monte Carlo
     min_weight_pct: float = 1.0          # peso mínimo por ticker (evita dust)
     min_score_threshold: float = 30.0    # score mínimo para ser elegible
-    ars_risk_discount: float = 0.85      # descuento score para ADRs argentinos
 
 CONSERVATIVE_PROFILE = ProfileConfig(
     max_position_pct=8.0,

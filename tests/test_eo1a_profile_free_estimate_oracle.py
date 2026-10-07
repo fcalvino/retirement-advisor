@@ -10,8 +10,8 @@ Dos caminos dejaban entrar el perfil en el rendimiento esperado de un activo:
   es el del mercado, ``BLACK_LITTERMAN.risk_aversion``.
 * **El descuento por riesgo argentino.** ``_apply_ars_discount`` lo salteaba con
   Agresivo. El riesgo de un emisor argentino no depende de quién mira: rige para
-  todos (el valor sigue siendo ``OPTIMIZER.ars_risk_discount``, pendiente de Fuente
-  hasta EO-2).
+  todos. (EO-4d lo pasó del score al rendimiento; ``test_eo4d_riesgo_pais_estimacion_oracle``
+  verifica que no depende del Perfil.)
 
 Referencia independiente del optimizador: un Σ de 2×2 y unos pesos de mercado
 armados a mano, con Π = 2,5·Σ·w calculado en el docstring de abajo. Si las vistas
@@ -57,15 +57,3 @@ def test_views_equal_to_the_market_prior_come_back_unchanged(profile):
     )
     # main: Conservador mezcla la vista con 4,0·Σ·w y Agresivo con 1,5·Σ·w.
     assert posterior == pytest.approx(PI_MARKET, rel=1e-9)
-
-
-@pytest.mark.parametrize("profile", PROFILES)
-def test_an_argentine_issuer_is_discounted_for_every_profile(profile):
-    """80 puntos × 0,85 = 68: la cuenta a mano con el valor de config hoy."""
-    from config import OPTIMIZER
-
-    assert OPTIMIZER.ars_risk_discount == 0.85           # el número que pide Fuente (EO-2)
-    row = {"symbol": "YPF", "adjusted_score": 80.0, "country": "Argentina"}
-    [scored] = PortfolioOptimizer(profile)._apply_ars_discount([row])
-    assert scored["adjusted_score"] == pytest.approx(68.0)   # main: 80 con Agresivo
-    assert scored["_ars_discounted"] is True

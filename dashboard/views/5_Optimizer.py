@@ -832,7 +832,6 @@ with tab_cart:
         for a in result.tickers:
             t             = scored_map.get(a.symbol, {})
             moat_cls      = t.get("moat_classification", "None")
-            discount_note = f" (−{(1-OPTIMIZER.ars_risk_discount)*100:.0f}% ARS)" if a.score_discounted else ""
             ticker_label  = f"🪙 {a.symbol}" if a.symbol == "BTC-USD" else a.symbol
             row = {
                 "Peso %":  a.weight_pct,
@@ -846,7 +845,7 @@ with tab_cart:
                 ),
                 "Div %":   a.dividend_yield_pct,
                 "Sector":  a.sector,
-                "Notas":   ("🇦🇷" + discount_note) if a.is_ars else "",
+                "Notas":   "🇦🇷 riesgo país en μ" if a.is_ars else "",
             }
             if _total_val > 0:
                 row["Valor USD"] = round(a.weight_pct / 100 * _total_val)
@@ -1027,12 +1026,12 @@ with tab_cart:
         # ARS disclaimer
         if any(a.is_ars for a in result.tickers):
             from analysis.fuentes import load_shipped_country_risk
-            from data.product_ux import ars_discount_note
+            from data.product_ux import ars_country_risk_note
 
             ars_syms = ", ".join(a.symbol for a in result.tickers if a.is_ars)
             _ar_risk = next((c for c in load_shipped_country_risk()
                              if c.country == "Argentina"), None)
-            st.info(ars_discount_note(OPTIMIZER.ars_risk_discount, ars_syms, _ar_risk))
+            st.info(ars_country_risk_note(ars_syms, _ar_risk))
 
     if result.excluded:
         with st.expander(f"Tickers excluidos de la optimización ({len(result.excluded)})"):

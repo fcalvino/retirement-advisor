@@ -2,9 +2,8 @@
 
 Decisiones del usuario (2026-10-05):
 - Entra como dato, no como rendimiento esperado: no toca la mediana ni el
-  Desacuerdo de emergentes. ``OPTIMIZER.ars_risk_discount`` (0,85) sigue igual,
-  rotulado «pendiente de Fuente»; convertir el riesgo país en la Estimación de un
-  ADR argentino es de EO-4.
+  Desacuerdo de emergentes. (EO-4d lo convierte en la Estimación de un ADR argentino
+  y borra ``OPTIMIZER.ars_risk_discount``: ``test_eo4d_riesgo_pais_estimacion_oracle``.)
 - La antigüedad sigue las reglas de ``FUENTES``: aviso a los 12 meses, fuera a los 24.
 
 El dato es el EMBI de J.P. Morgan para Argentina que publica Ámbito, por
@@ -122,49 +121,21 @@ def test_the_age_follows_the_fuentes_rules(as_of, expected):
 #  Lo que ve el usuario                                                        #
 # --------------------------------------------------------------------------- #
 
-def test_the_optimizer_note_keeps_the_discount_pending_and_points_to_supuestos():
+def test_the_optimizer_note_says_the_country_risk_is_in_the_return():
     from analysis.fuentes import CountryRisk
-    from data.product_ux import ars_discount_note
+    from data.product_ux import ars_country_risk_note
 
     cr = CountryRisk(country="Argentina", value_bp=655, as_of=date(2026, 10, 2),
                      source="https://x.org")
-    text = ars_discount_note(0.85, "YPF, TEO", cr)
-    assert "**15%**" in text                                   # (1 − 0,85) × 100
-    assert "pendiente de Fuente" in text and "Supuestos" in text and "EO-4" in text
-    assert "655 pb" in text and "2026-10-02" in text
+    text = ars_country_risk_note("YPF, TEO", cr)
+    assert "YPF, TEO" in text and "menos el riesgo país" in text and "0 % real" in text
+    assert "655 pb" in text and "2026-10-02" in text and "Supuestos" in text
+    assert "pendiente de Fuente" not in text
     # Sin el dato, el rótulo no inventa un número.
-    assert "pb" not in ars_discount_note(0.85, "YPF", None)
+    assert "pb" not in ars_country_risk_note("YPF", None)
 
 
-def test_the_discount_itself_does_not_move():
+def test_the_score_discount_is_gone():
     from config import OPTIMIZER
 
-    assert OPTIMIZER.ars_risk_discount == 0.85
-    assert "conservative/moderate" not in (type(OPTIMIZER).__doc__ or "")
-
-
-def test_the_supuestos_page_shows_the_country_risk_outside_the_central(monkeypatch):
-    from pathlib import Path
-
-    from streamlit.testing.v1 import AppTest
-
-    import analysis.fuentes as fuentes_mod
-
-    def f(v, name):
-        return fuentes_mod.Fuente(name=name, kind="gestora", asset_class="emerging",
-                                  value_pct=v, basis="nominal", currency="USD",
-                                  as_of=date(2026, 6, 30), source="https://example.org")
-
-    cr = fuentes_mod.CountryRisk(country="Argentina", value_bp=655, as_of=date(2026, 10, 2),
-                                 source="https://example.org")
-    monkeypatch.setattr(fuentes_mod, "load_shipped", lambda: [f(3.0, "G"), f(7.8, "H")])
-    monkeypatch.setattr(fuentes_mod, "load_shipped_country_risk", lambda: [cr])
-    monkeypatch.setattr(fuentes_mod, "today", lambda: TODAY)
-    page = Path(__file__).resolve().parents[1] / "dashboard/views/21_Supuestos.py"
-    at = AppTest.from_file(str(page), default_timeout=60)
-    at.run()
-    assert not at.exception, [str(e)[:300] for e in at.exception]
-    text = "\n".join((getattr(e, "value", "") or "") for coll in (
-        at.markdown, at.caption, at.info, at.warning) for e in coll)
-    assert "Central 5.4%" in text and "3.0%–7.8%" in text
-    assert "655 pb" in text and "no entra al central" in text
+    assert not hasattr(OPTIMIZER, "ars_risk_discount")

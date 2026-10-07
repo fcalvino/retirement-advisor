@@ -316,6 +316,7 @@ class GoalPlanner:
         seed: int = 42,
         asset_classes: Optional[dict] = None,
         scenario: str = ESTIMACION.default_scenario,
+        countries: Optional[dict] = None,
     ) -> None:
         self.symbols = symbols
         self.weights = weights
@@ -326,6 +327,8 @@ class GoalPlanner:
         # EO-4a: the Clase of each symbol, so «Mis Metas» projects with the same
         # Estimación as the main simulation (EO-0). None keeps the old haircut.
         self.asset_classes = asset_classes
+        # EO-4d: the issuer's country of each symbol, for the country-risk discount.
+        self.countries = countries
 
     def run(
         self,
@@ -419,6 +422,7 @@ class GoalPlanner:
             return_scale=return_scale,
             asset_classes=self.asset_classes,
             scenario=self.scenario,
+            countries=self.countries,
         )
 
     def _simulate_goal(
