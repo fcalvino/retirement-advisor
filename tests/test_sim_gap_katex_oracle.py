@@ -28,14 +28,12 @@ from tests.test_plan_page_runtime import stores  # noqa: F401  (fixture)
 ROOT = Path(__file__).resolve().parents[1]
 SIM_PAGE = ROOT / "dashboard" / "views" / "7_Simulaciones.py"
 
-# Los números de la QA en vivo de REALISTIC-TAIL-CLIP (fila SIM-GAP-PCT).
-REALISTIC_MEDIAN = 3_155_332.0
 CONSERVATIVE_MEDIAN = 1_220_635.0
 
 _RAW_DOLLAR = re.compile(r"(?<!\\)\$")
 
 
-def _fake_mc(*, median_terminal: float, realistic_median: float | None = None):
+def _fake_mc(*, median_terminal: float):
     """Un Monte Carlo terminado: la página lo lee de la sesión sin correr nada."""
     from portfolio.monte_carlo import MonteCarloResult
 
@@ -55,39 +53,28 @@ def _fake_mc(*, median_terminal: float, realistic_median: float | None = None):
         y: {p: 100_000.0 * ((1 + p / 1000) ** y) for p in (5, 10, 25, 50, 75, 90, 95)}
         for y in range(horizon + 1)
     }
-    if realistic_median is not None:
-        mc.realistic_reference_applied = True
-        mc.realistic_median_terminal = realistic_median
-        mc.realistic_p10_terminal = realistic_median * 0.4
     return mc
 
 
 def _two_scenarios_block() -> str:
+    """EO-4c-2: «Dos referencias» se fue; el bloque que dibuja montos ahí es «Tres
+    Escenarios». La prueba de KaTeX sigue sobre ese bloque. SIM-GAP-PCT (el
+    porcentaje entre la Estimación y la historia reciente) se fue con su bloque."""
     at = AppTest.from_file(str(SIM_PAGE), default_timeout=120)
-    at.session_state["mc_result"] = _fake_mc(
-        median_terminal=CONSERVATIVE_MEDIAN, realistic_median=REALISTIC_MEDIAN
-    )
+    mc = _fake_mc(median_terminal=CONSERVATIVE_MEDIAN)
+    mc.scenario = "central"
+    mc.scenarios = {
+        n: {"median_terminal": CONSERVATIVE_MEDIAN * k, "p10_terminal": CONSERVATIVE_MEDIAN * k * 0.4,
+            "p90_terminal": CONSERVATIVE_MEDIAN * k * 1.7, "prob_achieve_target_pct": 0.0,
+            "n_sims": 100}
+        for n, k in (("pesimista", 0.8), ("central", 1.0), ("optimista", 1.3))
+    }
+    at.session_state["mc_result"] = mc
     at.run()
     assert not at.exception, [str(e)[:400] for e in at.exception]
-    # EO-4a renombró el bloque: «Dos referencias» (Estimación objetiva vs historia
-    # reciente). La cuenta del porcentaje sigue siendo la de SIM-GAP-PCT.
-    blocks = [i.value for i in at.info if "Dos referencias" in (i.value or "")]
-    assert len(blocks) == 1, "el bloque «Dos referencias» no se dibujó"
+    blocks = [i.value for i in at.info if "Tres Escenarios" in (i.value or "")]
+    assert len(blocks) == 1, "el bloque «Tres Escenarios» no se dibujó"
     return blocks[0]
-
-
-# --------------------------------------------------------------------------- #
-#  SIM-GAP-PCT                                                                 #
-# --------------------------------------------------------------------------- #
-
-def test_the_conservative_median_is_61_percent_lower_not_158():
-    expected_lower_pct = round((1 - CONSERVATIVE_MEDIAN / REALISTIC_MEDIAN) * 100)
-    assert expected_lower_pct == 61                    # la cuenta de la fila, a mano
-
-    text = _two_scenarios_block()
-    match = re.search(r"~(\d+)% más baja", text)
-    assert match, text
-    assert int(match.group(1)) == expected_lower_pct   # main: «~158% más baja»
 
 
 # --------------------------------------------------------------------------- #

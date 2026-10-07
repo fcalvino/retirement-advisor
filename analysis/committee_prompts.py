@@ -633,7 +633,7 @@ def portfolio_committee_context_block(ctx: dict) -> str:
             f"Volatilidad: {_fmt_pct(g('volatility_pct'))} · "
             + ratio_prompt_line(g("sharpe_ratio"), g("return_basis")) + ".",
             f"Probabilidad de alcanzar la meta: {_fmt_pct(g('prob_target_pct'))} · "
-            f"Pesimista (p10): ${_num(g('p10_terminal'))} · {_growth_label} mediano: "
+            f"Mala racha (p10): ${_num(g('p10_terminal'))} · {_growth_label} mediano: "
             f"{_fmt_pct(g('median_cagr_pct'))}{_growth_caveat}",
         ]
 

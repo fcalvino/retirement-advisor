@@ -70,6 +70,12 @@ def calls(monkeypatch):
         monkeypatch.setattr(shared, name, recorder(name))
     monkeypatch.setattr(shared, "get_user_prefs", lambda: UserPreferences())
     monkeypatch.setattr(shared, "seed_session_defaults_from_profile", lambda *a, **k: None)
+    # Las Clases salen de la ficha de cada ticker (red). Sin este stub el test sólo
+    # pasaba si otro test de la corrida ya las había dejado en la caché de Streamlit:
+    # corrido solo, el guard de red lo cortaba (visto en EO-4c-2).
+    import analysis.estimacion as est
+
+    monkeypatch.setattr(est, "classes_for", lambda symbols: {s: None for s in symbols})
     with patch("portfolio.monte_carlo.get_history",
                side_effect=lambda *a, **k: _flat_history(0.06)):
         yield recorded

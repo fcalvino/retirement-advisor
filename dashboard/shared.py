@@ -1631,7 +1631,6 @@ def cached_monte_carlo(
     drags_tuple: tuple | None = None,      # Item 1: hashable drags (None = base behavior)
     withdrawal_tuple: tuple | None = None, # Fase H.1: hashable withdrawal strategy (None = base)
     longevity_years: int | None = None,    # Fase H.1: horizon for "income lasts" metric
-    include_realistic_reference: bool = True,  # EO-4a: the raw recent history next to the Estimación
     contribution_growth_rate: float = 0.0, # N8b: yearly raise of the savings, not inflation
     years_to_retirement: int | None = None,  # WD-PHASED: save until then, then the strategy
     scenario: str = ESTIMACION.default_scenario,   # EO-4c: the planning Escenario
@@ -1669,7 +1668,6 @@ def cached_monte_carlo(
         drags=drags,
         withdrawal_strategy=withdrawal_strategy,
         longevity_years=longevity_years,
-        include_realistic_reference=include_realistic_reference,
         contribution_growth_rate=contribution_growth_rate,
         years_to_retirement=years_to_retirement,
         include_scenarios=include_scenarios,

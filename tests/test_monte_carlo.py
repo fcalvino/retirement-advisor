@@ -404,55 +404,6 @@ class TestEconomicDrags:
         assert abs(dragged.base_median_terminal - base.median_terminal) < 1.0
 
 
-class TestRealisticReference:
-    """Realistic reference is opt-in: off → byte-identical; on → higher than conservative."""
-
-    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
-    def test_off_by_default_unchanged(self, _mock):
-        sim = _make_simulator(["AAPL"])
-        result = sim.run(horizon_years=10, n_sims=500, initial_value=100_000)
-        assert result.realistic_reference_applied is False
-        assert result.realistic_median_terminal == 0.0
-        assert result.realistic_p10_terminal == 0.0
-        assert result.realistic_p90_terminal == 0.0
-
-    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
-    def test_on_lifts_median_and_downside(self, _mock):
-        result = _make_simulator(["AAPL"]).run(
-            horizon_years=10, n_sims=4000, initial_value=100_000,
-            include_realistic_reference=True,
-        )
-        assert result.realistic_reference_applied is True
-        # Removing the haircut (higher drift, lower vol) lifts the median and,
-        # most reliably, the pessimistic floor (p10). The optimistic tail (p90)
-        # is intentionally NOT asserted: inflating volatility in the conservative
-        # case fattens its upper tail, so p90 can move either way.
-        assert result.realistic_median_terminal >= result.median_terminal
-        assert result.realistic_p10_terminal > result.p10_terminal
-
-    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
-    def test_on_does_not_change_conservative_numbers(self, _mock):
-        base = _make_simulator(["AAPL"]).run(
-            horizon_years=10, n_sims=800, initial_value=100_000,
-        )
-        withref = _make_simulator(["AAPL"]).run(
-            horizon_years=10, n_sims=800, initial_value=100_000,
-            include_realistic_reference=True,
-        )
-        # The main (conservative) metrics must be unchanged by the extra pass.
-        assert abs(withref.median_terminal - base.median_terminal) < 1.0
-        assert abs(withref.p10_terminal - base.p10_terminal) < 1.0
-
-    @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
-    def test_realistic_target_prob_is_populated(self, _mock):
-        result = _make_simulator(["AAPL"]).run(
-            horizon_years=10, n_sims=1500, initial_value=100_000,
-            target_value=120_000, include_realistic_reference=True,
-        )
-        # When a target is set, the realistic reference reports its own hit-rate.
-        assert result.realistic_prob_achieve_target_pct > 0.0
-
-
 # ------------------------------------------------------------------ #
 #  Decumulation / withdrawal strategies (Fase H.1)                     #
 # ------------------------------------------------------------------ #

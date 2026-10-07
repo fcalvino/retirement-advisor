@@ -139,13 +139,6 @@ class MonteCarloResult:
     base_p90_terminal: float = 0.0
     base_prob_achieve_target_pct: float = 0.0
 
-    # ------------------------------------------------------------------ #
-    #  Recent-history reference (the "realistic_*" fields). Populated ONLY  #
-    #  when run(include_realistic_reference=True): the same draws on the    #
-    #  RAW returns, with no Estimación and no haircut, so the UI can show    #
-    #  the Estimación next to "if the future looks like the last 10 years".  #
-    #  Drags and withdrawals are kept identical. Flag off → byte-identical.  #
-    # ------------------------------------------------------------------ #
     #: EO-4a: with what each asset was projected —``asdict`` of
     #: ``analysis.estimacion.AssetEstimation`` (symbol, asset_class, mode,
     #: annual_pct, label)— so the UI can say where the projection comes from.
@@ -153,15 +146,11 @@ class MonteCarloResult:
     estimations: List[dict] = field(default_factory=list)
     #: EO-4c: the Escenario every number above was projected with (the
     #: planning one), and —with ``run(include_scenarios=True)``— the terminal
-    #: stats of the three, same draws: {name: {median_terminal, p10_terminal,
-    #: p90_terminal, prob_achieve_target_pct}}.
+    #: stats of the three: {name: {median_terminal, p10_terminal, p90_terminal,
+    #: prob_achieve_target_pct, n_sims}}. EO-4c-2: the two not planned with run
+    #: ``MONTE_CARLO.scenario_side_sims`` paths, independent of this run's.
     scenario: str = ESTIMACION.default_scenario
     scenarios: Dict[str, Dict[str, float]] = field(default_factory=dict)
-    realistic_reference_applied: bool = False
-    realistic_median_terminal: float = 0.0
-    realistic_p10_terminal: float = 0.0
-    realistic_p90_terminal: float = 0.0
-    realistic_prob_achieve_target_pct: float = 0.0
 
     # ------------------------------------------------------------------ #
     #  Decumulation (Fase H.1). All optional / backward-compatible:        #
@@ -271,7 +260,6 @@ class MonteCarloSimulator:
         drags: Optional[dict] = None,          # Item 1: economic drags (None = base behavior)
         withdrawal_strategy=None,              # Fase H.1: WithdrawalStrategy | dict | None
         longevity_years: Optional[int] = None, # Fase H.1: horizon for "outliving money" metric
-        include_realistic_reference: bool = False,  # show realistic (no-haircut) next to conservative
         include_scenarios: bool = False,       # EO-4c: terminal stats of the three Escenarios
         contribution_growth_rate: float = 0.0, # N8b: yearly raise of the savings, its own assumption
         years_to_retirement: Optional[int] = None,  # WD-PHASED: save until then, spend after
@@ -322,21 +310,15 @@ class MonteCarloSimulator:
                         draws from today, the savings stay out and the result is
                         byte-identical to the engine before this parameter.
                         Without a strategy it is ignored.
-        include_realistic_reference : when True, runs a second compact pass on
-                        the RAW historical returns (no conservative haircut) and
-                        populates the ``realistic_*`` fields so the UI can show
-                        the realistic median next to the conservative one. Drags
-                        and withdrawals are applied identically, so the two
-                        differ by exactly the haircut. Uses the same bootstrap
-                        draws (re-seeded), so the comparison is apples-to-apples.
-                        When False the engine is byte-identical to before.
         include_scenarios : EO-4c. When True, ``result.scenarios`` carries the
                         terminal stats of the three Escenarios: this run's for
                         its own, and a full re-run —same kwargs, a copy of this
                         simulator re-seeded identically— for each of the other
                         two, so goals, withdrawals and drags are applied the same
-                        way. Same draws as this run when it is the first one on
-                        the instance. Three times the cost; off by default.
+                        way. EO-4c-2: those two run with
+                        ``min(n_sims, MONTE_CARLO.scenario_side_sims)`` paths, so
+                        they are independent samples, not this run's draws; each
+                        entry says how many it used (``n_sims``). Off by default.
         """
         run_kwargs = dict(
             horizon_years=horizon_years, n_sims=n_sims, initial_value=initial_value,
@@ -576,28 +558,6 @@ class MonteCarloSimulator:
             if target_value > 0:
                 result.base_prob_achieve_target_pct = float((base_terminal >= target_value).mean() * 100)
 
-        # 5b' — Realistic (no-haircut) reference. Re-runs the bootstrap on the
-        # RAW returns (port_hist, before _conservative_adjustment) using a fresh
-        # RNG seeded identically, so the block draws match the main pass and the
-        # only difference is the conservative haircut. Drags + withdrawals are
-        # applied the same way. Cheap (one extra pass) and fully opt-in.
-        if include_realistic_reference:
-            realistic_rng = np.random.default_rng(self._seed)
-            realistic_paths = self._simulate_paths(
-                port_hist, n_sims, n_horizon_weeks, rng=realistic_rng
-            )
-            if total_drag_frac > 0:
-                realistic_paths = self._apply_drags(realistic_paths, total_drag_frac)
-            realistic_terminal = _wealth_usd(realistic_paths)[:, horizon_week]
-            result.realistic_reference_applied = True
-            result.realistic_median_terminal = float(np.median(realistic_terminal))
-            result.realistic_p10_terminal    = float(np.percentile(realistic_terminal, 10))
-            result.realistic_p90_terminal    = float(np.percentile(realistic_terminal, 90))
-            if target_value > 0:
-                result.realistic_prob_achieve_target_pct = float(
-                    (realistic_terminal >= target_value).mean() * 100
-                )
-
         # Ruin is measured on the intra-horizon minimum, not the terminal value:
         # a path that runs dry mid-horizon has failed even if the market later
         # recovers. With the absorbing kernel the two agree, but measuring the
@@ -694,6 +654,7 @@ class MonteCarloSimulator:
             "p10_terminal": res.p10_terminal,
             "p90_terminal": res.p90_terminal,
             "prob_achieve_target_pct": res.prob_achieve_target_pct,
+            "n_sims": res.n_sims,
         }
 
     def _scenario_stats(self, result: "MonteCarloResult", run_kwargs: dict) -> Dict[str, Dict[str, float]]:
@@ -706,7 +667,9 @@ class MonteCarloSimulator:
             other = copy.copy(self)
             other.scenario = name
             other._rng = np.random.default_rng(self._seed)
-            out[name] = self._terminal_stats(other.run(**run_kwargs))
+            side_kwargs = {**run_kwargs,
+                           "n_sims": min(int(run_kwargs["n_sims"]), int(MONTE_CARLO.scenario_side_sims))}
+            out[name] = self._terminal_stats(other.run(**side_kwargs))
         return out
 
     # ------------------------------------------------------------------ #

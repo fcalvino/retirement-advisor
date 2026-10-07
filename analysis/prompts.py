@@ -1021,8 +1021,10 @@ Inflación considerada: {inflation_rate:.1f}%
 
 **RESULTADOS DE LA SIMULACIÓN (10 000 paths)**
 - Mediana final (P50): ${median_terminal:,.0f}
-- Escenario pesimista (P10): ${p10_terminal:,.0f}
-- Escenario optimista (P90): ${p90_terminal:,.0f}
+- Mala racha (P10, 1 de cada 10 caminos termina debajo): ${p10_terminal:,.0f}
+- Buena racha (P90, 1 de cada 10 caminos termina arriba): ${p90_terminal:,.0f}
+(La mala racha es azar de mercado dentro de la proyección; no la llames «escenario
+pesimista»: ese nombre es de otra cosa, la Fuente más baja de cada Clase.)
 - Probabilidad de ruina (terminal <= 0): {prob_ruin:.1f}%
 - Probabilidad de alcanzar la meta: {prob_target:.1f}%
 
@@ -1036,7 +1038,7 @@ Estructura la respuesta exactamente así (usá viñetas y lenguaje directo):
 **Resumen del plan en una frase**  
 **Fortalezas de esta cartera para tu horizonte** (máx 3 bullets)  
 **Riesgos reales que deberías entender** (máx 3 bullets, sé brutalmente honesto)  
-**Qué significa el escenario pesimista (P10)**  
+**Qué significa la mala racha (P10)**  
 **Recomendaciones concretas** (máx 3 acciones accionables)  
 **Una frase final de prudencia**
 
@@ -1462,7 +1464,7 @@ Dividend yield {float(metrics.get('dividend_yield_pct', 0)):.2f}% | Score prom. 
    - **Resumen del plan en una frase**
    - **Fortalezas para tu horizonte** (máx 3 bullets)
    - **Riesgos reales que deberías entender** (máx 3 bullets, brutalmente honesto)
-   - **Qué dice el escenario pesimista (P10)** (si hay Monte Carlo)
+   - **Qué dice la mala racha (P10)** (si hay Monte Carlo; es azar de mercado, no el Escenario pesimista de las Fuentes)
    - **¿Cuánto dura tu ingreso?** (SOLO si hay estrategia de retiro definida arriba: explicá la probabilidad de sostener el retiro durante el horizonte, y advertí sobre el riesgo de secuencia de retornos y el riesgo de longevidad —vivir más de lo previsto. Si guardrails, mencioná que recortar gasto en caídas es lo que sube la probabilidad de durar.)
    - **Recomendaciones concretas** (máx 3 acciones)
    - **Una frase final de prudencia**

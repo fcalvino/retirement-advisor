@@ -375,43 +375,6 @@ class TestLongevityCountsFromRetirement:
 #  4. El mercado realista sólo dibuja el horizonte                     #
 # ================================================================== #
 
-class TestEventsPastTheMarketAreDropped:
-    """La referencia realista sortea sólo el horizonte de proyección. Los flujos
-    que caen después no existen en ese mercado: no se apilan en su última semana."""
-
-    def test_realistic_reference_at_retirement_is_the_raw_market_pot(self):
-        R = 15
-        result = _run(
-            horizon=R, initial_value=100_000.0, annual_contribution=18_000.0,
-            withdrawal_strategy=STRATEGIES["fixed_real"], longevity_years=30,
-            years_to_retirement=R, include_realistic_reference=True,
-        )
-        pot = _oracle(
-            years=R, haircut=False, initial=100_000.0, annual_contribution=18_000.0,
-            years_to_retirement=R, decumulation_years=0, strategy=STRATEGIES["fixed_real"],
-        )[-1]
-        assert result.realistic_median_terminal == pytest.approx(pot, rel=1e-9)
-
-
-class TestRealisticReferenceAcrossRetirement:
-    """El horizonte cae entre el retiro y el final: hay retiros dentro del mercado
-    realista y otros después de su última semana, que no existen ahí."""
-
-    def test_withdrawals_inside_the_horizon_count_and_the_rest_do_not(self):
-        R, horizon, L = 10, 20, 30
-        strategy = STRATEGIES["guardrails"]
-        result = _run(
-            horizon=horizon, initial_value=100_000.0, annual_contribution=18_000.0,
-            withdrawal_strategy=strategy, longevity_years=L, years_to_retirement=R,
-            include_realistic_reference=True,
-        )
-        expected = _oracle(
-            years=horizon, haircut=False, initial=100_000.0, annual_contribution=18_000.0,
-            years_to_retirement=R, decumulation_years=L, strategy=strategy,
-        )
-        assert result.realistic_median_terminal == pytest.approx(expected[-1], rel=1e-9)
-
-
 class TestHorizonBeyondRetirement:
     """Horizonte > R + longevidad: el gasto sigue hasta el final del horizonte,
     pero las métricas de retiro leen la longevidad pedida."""

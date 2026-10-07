@@ -1445,7 +1445,7 @@ _COMPARE_LABELS = {
     "dividend_yield_pct": "Div. yield %",
     "adjusted_score_avg": "Score promedio",
     "median_terminal": "Mediana final ($)",
-    "p10_terminal": "Pesimista p10 ($)",
+    "p10_terminal": "Mala racha p10 ($)",
     "prob_target_pct": "Prob. de meta %",
     "horizon_years": "Horizonte (años)",
     "current_capital": "Capital actual ($)",
@@ -3310,6 +3310,59 @@ def profile_planning_scenario(profile_key: str | None, override: str | None = No
     if override in ESTIMACION.scenarios:
         return str(override)
     return OPTIMIZER_PROFILES[profile_key].planning_scenario
+
+
+# EO-4c-2 (decisión del usuario, 2026-10-07): el p10 y el p90 de una proyección
+# son el Azar —una mala o una buena racha del mismo Escenario—; «pesimista» y
+# «optimista» quedan para los Escenarios, que son el Desacuerdo entre Fuentes.
+# ``tests/test_eo4c2_ui_oracle.py`` barre las superficies de usuario.
+BAD_RUN_LABEL = "Mala racha (p10)"
+GOOD_RUN_LABEL = "Buena racha (p90)"
+BAD_RUN_HELP = (
+    "En 1 de cada 10 simulaciones terminás con este valor o menos: una mala racha de "
+    "mercado dentro del mismo Escenario. No es el Escenario pesimista, que es otra "
+    "cosa: las Fuentes más bajas."
+)
+GOOD_RUN_HELP = (
+    "Sólo en 1 de cada 10 simulaciones terminás por encima de este valor: una buena "
+    "racha dentro del mismo Escenario."
+)
+
+
+def _usd_md(x) -> str:
+    return f"\\${float(x):,.0f}"
+
+
+def scenarios_block_text(scenarios: Mapping[str, Mapping[str, float]], planning: str | None) -> str:
+    """El bloque «Tres Escenarios» (EO-4c-2): mediana y p10–p90 de cada uno.
+
+    ``scenarios`` es ``MonteCarloResult.scenarios`` (o el del plan guardado). Marca
+    el de la Postura y dice cuántas simulaciones usó cada uno: los otros dos corren
+    con ``MONTE_CARLO.scenario_side_sims``. Montos con ``$`` escapado (KaTeX). Vacío
+    si no hay Escenarios.
+    """
+    from config import ESTIMACION
+
+    if not scenarios:
+        return ""
+    lines = ["**Tres Escenarios** — el Desacuerdo entre las Fuentes de cada Clase:"]
+    for name in ESTIMACION.scenarios:
+        s = scenarios.get(name)
+        if not s:
+            continue
+        mark = " ← **tu Postura**" if name == planning else ""
+        n = int(s.get("n_sims") or 0)
+        sims = f" · {n:,} simulaciones" if n else ""
+        lines.append(
+            f"• **{name.capitalize()}**: mediana **{_usd_md(s['median_terminal'])}** · "
+            f"mala racha {_usd_md(s['p10_terminal'])} · buena racha "
+            f"{_usd_md(s['p90_terminal'])}{sims}{mark}"
+        )
+    lines.append(
+        "Pesimista y optimista ponen cada Clase en su Fuente más baja o más alta; la "
+        "historia reciente de cada Clase es una de esas Fuentes (ver «Supuestos»)."
+    )
+    return "  \n".join(lines)
 
 
 def projection_scenario_label(scenario: str | None) -> str:
