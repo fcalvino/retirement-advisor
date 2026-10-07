@@ -2,7 +2,7 @@
 
 ``optimizer.py`` carried ``_ARS_TICKERS = {"YPF", "PAM", "CEPU", "LOMA", "TEO",
 "EDN"}`` as a literal, and every conservative/moderate optimisation multiplied
-those six scores by ``ars_risk_discount``.
+those six scores by a fixed discount.
 
 **Measured, that list is exactly right for today's shipped universes** — the six
 are precisely the tickers the feed marks ``country == "Argentina"`` across all
@@ -21,9 +21,10 @@ It is live in one place and fragile in another:
     keyed the corporate tax rate off it. Two mechanisms for "which country is
     this company exposed to" is one too many.
 
-The discount is unchanged — its size and its config knob stay. What changes is
-who it reaches. (Its exemption for the aggressive profile, which this row kept,
-was removed by EO-1a, ADR 0001.)
+What this row fixed is who is exposed: keyed off the company's country, not a
+list. (The score discount itself, and its exemption for the aggressive profile,
+are gone: EO-1a made it universal and EO-4d moved the country risk into the
+Estimación, ``test_eo4d_riesgo_pais_estimacion_oracle``.)
 
 No network.
 """
@@ -33,7 +34,7 @@ from __future__ import annotations
 import pytest
 
 from config import ARS_RISK
-from portfolio.optimizer import PortfolioOptimizer, is_ars_exposed
+from portfolio.optimizer import is_ars_exposed
 
 
 def _row(symbol: str, *, country: str = "United States", score: float = 80.0) -> dict:
@@ -68,42 +69,6 @@ class TestExposureComesFromTheCompany:
 
     def test_the_country_list_is_config_driven(self):
         assert "Argentina" in ARS_RISK.exposed_countries
-
-
-class TestTheDiscountItselfIsUnchanged:
-    def _scores(self, profile: str, rows):
-        return [
-            r["adjusted_score"]
-            for r in PortfolioOptimizer(profile)._apply_ars_discount(rows)
-        ]
-
-    def test_a_conservative_profile_still_discounts(self):
-        (scored,) = self._scores("conservative", [_row("YPF", country="Argentina")])
-        expected = 80.0 * PortfolioOptimizer("conservative").opt.ars_risk_discount
-        assert scored == pytest.approx(expected)
-
-    def test_an_aggressive_profile_is_discounted_too(self):
-        """EO-1a (ADR 0001): the exemption is gone — the issuer's country risk
-        does not depend on who is looking. ``test_eo1a_profile_free_estimate_oracle``
-        holds the worked number."""
-        (scored,) = self._scores("aggressive", [_row("YPF", country="Argentina")])
-        expected = 80.0 * PortfolioOptimizer("aggressive").opt.ars_risk_discount
-        assert scored == pytest.approx(expected)
-
-    def test_a_non_argentine_company_is_untouched(self):
-        (scored,) = self._scores("conservative", [_row("KO")])
-        assert scored == pytest.approx(80.0)
-
-    def test_the_discount_is_flagged_on_the_row(self):
-        rows = PortfolioOptimizer("moderate")._apply_ars_discount(
-            [_row("YPF", country="Argentina")]
-        )
-        assert rows[0]["_ars_discounted"] is True
-
-    def test_a_custom_argentine_adr_is_now_discounted_too(self):
-        """The behaviour the literal list could not deliver."""
-        (scored,) = self._scores("moderate", [_row("GGAL", country="Argentina")])
-        assert scored < 80.0
 
 
 class TestNoSecondMechanism:

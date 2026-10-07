@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## EO-4d — el riesgo país entra a la Estimación de los ADRs argentinos (2026-10-07)
+
+EO-4d (ADR 0001) cierra «Qué se decidió» salvo SCORE-CONTRACCION. El riesgo país de Argentina (EO-2c) se resta, en pp y completo, de la Estimación de la Clase de cada ADR argentino, con piso en la inflación implícita (0 % real), en el Optimizer y en el Monte Carlo por el mismo camino (`analysis.estimacion`). Se borra `OPTIMIZER.ars_risk_discount`. Dato vieja: se usa con aviso; fuera o ausente: no se resta y se avisa; con haircut no se resta. Con las Fuentes de hoy el piso manda. `ENGINE_VERSION` 2026.10-tier23.
+
+---
+
 ## EO-4c-2 — la UI de Escenarios: mala y buena racha, «Tres Escenarios» y la pestaña «Escenarios» (2026-10-07)
 
 Segunda parte de EO-4c (ADR 0001): la UI. Decisiones del usuario (2026-10-07): «Mala racha (p10)» / «Buena racha (p90)»; bloque «Tres Escenarios» + pestaña «Escenarios»; los dos no planificados con menos simulaciones, siempre visibles.

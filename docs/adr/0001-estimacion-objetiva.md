@@ -197,3 +197,20 @@ Clase. Los dos Escenarios que no son la Postura corren con menos simulaciones
 (`MONTE_CARLO.scenario_side_sims`), y la UI lo dice. Con esto «Qué se decidió» está
 implementado salvo la contracción por score (SCORE-CONTRACCION) y el riesgo país
 (EO-4d). La decisión no cambia.
+
+## Nota (2026-10-07, EO-4d)
+
+El riesgo país de EO-2c entra a la Estimación de los ADRs argentinos, en rendimiento.
+Regla del usuario (2026-10-07, entre tres): el spread completo, en pp, se resta de la
+Estimación de la Clase del ADR, sin bajar del 0 % real (la inflación implícita), igual
+en los tres Escenarios porque es un dato citado y no Desacuerdo. El camino es uno solo,
+`analysis.estimacion`, así que el Optimizer y el Monte Carlo dicen el mismo número. Se
+va `OPTIMIZER.ars_risk_discount`: el score ya no se descuenta por ser argentino. Dato
+«vieja» (más de 12 meses): se usa y se rotula; «fuera» (más de 24) o ausente: no se
+resta y se avisa. Con haircut (sin Clase o Clase sin Fuentes) no se resta: su historia
+ya trae el riesgo realizado. Con las Fuentes de hoy el piso manda: emergentes 7,225 %
+menos 6,55 pp queda bajo la inflación implícita de 2,36 %, así que un ADR argentino
+proyecta 0 % real. Descartadas: la pérdida esperada (spread × (1 − recuperación)) y el
+spread neto del de la Clase emergente, porque cada una pide una Fuente nueva. «Qué se
+decidió» queda implementado salvo la contracción por score (SCORE-CONTRACCION). La
+decisión no cambia.

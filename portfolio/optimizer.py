@@ -9,7 +9,7 @@ scored_tickers is a list of dicts with at minimum:
 
 Optimization flow:
   1. Filter eligible tickers (non-ETF, score ≥ threshold)
-  2. Apply ARS risk discount for Argentine ADRs in conservative/moderate profiles
+  2. (EO-4d) Argentine ADRs carry their country risk in μ, via the Estimación
   3. Build 2Y weekly price matrix → covariance matrix
   4. Compute expected return proxy per ticker
   5. SLSQP Mean-Variance (minimize the negative attractiveness/vol ratio)
@@ -84,7 +84,7 @@ def _moat_had_ai(row) -> bool:
 
 
 def is_ars_exposed(ticker: dict) -> bool:
-    """Whether a row carries the macro risk the ARS discount exists for.
+    """Whether a row carries the country risk the Estimación discounts (EO-4d).
 
     U5-16: this was a literal set of six ADR symbols. Measured across the 167
     tickers in the shipped universes that set was exactly the companies the feed
@@ -114,7 +114,6 @@ class TickerAllocation:
     # scale depends on whether the AI layer ran, and this row cannot tell (U3-7).
     moat_classification: str = ""
     is_ars: bool = False
-    score_discounted: bool = False
     # Sector-country structural tailwind (Idea 2) — defaults keep backward compat
     tailwind_score: float = 0.0
     tailwind_classification: str = "Neutral"
@@ -358,9 +357,6 @@ class PortfolioOptimizer:
             result.method = "score-weighted"
             return result
 
-        # 2 — ARS discount
-        eligible = self._apply_ars_discount(eligible)
-
         # 2b — Profile-aware candidate down-select (Fase C)
         # Reduces large eligible sets to a manageable pool before cov/SLSQP,
         # tilted by the profile's scoring priorities. Avoids dusty allocations
@@ -534,20 +530,6 @@ class PortfolioOptimizer:
                 row["_dq_partial_haircut"] = haircut
             eligible.append(row)
         return eligible, excluded
-
-    def _apply_ars_discount(self, tickers: List[dict]) -> List[dict]:
-        # EO-1a (ADR 0001): the issuer's country risk does not depend on who is
-        # looking, so every profile gets the discount (aggressive used to skip
-        # it). Its size is still a config number pending a Fuente (EO-2).
-        result = []
-        for t in tickers:
-            t = dict(t)
-            if is_ars_exposed(t):
-                original = float(t.get("adjusted_score", 0) or 0)
-                t["adjusted_score"] = original * self.opt.ars_risk_discount
-                t["_ars_discounted"] = True
-            result.append(t)
-        return result
 
     @staticmethod
     def _clean_div_yield(raw: float) -> float:
@@ -818,14 +800,16 @@ class PortfolioOptimizer:
         for every asset (the haircut's +10 % vol is a Monte Carlo device).
 
         No contraction toward the score (user decision, 2026-10-06): two US stocks
-        get the same μ, and the score only ranks the candidate pool. The ARS
-        discount and the tailwind tilt act on the score, so they no longer reach μ
-        until EO-4d puts the country risk into the Estimación.
+        get the same μ, and the score only ranks the candidate pool. The tailwind
+        tilt acts on the score, so it no longer reaches μ. The country risk of an
+        Argentine ADR does (EO-4d): its μ is the Clase's minus the riesgo país, with
+        a floor at 0 % real — the same rule as the Monte Carlo.
         """
-        from analysis.estimacion import OBJETIVA, asset_estimations
+        from analysis.estimacion import OBJETIVA, asset_estimations, country_warnings
 
         symbols = [t["symbol"] for t in tickers]
-        ests = asset_estimations(symbols, self._asset_classes or {})
+        countries = {t["symbol"]: t.get("country") for t in tickers if is_ars_exposed(t)}
+        ests = asset_estimations(symbols, self._asset_classes or {}, countries=countries)
         periods = ESTIMACION.periods_per_year
         mu, no_history = [], []
         for e in ests:
@@ -852,12 +836,7 @@ class PortfolioOptimizer:
                     f"{', '.join(no_history)}: sin historia de precios no hay ajuste "
                     "histórico; su μ queda en 0 %."
                 )
-            ars = [t["symbol"] for t in tickers if is_ars_exposed(t)]
-            if ars:
-                result.warnings.append(
-                    f"{', '.join(ars)}: el descuento por riesgo argentino todavía no "
-                    "entra a la Estimación (llega con EO-4d); hoy sólo baja su score."
-                )
+            result.warnings.extend(country_warnings(ests))
         return np.array(mu, dtype=float)
 
     def _covariance_matrix(self, price_matrix: pd.DataFrame) -> np.ndarray:
@@ -1184,7 +1163,6 @@ class PortfolioOptimizer:
                 sector=sector,
                 moat_classification=str(t.get("moat_classification", "") or ""),
                 is_ars=is_ars_exposed(t),
-                score_discounted=bool(t.get("_ars_discounted", False)),
                 tailwind_score=round(float(t.get("tailwind_score", 0.0) or 0.0), 1),
                 tailwind_classification=str(t.get("tailwind_classification", "Neutral") or "Neutral"),
             )

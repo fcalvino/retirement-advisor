@@ -202,6 +202,7 @@ class MonteCarloSimulator:
         currencies: Optional[Dict[str, str]] = None,
         asset_classes: Optional[Mapping[str, Optional[str]]] = None,
         scenario: str = ESTIMACION.default_scenario,
+        countries: Optional[Mapping[str, Optional[str]]] = None,
     ) -> None:
         self.symbols = symbols
         # EO-4c: which Escenario the Estimación of each Clase is taken in
@@ -214,6 +215,10 @@ class MonteCarloSimulator:
         # resolved by the caller so the simulator never goes to the network. None
         # keeps the pre-EO-4a haircut on the whole portfolio, and says so.
         self._asset_classes = dict(asset_classes) if asset_classes is not None else None
+        # EO-4d: the issuer's country of each symbol (``analysis.estimacion.countries_for``),
+        # also resolved by the caller; it turns on the country-risk discount of the
+        # Estimación. None leaves the Estimación of the Clase untouched.
+        self._countries = dict(countries) if countries is not None else None
         self._asset_hist: Optional[np.ndarray] = None
         self._asset_weights: Optional[np.ndarray] = None
         self._asset_symbols: List[str] = []
@@ -808,10 +813,12 @@ class MonteCarloSimulator:
             return self._conservative_adjustment(port_hist)
         if self._asset_hist is None:
             return self._conservative_adjustment(port_hist)
-        from analysis.estimacion import OBJETIVA, asset_estimations
+        from analysis.estimacion import OBJETIVA, asset_estimations, country_warnings
 
-        ests = asset_estimations(self._asset_symbols, self._asset_classes, self.scenario)
+        ests = asset_estimations(self._asset_symbols, self._asset_classes, self.scenario,
+                                 self._countries)
         result.estimations = [asdict(e) for e in ests]
+        result.warnings.extend(country_warnings(ests))
         unclassed = [e.symbol for e in ests if e.asset_class is None]
         if unclassed:
             result.warnings.append(

@@ -200,7 +200,14 @@ DB_PATH = Path(os.getenv("RETIREMENT_ADVISOR_DB_PATH") or DB_DIR / "retirement_a
 #                   planificación del Perfil —cada Clase en su Fuente vigente más
 #                   baja, central o más alta—. Conservador planifica con el
 #                   pesimista; Moderado y Agresivo siguen en el central, byte-idénticos.
-ENGINE_VERSION = "2026.10-tier22"
+#   2026.10-tier23 — EO-4d (ADR 0001): el riesgo país de Argentina (EO-2c) entra a la
+#                   Estimación de los ADRs argentinos, en rendimiento: la Estimación de
+#                   su Clase menos el riesgo país en pp, sin bajar de la inflación
+#                   implícita (0 % real), igual en los tres Escenarios. Se va
+#                   ``OPTIMIZER.ars_risk_discount`` (×0,85 al score). Mueve el μ del
+#                   Optimizer y el target del Monte Carlo sólo de los ADRs argentinos;
+#                   el resto de las carteras, byte-idéntico.
+ENGINE_VERSION = "2026.10-tier23"
 
 
 @dataclass(frozen=True)
@@ -1883,13 +1890,6 @@ class OptimizerConfig:
     frontier_points       — Monte Carlo portfolios rendered on the Efficient Frontier
     min_weight_pct        — minimum per-ticker allocation (avoids dust positions)
     min_score_threshold   — tickers below this adjusted_score are excluded
-    ars_risk_discount     — composite-score multiplier for Argentine ADR tickers,
-                            with every profile since EO-1a (the issuer's country
-                            risk does not depend on who is looking). A fixed
-                            number pending a Fuente: the riesgo país itself is in
-                            ``FUENTES`` since EO-2c, but turning a spread into a
-                            score multiplier has no Fuente; the conversion to the
-                            Estimación of an Argentine ADR is EO-4's
     max_ai_screener_tickers — when the selected universe has more than this many tickers,
                               the dashboard auto-disables AI in the screener and shows a
                               banner. AI bulk scoring N>this adds latency/cost without
@@ -1918,7 +1918,6 @@ class OptimizerConfig:
     frontier_points: int = 300
     min_weight_pct: float = 1.0
     min_score_threshold: float = 30.0
-    ars_risk_discount: float = 0.85
     max_ai_screener_tickers: int = 40
     price_fetch_max_workers: int = 6
     er_absolute_cap: float = 0.14
@@ -2396,13 +2395,13 @@ class EconomicDragConfig:
       ar_buffer_pct             — extra conservative haircut for AR residents
                                   (cepo / FX vol / inflation differential proxy).
                                   AVOID DOUBLE-COUNTING: the optimizer already
-                                  applies ``OptimizerConfig.ars_risk_discount``
-                                  (0.85×) to Argentine ADR scores in the
-                                  Conservative/Moderate profiles, tilting the
-                                  allocation away from AR risk. This buffer is for
-                                  plan-level country risk NOT already captured by
-                                  how the portfolio was selected; keep it at 0
-                                  when the ARS score discount is doing that job.
+                                  takes the riesgo país (EO-2c) off the μ of
+                                  Argentine ADRs (EO-4d): the Estimación is the
+                                  Clase's minus the spread, with a floor at 0 %
+                                  real. This buffer is for plan-level country risk
+                                  NOT already in that μ (cepo / FX on the whole
+                                  plan); keep it at 0 when the ADRs' own μ is
+                                  doing that job.
       enabled                   — master switch (UI default; engine still opt-in)
     """
     enabled: bool = True

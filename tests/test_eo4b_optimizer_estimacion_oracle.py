@@ -156,7 +156,15 @@ def test_the_result_names_each_estimation_and_the_unclassed(stub):
     assert any("ZZZ" in w and "sin Clase" in w for w in res.warnings)
 
 
-def test_ars_and_tailwind_are_named_while_they_wait_for_eo_4d(stub):
+def test_the_argentine_adr_carries_its_country_risk_in_mu(stub, monkeypatch):
+    """EO-4d: lo que esperaba a EO-4d llegó; el descuento ya no es sólo del score."""
+    import analysis.estimacion as est
+    from analysis.fuentes import CountryRisk
+
+    cr = CountryRisk(country="Argentina", value_bp=300, as_of=pd.Timestamp("2026-10-02").date(),
+                     source="https://x.org")
+    monkeypatch.setattr(est, "country_risks", lambda: {"Argentina": cr})
+    monkeypatch.setattr(est, "fuentes_today", lambda: pd.Timestamp("2026-10-07").date())
     rows = [dict(r) for r in ROWS] + [_row("YPF", 60, sector="Energy", country="Argentina")]
     PRICES["YPF"] = _frame(8, 0.002, 0.04)
     try:
@@ -164,7 +172,9 @@ def test_ars_and_tailwind_are_named_while_they_wait_for_eo_4d(stub):
                                  asset_classes={**CLASSES, "YPF": "emerging"}).optimize(rows)
     finally:
         del PRICES["YPF"]
-    assert any("riesgo argentino" in w and "EO-4d" in w for w in res.warnings)
+    assert any("YPF" in w and "riesgo país de Argentina 300 pb" in w for w in res.warnings)
+    ypf = next(t for t in res.tickers if t.symbol == "YPF")
+    assert ypf.expected_return_pct == pytest.approx(round(7.225 - 3.0, 1), abs=1e-9)
 
 
 # --------------------------------------------------------------------------- #

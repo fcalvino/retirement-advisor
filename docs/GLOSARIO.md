@@ -99,3 +99,8 @@ o un dato que lo respalde.
 La medida de si las probabilidades que la app declaró se cumplieron con esa
 frecuencia. Sólo es medible en horizontes cortos (señales, rangos anuales); en
 horizontes de retiro rige la Trazabilidad.
+
+**Riesgo país**:
+El spread de la deuda soberana en USD sobre el Tesoro de EE.UU., en pb (EMBI de
+J.P. Morgan para Argentina). Es un dato fechado y citado, no una Fuente. Se resta en pp
+de la Estimación de un ADR argentino, sin bajar del 0 % real.

@@ -131,49 +131,6 @@ class TestFilterEligible:
 
 
 # ------------------------------------------------------------------ #
-#  ARS Discount                                                        #
-# ------------------------------------------------------------------ #
-
-class TestArsDiscount:
-    def test_ars_discount_applied_conservative(self):
-        opt = PortfolioOptimizer("conservative")
-        tickers = [_ticker("YPF", score=70.0, country="Argentina"),
-                   _ticker("AAPL", score=70.0)]
-        result = opt._apply_ars_discount(tickers)
-        ypf = next(t for t in result if t["symbol"] == "YPF")
-        aapl = next(t for t in result if t["symbol"] == "AAPL")
-        assert ypf["adjusted_score"] < 70.0          # discounted
-        assert aapl["adjusted_score"] == 70.0         # unchanged
-
-    def test_ars_discount_applied_moderate(self):
-        opt = PortfolioOptimizer("moderate")
-        tickers = [_ticker("PAM", score=60.0, country="Argentina")]
-        result = opt._apply_ars_discount(tickers)
-        assert result[0]["adjusted_score"] < 60.0
-
-    def test_ars_discount_applied_aggressive(self):
-        """EO-1a (ADR 0001): no profile is exempt from the country-risk discount."""
-        opt = PortfolioOptimizer("aggressive")
-        tickers = [_ticker("YPF", score=70.0, country="Argentina")]
-        result = opt._apply_ars_discount(tickers)
-        assert result[0]["adjusted_score"] < 70.0
-
-    def test_discount_factor_matches_config(self):
-        opt = PortfolioOptimizer("conservative")
-        tickers = [_ticker("YPF", score=100.0, country="Argentina")]
-        result = opt._apply_ars_discount(tickers)
-        expected = 100.0 * OPTIMIZER.ars_risk_discount
-        assert abs(result[0]["adjusted_score"] - expected) < 0.01
-
-    def test_non_ars_tickers_unchanged(self):
-        opt = PortfolioOptimizer("conservative")
-        tickers = [_ticker("MSFT", score=80.0), _ticker("JNJ", score=75.0)]
-        result = opt._apply_ars_discount(tickers)
-        for t in result:
-            assert t["adjusted_score"] in (80.0, 75.0)
-
-
-# ------------------------------------------------------------------ #
 #  Expected returns                                                    #
 # ------------------------------------------------------------------ #
 

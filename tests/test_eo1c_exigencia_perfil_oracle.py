@@ -103,6 +103,7 @@ def _goals_tab(prefs, monkeypatch):
     # EO-4a: las simulaciones piden la ficha de cada ticker para saber su Clase;
     # sin red, ningún ticker tiene Clase y el MC proyecta con el ajuste histórico.
     monkeypatch.setattr("analysis.estimacion.classes_for", lambda syms: {s: None for s in syms})
+    monkeypatch.setattr("analysis.estimacion.countries_for", lambda syms: {s: None for s in syms})
     page = Path(__file__).resolve().parents[1] / "dashboard/views/7_Simulaciones.py"
     with patch("portfolio.monte_carlo.get_history", side_effect=lambda *a, **k: _flat_history(0.06)):
         at = AppTest.from_file(str(page), default_timeout=180)
