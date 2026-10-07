@@ -209,6 +209,20 @@ DB_PATH = Path(os.getenv("RETIREMENT_ADVISOR_DB_PATH") or DB_DIR / "retirement_a
 #                   el resto de las carteras, byte-idéntico.
 ENGINE_VERSION = "2026.10-tier23"
 
+# Versión del método de señales (EO-6a, ADR 0001): cómo se decide la acción que
+# `recommendation_log` registra —la escalera de score de `analysis/strategy.py`, la
+# imputación de datos faltantes y la atenuación con datos parciales—. Es propia: no es
+# `ENGINE_VERSION` (el contrato del motor del Monte Carlo ni del Optimizer) ni
+# `COMMITTEE.prompt_version` (prompts y caché del comité). Sube cuando cambia lo que una
+# señal significa, no cuando cambia un número del plan. `TrackRecordStore` la guarda en
+# cada recomendación que escribe, para separar después los outcomes de una escalera de
+# los de la otra. Las filas escritas antes quedan en NULL y se rotulan
+# `SIGNAL_METHOD_LEGACY_LABEL`: no se infiere cuál era su método.
+#   2026.10-senales1 — EO-6a: sólo el sello; ninguna señal ni umbral cambia. Es el método
+#                   de antes de EO-6b (escalera con tope asimétrico, faltantes en 0).
+SIGNAL_METHOD_VERSION = "2026.10-senales1"
+SIGNAL_METHOD_LEGACY_LABEL = "anterior a EO-6"
+
 
 @dataclass(frozen=True)
 class RiskFreeConfig:
