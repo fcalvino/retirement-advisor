@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from loguru import logger
 
-from config import AR_FX, GOAL_CARD, MONTE_CARLO, SECTOR_MAP, WITHDRAWAL
+from config import AR_FX, ESTIMACION, GOAL_CARD, MONTE_CARLO, SECTOR_MAP, WITHDRAWAL
 from dashboard.shared import (
     SIM_HORIZON_OPTIONS,
     _get_ai_config,
@@ -61,9 +61,11 @@ from data.product_ux import (
     pot_growth_help,
     pot_growth_pct,
     profile_exigencia_pct,
+    profile_planning_scenario,
     ratio_help,
     ratio_label,
     remember_sim_sidebar,
+    scenario_caption,
     sim_sidebar_value,
 )
 from portfolio.goals import (
@@ -113,6 +115,12 @@ _loaded_plan_name = apply_pending_plan_load(st.session_state)
 # earlier in the same run. Without a choice it stays None (no silent Conservador).
 if "plan_profile" not in st.session_state and _prefs_sim.chosen_profile_key:
     st.session_state["plan_profile"] = _prefs_sim.chosen_profile_key
+
+
+def _planning_scenario(profile_key) -> str:
+    """EO-4c: the Escenario this profile plans with (Postura); central without one."""
+    return (profile_planning_scenario(profile_key, getattr(_prefs_sim, "planning_scenario", None))
+            or ESTIMACION.default_scenario)
 
 if _prefs_sim.is_onboarded and not st.session_state.get("_goal_form_seeded"):
     if _prefs_sim.primary_goal_type in GOAL_TYPE_ICONS:
@@ -488,7 +496,10 @@ def _tab_mc_content():
         drags = get_economic_drags()
         wd_strategy = get_withdrawal_strategy(float(initial_value))   # Fase H.1
         with st.spinner(f"Ejecutando {n_sims:,} simulaciones × {horizon_years} años…"):
-            mc = cached_monte_carlo(**_plan_mc_kwargs())
+            mc = cached_monte_carlo(
+                **_plan_mc_kwargs(),
+                scenario=_planning_scenario(_prefs_sim.chosen_profile_key),   # EO-4c
+            )
         st.session_state["mc_result"] = mc
         st.session_state["mc_params"] = {
             "horizon_years": horizon_years,
@@ -611,7 +622,8 @@ def _tab_mc_content():
         ), icon="📊")
     _est_caption = estimation_caption(getattr(mc, "estimations", []) or [])
     if _est_caption:
-        st.caption(_est_caption)
+        st.caption(scenario_caption(getattr(mc, "scenario", None), _prefs_sim.chosen_profile_key)
+                   + " " + _est_caption)
 
     # From "no llegás" to "hacé esto" with *numbers* (backlog 3).
     if target_value > 0 and mc.prob_achieve_target_pct < 70:
@@ -1136,6 +1148,7 @@ def _render_sensitivity_lab():
         "withdrawal_tuple": withdrawal_to_tuple(_wd),
         "longevity_years": get_longevity_years() if _wd else None,
         "years_to_retirement": _saving_years() if _wd else None,  # WD-PHASED
+        "scenario": _planning_scenario(_prefs_sim.chosen_profile_key),   # EO-4c
     }
 
     with st.spinner("Corriendo el laboratorio de sensibilidad…"):
@@ -1469,6 +1482,7 @@ def _tab_compare_content():
             _compare_prog.progress((_ci + 1) / 3, text=f"Simulando perfil {_pk}…")
             _compare_mc[_pk] = cached_monte_carlo(
                 **_plan_mc_kwargs(),   # COMPARE-NO-SAVINGS: el mismo plan que la principal
+                scenario=_planning_scenario(_prefs_sim.chosen_profile_key),   # EO-4c
                 vol_scale=_scales["vol_scale"],
                 return_scale=_scales["return_scale"],
             )
@@ -2002,6 +2016,7 @@ def _tab_goals_content():
                         goals_serialized=goals_serialized,
                         total_capital=float(plan_total_capital),
                         n_sims=plan_n_sims,
+                        scenario=_planning_scenario(st.session_state.get("plan_profile")),  # EO-4c
                     )
                 st.session_state["goal_plan_result"] = plan_result
 
@@ -2354,6 +2369,7 @@ def _tab_goals_content():
                     if _exigencia is not None and gr.prob_success_pct < _exigencia:
                         with st.spinner(f"Calculando el ahorro necesario para {goal.name}…"):
                             _total_mensual = cached_goal_savings_target(
+                                scenario=_planning_scenario(st.session_state.get("plan_profile")),
                                 symbols=tuple(symbols),
                                 weights_tuple=tuple(weights) if weights else None,
                                 # Reconstruido desde gr.goal (no desde

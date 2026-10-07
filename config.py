@@ -196,7 +196,11 @@ DB_PATH = Path(os.getenv("RETIREMENT_ADVISOR_DB_PATH") or DB_DIR / "retirement_a
 #                   bonos EE.UU. y tickers sin Clase, su historia ×0,80. Sin
 #                   contracción por score. Mueve los pesos y las métricas del
 #                   Optimizer que guarda un plan; el Monte Carlo no se mueve.
-ENGINE_VERSION = "2026.10-tier21"
+#   2026.10-tier22 — EO-4c (ADR 0001): el Monte Carlo proyecta con el Escenario de
+#                   planificación del Perfil —cada Clase en su Fuente vigente más
+#                   baja, central o más alta—. Conservador planifica con el
+#                   pesimista; Moderado y Agresivo siguen en el central, byte-idénticos.
+ENGINE_VERSION = "2026.10-tier22"
 
 
 @dataclass(frozen=True)
@@ -930,11 +934,19 @@ class EstimacionConfig:
       Clase, o una Clase sin Fuentes vigentes, conserva el haircut y se lo nombra.
       periods_per_year   — semanas por año del bootstrap: el recentrado suma
                            ``log(1 + E) / periods_per_year`` a cada semana.
+      scenarios          — pesimista / central / optimista (EO-4c): la Fuente vigente
+                           más baja, la mediana o la más alta de cada Clase.
+      default_scenario   — el Escenario sin Perfil, y el del Optimizer: el central.
     """
 
     calibrated_classes: tuple = ("us_equity",)
     haircut_classes: tuple = ("us_bonds",)
     periods_per_year: int = 52
+    #: EO-4c: los Escenarios son Desacuerdo, no Azar (ADR 0001): cada Clase en su
+    #: Fuente vigente más baja, en su central o en la más alta. El haircut y cripto
+    #: (0 % real) son iguales en los tres (decisión del usuario, 2026-10-06).
+    scenarios: tuple = ("pesimista", "central", "optimista")
+    default_scenario: str = "central"
 
 
 ESTIMACION = EstimacionConfig()
@@ -1635,7 +1647,12 @@ class ProfileConfig:
                              buying; shown in the Análisis card only. The Señal keeps
                              ``STRATEGY.min_margin_of_safety_pct`` for everyone so the
                              track record does not mix profiles. Decisión: 20 / 10 / 5.
-      Both are editable per user (``UserPreferences.exigencia_pct`` / ``margin_pct``).
+      planning_scenario    — Escenario (``ESTIMACION.scenarios``) con el que se planifica:
+                             planes, metas y ahorro. Conservador, el pesimista; Moderado y
+                             Agresivo, el central (decisión del usuario, 2026-10-06). No toca
+                             la Estimación ni el Optimizer: elige cuál de los tres se usa.
+      The three are editable per user (``UserPreferences.exigencia_pct`` /
+      ``margin_pct`` / ``planning_scenario``).
 
     Age-based allocation (U5-7):
       bond_age_offset_pp — shifts the "defensive % = age" glide path by profile:
@@ -1670,6 +1687,7 @@ class ProfileConfig:
     bond_age_offset_pp: float = 0.0  # shifts the "defensive % = age" glide path (U5-7)
     exigencia_pct: float = 80.0          # Postura: probabilidad que se le pide a una meta (EO-1c)
     margin_of_safety_pct: float = 10.0   # Postura: margen pedido antes de comprar (EO-1c)
+    planning_scenario: str = "central"   # Postura: Escenario con el que se planifica (EO-4c)
 
 
 # Module-level profile definitions (importable by name)
@@ -1690,6 +1708,7 @@ CONSERVATIVE_PROFILE = ProfileConfig(
     bond_age_offset_pp=0.0,    # defensivo % = age (bonos + efectivo)
     exigencia_pct=90.0,
     margin_of_safety_pct=20.0,
+    planning_scenario="pesimista",
 )
 
 MODERATE_PROFILE = ProfileConfig(

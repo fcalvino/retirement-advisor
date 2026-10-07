@@ -26,6 +26,7 @@ Usage:
 
 from __future__ import annotations
 
+import copy
 from dataclasses import asdict, dataclass, field
 from typing import Dict, List, Mapping, Optional, Tuple
 
@@ -150,6 +151,12 @@ class MonteCarloResult:
     #: annual_pct, label)— so the UI can say where the projection comes from.
     #: Empty for a run without ``asset_classes``.
     estimations: List[dict] = field(default_factory=list)
+    #: EO-4c: the Escenario every number above was projected with (the
+    #: planning one), and —with ``run(include_scenarios=True)``— the terminal
+    #: stats of the three, same draws: {name: {median_terminal, p10_terminal,
+    #: p90_terminal, prob_achieve_target_pct}}.
+    scenario: str = ESTIMACION.default_scenario
+    scenarios: Dict[str, Dict[str, float]] = field(default_factory=dict)
     realistic_reference_applied: bool = False
     realistic_median_terminal: float = 0.0
     realistic_p10_terminal: float = 0.0
@@ -205,8 +212,15 @@ class MonteCarloSimulator:
         return_scale: float = 1.0,
         currencies: Optional[Dict[str, str]] = None,
         asset_classes: Optional[Mapping[str, Optional[str]]] = None,
+        scenario: str = ESTIMACION.default_scenario,
     ) -> None:
         self.symbols = symbols
+        # EO-4c: which Escenario the Estimación of each Clase is taken in
+        # (pesimista / central / optimista). The caller resolves it from the
+        # Perfil (``data.product_ux.profile_planning_scenario``).
+        if scenario not in ESTIMACION.scenarios:
+            raise ValueError(f"Escenario desconocido: {scenario!r}")
+        self.scenario = scenario
         # EO-4a: the Clase of each symbol (``analysis.estimacion.classes_for``),
         # resolved by the caller so the simulator never goes to the network. None
         # keeps the pre-EO-4a haircut on the whole portfolio, and says so.
@@ -258,6 +272,7 @@ class MonteCarloSimulator:
         withdrawal_strategy=None,              # Fase H.1: WithdrawalStrategy | dict | None
         longevity_years: Optional[int] = None, # Fase H.1: horizon for "outliving money" metric
         include_realistic_reference: bool = False,  # show realistic (no-haircut) next to conservative
+        include_scenarios: bool = False,       # EO-4c: terminal stats of the three Escenarios
         contribution_growth_rate: float = 0.0, # N8b: yearly raise of the savings, its own assumption
         years_to_retirement: Optional[int] = None,  # WD-PHASED: save until then, spend after
     ) -> MonteCarloResult:
@@ -315,7 +330,22 @@ class MonteCarloSimulator:
                         differ by exactly the haircut. Uses the same bootstrap
                         draws (re-seeded), so the comparison is apples-to-apples.
                         When False the engine is byte-identical to before.
+        include_scenarios : EO-4c. When True, ``result.scenarios`` carries the
+                        terminal stats of the three Escenarios: this run's for
+                        its own, and a full re-run —same kwargs, a copy of this
+                        simulator re-seeded identically— for each of the other
+                        two, so goals, withdrawals and drags are applied the same
+                        way. Same draws as this run when it is the first one on
+                        the instance. Three times the cost; off by default.
         """
+        run_kwargs = dict(
+            horizon_years=horizon_years, n_sims=n_sims, initial_value=initial_value,
+            annual_withdrawal=annual_withdrawal, annual_contribution=annual_contribution,
+            target_value=target_value, withdrawal_growth_rate=withdrawal_growth_rate,
+            drags=drags, withdrawal_strategy=withdrawal_strategy,
+            longevity_years=longevity_years, contribution_growth_rate=contribution_growth_rate,
+            years_to_retirement=years_to_retirement,
+        )
         result = MonteCarloResult(
             n_sims=n_sims,
             horizon_years=horizon_years,
@@ -324,6 +354,7 @@ class MonteCarloSimulator:
             annual_contribution=annual_contribution,
             target_value=target_value,
         )
+        result.scenario = self.scenario
 
         # 1 — Load historical returns
         port_hist, n_weeks, symbols_used, warnings = self._load_returns()
@@ -652,7 +683,31 @@ class MonteCarloSimulator:
             f"prob_target={result.prob_achieve_target_pct:.1f}% "
             f"prob_ruin={result.prob_ruin_pct:.1f}%"
         )
+        if include_scenarios:
+            result.scenarios = self._scenario_stats(result, run_kwargs)
         return result
+
+    @staticmethod
+    def _terminal_stats(res: "MonteCarloResult") -> Dict[str, float]:
+        return {
+            "median_terminal": res.median_terminal,
+            "p10_terminal": res.p10_terminal,
+            "p90_terminal": res.p90_terminal,
+            "prob_achieve_target_pct": res.prob_achieve_target_pct,
+        }
+
+    def _scenario_stats(self, result: "MonteCarloResult", run_kwargs: dict) -> Dict[str, Dict[str, float]]:
+        """The three Escenarios' terminal stats (EO-4c); see ``run(include_scenarios=)``."""
+        out: Dict[str, Dict[str, float]] = {}
+        for name in ESTIMACION.scenarios:
+            if name == self.scenario:
+                out[name] = self._terminal_stats(result)
+                continue
+            other = copy.copy(self)
+            other.scenario = name
+            other._rng = np.random.default_rng(self._seed)
+            out[name] = self._terminal_stats(other.run(**run_kwargs))
+        return out
 
     # ------------------------------------------------------------------ #
     #  Data loading                                                        #
@@ -792,7 +847,7 @@ class MonteCarloSimulator:
             return self._conservative_adjustment(port_hist)
         from analysis.estimacion import OBJETIVA, asset_estimations
 
-        ests = asset_estimations(self._asset_symbols, self._asset_classes)
+        ests = asset_estimations(self._asset_symbols, self._asset_classes, self.scenario)
         result.estimations = [asdict(e) for e in ests]
         unclassed = [e.symbol for e in ests if e.asset_class is None]
         if unclassed:

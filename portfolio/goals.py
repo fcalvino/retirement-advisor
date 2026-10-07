@@ -24,7 +24,7 @@ from typing import Dict, List, Mapping, Optional
 
 import numpy as np
 
-from config import GOAL_CARD, MONTE_CARLO
+from config import ESTIMACION, GOAL_CARD, MONTE_CARLO
 from data.product_ux import present_value_usd
 from portfolio.monte_carlo import MonteCarloResult, MonteCarloSimulator
 
@@ -315,10 +315,14 @@ class GoalPlanner:
         weights: Optional[np.ndarray] = None,
         seed: int = 42,
         asset_classes: Optional[dict] = None,
+        scenario: str = ESTIMACION.default_scenario,
     ) -> None:
         self.symbols = symbols
         self.weights = weights
         self.seed = seed
+        # EO-4c: the planning Escenario of the Perfil; goals and the savings solver
+        # project with it, like the main simulation.
+        self.scenario = scenario
         # EO-4a: the Clase of each symbol, so «Mis Metas» projects with the same
         # Estimación as the main simulation (EO-0). None keeps the old haircut.
         self.asset_classes = asset_classes
@@ -414,6 +418,7 @@ class GoalPlanner:
             vol_scale=vol_scale,
             return_scale=return_scale,
             asset_classes=self.asset_classes,
+            scenario=self.scenario,
         )
 
     def _simulate_goal(

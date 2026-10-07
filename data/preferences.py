@@ -89,6 +89,7 @@ class UserPreferences:
     # Postura editable (EO-1c, ADR 0001): None = el valor del perfil elegido.
     exigencia_pct: float | None = None    # probabilidad que le pedís a una meta
     margin_pct: float | None = None       # margen de seguridad antes de comprar
+    planning_scenario: str | None = None  # Escenario con el que planificás (EO-4c)
 
     # Universes
     active_universe: str = "default"        # key matching data/universes/<key>.json

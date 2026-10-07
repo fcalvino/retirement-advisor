@@ -10,6 +10,19 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## EO-4c-1 — tres Escenarios y el Escenario de planificación del Perfil (2026-10-06)
+
+Primera parte de EO-4c (ADR 0001), partido en dos PRs (decisión del usuario, 2026-10-06): este, el motor y el Escenario de planificación; EO-4c-2, la UI.
+
+- **Escenarios** (`analysis/estimacion.py`, `config.ESTIMACION.scenarios`): cada Clase en su Fuente vigente más baja, mediana o más alta; haircut y cripto (0 % real) iguales en los tres.
+- **Monte Carlo** (`portfolio/monte_carlo.py`): `scenario=` en el simulador; `run(include_scenarios=True)` da los tres con la misma semilla. `ENGINE_VERSION` → tier22.
+- **Postura**: `ProfileConfig.planning_scenario` (Conservador pesimista; Moderado y Agresivo central), override en Settings; Simulaciones, metas, ahorro, sensibilidad y chat lo pasan; el plan lo guarda. El Optimizer sigue en el central.
+- **QA en vivo** (Agresivo): central byte-idéntico (mediana $1.469.077); pesimista $1.126.852, meta 95,1 % → 89,9 %.
+- **Para EO-4c-2:** la tarjeta «Escenario pesimista (P10)» choca con el Escenario pesimista de la Postura en la misma pantalla.
+- **Oráculo:** `tests/test_eo4c_escenarios_oracle.py`, 17 casos.
+
+---
+
 ## EO-4b — el Optimizer usa la Estimación objetiva de cada Clase (2026-10-06)
 
 Segunda parte de EO-4 (ADR 0001). Decisiones del usuario (2026-10-06): sin contracción por score (pasa a SCORE-CONTRACCION); los rótulos cambian en todas las superficies, por la base del número; el descuento argentino y el tilt de tailwind dejan de mover μ hasta EO-4d, avisado.

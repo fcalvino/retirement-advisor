@@ -46,6 +46,27 @@ class AssetEstimation:
     label: str
 
 
+def class_ranges() -> Dict[str, tuple]:
+    """(más baja, más alta) de las Fuentes vigentes de cada Clase; (None, None) sin ellas."""
+    summaries = summarize_all(load_shipped(), today=fuentes_today())
+    return {cls: ((None, None) if s.declared_absent else (s.low_pct, s.high_pct))
+            for cls, s in summaries.items()}
+
+
+def class_estimates(scenario: str = ESTIMACION.default_scenario) -> Dict[str, Optional[float]]:
+    """La Estimación de cada Clase en un Escenario (EO-4c): Desacuerdo, no Azar.
+
+    pesimista / optimista ponen cada Clase en su Fuente vigente más baja / más alta;
+    central es la mediana (``class_centrals``).
+    """
+    if scenario not in ESTIMACION.scenarios:
+        raise ValueError(f"Escenario desconocido: {scenario!r}")
+    if scenario == "central":
+        return class_centrals()
+    idx = 0 if scenario == "pesimista" else 1
+    return {cls: rng[idx] for cls, rng in class_ranges().items()}
+
+
 def class_centrals() -> Dict[str, Optional[float]]:
     """El central de cada Clase hoy; None si no tiene (cripto, o sin Fuentes vigentes)."""
     summaries = summarize_all(load_shipped(), today=fuentes_today())
@@ -62,8 +83,13 @@ def _class_label(cls: str) -> str:
 
 
 def estimate_asset(symbol: str, asset_class: Optional[str], *,
-                   centrals: Mapping[str, Optional[float]], inflation: float) -> AssetEstimation:
-    """La regla de un activo; ver el docstring del módulo."""
+                   centrals: Mapping[str, Optional[float]], inflation: float,
+                   scenario: str = ESTIMACION.default_scenario) -> AssetEstimation:
+    """La regla de un activo; ver el docstring del módulo.
+
+    ``centrals`` es la Estimación de cada Clase en ``scenario`` (``class_estimates``);
+    fuera del central el rótulo nombra el Escenario. Haircut y cripto no cambian.
+    """
     if asset_class is None:
         return AssetEstimation(symbol, None, HAIRCUT, None,
                                f"{symbol}: sin Clase · ajuste histórico (−20 % / +10 %)")
@@ -81,14 +107,18 @@ def estimate_asset(symbol: str, asset_class: Optional[str], *,
         return AssetEstimation(symbol, asset_class, HAIRCUT, None,
                                f"{name}: sin Fuentes vigentes · ajuste histórico (−20 % / +10 %)")
     status = "calibrada" if asset_class in ESTIMACION.calibrated_classes else "no calibrable"
-    return AssetEstimation(symbol, asset_class, OBJETIVA, central, f"{name} {central:.1f}% · {status}")
+    tag = "" if scenario == "central" else f" ({scenario})"
+    return AssetEstimation(symbol, asset_class, OBJETIVA, central,
+                           f"{name} {central:.1f}%{tag} · {status}")
 
 
 def asset_estimations(symbols: Iterable[str],
-                      asset_classes: Mapping[str, Optional[str]]) -> List[AssetEstimation]:
-    """La Estimación de cada símbolo, con el central y la inflación de hoy."""
-    centrals, inflation = class_centrals(), inflation_pct()
-    return [estimate_asset(s, asset_classes.get(s), centrals=centrals, inflation=inflation)
+                      asset_classes: Mapping[str, Optional[str]],
+                      scenario: str = ESTIMACION.default_scenario) -> List[AssetEstimation]:
+    """La Estimación de cada símbolo en un Escenario, con las Fuentes y la inflación de hoy."""
+    estimates, inflation = class_estimates(scenario), inflation_pct()
+    return [estimate_asset(s, asset_classes.get(s), centrals=estimates, inflation=inflation,
+                           scenario=scenario)
             for s in symbols]
 
 
