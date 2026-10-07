@@ -63,7 +63,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-from config import DB_PATH, TRACK_RECORD
+from config import DB_PATH, SIGNAL_METHOD_VERSION, TRACK_RECORD
 from data.clock import local_day_start_utc, utc_now
 
 
@@ -132,6 +132,12 @@ class RecommendationLog(_Base):
     # rows written before the column: the scorer resolves those with
     # ``data.fx.quote_currency`` — all of them are US listings, so no lookup.
     currency          = Column(String, default="")
+
+    # Versión del método de señales con que se decidió la acción (EO-6a,
+    # ``config.SIGNAL_METHOD_VERSION``). NULL en las filas escritas antes de la
+    # columna: no se rellena —no se sabe cuál fue su método más allá de que es
+    # anterior a EO-6—, y la lectura las rotula ``SIGNAL_METHOD_LEGACY_LABEL``.
+    signal_method_version = Column(String, nullable=True)
 
 
 class RecommendationOutcome(_Base):
@@ -510,6 +516,7 @@ class TrackRecordStore:
             ("recommendation_log", "ai_provider",         "VARCHAR"),
             ("recommendation_log", "ai_model",            "VARCHAR"),
             ("recommendation_log", "currency",            "VARCHAR DEFAULT ''"),
+            ("recommendation_log", "signal_method_version", "VARCHAR"),
         ]
         with engine.connect() as conn:
             from sqlalchemy import text
@@ -595,6 +602,7 @@ class TrackRecordStore:
                     ai_provider=ai_provider,
                     ai_model=ai_model,
                     currency=currency,
+                    signal_method_version=SIGNAL_METHOD_VERSION,
                     **fields,
                 )
                 s.add(row)
@@ -893,6 +901,7 @@ class TrackRecordStore:
                         "created_at": r.created_at,
                         "price_at_rec": r.price_at_rec,
                         "currency": r.currency or "",
+                        "signal_method_version": r.signal_method_version,
                         "horizon_days": o.horizon_days,
                         "return_pct": o.return_pct,
                         "benchmark_return_pct": o.benchmark_return_pct,

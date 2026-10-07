@@ -320,6 +320,28 @@ def hit_rate_by_source(rows: List[dict]) -> Dict[str, dict]:
     return out
 
 
+def hit_rate_by_signal_method(rows: List[dict]) -> Dict[str, dict]:
+    """Hit rate por versión del método de señales (EO-6a).
+
+    Las filas sin versión —escritas antes de EO-6— van juntas bajo
+    ``SIGNAL_METHOD_LEGACY_LABEL``: no se les inventa una versión. Es lo que separa los
+    outcomes de una escalera de los de la otra cuando EO-6b la cambie.
+    """
+    from config import SIGNAL_METHOD_LEGACY_LABEL
+
+    def label(r: dict) -> str:
+        return r.get("signal_method_version") or SIGNAL_METHOD_LEGACY_LABEL
+
+    scored = [r for r in rows if r.get("hit") is not None]
+    out: Dict[str, dict] = {}
+    for method in sorted({label(r) for r in scored}):
+        subset = [r for r in scored if label(r) == method]
+        n = len(subset)
+        hits = sum(1 for r in subset if r["hit"])
+        out[method] = {"n": n, "hit_rate": round(hits / n, 4)}
+    return out
+
+
 def equity_curve(rows: List[dict]) -> pd.DataFrame:
     """Cumulative growth of $1 following the model's bullish signals vs benchmark.
 

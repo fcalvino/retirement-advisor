@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## EO-6a — el track record guarda la versión del método de señales (2026-10-07)
+
+EO-6a (ADR 0001), primera parte de EO-6: el track record sella cada recomendación con la versión del método de señales (`SIGNAL_METHOD_VERSION`, propia, no `ENGINE_VERSION`). Columna nueva en `recommendation_log`, migración que no toca las filas viejas (NULL, «anterior a EO-6») y `hit_rate_by_signal_method` para separar los outcomes por versión. Ninguna señal ni umbral cambia; EO-6b mueve la escalera y sube la versión.
+
+---
+
 ## EO-4d — el riesgo país entra a la Estimación de los ADRs argentinos (2026-10-07)
 
 EO-4d (ADR 0001) cierra «Qué se decidió» salvo SCORE-CONTRACCION. El riesgo país de Argentina (EO-2c) se resta, en pp y completo, de la Estimación de la Clase de cada ADR argentino, con piso en la inflación implícita (0 % real), en el Optimizer y en el Monte Carlo por el mismo camino (`analysis.estimacion`). Se borra `OPTIMIZER.ars_risk_discount`. Dato vieja: se usa con aviso; fuera o ausente: no se resta y se avisa; con haircut no se resta. Con las Fuentes de hoy el piso manda. `ENGINE_VERSION` 2026.10-tier23.

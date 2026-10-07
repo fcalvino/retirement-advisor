@@ -214,3 +214,11 @@ proyecta 0 % real. Descartadas: la pérdida esperada (spread × (1 − recuperac
 spread neto del de la Clase emergente, porque cada una pide una Fuente nueva. «Qué se
 decidió» queda implementado salvo la contracción por score (SCORE-CONTRACCION). La
 decisión no cambia.
+
+## Nota (2026-10-07, EO-6a)
+
+EO-6 se parte en dos PRs por decisión del usuario: 6a sella cada recomendación del
+track record con la versión del método de señales (`SIGNAL_METHOD_VERSION`, propia: no
+es `ENGINE_VERSION` ni `COMMITTEE.prompt_version`) y 6b cambia la escalera. Las filas
+escritas antes quedan sin versión, rotuladas «anterior a EO-6». 6a no mueve ninguna
+señal. La decisión no cambia.
