@@ -48,6 +48,8 @@ from reportlab.platypus import (
 )
 
 from data.product_ux import (
+    BAD_RUN_LABEL,
+    GOOD_RUN_LABEL,
     GUARDRAILS_LABEL_LONG,
     GUARDRAILS_OMISSIONS,
     POT_CAGR_LABEL,
@@ -496,8 +498,15 @@ class InvestmentPlanReport:
         if mc_result:
             rows.append(["Proyectado con", projection_scenario_label(getattr(mc_result, "scenario", None))])
             rows.append(["Proyección mediana (P50)", f"${mc_result.median_terminal:,.0f}"])
-            rows.append(["Escenario pesimista (P10)", f"${mc_result.p10_terminal:,.0f}"])
-            rows.append(["Escenario optimista (P90)", f"${mc_result.p90_terminal:,.0f}"])
+            rows.append([BAD_RUN_LABEL, f"${mc_result.p10_terminal:,.0f}"])
+            rows.append([GOOD_RUN_LABEL, f"${mc_result.p90_terminal:,.0f}"])
+            # EO-4c-2: los otros dos Escenarios, si la corrida los calculó.
+            for _name, _s in (getattr(mc_result, "scenarios", None) or {}).items():
+                if _name == getattr(mc_result, "scenario", None):
+                    continue
+                rows.append([f"Escenario {_name} (mediana · p10–p90)",
+                             f"${_s['median_terminal']:,.0f} · ${_s['p10_terminal']:,.0f}–"
+                             f"${_s['p90_terminal']:,.0f}"])
             rows.append(["Probabilidad de ruina",    f"{mc_result.prob_ruin_pct:.1f}%"])
 
         tbl = Table(rows, colWidths=[8 * cm, 9.2 * cm])
@@ -807,9 +816,9 @@ class InvestmentPlanReport:
             (f"{_pdf_growth} mediano",
              f"{mc_result.median_cagr_pct:.1f}%",
              _pdf_growth_note),
-            (f"{_pdf_growth} pesimista (P10)",
+            (f"{_pdf_growth} en una mala racha (p10)",
              f"{mc_result.p10_cagr_pct:.1f}%",
-             "En el 10% de peores escenarios"),
+             "1 de cada 10 simulaciones termina debajo"),
             ("Max Drawdown mediano",
              f"{mc_result.median_max_drawdown_pct:.0f}%",
              "Caída pico-a-valle típica del mercado (no incluye retiros)"),
@@ -1127,7 +1136,7 @@ class InvestmentPlanReport:
 
         # P10 line
         ax.plot(years, [fp[y][10] for y in years], color="#DC3545", linewidth=1.5,
-                linestyle="--", label="Pesimista (P10)", zorder=4)
+                linestyle="--", label=BAD_RUN_LABEL, zorder=4)
 
         # Initial value line
         if initial > 0:

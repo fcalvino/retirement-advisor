@@ -55,6 +55,7 @@ from data.product_ux import (
     projection_scenario_label,
     ratio_help,
     ratio_label,
+    scenarios_block_text,
     strategy_ignored_savings_note,
 )
 from data.universe_loader import UNIVERSE_META
@@ -283,14 +284,13 @@ else:
             st.caption(
                 f"{projection_scenario_label(getattr(mc_result, 'scenario', None))} · "
                 f"Mediana \\${getattr(mc_result, 'median_terminal', 0):,.0f} · "
-                f"P10 \\${getattr(mc_result, 'p10_terminal', 0):,.0f} · "
-                f"P90 \\${getattr(mc_result, 'p90_terminal', 0):,.0f}"
+                f"mala racha (p10) \\${getattr(mc_result, 'p10_terminal', 0):,.0f} · "
+                f"buena racha (p90) \\${getattr(mc_result, 'p90_terminal', 0):,.0f}"
             )
-            if getattr(mc_result, "realistic_reference_applied", False):
-                st.caption(
-                    f"📊 Estimación objetiva vs historia reciente: mediana con la historia "
-                    f"de los últimos 10 años \\${getattr(mc_result, 'realistic_median_terminal', 0):,.0f}."
-                )
+            _scen = scenarios_block_text(getattr(mc_result, "scenarios", None) or {},
+                                         getattr(mc_result, "scenario", None))
+            if _scen:   # EO-4c-2: los tres Escenarios de la corrida
+                st.caption(_scen)
             # WD-PLAN-PDF: the note Simulaciones shows travels with the figure.
             _savings_note = strategy_ignored_savings_note(mc_result)
             if _savings_note:
@@ -520,9 +520,13 @@ def _render_snapshot(snap: PlanSnapshot) -> None:
         st.caption(
             f"{projection_scenario_label(m.get('scenario'))} · "
             f"Horizonte {m.get('horizon_years', '—')}a · Mediana \\${m.get('median_terminal', 0):,.0f} · "
-            f"P10 \\${m.get('p10_terminal', 0):,.0f} · P90 \\${m.get('p90_terminal', 0):,.0f}"
+            f"mala racha (p10) \\${m.get('p10_terminal', 0):,.0f} · "
+            f"buena racha (p90) \\${m.get('p90_terminal', 0):,.0f}"
             + (f" · Prob. meta {m.get('prob_target_pct', 0):.0f}%" if m.get("target_value") else "")
         )
+        _saved_scen = scenarios_block_text(m.get("scenarios") or {}, m.get("scenario"))
+        if _saved_scen:   # EO-4c-2: un plan anterior no los guardó
+            st.caption(_saved_scen)
         # WD-PLAN-PDF: gated on the saved run, not on snap.withdrawal_strategy —
         # that one is the sidebar at save time and can differ from the run.
         _savings_note = strategy_ignored_savings_note(

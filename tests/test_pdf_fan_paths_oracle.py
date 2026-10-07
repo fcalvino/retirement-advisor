@@ -100,7 +100,7 @@ def test_the_median_follows_the_run_year_by_year(draw, mc):
 
 
 def test_the_p10_follows_the_run_year_by_year_without_zeros(draw, mc):
-    line = _line(draw(mc, PARAMS), "Pesimista (P10)")
+    line = _line(draw(mc, PARAMS), "Mala racha (p10)")
     ys = list(line.get_ydata())
     assert list(line.get_xdata()) == mc.years
     assert ys == pytest.approx(_series(mc, 10))
@@ -123,7 +123,7 @@ def test_the_chart_ends_on_the_terminal_figures_the_pdf_prints(draw, mc):
     """El resumen ejecutivo imprime P50 y P10 del horizonte: el gráfico termina ahí."""
     ax = draw(mc, PARAMS)
     assert _line(ax, "Mediana (P50)").get_ydata()[-1] == mc.fan_paths[HORIZON][50]
-    assert _line(ax, "Pesimista (P10)").get_ydata()[-1] == mc.fan_paths[HORIZON][10]
+    assert _line(ax, "Mala racha (p10)").get_ydata()[-1] == mc.fan_paths[HORIZON][10]
 
 
 def test_without_a_horizon_in_params_the_chart_still_covers_the_run(draw, mc):

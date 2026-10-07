@@ -38,7 +38,11 @@ from dashboard.shared import (
     withdrawal_to_tuple,
 )
 from data.product_ux import (
+    BAD_RUN_HELP,
+    BAD_RUN_LABEL,
     CONTRIBUTION_GROWTH_HELP,
+    GOOD_RUN_HELP,
+    GOOD_RUN_LABEL,
     LOADED_PLAN_RETIREMENT_KEY,
     STRATEGY_IGNORES_SAVINGS_CAPTION,
     apply_pending_plan_load,
@@ -66,6 +70,7 @@ from data.product_ux import (
     ratio_label,
     remember_sim_sidebar,
     scenario_caption,
+    scenarios_block_text,
     sim_sidebar_value,
 )
 from portfolio.goals import (
@@ -135,27 +140,6 @@ if _prefs_sim.is_onboarded:
         f"📋 Defaults tomados de **Mi Perfil**: horizonte ~{_prefs_sim.primary_horizon_years} años "
         f"· capital \\${_prefs_sim.current_capital:,.0f}. Editá en ⚙️ Settings."
     )
-
-# ------------------------------------------------------------------ #
-#  Profile comparison scales (vol_scale, return_scale over global cfg) #
-# Conservative = extra caution; Aggressive = higher return assumption  #
-# ------------------------------------------------------------------ #
-
-_PROFILE_MC_SCALES = {
-    "conservative": {"vol_scale": 1.15, "return_scale": 0.70},
-    "moderate":     {"vol_scale": 1.10, "return_scale": 0.80},
-    "aggressive":   {"vol_scale": 1.00, "return_scale": 0.95},
-}
-_PROFILE_COLORS_MC = {
-    "conservative": "#28A745",
-    "moderate":     "#17A2B8",
-    "aggressive":   "#DC3545",
-}
-_PROFILE_NAMES_MC = {
-    "conservative": "🛡️ Conservador",
-    "moderate":     "⚖️ Moderado",
-    "aggressive":   "🚀 Agresivo",
-}
 
 # ------------------------------------------------------------------ #
 #  Sidebar controls                                                    #
@@ -437,8 +421,8 @@ def _plan_mc_kwargs() -> dict:
 
     COMPARE-NO-SAVINGS: «Comparar Perfiles» armaba su propia llamada y se olvidaba
     del ahorro, los drags y la estrategia de retiro, así que comparaba otro plan
-    (probabilidad de meta 2,5 % contra 97,5 % sobre el perfil real). La pestaña
-    principal y la de perfiles leen de acá; un perfil sólo agrega sus escalas.
+    (probabilidad de meta 2,5 % contra 97,5 % sobre el perfil real). EO-4c-2 retiró
+    esa pestaña; la de «Escenarios» lee la corrida principal, que sale de acá.
     """
     _wd = get_withdrawal_strategy(float(initial_value))   # Fase H.1
     return dict(
@@ -459,8 +443,8 @@ def _plan_mc_kwargs() -> dict:
     )
 
 
-tab_mc, tab_stress, tab_custom, tab_compare, tab_goals = st.tabs(
-    ["📈 Monte Carlo", "🌪️ Stress Test", "🎯 Escenario personalizado", "🔀 Comparar Perfiles", "🏆 Mis Metas"]
+tab_mc, tab_stress, tab_custom, tab_scenarios, tab_goals = st.tabs(
+    ["📈 Monte Carlo", "🌪️ Stress Test", "🎯 Escenario personalizado", "🔀 Escenarios", "🏆 Mis Metas"]
 )
 
 # ================================================================== #
@@ -499,6 +483,7 @@ def _tab_mc_content():
             mc = cached_monte_carlo(
                 **_plan_mc_kwargs(),
                 scenario=_planning_scenario(_prefs_sim.chosen_profile_key),   # EO-4c
+                include_scenarios=True,   # EO-4c-2: el bloque y la pestaña «Escenarios»
             )
         st.session_state["mc_result"] = mc
         st.session_state["mc_params"] = {
@@ -569,21 +554,21 @@ def _tab_mc_content():
     )
 
     k3.metric(
-        "⚠️ Escenario pesimista (peor 10%)",
+        BAD_RUN_LABEL,   # EO-4c-2: el Azar, no el Escenario pesimista
         f"${mc.p10_terminal:,.0f}",
         delta=pot_growth_delta(mc.p10_cagr_pct, _mc_flows),
         # "off", no "inverse": teñir de rojo una tasa positiva confunde. Lo malo
-        # acá es el escenario, y eso ya lo dice la etiqueta "pesimista".
+        # acá es la racha, y eso ya lo dice la etiqueta.
         delta_color="off",
         delta_arrow="off",
-        help="En 1 de cada 10 simulaciones terminás con este valor o menos. Este es "
-             "el caso 'malo' que debés estar dispuesto a aceptar.\n\n" + _growth_help,
+        help=BAD_RUN_HELP + " Es el caso 'malo' que debés estar dispuesto a aceptar.\n\n"
+             + _growth_help,
     )
 
     k4.metric(
-        "Escenario optimista (mejor 10%)",
+        GOOD_RUN_LABEL,
         f"${mc.p90_terminal:,.0f}",
-        help="Solo en 1 de cada 10 simulaciones terminás por encima de este valor (caso muy favorable).",
+        help=GOOD_RUN_HELP,
     )
 
     if target_value > 0:
@@ -603,23 +588,11 @@ def _tab_mc_content():
             help="Casos en los que el portafolio llega a cero o negativo antes del final del horizonte.",
         )
 
-    # ---- Estimación vs historia reciente: no engañar con un solo número ----
-    if getattr(mc, "realistic_reference_applied", False) and mc.realistic_median_terminal > 0:
-        # SIM-GAP-PCT: la diferencia se mide sobre la historia reciente. EO-4a: la
-        # proyección principal ya no es «conservadora» —es la Estimación objetiva— y
-        # puede quedar arriba o abajo de la historia, así que se dice de qué lado.
-        _gap_pct = (1 - mc.median_terminal / mc.realistic_median_terminal) * 100
-        _side = "más baja" if _gap_pct >= 0 else "más alta"
-        st.info(escape_dollars(   # KATEX-DOLLAR-PLAN
-            "📊 **Dos referencias para no engañarte con un solo número:**  \n"
-            f"• **Estimación objetiva** (los números de arriba; sale de las Fuentes de cada "
-            f"Clase): mediana **${mc.median_terminal:,.0f}** · pesimista ${mc.p10_terminal:,.0f}  \n"
-            f"• **Historia reciente** (los últimos 10 años de tus activos, sin ajuste): mediana "
-            f"**${mc.realistic_median_terminal:,.0f}** · pesimista ${mc.realistic_p10_terminal:,.0f}  \n"
-            f"Planificá con la Estimación (mediana ~{abs(_gap_pct):.0f}% {_side} que la historia "
-            "reciente): sale de lo que publican las gestoras, la valuación de hoy y la historia "
-            "larga de cada Clase, no de un período bueno o malo."
-        ), icon="📊")
+    # ---- EO-4c-2: los tres Escenarios (Desacuerdo), con su mala y buena racha ----
+    _scen_text = scenarios_block_text(getattr(mc, "scenarios", None) or {},
+                                      getattr(mc, "scenario", None))
+    if _scen_text:
+        st.info(_scen_text, icon="📊")   # montos ya escapados (KATEX-DOLLAR-PLAN)
     _est_caption = estimation_caption(getattr(mc, "estimations", []) or [])
     if _est_caption:
         st.caption(scenario_caption(getattr(mc, "scenario", None), _prefs_sim.chosen_profile_key)
@@ -783,23 +756,23 @@ def _tab_mc_content():
 
             st.markdown(f"**En poder de compra de hoy (después de {inflation_rate:.1f}% inflación anual):**")
             st.markdown(f"- Caso más probable: tus \\${initial_value:,.0f} de hoy tendrían el poder de compra de **\\${real_median:,.0f}**")
-            st.markdown(f"- Escenario pesimista (1 de cada 10 casos): **\\${real_p10:,.0f}**")
-            st.markdown(f"- Escenario muy bueno (1 de cada 10 casos): **\\${real_p90:,.0f}**")
+            st.markdown(f"- Mala racha (1 de cada 10 casos termina debajo): **\\${real_p10:,.0f}**")
+            st.markdown(f"- Buena racha (1 de cada 10 casos termina arriba): **\\${real_p90:,.0f}**")
         else:
             st.markdown("**Valores en dólares de hoy:**")
 
         st.markdown(f"""
 **Valores nominales (sin ajustar por inflación):**
 - Caso más probable: **\\${mc.median_terminal:,.0f}** ({mc.median_terminal/initial_value:.1f}x)
-- Escenario pesimista: **\\${mc.p10_terminal:,.0f}** o menos
-- Escenario optimista: **\\${mc.p90_terminal:,.0f}** o más
+- Mala racha (p10): **\\${mc.p10_terminal:,.0f}**
+- Buena racha (p90): **\\${mc.p90_terminal:,.0f}**
 """)
 
         # Much more direct reality check
         st.markdown("**⚠️ Por qué estos números pueden engañarte (importante leer):**")
         if real_p10 is not None:
             st.markdown(f"""
-Aunque el escenario pesimista nominal (\\${mc.p10_terminal:,.0f}) parece "ganar", tené en cuenta:
+Aunque la mala racha nominal (\\${mc.p10_terminal:,.0f}) parece "ganar", tené en cuenta:
 
 - En **poder de compra real** (después de inflación), en el peor 10% de los casos solo terminás con **\\${real_p10:,.0f}** de los dólares de hoy. Eso es un crecimiento real bastante modesto en {horizon_years} años.
 - La proyección no extrapola el período reciente: usa la Estimación objetiva de cada Clase (ver «Supuestos»). Aun así, el futuro puede ser peor que el central.
@@ -927,14 +900,14 @@ En resumen: el modelo no está diciendo "siempre vas a ganar mucho". Está dicie
             y=[mc.fan_paths[y][10] for y in years_list],
             mode="lines",
             line=dict(color="#DC3545", width=1.5, dash="dot"),
-            name="Pesimista (P10)",
+            name=BAD_RUN_LABEL,
         ))
         fan_chart.add_trace(go.Scatter(
             x=years_list,
             y=[mc.fan_paths[y][90] for y in years_list],
             mode="lines",
             line=dict(color="#28A745", width=1.5, dash="dot"),
-            name="Optimista (P90)",
+            name=GOOD_RUN_LABEL,
         ))
 
         # Inflation-adjusted real value line
@@ -1108,7 +1081,7 @@ def _render_sensitivity_lab():
     )
 
     _metric_label = {
-        "p10_terminal": "Escenario pesimista (P10)",
+        "p10_terminal": BAD_RUN_LABEL,
         "median_terminal": "Caso más probable (mediana)",
         "prob_ruin_pct": "Probabilidad de ruina",
     }
@@ -1451,190 +1424,74 @@ with tab_custom:
     _tab_custom_content()
 
 # ================================================================== #
-#  Tab 4: Comparar Perfiles                                           #
+#  Tab 4: Escenarios (EO-4c-2)                                        #
 # ================================================================== #
 
 
-def _tab_compare_content():
-    st.subheader("🔀 Cómo afecta el perfil de riesgo a las proyecciones")
+def _tab_scenarios_content():
+    """EO-4c-2: los tres Escenarios —el Desacuerdo entre Fuentes— con su p10–p90.
+
+    Reemplaza «Comparar perfiles», que escalaba rendimiento y volatilidad por perfil
+    sin Fuente. Lee la corrida de la pestaña Monte Carlo.
+    """
+    st.markdown("#### 🔀 Escenarios")
     st.caption(
-        "Compara Conservador / Moderado / Agresivo con **tu mismo plan** —activos, "
-        "ahorro, drags y estrategia de retiro de la pestaña Monte Carlo— "
-        "pero escalando por perfil el rendimiento y la volatilidad simulados. "
-        "Conservador = menos rendimiento y más volatilidad; Agresivo = lo contrario. "
-        "Estas escalas no tienen Fuente: se quedan rotuladas hasta que lleguen los Escenarios."
+        "Tu mismo plan proyectado con cada Clase de activo en su Fuente más baja "
+        "(pesimista), su mediana (central) o su Fuente más alta (optimista). La barra "
+        "va de la mala racha (p10) a la buena racha (p90) de cada uno. Tu perfil elige "
+        "con cuál planificás (⚙️ Settings); acá ves los tres."
     )
-
-    run_compare = st.button("▶ Comparar los 3 perfiles", type="primary", key="run_compare_profiles")
-
-    if not run_compare and "mc_compare_results" not in st.session_state:
-        st.info(
-            "Presioná **▶ Comparar los 3 perfiles** para ver cómo cambian las "
-            "proyecciones según el perfil de riesgo.",
-            icon="🔀",
-        )
+    mc = st.session_state.get("mc_result")
+    scen = getattr(mc, "scenarios", None) or {}
+    if not scen:
+        st.info("Ejecutá la simulación en la pestaña 📈 Monte Carlo para ver los tres Escenarios.")
         return
-
-    if run_compare:
-        _compare_mc: dict = {}
-        _compare_prog = st.progress(0.0)
-        for _ci, (_pk, _scales) in enumerate(_PROFILE_MC_SCALES.items()):
-            _compare_prog.progress((_ci + 1) / 3, text=f"Simulando perfil {_pk}…")
-            _compare_mc[_pk] = cached_monte_carlo(
-                **_plan_mc_kwargs(),   # COMPARE-NO-SAVINGS: el mismo plan que la principal
-                scenario=_planning_scenario(_prefs_sim.chosen_profile_key),   # EO-4c
-                vol_scale=_scales["vol_scale"],
-                return_scale=_scales["return_scale"],
-            )
-        _compare_prog.empty()
-        st.session_state["mc_compare_results"] = _compare_mc
-        st.session_state["mc_compare_horizon"]  = horizon_years
-        st.session_state["mc_compare_plan"] = _plan_mc_kwargs()
-
-    compare_mc = st.session_state.get("mc_compare_results", {})
-    if not compare_mc:
-        return
-
-    # COMPARE-NO-SAVINGS: la comparación depende de todo el plan (ahorro, suba,
-    # drags, estrategia, inflación…), no sólo del horizonte. Si cambió cualquiera,
-    # la tabla de abajo es de otro plan y se dice.
-    _stored_horizon = st.session_state.get("mc_compare_horizon", horizon_years)
-    if _stored_horizon != horizon_years:
-        st.warning(
-            f"Los resultados de comparación son para {_stored_horizon} años. "
-            "Presioná **Comparar** para actualizar."
-        )
-    elif st.session_state.get("mc_compare_plan", _plan_mc_kwargs()) != _plan_mc_kwargs():
-        st.warning(
-            "Cambiaste el plan (ahorro, supuestos o estrategia) después de comparar: "
-            "estos resultados son del plan anterior. Presioná **Comparar** para actualizar."
-        )
-
-    # ---- KPI comparison table ----
-    # U1-7: los tres perfiles comparten el mismo esquema de flujos (sale del
-    # mismo sidebar), así que la columna tiene un solo rótulo para las 3 filas.
-    _cmp_flows = any(mc_has_cash_flows(_mc) for _mc in compare_mc.values())
-    _cmp_growth_col = f"{pot_growth_column_label(_cmp_flows)} (P50)"
-    cmp_rows = []
-    for _pk, _mc in compare_mc.items():
-        _pname = _PROFILE_NAMES_MC[_pk]
-        cmp_rows.append({
-            "Perfil":     _pname,
-            "P10 (USD)":  _mc.p10_terminal,
-            "P50 (USD)":  _mc.median_terminal,
-            "P90 (USD)":  _mc.p90_terminal,
-            _cmp_growth_col: _mc.median_cagr_pct,
-            "Prob. ruina %": _mc.prob_ruin_pct,
-            "Prob. meta %":  _mc.prob_achieve_target_pct if target_value > 0 else None,
-        })
-    _cmp_df = pd.DataFrame(cmp_rows)
-    _cmp_col_cfg = {
-        "P10 (USD)":     st.column_config.NumberColumn("P10 (USD)",     format="$%,.0f"),
-        "P50 (USD)":     st.column_config.NumberColumn("P50 (USD)",     format="$%,.0f"),
-        "P90 (USD)":     st.column_config.NumberColumn("P90 (USD)",     format="$%,.0f"),
-        _cmp_growth_col: st.column_config.NumberColumn(
-            _cmp_growth_col, format="%.1f%%", help=pot_growth_help(_cmp_flows)
+    planning = getattr(mc, "scenario", None)
+    names = [n for n in ESTIMACION.scenarios if n in scen]
+    med = [scen[n]["median_terminal"] for n in names]
+    fig = go.Figure(go.Bar(
+        x=[n.capitalize() + (" (tu Postura)" if n == planning else "") for n in names],
+        y=med,
+        marker_color=["#1B3A6B" if n == planning else "#8FA3C0" for n in names],
+        error_y=dict(
+            type="data", symmetric=False,
+            array=[scen[n]["p90_terminal"] - scen[n]["median_terminal"] for n in names],
+            arrayminus=[scen[n]["median_terminal"] - scen[n]["p10_terminal"] for n in names],
         ),
-        "Prob. ruina %": st.column_config.NumberColumn("Prob. ruina %", format="%.1f%%"),
-    }
+        text=[f"${m:,.0f}" for m in med], textposition="inside",
+    ))
     if target_value > 0:
-        _cmp_col_cfg["Prob. meta %"] = st.column_config.NumberColumn(
-            f"Prob. meta ${target_value:,.0f}", format="%.1f%%"
-        )
-    st.dataframe(_cmp_df, width="stretch", hide_index=True, column_config=_cmp_col_cfg)
-
-    # ---- Fan chart overlay: median + P10/P90 per profile ----
-    _years = list(range(0, horizon_years + 1))
-
-    fig_cmp = go.Figure()
-    for _pk, _mc in compare_mc.items():
-        if not _mc.fan_paths:
-            continue
-        _color = _PROFILE_COLORS_MC[_pk]
-        _name  = _PROFILE_NAMES_MC[_pk]
-
-        # Shaded P25-P75 band
-        _lo = [_mc.fan_paths[y].get(25, 0) for y in _years]
-        _hi = [_mc.fan_paths[y].get(75, 0) for y in _years]
-        fig_cmp.add_trace(go.Scatter(
-            x=_years + _years[::-1],
-            y=_hi + _lo[::-1],
-            fill="toself",
-            fillcolor=_color.replace(")", ", 0.12)").replace("rgb", "rgba") if "rgb" in _color else f"rgba({int(_color[1:3],16)},{int(_color[3:5],16)},{int(_color[5:7],16)},0.10)",
-            line=dict(color="rgba(0,0,0,0)"),
-            hoverinfo="skip",
-            showlegend=False,
-        ))
-        # Median line
-        fig_cmp.add_trace(go.Scatter(
-            x=_years,
-            y=[_mc.fan_paths[y][50] for y in _years],
-            mode="lines",
-            line=dict(color=_color, width=2.5),
-            name=f"{_name} (P50)",
-        ))
-
-    if target_value > 0:
-        fig_cmp.add_hline(
-            y=target_value, line_dash="dash", line_color="gold", line_width=2,
-            annotation_text=f"Meta ${target_value:,.0f}",
-            annotation_position="right",
-        )
-    fig_cmp.update_layout(
-        title=f"Proyección mediana por perfil — {horizon_years} años ({n_sims:,} sims)",
-        xaxis_title="Años desde hoy",
-        yaxis_title="Valor del portafolio (USD)",
-        yaxis_tickformat="$,.0f",
-        height=500,
-        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
-        hovermode="x unified",
+        fig.add_hline(y=target_value, line_dash="dash", line_color="#FFC107",
+                      annotation_text=f"Meta ${target_value:,.0f}")
+    fig.update_layout(title="Mediana y rango p10–p90 por Escenario", yaxis_title="USD",
+                      height=420, showlegend=False)
+    st.plotly_chart(fig, width="stretch")
+    rows = [{
+        "Escenario": n.capitalize() + (" ← tu Postura" if n == planning else ""),
+        "Mediana": scen[n]["median_terminal"],
+        BAD_RUN_LABEL: scen[n]["p10_terminal"],
+        GOOD_RUN_LABEL: scen[n]["p90_terminal"],
+        "Prob. de la meta %": scen[n]["prob_achieve_target_pct"] if target_value > 0 else None,
+        "Simulaciones": int(scen[n].get("n_sims") or 0),
+    } for n in names]
+    st.dataframe(
+        pd.DataFrame(rows), hide_index=True, width="stretch",
+        column_config={
+            "Mediana": st.column_config.NumberColumn(format="$%d"),
+            BAD_RUN_LABEL: st.column_config.NumberColumn(format="$%d"),
+            GOOD_RUN_LABEL: st.column_config.NumberColumn(format="$%d"),
+            "Prob. de la meta %": st.column_config.NumberColumn(format="%.1f%%"),
+        },
     )
-    st.plotly_chart(fig_cmp, width="stretch")
-
-    # ---- P10 comparison (downside risk) ----
-    fig_p10 = go.Figure()
-    for _pk, _mc in compare_mc.items():
-        if not _mc.fan_paths:
-            continue
-        fig_p10.add_trace(go.Scatter(
-            x=_years,
-            y=[_mc.fan_paths[y][10] for y in _years],
-            mode="lines",
-            line=dict(color=_PROFILE_COLORS_MC[_pk], width=2, dash="dot"),
-            name=f"{_PROFILE_NAMES_MC[_pk]} (P10)",
-        ))
-    fig_p10.update_layout(
-        title="Escenario pesimista (P10) por perfil — riesgo de baja",
-        xaxis_title="Años",
-        yaxis_title="USD",
-        yaxis_tickformat="$,.0f",
-        height=350,
-        hovermode="x unified",
-    )
-    st.plotly_chart(fig_p10, width="stretch")
-
     st.caption(
-        "⚠️ Los perfiles NO cambian los activos ni los pesos — solo ajustan los supuestos "
-        "de retorno y volatilidad. Para comparar con pesos distintos, ejecutá el Optimizer "
-        "con cada perfil y volvé a correr la simulación."
+        f"Los dos Escenarios que no son tu Postura corren con "
+        f"{MONTE_CARLO.scenario_side_sims:,} simulaciones; el tuyo, con las de la "
+        "corrida. La historia reciente de cada Clase es una de sus Fuentes (ver «Supuestos»)."
     )
 
-    # Export
-    _cmp_csv = io.StringIO()
-    _cmp_df.to_csv(_cmp_csv, index=False)
-    st.download_button(
-        label="⬇️ Exportar comparación a CSV",
-        data=_cmp_csv.getvalue(),
-        file_name=f"perfil_comparison_{horizon_years}y.csv",
-        mime="text/csv",
-    )
 
-# ================================================================== #
-#  Tab 5: Mis Metas (Multi-Goal Planner)                              #
-
-
-with tab_compare:
-    _tab_compare_content()
+with tab_scenarios:
+    _tab_scenarios_content()
 
 # ================================================================== #
 
@@ -2167,7 +2024,7 @@ def _tab_goals_content():
                         ) if _con_aportes else pot_growth_help(False),
                     )
                     m5.metric(
-                        "Pesimista (P10)",
+                        BAD_RUN_LABEL,
                         f"${mc.p10_terminal:,.0f}",
                         delta=(
                             "peor 10% de las simulaciones"

@@ -2342,6 +2342,10 @@ class MonteCarloConfig:
     max_annual_withdrawal: int = 500_000  # tope del control «Retiro anual» de Simulaciones
     min_history_weeks: int = 104         # 2 years minimum
     default_n_sims: int = 10_000
+    # EO-4c-2: paths of the two Escenarios that are not the planning one (the
+    # «Tres Escenarios» block). Fewer than the main run so the block costs ~1.4×
+    # instead of 3×; the UI says how many each one used (decisión del usuario).
+    scenario_side_sims: int = 2_000
     default_horizon_years: int = 20
     default_initial_value: int = 100_000   # capital de Simulaciones sin perfil (SIM-REENTRY-WIDGETS)
     block_size_weeks: int = 4            # bootstrap block size (preserves autocorrelation)

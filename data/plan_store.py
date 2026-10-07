@@ -288,6 +288,9 @@ class PlanSnapshot:
                 # EO-4c: con qué Escenario se proyectó. Un plan anterior no lo
                 # tiene y se proyectó con el central (o el haircut, antes de EO-4a).
                 "scenario":         getattr(mc_result, "scenario", None),
+                # EO-4c-2: los tres Escenarios, si la corrida los calculó.
+                "scenarios":        {k: dict(v) for k, v in
+                                     (getattr(mc_result, "scenarios", None) or {}).items()},
                 "median_terminal":  round(float(getattr(mc_result, "median_terminal", 0.0)), 0),
                 "p10_terminal":     round(float(getattr(mc_result, "p10_terminal", 0.0)), 0),
                 "p90_terminal":     round(float(getattr(mc_result, "p90_terminal", 0.0)), 0),
