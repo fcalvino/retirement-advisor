@@ -207,6 +207,25 @@ def test_a_projection_names_its_scenario_and_an_old_plan_says_so():
     assert "anterior a EO-4c" in projection_scenario_label(None)
 
 
+def test_the_chat_projects_with_the_users_postura():
+    """Decisión del usuario (2026-10-07): la Postura gana sobre lo que guardó el plan."""
+    from types import SimpleNamespace as NS
+
+    from analysis.chat_tools import projection_scenario
+
+    old_plan = NS(mc_summary={"median_terminal": 1.0}, profile_key="aggressive")
+    saved_plan = NS(mc_summary={"scenario": "optimista"}, profile_key="aggressive")
+    agresivo_pesimista = NS(chosen_profile_key="aggressive", planning_scenario="pesimista")
+    conservador = NS(chosen_profile_key="conservative", planning_scenario=None)
+    sin_perfil = NS(chosen_profile_key=None, planning_scenario="pesimista")
+
+    assert projection_scenario(old_plan, agresivo_pesimista) == "pesimista"   # el override gana
+    assert projection_scenario(saved_plan, conservador) == "pesimista"        # la Postura gana
+    assert projection_scenario(saved_plan, sin_perfil) == "optimista"         # sin Postura: el plan
+    assert projection_scenario(old_plan, None) == "central"                   # su perfil
+    assert projection_scenario(NS(mc_summary=None, profile_key=""), None) == "central"
+
+
 # --------------------------------------------------------------------------- #
 #  Contratos                                                                   #
 # --------------------------------------------------------------------------- #

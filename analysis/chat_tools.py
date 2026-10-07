@@ -125,6 +125,29 @@ def _tool_plan_status(args: dict) -> dict:
         return {"ok": False, "error": f"No pude evaluar el plan: {exc}"}
 
 
+def projection_scenario(snap, prefs) -> str:
+    """El Escenario con que el chat re-proyecta el plan (EO-4c).
+
+    Gana la Postura del usuario —su perfil elegido y su override de Settings—,
+    como en Simulaciones (decisión del usuario, 2026-10-07). Sin perfil elegido,
+    el Escenario que el plan guardó; si no guardó ninguno (anterior a EO-4c), el de
+    su perfil; si tampoco, el central.
+    """
+    from data.product_ux import profile_planning_scenario
+
+    postura = profile_planning_scenario(
+        getattr(prefs, "chosen_profile_key", None) or None,
+        getattr(prefs, "planning_scenario", None),
+    )
+    if postura:
+        return postura
+    saved = str((getattr(snap, "mc_summary", None) or {}).get("scenario") or "")
+    if saved in ESTIMACION.scenarios:
+        return saved
+    return (profile_planning_scenario(getattr(snap, "profile_key", "") or None)
+            or ESTIMACION.default_scenario)
+
+
 def _tool_retirement_projection(args: dict) -> dict:
     snap = _active_plan()
     if snap is None:
@@ -162,14 +185,14 @@ def _tool_retirement_projection(args: dict) -> dict:
         w = w / w.sum() if w.sum() > 0 else None
 
         from analysis.estimacion import classes_for
-        from data.product_ux import profile_planning_scenario
+        try:
+            from data.preferences import UserPreferences
 
-        # EO-4c: the plan is re-projected with its own Escenario —the one it was
-        # saved with, else its profile's—; a plan with neither gets the central.
-        _saved = str((getattr(snap, "mc_summary", None) or {}).get("scenario") or "")
-        scenario = (_saved if _saved in ESTIMACION.scenarios else
-                    profile_planning_scenario(getattr(snap, "profile_key", "") or None)
-                    or ESTIMACION.default_scenario)
+            prefs = UserPreferences.load()
+        except Exception as exc:   # sin preferencias, decide el plan
+            logger.debug(f"chat_tools: sin preferencias — {exc}")
+            prefs = None
+        scenario = projection_scenario(snap, prefs)
         sim = MonteCarloSimulator(symbols, weights=w, asset_classes=classes_for(symbols),
                                   scenario=scenario)
         res = sim.run(
