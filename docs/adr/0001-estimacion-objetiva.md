@@ -185,3 +185,15 @@ rendimiento de la cartera es el promedio ponderado de las Estimaciones) vale en 
 central, y un plan Conservador proyecta debajo de la cifra del Optimizer por el
 Desacuerdo, a propósito. La UI que muestra los tres Escenarios es EO-4c-2. La
 decisión no cambia.
+
+## Nota (2026-10-07, EO-4c-2)
+
+La UI muestra los tres Escenarios: un bloque en la pestaña Monte Carlo y una pestaña
+«Escenarios» que reemplaza «Comparar perfiles» y sus escalas sin Fuente. El p10 y el
+p90 de una proyección se llaman «Mala racha» y «Buena racha» —son Azar—, y «pesimista»
+/ «optimista» quedan para el Desacuerdo entre Fuentes (decisión del usuario). La
+historia reciente deja de ser una proyección y queda como la Fuente «Historia» de cada
+Clase. Los dos Escenarios que no son la Postura corren con menos simulaciones
+(`MONTE_CARLO.scenario_side_sims`), y la UI lo dice. Con esto «Qué se decidió» está
+implementado salvo la contracción por score (SCORE-CONTRACCION) y el riesgo país
+(EO-4d). La decisión no cambia.

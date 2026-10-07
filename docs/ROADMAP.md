@@ -10,6 +10,19 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## EO-4c-2 — la UI de Escenarios: mala y buena racha, «Tres Escenarios» y la pestaña «Escenarios» (2026-10-07)
+
+Segunda parte de EO-4c (ADR 0001): la UI. Decisiones del usuario (2026-10-07): «Mala racha (p10)» / «Buena racha (p90)»; bloque «Tres Escenarios» + pestaña «Escenarios»; los dos no planificados con menos simulaciones, siempre visibles.
+
+- **Rótulos:** el p10/p90 deja de llamarse «pesimista»/«optimista» en todas las superficies; contrato en el oráculo.
+- **UI:** «Tres Escenarios» reemplaza «Dos referencias»; «Escenarios» reemplaza «Comparar perfiles» y `_PROFILE_MC_SCALES`.
+- **Motor:** se retira la pasada «realista»; `MONTE_CARLO.scenario_side_sims` = 2.000.
+- **Plan:** `mc_summary.scenarios`; Mi Plan y el PDF muestran los tres. Sin bump de `ENGINE_VERSION`.
+- **QA en vivo** (Agresivo; Postura central y pesimista; IA): mismo código y misma base, misma mediana; la narrativa distingue mala racha de Escenario pesimista.
+- **Oráculo:** `tests/test_eo4c2_ui_oracle.py`, 11 casos.
+
+---
+
 ## EO-4c-1 — tres Escenarios y el Escenario de planificación del Perfil (2026-10-06)
 
 Primera parte de EO-4c (ADR 0001), partido en dos PRs (decisión del usuario, 2026-10-06): este, el motor y el Escenario de planificación; EO-4c-2, la UI.
