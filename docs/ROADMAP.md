@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## EO-6b-2 — un dato faltante del Consistency Score recibe la mediana de su sector (2026-10-08)
+
+EO-6b-2 (ADR 0001), segunda parte de EO-6b y cierre de EO-6: un dato faltante del Consistency Score recibe la mediana de su sector en el universo cacheado (mínimo 5 datos, respaldo la mediana de todos los equities; fondos y cripto no se imputan) desde una tabla derivada y versionada. Medido: 1 de 189 equities cambia de score (ISRG, +6,5) y ninguna señal. `SIGNAL_METHOD_VERSION` 2026.10-senales3; `ENGINE_VERSION` no cambia.
+
+---
+
 ## EO-6b-1 — las señales son simétricas: tope de la IA y atenuación con datos parciales (2026-10-07)
 
 EO-6b-1 (ADR 0001), primera parte de EO-6b: el tope de la IA contra la escalera pasa a ±1 escalón (sube sólo desde el techo de la escalera, sin pasar de BUY ni para un cripto), la atenuación con datos parciales es simétrica (SELL → REDUCE además de STRONG BUY → BUY), los umbrales de señal se rotulan «ranking relativo, no calibrado» en la ficha y `SIGNAL_METHOD_VERSION` sube a `2026.10-senales2`. Medido en el sandbox: 0 señales cambian por la vía de reglas; el camino de la IA no se midió.

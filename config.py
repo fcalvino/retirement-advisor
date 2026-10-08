@@ -224,9 +224,13 @@ ENGINE_VERSION = "2026.10-tier23"
 #                   escalón (`STRATEGY.ai_ladder_step_tolerance`; no sube sobre un veto);
 #                   con datos parciales SELL pasa a REDUCE además de STRONG BUY a BUY
 #                   (`DATA_QUALITY.partial_lifts_sell`); los umbrales 82/68/55/45 se
-#                   rotulan «ranking relativo, no calibrado». La imputación de faltantes
-#                   por la mediana del sector (EO-6b-2) sube la versión de nuevo.
-SIGNAL_METHOD_VERSION = "2026.10-senales2"
+#                   rotulan «ranking relativo, no calibrado».
+#   2026.10-senales3 — EO-6b-2: un dato faltante del Consistency Score deja el 0 y recibe
+#                   la mediana de su sector en el universo cacheado
+#                   (`CONSISTENCY.impute_from_sector_median`, tabla en
+#                   `data/fuentes/sector_medians.json`). Sólo equities; mueve el score de
+#                   los que tienen faltantes.
+SIGNAL_METHOD_VERSION = "2026.10-senales3"
 SIGNAL_METHOD_LEGACY_LABEL = "anterior a EO-6"
 
 
@@ -1222,8 +1226,18 @@ class ConsistencyThresholds:
     roe_std_max_acceptable: float = 12.0
     margin_volatility_max: float = 6.0
     # P1 audit D6: insufficient history must NOT gift ~2.5 pts/dimension (was
-    # "neutral"). 0.0 is the conservative retirement default.
+    # "neutral"). 0.0 is the conservative retirement default — today only the fallback
+    # (funds, crypto, no median table; see ``impute_from_sector_median``).
     missing_data_score: float = 0.0
+    # EO-6b-2 (ADR 0001): con la Estimación objetiva un dato faltante ya no se castiga con
+    # un número sin base. Un equity sin historia suficiente en una dimensión recibe la
+    # mediana de esa dimensión entre los equities de su sector (tabla derivada del universo
+    # cacheado, ``analysis.sector_medians``); con menos de ``sector_median_min_tickers``
+    # datos en el sector, la de todos los equities. Fondos y cripto no se imputan, y sin
+    # tabla vale ``missing_data_score``. Apagar la imputación restaura el 0.
+    impute_from_sector_median: bool = True
+    sector_median_min_tickers: int = 5
+    sector_medians_file: str = "data/fuentes/sector_medians.json"
     # S6: EPS coefficient of variation thresholds for _eps_stability
     eps_cv_excellent: float = 0.3
     eps_cv_good: float = 0.6
