@@ -557,7 +557,7 @@ if symbol:
                 _alloc_eq = getattr(_moat_detail, "recommended_max_allocation", None)
                 if _dur_eq or _alloc_eq:
                     _dur_txt   = f"Durabilidad estimada: ~{_dur_eq} años" if _dur_eq else ""
-                    _alloc_txt = f"Asignación máx. conservadora: ≤{_alloc_eq}%" if _alloc_eq else ""
+                    _alloc_txt = f"Asignación máx. sugerida por la IA: ≤{_alloc_eq}%" if _alloc_eq else ""
                     st.caption(f"🛡️ {' · '.join(x for x in [_dur_txt, _alloc_txt] if x)}")
             else:
                 st.caption(
@@ -659,7 +659,7 @@ if symbol:
             _moat_detail_c = getattr(fund, "crypto_moat_detail", None)
             _alloc_tip = ""
             if _moat_detail_c and _moat_detail_c.ai_available:
-                _alloc_tip = f"Límite recomendado (Conservador): ≤{_moat_detail_c.recommended_max_allocation_pct:.0f}%"
+                _alloc_tip = f"Límite recomendado por la IA: ≤{_moat_detail_c.recommended_max_allocation_pct:.0f}%"
             cr3.metric(
                 "Crypto Moat",
                 f"{getattr(fund,'moat_score',0):.1f}/8",

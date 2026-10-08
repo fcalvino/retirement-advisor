@@ -21,7 +21,7 @@ usan la Estimación objetiva rotulada «no calibrable» (decisiones del usuario,
 1. ~~**Sincronización** — este orden, el ADR 0001 y el glosario llegan a `main` (sólo docs).~~
 2. ~~**SIM-GAP-PCT + KATEX-DOLLAR-PLAN** — banda 4, un PR: el mismo bloque «Dos escenarios».~~
 3. ~~**EO-0 → EO-1a → EO-1b → EO-1c → EO-2a → EO-2b → EO-2c → EO-3 → EO-4a → EO-4b → EO-4c-1 → EO-4c-2 → EO-4d**: el riesgo país argentino entra a la Estimación de los ADRs (EO-4a el Monte Carlo, EO-4b el Optimizer, EO-4c-1 el motor de Escenarios, EO-4c-2 su UI y EO-4d el riesgo país, cerrados). Ver bloque 6.~~
-4. ~~**EO-6a**~~ → ~~**EO-6b-1**~~ → ~~**EO-6b-2**~~ → ~~**EO-5a**~~ → **EO-5b** (necesita el OK de costo del banco `--live`). Ver bloque 6.
+4. ~~**EO-6a**~~ → ~~**EO-6b-1**~~ → ~~**EO-6b-2**~~ → ~~**EO-5a**~~ → ~~**EO-5b**~~. Cerrado el bloque 6 salvo SCORE-CONTRACCION (espera Fuente). Ver bloque 6.
 
 Esperan disparador: U5-1b y COM-*. Sin orden: STREAMLIT-1.65 (sin banda), PORTFOLIO-FX,
 COM-LOG-TESTS, IDEA-4, IDEA-5, PIT-TOOLS y GOAL-PRIORITY-TEXT. Espera Fuente: SCORE-CONTRACCION.
@@ -409,7 +409,7 @@ Toda etapa que mueva μ o el Monte Carlo sube `ENGINE_VERSION`.
   de EO-4 (corregir el método con otro mecanismo de Azar, o dejarlos fuera de la
   Estimación objetiva con el haircut rotulado); probar variantes hasta que una pase
   sobre las mismas 14 ventanas sería ajustar al test.
-- **EO-5 — IA calibrada**, en dos PRs (decisión del usuario, 2026-10-08): **EO-5a** el renombre mecánico y `resolve_optimizer_profile` (cerrada 2026-10-08) y **EO-5b** la redacción, el PM con Postura, la clave de caché y el banco en vivo. Fuera «filosofía conservadora» (`committee_prompts.py`),
+- **EO-5 — IA calibrada**, en dos PRs (decisión del usuario, 2026-10-08): **EO-5a** el renombre mecánico y `resolve_optimizer_profile` (cerrada 2026-10-08) y **EO-5b** la redacción, el PM con Postura, la clave de caché y el banco en vivo (cerrada 2026-10-08). Fuera «filosofía conservadora» (`committee_prompts.py`),
   «extremadamente… conservador» y «nunca digas esto es genial» (`prompts.py`),
   «asesor… conservador» (`chat_agent.py:138`); la instrucción es decir lo que la
   evidencia sostiene, con su incertidumbre. El Abogado del Diablo se queda (método,

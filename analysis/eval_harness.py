@@ -264,7 +264,7 @@ def check_allocation_sane(case: GoldenCase, d: Decision) -> Optional[CheckResult
     alloc = d.recommended_max_allocation_pct
     if alloc is None:
         return None
-    cap = EVAL.conservative_alloc_cap_pct
+    cap = EVAL.alloc_cap_pct
     if alloc < 0 or alloc > cap:
         return CheckResult("allocation_sane", False, f"alloc {alloc}% fuera de [0, {cap}]")
     if d.action == "SELL" and alloc > 1.0:
@@ -593,10 +593,10 @@ def check_moat_reasoning(case: MoatGoldenCase, m) -> CheckResult:
 
 def check_moat_allocation(case: MoatGoldenCase, m) -> CheckResult:
     alloc = m.recommended_max_allocation
-    ok = 0 < alloc <= EVAL.conservative_alloc_cap_pct
+    ok = 0 < alloc <= EVAL.alloc_cap_pct
     return CheckResult(
         "moat_allocation", ok,
-        "" if ok else f"alloc {alloc}% fuera de (0, {EVAL.conservative_alloc_cap_pct}]",
+        "" if ok else f"alloc {alloc}% fuera de (0, {EVAL.alloc_cap_pct}]",
     )
 
 

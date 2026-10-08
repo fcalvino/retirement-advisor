@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Optional
+from typing import Mapping, Optional
 
 from analysis.currency_metric_text import currency_metric_note, currency_metric_text
 from analysis.prompts import (
@@ -191,10 +191,18 @@ def committee_context_block(fund, tech) -> str:
     return "\n".join(lines)
 
 
+#: EO-5b (ADR 0001): el registro de todo prompt de rol. La prudencia es Postura del Perfil, no
+#: un sesgo del modelo: el comité dice lo que la evidencia sostiene, con su incertidumbre.
+EVIDENCE_REGISTER = (
+    "Decí lo que la evidencia sostiene, con su incertidumbre: ni más cauto ni más optimista "
+    "de lo que los datos justifican."
+)
+
+
 def _role_prompt(role_title: str, role_instructions: str, fund, tech) -> str:
     return (
-        f"Sos el **{role_title}** en un comité de inversión para un inversor de RETIRO "
-        f"con filosofía conservadora (preservación de capital primero).\n\n"
+        f"Sos el **{role_title}** en un comité de inversión para un inversor de RETIRO. "
+        f"{EVIDENCE_REGISTER}\n\n"
         f"=== DATOS DUROS (anclá tus argumentos a estos números, no inventes otros) ===\n"
         f"{committee_context_block(fund, tech)}\n\n"
         f"=== TU ROL ===\n{role_instructions}\n\n"
@@ -430,46 +438,68 @@ def _ticker_portfolio_block(ctx: dict) -> str:
             + ", ".join(f"{name} {shock:.0f}%" for name, shock in shocks[:4])
         )
     lines.append(
-        "Decidí el tamaño sobre la posición REAL: si ya está en o por encima del máximo prudente, "
-        "o su sector ya concentra la cartera, un BUY no se justifica aunque el negocio sea bueno."
+        "Decidí el tamaño sobre la posición REAL: si ya está en o por encima del tope por nombre de su "
+        "Postura, o su sector ya concentra la cartera, un BUY no se justifica aunque el negocio sea bueno."
     )
     return "\n".join(lines)
 
 
-def _crypto_position_cap_pct() -> float:
-    """El techo por ticker cripto del perfil que el comité declara (conservador).
+def postura_line(postura: Mapping) -> str:
+    """La Postura del inversor en una línea (EO-5b): lo que el PM tiene que respetar.
 
-    El motor ya tiene este número — ``ProfileConfig.max_crypto_pct``, que el
-    optimizer respeta como cota dura de SLSQP — y el PM citaba en su lugar la
-    banda de equity, ~8-15 %, entre 3 y 5 veces más alta. Un dimensionamiento que
-    contradice la restricción que la cartera sí va a aplicar no es un consejo
-    conservador, es un consejo que el optimizer después descarta en silencio.
+    ``postura`` sale de ``data.product_ux.committee_postura``: el Perfil elegido y sus
+    topes, con lo que el usuario haya editado por encima del Perfil.
     """
-    from analysis.ai_analyzer import resolve_optimizer_profile
+    return (
+        f"Perfil {postura['profile_name']}: máximo {postura['max_position_pct']:.0f}% por nombre, "
+        f"exigencia de {postura['exigencia_pct']:.0f}% de probabilidad de éxito para sus metas, "
+        f"margen de seguridad de {postura['margin_pct']:.0f}% antes de comprar, planifica con el "
+        f"Escenario {postura['planning_scenario']}"
+    )
 
-    return float(resolve_optimizer_profile(CRYPTO_COMMITTEE.sizing_profile).max_crypto_pct)
+
+_SIN_POSTURA = (
+    "Este inversor no eligió un Perfil, así que no hay Postura: dá tu stance sobre la evidencia, "
+    "NO propongas un tamaño por nombre y decí que dimensionar necesita elegir un Perfil."
+)
 
 
-def portfolio_manager_prompt(fund, tech, portfolio_ctx: Optional[dict] = None) -> str:
+def portfolio_manager_prompt(fund, tech, portfolio_ctx: Optional[dict] = None,
+                             postura: Optional[Mapping] = None) -> str:
+    """El PM concilia las visiones y dimensiona **dentro de la Postura del Perfil** (EO-5b).
+
+    Sin ``postura`` no hay Perfil elegido (EO-1b): el PM da su stance y no dimensiona.
+    El techo cripto es el del Perfil del inversor (``max_crypto_pct``), el mismo que el
+    optimizer aplica como cota dura; antes el prompt asumía Conservador para todos.
+    """
     if _is_crypto(fund):
-        instructions = (
+        head = (
             "Concilá las visiones (fundamental, macro y el bear case del abogado del "
-            "diablo) y decidí el dimensionamiento práctico para una cartera de retiro "
-            f"conservadora. El techo por ticker cripto de este perfil es "
-            f"{_crypto_position_cap_pct():.0f}% — es la restricción que el optimizer "
-            "aplica de verdad, no una sugerencia, y NO es la banda de una acción. "
+            "diablo) y decidí el dimensionamiento práctico. "
+        )
+        if postura:
+            head += (
+                f"Su Postura — {postura_line(postura)}. El techo por ticker cripto de su "
+                f"Perfil es {postura['max_crypto_pct']:.0f}% — es la restricción que el "
+                "optimizer aplica de verdad, no una sugerencia, y NO es la banda de una acción. "
+            )
+        else:
+            head += _SIN_POSTURA + " "
+        instructions = head + (
             "Tu stance es la decisión de cartera, no un análisis aislado: pesá el upside "
             "contra el riesgo de capital, y recordá que este activo no paga renta, así que "
-            "todo su aporte depende del precio. Si el bear case es serio, reflejalo en una "
-            "postura y un tamaño más cautos."
+            "todo su aporte depende del precio. Si el bear case es serio, reflejalo en la "
+            "postura y en el tamaño."
         )
     else:
-        instructions = (
+        head = (
             "Concilá las visiones (fundamental, macro y el bear case del abogado del diablo) y "
-            "decidí el dimensionamiento práctico para una cartera de retiro conservadora "
-            "(máximo prudente por nombre ~8-15%). Tu stance es la decisión de cartera, no un "
-            "análisis aislado: pesá el upside contra el riesgo de capital. Si el bear case es "
-            "serio, reflejalo en una postura y un tamaño más cautos."
+            "decidí el dimensionamiento práctico. "
+        )
+        head += (f"Su Postura — {postura_line(postura)}. " if postura else _SIN_POSTURA + " ")
+        instructions = head + (
+            "Tu stance es la decisión de cartera, no un análisis aislado: pesá el upside contra "
+            "el riesgo de capital. Si el bear case es serio, reflejalo en la postura y en el tamaño."
         )
     if portfolio_ctx:
         instructions += _ticker_portfolio_block(portfolio_ctx)
@@ -723,8 +753,7 @@ def portfolio_committee_context_block(ctx: dict) -> str:
 def _portfolio_role_prompt(role_title: str, role_instructions: str, ctx: dict) -> str:
     return (
         f"Sos el **{role_title}** en un comité que evalúa el PORTFOLIO ACTUAL (las posiciones "
-        f"REALES que el inversor tiene hoy) de un inversor de retiro con filosofía conservadora "
-        f"(preservación de capital primero). No analizás un activo suelto: evaluás la cartera "
+        f"REALES que el inversor tiene hoy) de un inversor de retiro. {EVIDENCE_REGISTER} No analizás un activo suelto: evaluás la cartera "
         f"como un todo, tal como está hoy.\n\n"
         f"=== DATOS DUROS DE LA CARTERA (anclá tus argumentos a estos números, no inventes otros) ===\n"
         f"{portfolio_committee_context_block(ctx)}\n\n"

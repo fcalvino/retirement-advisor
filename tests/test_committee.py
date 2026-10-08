@@ -381,12 +381,16 @@ from analysis.committee_prompts import (  # noqa: E402
 )
 from config import STRESS_SCENARIOS  # noqa: E402
 
-_PM_LEGACY_INSTRUCTIONS = (
+# EO-5b: el PM sin Perfil elegido (sin Postura) y sin cartera real. Escrito a mano: es el
+# texto que el usuario sin Perfil ve, y lo que fija que no se invente un tamaño.
+_PM_SIN_POSTURA_INSTRUCTIONS = (
     "Concilá las visiones (fundamental, macro y el bear case del abogado del diablo) y "
-    "decidí el dimensionamiento práctico para una cartera de retiro conservadora "
-    "(máximo prudente por nombre ~8-15%). Tu stance es la decisión de cartera, no un "
-    "análisis aislado: pesá el upside contra el riesgo de capital. Si el bear case es "
-    "serio, reflejalo en una postura y un tamaño más cautos."
+    "decidí el dimensionamiento práctico. "
+    "Este inversor no eligió un Perfil, así que no hay Postura: dá tu stance sobre la "
+    "evidencia, NO propongas un tamaño por nombre y decí que dimensionar necesita elegir "
+    "un Perfil. "
+    "Tu stance es la decisión de cartera, no un análisis aislado: pesá el upside contra "
+    "el riesgo de capital. Si el bear case es serio, reflejalo en la postura y en el tamaño."
 )
 
 
@@ -428,11 +432,11 @@ def test_shared_block_adds_country_and_omits_empty_facts():
     assert "Alertas del motor" not in prompt
 
 
-def test_pm_prompt_byte_identical_without_portfolio():
+def test_pm_prompt_without_portfolio_and_without_postura_is_the_hand_written_text():
     fund, tech = _fund_tech()
-    legacy = _role_prompt("Portfolio Manager", _PM_LEGACY_INSTRUCTIONS, fund, tech)
-    assert portfolio_manager_prompt(fund, tech) == legacy
-    assert portfolio_manager_prompt(fund, tech, None) == legacy
+    expected = _role_prompt("Portfolio Manager", _PM_SIN_POSTURA_INSTRUCTIONS, fund, tech)
+    assert portfolio_manager_prompt(fund, tech) == expected
+    assert portfolio_manager_prompt(fund, tech, None, None) == expected
 
 
 def test_pm_prompt_carries_real_weight_and_sector_shock():
@@ -745,8 +749,9 @@ def test_analyze_keys_cache_and_confidence_by_data_quality(monkeypatch):
     fund, tech = _fund_with(data_quality={"stale": True, "n_missing": 0})
     stale = c.analyze(fund, tech)
 
-    assert seen[0] == ""  # sin calidad: la clave de siempre
-    assert seen[1] == "dq:s1m0"
+    # EO-5b: el Perfil (aquí ninguno) es parte de la clave; sin calidad no hay sufijo de dq.
+    assert seen[0] == "pos:sin-perfil"
+    assert seen[1] == "dq:s1m0:pos:sin-perfil"
     assert (stale.lean, stale.action) == (fresh.lean, fresh.action)
     rank = ["LOW", "MEDIUM", "HIGH"]
     assert rank.index(stale.confidence) == max(0, rank.index(fresh.confidence) - 1)

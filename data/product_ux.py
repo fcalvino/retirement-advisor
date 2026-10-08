@@ -3426,6 +3426,32 @@ def profile_margin_pct(profile_key: str | None, override: float | None = None) -
     return float(OPTIMIZER_PROFILES[profile_key].margin_of_safety_pct)
 
 
+def committee_postura(prefs: Any) -> Optional[dict]:
+    """La Postura del Perfil elegido, para el Portfolio Manager del comité (EO-5b).
+
+    ``prefs`` es ``UserPreferences``. Devuelve None sin Perfil elegido: sin Perfil no hay
+    Postura (EO-1b) y el PM no dimensiona. Lleva lo que el usuario editó por encima del
+    Perfil (exigencia, margen, Escenario) y los topes de ``ProfileConfig``.
+    """
+    from config import OPTIMIZER_PROFILES
+
+    key = getattr(prefs, "chosen_profile_key", None)
+    if key not in OPTIMIZER_PROFILES:
+        return None
+    cfg = OPTIMIZER_PROFILES[key]
+    return {
+        "profile_key": key,
+        "profile_name": cfg.name,
+        "max_position_pct": float(cfg.max_position_pct),
+        "max_crypto_pct": float(cfg.max_crypto_pct),
+        "exigencia_pct": float(profile_exigencia_pct(key, getattr(prefs, "exigencia_pct", None))),
+        "margin_pct": float(profile_margin_pct(key, getattr(prefs, "margin_pct", None))),
+        "planning_scenario": str(
+            profile_planning_scenario(key, getattr(prefs, "planning_scenario", None))
+        ),
+    }
+
+
 # --------------------------------------------------------------------------- #
 #  Riesgo país de los ADRs argentinos en la Estimación (EO-4d)                 #
 # --------------------------------------------------------------------------- #

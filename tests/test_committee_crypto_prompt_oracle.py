@@ -30,8 +30,6 @@ Sin red y sin LLM.
 
 from __future__ import annotations
 
-import re
-
 import pytest
 
 from analysis.committee_prompts import (
@@ -41,7 +39,7 @@ from analysis.committee_prompts import (
     macro_strategist_prompt,
     portfolio_manager_prompt,
 )
-from config import CRYPTO_COMMITTEE, CRYPTO_MOAT, OPTIMIZER_PROFILES
+from config import CRYPTO_COMMITTEE, CRYPTO_MOAT
 from tests.test_prompts import _crypto_fund, _equity_fund, _tech
 
 #: Vocabulario de estados contables. Nada de esto existe en un activo digital, y
@@ -132,26 +130,38 @@ class TestElPanelVeLosDatosNativosDelActivo:
         assert "crypto_halving" in CRYPTO_COMMITTEE.context_note_keys
 
 
-class TestElPortfolioManagerDimensionaConElTechoReal:
-    def test_cita_el_max_crypto_pct_del_perfil_y_no_la_banda_de_equity(self):
-        prompt = portfolio_manager_prompt(_crypto_fund(), _tech("BTC-USD"))
-        cap = OPTIMIZER_PROFILES[CRYPTO_COMMITTEE.sizing_profile].max_crypto_pct
-        assert f"{cap:.0f}%" in prompt
+_POSTURA = {
+    "profile_key": "aggressive", "profile_name": "Agresivo", "max_position_pct": 18.0,
+    "max_crypto_pct": 10.0, "exigencia_pct": 70.0, "margin_pct": 5.0,
+    "planning_scenario": "central",
+}
+
+
+class TestElPortfolioManagerDimensionaDentroDeLaPostura:
+    """EO-5b: el techo es el del Perfil del inversor, no el de un Conservador fijo."""
+
+    def test_cripto_cita_el_max_crypto_pct_de_la_postura_y_no_la_banda_de_equity(self):
+        prompt = portfolio_manager_prompt(_crypto_fund(), _tech("BTC-USD"), None, _POSTURA)
+        assert "10%" in prompt                       # el techo del Perfil Agresivo, a mano
+        assert "Perfil Agresivo" in prompt
         assert "8-15%" not in prompt, "el PM sigue dimensionando con la banda de una acción"
 
-    def test_una_accion_conserva_su_banda(self):
-        prompt = portfolio_manager_prompt(_equity_fund(), _tech())
-        assert "~8-15%" in prompt
+    def test_cripto_sin_perfil_no_inventa_un_techo(self):
+        prompt = portfolio_manager_prompt(_crypto_fund(), _tech("BTC-USD"))
+        assert "no hay Postura" in prompt and "NO propongas un tamaño" in prompt
+        assert "techo por ticker cripto" not in prompt
 
-    def test_el_techo_no_esta_hardcodeado_en_el_prompt(self):
-        """Mover el perfil en config tiene que mover el número del prompt."""
-        from analysis import committee_prompts as cp
+    def test_una_accion_cita_el_maximo_por_nombre_de_la_postura(self):
+        prompt = portfolio_manager_prompt(_equity_fund(), _tech(), None, _POSTURA)
+        assert "máximo 18% por nombre" in prompt
+        assert "exigencia de 70%" in prompt and "margen de seguridad de 5%" in prompt
+        assert "Escenario central" in prompt
+        assert "~8-15%" not in prompt
 
-        src = re.sub(r"#.*", "", cp._crypto_position_cap_pct.__doc__ or "")
-        assert "3%" not in src
-        assert cp._crypto_position_cap_pct() == OPTIMIZER_PROFILES[
-            CRYPTO_COMMITTEE.sizing_profile
-        ].max_crypto_pct
+    def test_el_techo_cambia_con_el_perfil_y_no_esta_en_el_texto(self):
+        otro = {**_POSTURA, "max_crypto_pct": 3.0, "profile_name": "Conservador"}
+        assert "3%" in portfolio_manager_prompt(_crypto_fund(), _tech("BTC-USD"), None, otro)
+        assert "Perfil Conservador" in portfolio_manager_prompt(_equity_fund(), _tech(), None, otro)
 
 
 class TestElCoachNombraTrampasDeCripto:

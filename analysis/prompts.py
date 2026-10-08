@@ -12,7 +12,7 @@ vendor's model, which told whichever provider was executing the request that it 
 a different model; the register never depended on the brand and survived the
 substitution intact. The two plan-narrative prompts
 (``long_term_plan_narrative_prompt``, ``plan_level_narrative_prompt``) never carried
-that persona and keep their own, more conservative opening.
+that persona and keep their own, plainer opening.
 
 Design goals:
 - Máxima fidelidad a los datos: fundamentals detallados + técnico semanal + moat previo + métricas de riesgo + alertas se inyectan completos (nunca se remueve contexto).
@@ -222,7 +222,7 @@ def _macro_factors_output_spec(for_moat: bool = False, for_portfolio: bool = Fal
         "  factor: nombre corto del factor macro\n"
         "  why_relevant: por qué es relevante para ESTA empresa/cartera concreta (sector, industria, país, números del prompt)\n"
         "  impact: cómo afecta tesis/riesgos/valuación/márgenes/señal o durabilidad del moat (anclá a datos concretos que te di)\n"
-        "  effect_on_allocation_or_conviction: efecto medible en el % de asignación conservadora o en HIGH/MEDIUM/LOW\n"
+        "  effect_on_allocation_or_conviction: efecto medible en el % de asignación o en HIGH/MEDIUM/LOW\n"
     )
     if for_moat:
         shape += "Además, si aplica, agregá el campo top-level macro_impact_on_moat_durability (texto sobre efecto estructural en la durabilidad del moat a 5-15+ años).\n"
@@ -349,7 +349,7 @@ def _hard_decision_constraints_block(fund, tech) -> str:
 2. SEGURIDAD: ¿viola constraints duros? Si sí, action en HOLD / REDUCE / SELL y explicá.
 3. MATRIZ: compará score ajustado con umbrales STRONG/BUY/HOLD del sistema.
 4. MACRO: 0–2 factores SOLO si los conectás a un número del paso 1; si no, macro_factors=[].
-5. ASIGNACIÓN: % conservador ≤ {S.max_position_pct:.0f} (o menor si emergentes/vol alta); justificá confidence.
+5. ASIGNACIÓN: % ≤ {S.max_position_pct:.0f} (o menor si emergentes/vol alta); justificá confidence.
 
 FEW-SHOT DE RIGOR (estilo, no copiar números):
 Empresa con ROE 22%, moat Wide, pero D/E 3.5 y valuación en percentil alto → action HOLD o REDUCE,
@@ -490,7 +490,7 @@ Incluye en el reasoning: (1) la fortaleza central del moat, (2) la limitación o
   "regulatory_ip": 0.0,
   "moat_durability_years": 10,
   "recommended_max_allocation": 6,
-  "reasoning": "Análisis con voz propia: (1) Fortaleza central del moat y por qué es estructural. (2) Limitación o riesgo principal (incluyendo macro si aplica y cómo se conecta a los números concretos). (3) Durabilidad estimada en años y evidencia. (4) % máximo de asignación conservadora y el razonamiento detrás (ajustado por macro cuando corresponda).",
+  "reasoning": "Análisis con voz propia: (1) Fortaleza central del moat y por qué es estructural. (2) Limitación o riesgo principal (incluyendo macro si aplica y cómo se conecta a los números concretos). (3) Durabilidad estimada en años y evidencia. (4) % máximo de asignación y el razonamiento detrás (ajustado por macro cuando corresponda).",
   "macro_factors": [],
   "macro_impact_on_moat_durability": ""
 }}"""
@@ -741,7 +741,7 @@ Analiza estas 5 dimensiones (sé escéptico — el optimismo del mercado no sust
 - 0.0 → Prohibición activa en principales mercados. Sin ETFs disponibles.
 
 **5. tech_resilience (0–1 pt) — Resiliencia Tecnológica & Competencia**
-- 1.0 → Lightning Network operativa con >5.000 BTC en canales activos. BTC domina "reserva de valor digital" sin competidor directo. Protocolo base conservador, battle-tested 15+ años.
+- 1.0 → Lightning Network operativa con >5.000 BTC en canales activos. BTC domina "reserva de valor digital" sin competidor directo. Protocolo base simple y probado (battle-tested 15+ años).
 - 0.5 → Lightning funcional pero con adopción limitada. Competidores (ETH, Solana) amenazan la narrativa de reserva de valor.
 - 0.0 → Protocolo estagnado o competidores ganando terreno decisivamente.
 
@@ -765,7 +765,7 @@ Escribí el `reasoning` con tu voz: análisis honesto, directo y con contexto ma
   "moat_durability_years": 10,
   "recommended_max_allocation": 3,
   "retirement_risk_summary": "Resumen objetivo de 2–3 oraciones sobre los riesgos principales de este activo (incluyendo macro cuando aplique).",
-  "reasoning": "Análisis con voz propia en español (5–7 oraciones). Incluye: (1) fortaleza central del moat, (2) debilidad o riesgo principal (macro o estructural), (3) durabilidad estimada y por qué, (4) en qué perfil de cartera de jubilación encaja y con qué dimensionamiento conservador.",
+  "reasoning": "Análisis con voz propia en español (5–7 oraciones). Incluye: (1) fortaleza central del moat, (2) debilidad o riesgo principal (macro o estructural), (3) durabilidad estimada y por qué, (4) en qué perfil de cartera de jubilación encaja y con qué dimensionamiento.",
   "macro_factors": [],
   "macro_impact_on_moat_durability": ""
 }}"""
@@ -866,7 +866,7 @@ Usá EXACTAMENTE el formato de salida para macro que se detalla abajo.
 - Volatilidad y drawdowns históricos del 70–85% son estructurales: dimensioná siempre.
 - Si hay alerta de volatilidad extrema o movimiento parabólico → no STRONG BUY; preferí HOLD.
 - Score a usar: ADJUSTED = {fund.adjusted_score:.1f} (total_score crypto es 0 por diseño).
-- Asignación conservadora típica ≤ 5% salvo convicción excepcional documentada.
+- Asignación típica ≤ 5% salvo convicción excepcional documentada.
 
 --- PASOS DE RAZONAMIENTO (reflejar en reasoning) ---
 1. Datos: score ajustado, moat crypto, vol/dd, señal técnica.
@@ -888,7 +888,7 @@ Respetá CONSTRAINTS DUROS CRYPTO y PASOS DE RAZONAMIENTO.
   "rationale": ["factor positivo 1", "factor positivo 2"],
   "risks": ["riesgo 1", "riesgo 2", "riesgo de volatilidad / drawdown"],
   "recommended_max_allocation": 3,
-  "reasoning": "Tesis: señal técnica y fundamentos incluyendo macro relevante. Técnico: momentum, SMAs, RSI. Riesgo: volatilidad y drawdown + macro. Asignación: % máx sugerido según convicción y por qué (dimensionando el riesgo real); la convicción es MEDIUM porque aunque el moat es sólido y el técnico acompaña, la volatilidad estructural y los riesgos regulatorios no permiten HIGH en un portafolio conservador de jubilación.",
+  "reasoning": "Tesis: señal técnica y fundamentos incluyendo macro relevante. Técnico: momentum, SMAs, RSI. Riesgo: volatilidad y drawdown + macro. Asignación: % máx sugerido según convicción y por qué (dimensionando el riesgo real); la convicción es MEDIUM porque aunque el moat es sólido y el técnico acompaña, la volatilidad estructural y los riesgos regulatorios no permiten HIGH.",
   "macro_factors": []
 }}"""
 
@@ -987,7 +987,7 @@ def long_term_plan_narrative_prompt(
     return_basis: str = "proxy",
 ) -> str:
     """
-    Generate a human, conservative narrative explaining the current long-term plan
+    Generate a human narrative, calibrated to the evidence, explaining the current long-term plan
     to a serious investor with a 10-30 year horizon.
     Returns a ready-to-send prompt string.
     """
@@ -1002,7 +1002,7 @@ def long_term_plan_narrative_prompt(
     withdrawal_str = f"${annual_withdrawal:,.0f}/año" if annual_withdrawal > 0 else "sin retiros (acumulación pura)"
     target_str = f"Meta ${target_value:,.0f}" if target_value > 0 else "sin meta numérica específica"
 
-    return f"""Eres un analista de inversión senior extremadamente riguroso, objetivo y conservador, especializado en carteras de largo plazo (horizonte 10-30 años). Tu prioridad #1 es que el inversor **no se arruine** por secuencia de retornos adversa o sobre-confianza.
+    return f"""Eres un analista de inversión senior extremadamente riguroso y objetivo, especializado en carteras de largo plazo (horizonte 10-30 años). Tu prioridad #1 es que el inversor entienda con qué probabilidad su plan se sostiene y qué lo amenaza (secuencia de retornos adversa, sobre-confianza): decí lo que la evidencia sostiene, con su incertidumbre.
 
 IDIOMA OBLIGATORIO: Responde SIEMPRE en español. Toda la narrativa, explicaciones y recomendaciones deben estar escritas en español correcto y natural. Nunca uses inglés en ninguna parte de tu respuesta.
 
@@ -1012,7 +1012,7 @@ Activos: {holdings_str}
 Volatilidad: {volatility:.1f}% | {ratio_prompt_line(sharpe, return_basis)}
 Dividend Yield: {dividend_yield:.1f}%
 
-**PARÁMETROS DE LA SIMULACIÓN MONTE CARLO (block bootstrap 10 años historia real + ajustes conservadores)**
+**PARÁMETROS DE LA SIMULACIÓN MONTE CARLO (block bootstrap sobre 10 años de historia real, recentrado en la Estimación objetiva de cada Clase)**
 Horizonte: {horizon_years} años
 Capital inicial: ${initial_value:,.0f}
 Retiro anual: {withdrawal_str} (crece a {inflation_rate:.1f}% anual)
@@ -1043,7 +1043,7 @@ Estructura la respuesta exactamente así (usá viñetas y lenguaje directo):
 **Una frase final de prudencia**
 
 Reglas:
-- Nunca digas "esto es genial" o "vas a estar tranquilo". Sé conservador.
+- No celebres ni prometas tranquilidad: decí lo que los números sostienen, con su incertidumbre (el rango, no sólo el centro).
 - Si el P10 es mucho más bajo que el inicial, decilo sin anestesia.
 - Si el retiro crece con inflación, mencioná que eso aumenta el riesgo de secuencia.
 - Mencioná el perfil de riesgo elegido y por qué importa.
@@ -1206,7 +1206,7 @@ Sé brutalmente honesto sobre si la versión concentrada pierde diversificación
 # 8. Plan-level narrative + macro risks (Fase D)
 # ---------------------------------------------------------------------------
 # Explains a *saved retirement plan* (the persisted PlanSnapshot) in human,
-# conservative Spanish — and surfaces the 0-2 macro factors that could most
+# calibrated Spanish — and surfaces the 0-2 macro factors that could most
 # damage the plan. Unlike long_term_plan_narrative_prompt (which describes the
 # live session), this works off a stored snapshot and an optional "refresh"
 # (today's prices vs. when the plan was saved), so a plan stays explainable
@@ -1284,7 +1284,7 @@ def plan_level_narrative_prompt(
             f"Meta principal: {personal.get('primary_goal_type', 'retiro')}."
         )
     else:
-        personal_str = "Perfil personal no definido (usá supuestos conservadores genéricos)."
+        personal_str = "Perfil personal no definido: no asumas uno; decí que falta."
 
     # --- Goals ---
     if goals:
@@ -1419,7 +1419,7 @@ def plan_level_narrative_prompt(
     else:
         refresh_str = "Sin refresco de mercado disponible (no se compararon precios de hoy)."
 
-    return f"""Eres un analista de inversión senior extremadamente riguroso, objetivo y conservador, especializado en planes de retiro de largo plazo (10-30 años). Tu prioridad #1 es que el inversor **no se arruine** y entienda su plan de verdad.
+    return f"""Eres un analista de inversión senior extremadamente riguroso y objetivo, especializado en planes de retiro de largo plazo (10-30 años). Tu prioridad #1 es que el inversor entienda su plan de verdad: decí lo que la evidencia sostiene, con su incertidumbre.
 
 IDIOMA OBLIGATORIO: Responde SIEMPRE en español natural y correcto. Nunca uses inglés.
 
@@ -1468,7 +1468,7 @@ Dividend yield {float(metrics.get('dividend_yield_pct', 0)):.2f}% | Score prom. 
    - **¿Cuánto dura tu ingreso?** (SOLO si hay estrategia de retiro definida arriba: explicá la probabilidad de sostener el retiro durante el horizonte, y advertí sobre el riesgo de secuencia de retornos y el riesgo de longevidad —vivir más de lo previsto. Si guardrails, mencioná que recortar gasto en caídas es lo que sube la probabilidad de durar.)
    - **Recomendaciones concretas** (máx 3 acciones)
    - **Una frase final de prudencia**
-   Reglas de voz: conservador, sin "vas a estar tranquilo" ni optimismo infundado. Si el P10 es mucho menor al capital, decilo sin anestesia. Mencioná el perfil de riesgo y por qué importa. Si hubo refresco de mercado, integrá qué cambió. Si la probabilidad de sostener el retiro es baja (<75%), decilo con claridad y sugerí retirar menos o cambiar de estrategia. NO inventes números de decumulación: usá solo los provistos arriba.
+   Reglas de voz: lo que la evidencia sostiene, con su incertidumbre, sin "vas a estar tranquilo" ni optimismo ni alarmismo infundados. Si el P10 es mucho menor al capital, decilo sin anestesia. Mencioná el perfil de riesgo y por qué importa. Si hubo refresco de mercado, integrá qué cambió. Si la probabilidad de sostener el retiro es baja (<75%), decilo con claridad y sugerí retirar menos o cambiar de estrategia. NO inventes números de decumulación: usá solo los provistos arriba.
 
 2. "macro_risks": una lista de 0, 1 o máximo 2 objetos con los factores macro que MÁS pueden romper este plan en su horizonte. Cada objeto: {{"factor": "nombre corto", "why": "por qué afecta a ESTA cartera/sectores concretos, anclado a los datos de arriba", "severity": "alta" | "media" | "baja"}}. Si ningún factor macro es claramente material para esta cartera, devolvé [].
 

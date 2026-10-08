@@ -136,8 +136,13 @@ if run and symbol:
     with st.spinner("El comité está deliberando (varios agentes en paralelo)…"):
         try:
             from analysis.committee import CommitteeAnalyzer
+            from data.preferences import UserPreferences
+            from data.product_ux import committee_postura
 
-            verdict = CommitteeAnalyzer(ai_config=ai_cfg).analyze(fund, tech, portfolio_ctx)
+            # EO-5b: el PM dimensiona dentro de la Postura del Perfil elegido (None sin Perfil).
+            verdict = CommitteeAnalyzer(ai_config=ai_cfg).analyze(
+                fund, tech, portfolio_ctx, committee_postura(UserPreferences.load())
+            )
         except Exception as exc:  # pragma: no cover - UI guard
             logger.error(f"comité page: failed — {exc}")
             st.error(f"No se pudo ejecutar el comité: {exc}")

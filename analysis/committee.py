@@ -3,9 +3,10 @@ Multi-agent investment committee (Gran Salto — Fase 2B).
 
 Replaces the single-shot AI call with a panel of specialised agents that debate
 and produce a verdict with **explicit dissent**. The Devil's Advocate always
-builds the bear case, so disagreement is auditable rather than smoothed over —
-exactly the conservative philosophy of the product ("que el inversor no se
-arruine").
+builds the bear case, so disagreement is auditable rather than smoothed over: it
+is the method of the committee, not a bias of the product (EO-5b, ADR 0001: the
+prudence an investor wants is the Postura of their Perfil, which reaches the
+Portfolio Manager; the agents say what the evidence supports, with its uncertainty).
 
 Design:
   - Each agent calls an injectable ``call_fn(prompt) -> raw_json_str``. In
@@ -437,7 +438,9 @@ def aggregate(
             dissent.append(f"{label}: {detail}" if detail else label)
 
     # Confidence: start from the Fundamental Analyst (or median), downgrade on
-    # strong dissent — the conservative bias.
+    # strong dissent. The lean (the vote) is symmetric; this notch is the Devil's
+    # Advocate's method, kept on purpose (EO-5b, user decision 2026-10-08): it moves
+    # the confidence label, never the action.
     base = next((o for o in valid if o.role == "Analista Fundamental"), None)
     base_conf_rank = _CONFIDENCE_RANK.get(base.confidence, 1) if base else 1
     strong_dissent = bool(
@@ -901,12 +904,19 @@ class CommitteeAnalyzer:
 
         return _call
 
-    def analyze(self, fund, tech, portfolio_ctx: Optional[dict] = None) -> CommitteeVerdict:
-        """``portfolio_ctx`` (from ``build_ticker_portfolio_context``) reaches only the PM."""
+    def analyze(self, fund, tech, portfolio_ctx: Optional[dict] = None,
+                postura: Optional[dict] = None) -> CommitteeVerdict:
+        """``portfolio_ctx`` (from ``build_ticker_portfolio_context``) reaches only the PM.
+
+        ``postura`` (``data.product_ux.committee_postura``) is the Postura of the investor's
+        Perfil (EO-5b): it reaches only the PM, and it is part of the cache key — a verdict
+        sized for one Perfil must not be served for another, nor for no Perfil at all.
+        """
         symbol = fund.symbol
         dq = getattr(fund, "data_quality", None)
         variant = ":".join(
-            p for p in (_portfolio_variant(portfolio_ctx), _data_quality_variant(dq)) if p
+            p for p in (_portfolio_variant(portfolio_ctx), _data_quality_variant(dq),
+                        _postura_variant(postura)) if p
         )
         if self._use_cache:
             cached = self._get_cached(symbol, variant)
@@ -952,7 +962,7 @@ class CommitteeAnalyzer:
             abstentions[MACRO_VOTE_ROLE] = MACRO_ABSTAIN_REASON
         jobs.update({
             "Abogado del Diablo": (devils_advocate_prompt(fund, tech, news, drawdowns), lambda r: _parse_agent("Abogado del Diablo", r)),
-            "Portfolio Manager": (portfolio_manager_prompt(fund, tech, portfolio_ctx), lambda r: _parse_agent("Portfolio Manager", r)),
+            "Portfolio Manager": (portfolio_manager_prompt(fund, tech, portfolio_ctx, postura), lambda r: _parse_agent("Portfolio Manager", r)),
             "Behavioral Coach": (behavioral_coach_prompt(fund, tech), lambda r: _parse_agent("Behavioral Coach", r)),
         })
         if _pays_dividend(fund):
@@ -1076,6 +1086,21 @@ class CommitteeAnalyzer:
             cache.set(self._cache_key(symbol, variant), _verdict_to_dict(verdict))
         except Exception as exc:
             logger.debug(f"committee cache set skipped — {exc}")
+
+
+def _postura_variant(postura: Optional[dict]) -> str:
+    """Cache-key suffix (EO-5b): the Postura the PM sized against, or ``sin-perfil``.
+
+    It carries every number the PM prompt prints, not only the Perfil's name: the user can
+    edit the exigencia, the margin and the planning Escenario on top of the Perfil.
+    """
+    if not postura:
+        return "pos:sin-perfil"
+    import hashlib
+    import json
+
+    digest = hashlib.md5(json.dumps(postura, sort_keys=True, default=str).encode()).hexdigest()
+    return f"pos:{postura.get('profile_key', '?')}:{digest[:8]}"
 
 
 def _portfolio_variant(portfolio_ctx: Optional[dict]) -> str:
