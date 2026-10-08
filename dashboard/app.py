@@ -12,6 +12,7 @@ Run with:
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -46,9 +47,18 @@ from data.universe_loader import UNIVERSE_META, list_universes
 #  Production logging                                                  #
 # ------------------------------------------------------------------ #
 
-_LOG_DIR = Path(__file__).parent.parent / "logs"
-_LOG_DIR.mkdir(exist_ok=True)
-_LOG_PATH = _LOG_DIR / "retirement_advisor.log"
+# COM-LOG-TESTS: ``RETIREMENT_ADVISOR_LOG_PATH`` mueve el archivo, igual que
+# ``RETIREMENT_ADVISOR_DB_PATH`` mueve la base. La suite lo fija a un temporal
+# (``tests/conftest.py``): este sumidero se agrega cuando un ``AppTest`` corre la app y
+# se queda hasta el final de la sesión de pytest, así que sin el desvío todo lo que loguea
+# un test posterior —los ``committee[...]`` de la suite, por ejemplo— terminaba en el log
+# de las corridas reales. Sin la variable, el archivo es el de siempre.
+_LOG_PATH = Path(
+    os.environ.get("RETIREMENT_ADVISOR_LOG_PATH")
+    or Path(__file__).parent.parent / "logs" / "retirement_advisor.log"
+)
+_LOG_DIR = _LOG_PATH.parent
+_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _ensure_logger() -> None:

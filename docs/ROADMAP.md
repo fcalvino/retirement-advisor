@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## COM-LOG-TESTS — la suite deja de escribir en el log de las corridas reales (2026-10-08)
+
+COM-LOG-TESTS: la suite deja de escribir en `logs/retirement_advisor.log` del clon real. `RETIREMENT_ADVISOR_LOG_PATH` (fijada en `tests/conftest.py` antes de cualquier import del proyecto y leída por `dashboard/app.py`) desvía el sumidero de archivo a un temporal; sin la variable, la app escribe donde siempre. Medido: 126 de 131 líneas `committee[` del log del clon eran de la suite. El log existente no se tocó. Abre la decimoséptima repriorización.
+
+---
+
 ## EO-5b — la IA se calibra, no se modera: prompts sin sesgo conservador y el PM recibe la Postura (2026-10-08)
 
 EO-5b (ADR 0001), segunda parte de EO-5 y cierre de EO-5: la IA se calibra, no se modera. Fuera la redacción conservadora de los prompts (comité, decisión, plan, chat); el PM recibe la Postura del Perfil y, sin Perfil, no dimensiona; el Perfil entra a la clave de caché del comité; `COMMITTEE.prompt_version` 2026-10-08b. Abogado del Diablo como método. Un barrido de los prompts impide que «conservador» vuelva. Banco en vivo: 7/7, 2/2, 2/2 GREEN (19 llamadas, ~USD 0,009).
