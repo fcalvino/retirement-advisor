@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## EO-5a — el tope de posición del modelo es recommended_max_allocation y un Perfil sin nombre no se asume (2026-10-08)
+
+EO-5a (ADR 0001), primera parte de EO-5: `recommended_max_allocation_conservative` → `recommended_max_allocation` en prompts, parser, moat, cripto y banco de eval, con la clave vieja como alias de lectura; `resolve_optimizer_profile` sin nombre levanta `ValueError`. `COMMITTEE.prompt_version` 2026-10-08a (el texto del prompt del Fundamental cambió). Sin cambio de señales ni de topes.
+
+---
+
 ## EO-6b-2 — un dato faltante del Consistency Score recibe la mediana de su sector (2026-10-08)
 
 EO-6b-2 (ADR 0001), segunda parte de EO-6b y cierre de EO-6: un dato faltante del Consistency Score recibe la mediana de su sector en el universo cacheado (mínimo 5 datos, respaldo la mediana de todos los equities; fondos y cripto no se imputan) desde una tabla derivada y versionada. Medido: 1 de 189 equities cambia de score (ISRG, +6,5) y ninguna señal. `SIGNAL_METHOD_VERSION` 2026.10-senales3; `ENGINE_VERSION` no cambia.

@@ -22,9 +22,13 @@ class TestResolveOptimizerProfile:
         cfg = resolve_optimizer_profile("totally-unknown-xyz")
         assert cfg.name == CONSERVATIVE_PROFILE.name
 
-    def test_empty_defaults_conservative(self):
-        assert resolve_optimizer_profile("").name == CONSERVATIVE_PROFILE.name
-        assert resolve_optimizer_profile(None).name == CONSERVATIVE_PROFILE.name
+    def test_empty_raises_instead_of_defaulting(self):
+        """EO-5a (ADR 0001): sin Perfil no hay Postura, y no se asume Conservador."""
+        import pytest
+
+        for blank in ("", "   ", None):
+            with pytest.raises(ValueError, match="Perfil"):
+                resolve_optimizer_profile(blank)
 
     def test_aggressive_differs_from_hardcoded_old_defaults(self):
         """Old hardcodes were max_pos=8, min_pos=8, max_vol=18 — aggressive must differ."""

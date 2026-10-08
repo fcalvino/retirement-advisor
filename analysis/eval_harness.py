@@ -592,7 +592,7 @@ def check_moat_reasoning(case: MoatGoldenCase, m) -> CheckResult:
 
 
 def check_moat_allocation(case: MoatGoldenCase, m) -> CheckResult:
-    alloc = m.recommended_max_allocation_conservative
+    alloc = m.recommended_max_allocation
     ok = 0 < alloc <= EVAL.conservative_alloc_cap_pct
     return CheckResult(
         "moat_allocation", ok,

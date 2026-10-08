@@ -21,7 +21,7 @@ usan la Estimación objetiva rotulada «no calibrable» (decisiones del usuario,
 1. ~~**Sincronización** — este orden, el ADR 0001 y el glosario llegan a `main` (sólo docs).~~
 2. ~~**SIM-GAP-PCT + KATEX-DOLLAR-PLAN** — banda 4, un PR: el mismo bloque «Dos escenarios».~~
 3. ~~**EO-0 → EO-1a → EO-1b → EO-1c → EO-2a → EO-2b → EO-2c → EO-3 → EO-4a → EO-4b → EO-4c-1 → EO-4c-2 → EO-4d**: el riesgo país argentino entra a la Estimación de los ADRs (EO-4a el Monte Carlo, EO-4b el Optimizer, EO-4c-1 el motor de Escenarios, EO-4c-2 su UI y EO-4d el riesgo país, cerrados). Ver bloque 6.~~
-4. ~~**EO-6a**~~ → ~~**EO-6b-1**~~ → ~~**EO-6b-2**~~ → **EO-5**. Ver bloque 6.
+4. ~~**EO-6a**~~ → ~~**EO-6b-1**~~ → ~~**EO-6b-2**~~ → ~~**EO-5a**~~ → **EO-5b** (necesita el OK de costo del banco `--live`). Ver bloque 6.
 
 Esperan disparador: U5-1b y COM-*. Sin orden: STREAMLIT-1.65 (sin banda), PORTFOLIO-FX,
 COM-LOG-TESTS, IDEA-4, IDEA-5, PIT-TOOLS y GOAL-PRIORITY-TEXT. Espera Fuente: SCORE-CONTRACCION.
@@ -102,7 +102,7 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **GOAL-PRIORITY-TEXT** | 5 | Una meta importada a mano con la prioridad en texto («esencial») llega a `goals_list` sin convertir y «Simular» la pasa por `int()`. Residual declarado de PLAN-GOALS-KEYS (#214); ningún export de la app la escribe así. Anotado el 2026-10-02, **no priorizado**. Ver bloque 4 |
 | **SCORE-CONTRACCION** | ? | La contracción de la Estimación de cada activo hacia la de su Clase según el score, que el ADR 0001 prevé y EO-4b no hizo (decisión del usuario, 2026-10-06): U6-1 midió que el score ordena el rendimiento (p<0,0001) pero no lo cotiza, así que hoy un peso sería un número sin Fuente. Con la contracción en 0, dos acciones de la misma Clase tienen el mismo μ y el score sólo elige los candidatos. **Reabrir** con una medición point-in-time que dé un peso con su banda (no recalibrar sobre la misma historia que U6-1). Anotado el 2026-10-06, **sin banda** |
-| **EO-5** | dec. | La IA calibrada: prompts, `recommended_max_allocation`, el PM recibe la Postura, oráculo de postura. Ver bloque 6 |
+| **EO-5b** | dec. | La IA calibrada: sale la redacción conservadora (`committee_prompts.py:197,726`, `prompts.py:1005,1046,1422`, `chat_agent.py:138`), el PM recibe la Postura, el Perfil entra a la clave de caché del comité, oráculo que barre los prompts, y el banco `--live` (llamadas pagas: pide el OK de costo del usuario). Sube `COMMITTEE.prompt_version`. Residuales de 5a: el rótulo de UI «Asignación máx. conservadora» (`2_Stock_Analysis.py`) y `EVAL.conservative_alloc_cap_pct`. Ver bloque 6 |
 
 Las filas cerradas están en [`ROADMAP.md`](ROADMAP.md): una entrada por fila, con su commit.
 
@@ -409,7 +409,7 @@ Toda etapa que mueva μ o el Monte Carlo sube `ENGINE_VERSION`.
   de EO-4 (corregir el método con otro mecanismo de Azar, o dejarlos fuera de la
   Estimación objetiva con el haircut rotulado); probar variantes hasta que una pase
   sobre las mismas 14 ventanas sería ajustar al test.
-- **EO-5 — IA calibrada.** Fuera «filosofía conservadora» (`committee_prompts.py`),
+- **EO-5 — IA calibrada**, en dos PRs (decisión del usuario, 2026-10-08): **EO-5a** el renombre mecánico y `resolve_optimizer_profile` (cerrada 2026-10-08) y **EO-5b** la redacción, el PM con Postura, la clave de caché y el banco en vivo. Fuera «filosofía conservadora» (`committee_prompts.py`),
   «extremadamente… conservador» y «nunca digas esto es genial» (`prompts.py`),
   «asesor… conservador» (`chat_agent.py:138`); la instrucción es decir lo que la
   evidencia sostiene, con su incertidumbre. El Abogado del Diablo se queda (método,

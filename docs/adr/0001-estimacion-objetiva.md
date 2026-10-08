@@ -240,3 +240,11 @@ sector; con menos, la mediana de todos los equities. Fondos y cripto no se imput
 mediana es una tabla derivada y versionada, no un cálculo al vuelo: el universo cacheado
 es distinto en cada instalación. Medido, el efecto es de un ticker de 189 equities, sin
 cambio de señal. Con esto EO-6 queda cerrado; sigue EO-5. La decisión no cambia.
+
+## Nota (2026-10-08, EO-5a)
+
+EO-5 se parte en dos PRs por decisión del usuario. 5a es mecánico: el tope de posición
+del modelo pasa de `recommended_max_allocation_conservative` a `recommended_max_allocation`
+(la clave vieja se sigue leyendo) y `resolve_optimizer_profile` sin nombre levanta un
+error en vez de asumir Conservador. 5b trae la redacción calibrada, el PM con Postura,
+el Perfil en la clave de caché del comité y el banco en vivo. La decisión no cambia.

@@ -146,7 +146,7 @@ def _resp(
         "macro_factors": macro_factors or [],
     }
     if alloc is not None:
-        payload["recommended_max_allocation_conservative"] = alloc
+        payload["recommended_max_allocation"] = alloc
     return json.dumps(payload, ensure_ascii=False)
 
 
@@ -553,7 +553,7 @@ def _moat_resp(brand, network, switching, regulatory, reasoning, durability=15, 
         "brand_strength": brand, "network_effects": network,
         "switching_costs": switching, "regulatory_ip": regulatory,
         "reasoning": reasoning, "moat_durability_years": durability,
-        "recommended_max_allocation_conservative": alloc,
+        "recommended_max_allocation": alloc,
         "macro_factors": [],
     }, ensure_ascii=False)
 

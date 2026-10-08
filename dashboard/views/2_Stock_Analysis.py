@@ -554,7 +554,7 @@ if symbol:
 
                 # Show durability + allocation recommendation if provided by the AI layer
                 _dur_eq  = getattr(_moat_detail, "moat_durability_years", 0)
-                _alloc_eq = getattr(_moat_detail, "recommended_max_allocation_conservative", None)
+                _alloc_eq = getattr(_moat_detail, "recommended_max_allocation", None)
                 if _dur_eq or _alloc_eq:
                     _dur_txt   = f"Durabilidad estimada: ~{_dur_eq} años" if _dur_eq else ""
                     _alloc_txt = f"Asignación máx. conservadora: ≤{_alloc_eq}%" if _alloc_eq else ""

@@ -297,3 +297,22 @@ def downside_deviation(
     shortfall = np.minimum(values - mar, 0.0)
     deviation = float(np.sqrt(np.mean(shortfall ** 2)) * np.sqrt(periods_per_year))
     return deviation if deviation > 0 else None
+
+
+#: EO-5a (ADR 0001): la clave con que el modelo devuelve el tope de posición. Antes se
+#: llamaba ``recommended_max_allocation_conservative``; el Perfil lo decide la Postura,
+#: no el nombre del campo. La clave vieja se sigue leyendo —cachés de moat, cache de
+#: análisis y corridas guardadas de ``data/eval_runs/`` la traen— y nunca se escribe.
+ALLOCATION_KEY = "recommended_max_allocation"
+LEGACY_ALLOCATION_KEY = "recommended_max_allocation_conservative"
+
+
+def read_allocation(data: Any, default: Any = None) -> Any:
+    """El tope de posición de una respuesta del modelo (o de un caché), con la clave vieja de alias."""
+    if not isinstance(data, dict):
+        return default
+    if data.get(ALLOCATION_KEY) is not None:
+        return data[ALLOCATION_KEY]
+    if data.get(LEGACY_ALLOCATION_KEY) is not None:
+        return data[LEGACY_ALLOCATION_KEY]
+    return default
