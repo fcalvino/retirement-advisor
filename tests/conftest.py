@@ -43,6 +43,12 @@ from pathlib import Path
 _test_db_dir = Path(tempfile.mkdtemp(prefix="ra-test-db-"))
 atexit.register(shutil.rmtree, _test_db_dir, ignore_errors=True)
 os.environ["RETIREMENT_ADVISOR_DB_PATH"] = str(_test_db_dir / "retirement_advisor.db")
+# COM-LOG-TESTS: lo mismo para el log. ``dashboard/app.py`` agrega el sumidero de archivo
+# cuando un AppTest corre la app y ese sumidero dura toda la sesión; sin este desvío, lo que
+# loguea cualquier test posterior (los ``committee[...]``, por ejemplo) terminaba en
+# ``logs/retirement_advisor.log`` mezclado con las corridas reales, y COM-QUORUM-MEDICION
+# cuenta sobre ese archivo. Los hijos heredan la variable.
+os.environ["RETIREMENT_ADVISOR_LOG_PATH"] = str(_test_db_dir / "retirement_advisor.log")
 # Same for where live eval runs are saved: a developer's own setting must not
 # leak into the suite (``test_runs_dir_is_outside_git`` checks the default).
 os.environ.pop("RETIREMENT_ADVISOR_EVAL_RUNS_DIR", None)
