@@ -5,11 +5,12 @@
 yfinance>=0.2.40
 pandas>=2.0.0
 numpy>=1.24.0
-# <1.65: 1.65.0 shows a value left under a widget key before the widget, so the
-# profile seed resurfaces on the way back to Simulaciones and beats the session
-# memory (SIM-REENTRY-WIDGETS; 1.61.1–1.64.0 pass). Lift it with that fix
-# (STREAMLIT-1.65, docs/BACKLOG.md).
-streamlit>=1.32.0,<1.65
+# <1.66: 1.65.0 shows a value left under a widget key before the widget, so the profile
+# seed resurfaced on the way back to Simulaciones and beat the session memory
+# (SIM-REENTRY-WIDGETS). Fixed in the app (STREAMLIT-1.65: the memory goes back onto the
+# keys on arrival) and the suite passes on 1.61.1 (the lock), 1.64.0 and 1.65.0. The cap
+# stays one minor above the newest tested release so a 1.66 cannot break CI unseen.
+streamlit>=1.32.0,<1.66
 plotly>=5.18.0
 sqlalchemy>=2.0.0
 python-dotenv>=1.0.0

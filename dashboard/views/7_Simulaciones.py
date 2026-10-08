@@ -35,6 +35,7 @@ from dashboard.shared import (
     run_plan_sensitivity,
     seed_session_defaults_from_profile,
     sim_horizon_index,
+    snap_sim_horizon,
     withdrawal_to_tuple,
 )
 from data.product_ux import (
@@ -44,6 +45,7 @@ from data.product_ux import (
     GOOD_RUN_HELP,
     GOOD_RUN_LABEL,
     LOADED_PLAN_RETIREMENT_KEY,
+    PAGE_ENTERED_KEY,
     STRATEGY_IGNORES_SAVINGS_CAPTION,
     apply_pending_plan_load,
     apply_pending_profile_seed,
@@ -69,6 +71,7 @@ from data.product_ux import (
     ratio_help,
     ratio_label,
     remember_sim_sidebar,
+    restore_sim_sidebar,
     scenario_caption,
     scenarios_block_text,
     sim_sidebar_value,
@@ -106,6 +109,10 @@ st.caption(
 # ------------------------------------------------------------------ #
 
 _prefs_sim = get_user_prefs()
+# STREAMLIT-1.65: al llegar a la página, lo último de la sesión vuelve a las claves de los
+# widgets antes de la siembra, el plan cargado y los presets (que siguen ganándole).
+if st.session_state.get(PAGE_ENTERED_KEY):
+    restore_sim_sidebar(st.session_state, snap_horizon=snap_sim_horizon)
 seed_session_defaults_from_profile(_prefs_sim)  # direct-nav safe
 # PROFILE-SEED-WIDGETS: la siembra corrió en otra página (casi siempre Inicio);
 # se vuelve a escribir acá, antes de los widgets, para que el navegador la muestre.

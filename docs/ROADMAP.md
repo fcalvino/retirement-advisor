@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## STREAMLIT-1.65 — volver a Simulaciones muestra lo editado con Streamlit 1.65 y el tope sube a 1.66 (2026-10-08)
+
+STREAMLIT-1.65: restaurar la memoria de Simulaciones sobre las claves de los widgets al llegar a la página (marca de llegada en `dashboard/app.py`, `restore_sim_sidebar`) y subir el tope de Streamlit de `<1.65` a `<1.66`. Reproducido en un venv aislado y en un navegador real con 1.65.0. La suite pasa en 1.57.0, 1.61.1, 1.64.0 y 1.65.0. Deja el Orden actual sin pasos abiertos.
+
+---
+
 ## COM-LOG-TESTS — la suite deja de escribir en el log de las corridas reales (2026-10-08)
 
 COM-LOG-TESTS: la suite deja de escribir en `logs/retirement_advisor.log` del clon real. `RETIREMENT_ADVISOR_LOG_PATH` (fijada en `tests/conftest.py` antes de cualquier import del proyecto y leída por `dashboard/app.py`) desvía el sumidero de archivo a un temporal; sin la variable, la app escribe donde siempre. Medido: 126 de 131 líneas `committee[` del log del clon eran de la suite. El log existente no se tocó. Abre la decimoséptima repriorización.

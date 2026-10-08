@@ -414,6 +414,11 @@ def _snap_sim_horizon(years: int) -> int:
     return min(SIM_HORIZON_OPTIONS, key=lambda o: abs(o - years))
 
 
+def snap_sim_horizon(years: int) -> int:
+    """Public face of the horizon snap, for the page that restores its memory (STREAMLIT-1.65)."""
+    return _snap_sim_horizon(years)
+
+
 def sim_horizon_index(state) -> int:
     """Index the Simulaciones horizon selectbox opens on when its key is gone (SIM-REENTRY-WIDGETS).
 

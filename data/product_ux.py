@@ -3247,6 +3247,49 @@ def sim_sidebar_value(state: Any, key: str, default: Any) -> Any:
     return (state.get(SIM_SIDEBAR_MEMORY_KEY) or {}).get(key, default)
 
 
+# STREAMLIT-1.65: which page the session is on, kept by ``dashboard/app.py`` on every run.
+NAV_PAGE_KEY = "_nav_page"
+PAGE_ENTERED_KEY = "_nav_page_entered"
+
+
+def track_page_entry(state: Any, page_id: str) -> bool:
+    """Record the page this run draws and say whether the session just arrived on it.
+
+    ``dashboard/app.py`` calls it before ``pg.run()`` on every run. A rerun of the same
+    page (an edit, a button) is not an entry; a change of page, and the first run of
+    a session, are. Pages read ``PAGE_ENTERED_KEY`` instead of guessing.
+    """
+    entered = state.get(NAV_PAGE_KEY) != page_id
+    state[NAV_PAGE_KEY] = page_id
+    state[PAGE_ENTERED_KEY] = entered
+    return entered
+
+
+def restore_sim_sidebar(state: Any, *, snap_horizon: Any = None) -> None:
+    """Write the remembered sidebar values back onto the widget keys (STREAMLIT-1.65).
+
+    Streamlit 1.65.0 draws, for a widget created in the run, the value that was left
+    under its key *before* the widget: when the session arrives on Simulaciones, that is
+    the profile seed written on the first page, not what the user edited here —the
+    remembered copy lived only as ``value=``, which a key already in the state
+    ignores—. So on **arrival** (never on a rerun, or it would undo the edit just made)
+    the memory goes back onto the keys, before the profile seed, a loaded plan and the
+    presets, which still beat it. ``snap_horizon`` fits a remembered horizon the
+    selectbox does not offer (the «Meta importante» preset writes 8) to an option.
+    """
+    # Only keys already in the state are rewritten: they hold a stale value (the profile
+    # seed). An absent key already opens on its remembered value through ``value=``
+    # (``sim_sidebar_value``), and writing it would risk a widget that serialises a value
+    # set from the session differently (``select_slider``'s ``n_sims`` showed an empty
+    # value in the proto).
+    for key, value in (state.get(SIM_SIDEBAR_MEMORY_KEY) or {}).items():
+        if key not in state:
+            continue
+        if key == "horizon_years" and snap_horizon is not None:
+            value = snap_horizon(int(value))
+        state[key] = value
+
+
 def forget_profile_fields_in_sim_memory(state: Any) -> None:
     """Saving the profile again beats what Simulaciones remembered of the old one."""
     memory = state.get(SIM_SIDEBAR_MEMORY_KEY)
