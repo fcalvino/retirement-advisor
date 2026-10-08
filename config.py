@@ -220,7 +220,13 @@ ENGINE_VERSION = "2026.10-tier23"
 # `SIGNAL_METHOD_LEGACY_LABEL`: no se infiere cuál era su método.
 #   2026.10-senales1 — EO-6a: sólo el sello; ninguna señal ni umbral cambia. Es el método
 #                   de antes de EO-6b (escalera con tope asimétrico, faltantes en 0).
-SIGNAL_METHOD_VERSION = "2026.10-senales1"
+#   2026.10-senales2 — EO-6b-1: el tope de la IA contra la escalera es simétrico, un
+#                   escalón (`STRATEGY.ai_ladder_step_tolerance`; no sube sobre un veto);
+#                   con datos parciales SELL pasa a REDUCE además de STRONG BUY a BUY
+#                   (`DATA_QUALITY.partial_lifts_sell`); los umbrales 82/68/55/45 se
+#                   rotulan «ranking relativo, no calibrado». La imputación de faltantes
+#                   por la mediana del sector (EO-6b-2) sube la versión de nuevo.
+SIGNAL_METHOD_VERSION = "2026.10-senales2"
 SIGNAL_METHOD_LEGACY_LABEL = "anterior a EO-6"
 
 
@@ -484,6 +490,14 @@ class StrategyConfig:
     # escalera, nunca menos. Apagar esto restaura el comportamiento previo
     # (el LLM elige la banda), documentado como defecto crítico.
     ai_action_capped_by_score_ladder: bool = True
+    # EO-6b-1 (ADR 0001): el tope es simétrico. La IA queda a lo sumo
+    # ``ai_ladder_step_tolerance`` escalones de la acción del motor, para los dos
+    # lados (antes sólo podía ser más prudente, en cualquier cantidad). Subir un
+    # escalón sobre el motor sólo es posible cuando el motor ya está en el techo de la
+    # escalera de score: si lo bajó un veto (BEARISH, margen de seguridad, techo
+    # cripto, política blanda de data quality o de patrimonio negativo), la IA no lo
+    # levanta. 0 deja a la IA clavada en la acción del motor.
+    ai_ladder_step_tolerance: int = 1
 
     # EVAL-GROQ-1: una acción de salida no admite un tope de posición > 0. El
     # modelo daba SELL con «máximo 4 %» (2 de 2 corridas del banco en vivo), y el
@@ -2020,6 +2034,7 @@ class DataQualityConfig:
     Signal / optimizer policy (P0 — quality governs decisions without rewriting
     scored fundamentals):
       partial_caps_strong_buy — STRONG BUY demoted to BUY when level is partial
+      partial_lifts_sell      — (EO-6b-1) the mirror: SELL lifted to REDUCE when partial
       partial_max_confidence  — confidence ceiling for partial (e.g. MEDIUM)
       exclude_poor_from_optimizer — drop poor tickers from SLSQP eligible set
       partial_optimizer_score_haircut — multiply adjusted_score for partial
@@ -2034,6 +2049,10 @@ class DataQualityConfig:
     partial_missing_fields: int = 3
     poor_missing_fields: int = 6
     partial_caps_strong_buy: bool = True
+    # EO-6b-1: el espejo de ``partial_caps_strong_buy``. Con datos parciales la señal
+    # se atenúa un escalón hacia HOLD en las dos direcciones: SELL pasa a REDUCE.
+    # AVOID es un bloqueo duro, no una señal, y no se toca.
+    partial_lifts_sell: bool = True
     partial_max_confidence: str = "MEDIUM"
     exclude_poor_from_optimizer: bool = True
     partial_optimizer_score_haircut: float = 0.95
