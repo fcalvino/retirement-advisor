@@ -302,7 +302,7 @@ def _moat_from(case, raw):
 def _moat_json(brand, network, switching, regulatory, reasoning="r" * 100, alloc=5):
     return json.dumps({"brand_strength": brand, "network_effects": network,
                        "switching_costs": switching, "regulatory_ip": regulatory,
-                       "reasoning": reasoning, "recommended_max_allocation_conservative": alloc})
+                       "reasoning": reasoning, "recommended_max_allocation": alloc})
 
 
 def test_moat_replay_bank_is_green():

@@ -57,9 +57,12 @@ import pandas as pd
 from loguru import logger
 
 from analysis.utils import (
+    ALLOCATION_KEY,
+    LEGACY_ALLOCATION_KEY,
     corporate_tax_rate_pct,
     extract_financial_row,
     extract_json_object,
+    read_allocation,
     roic_pct,
 )
 from config import MOAT, AIConfig
@@ -138,7 +141,7 @@ class MoatDetail:
 
     # AI-recommended allocation context (from the moat prompt)
     moat_durability_years: int = 0              # AI estimate: 5 | 10 | 15 | 20
-    recommended_max_allocation_conservative: int = 8  # % of portfolio (default: profile max)
+    recommended_max_allocation: int = 8  # % of portfolio (default: profile max); EO-5a: was ..._conservative
 
     # Structured macro factors (structural improvement for better reasoning).
     # [] when no material macro or AI not used. Mirrors the LLM "macro_factors" output.
@@ -386,9 +389,7 @@ class MoatAnalyzer:
                 quant_result.ai_reasoning    = parsed.get("reasoning", "")
                 quant_result.ai_available    = True
                 quant_result.moat_durability_years = parsed.get("moat_durability_years", 0)
-                quant_result.recommended_max_allocation_conservative = parsed.get(
-                    "recommended_max_allocation_conservative", 8
-                )
+                quant_result.recommended_max_allocation = read_allocation(parsed, 8)
                 quant_result.macro_factors = parsed.get("macro_factors", []) or []
                 quant_result.macro_impact_on_moat_durability = parsed.get("macro_impact_on_moat_durability", "")
 
@@ -400,7 +401,7 @@ class MoatAnalyzer:
                     "ai_total":         quant_result.ai_total,
                     "ai_reasoning":     quant_result.ai_reasoning,
                     "moat_durability_years":                    quant_result.moat_durability_years,
-                    "recommended_max_allocation_conservative":  quant_result.recommended_max_allocation_conservative,
+                    ALLOCATION_KEY:                             quant_result.recommended_max_allocation,
                     "macro_factors":                            quant_result.macro_factors,
                     "macro_impact_on_moat_durability":          quant_result.macro_impact_on_moat_durability,
                 })
@@ -583,10 +584,11 @@ class MoatAnalyzer:
             data["moat_durability_years"] = 0
 
         try:
-            alloc = int(data.get("recommended_max_allocation_conservative", 8))
-            data["recommended_max_allocation_conservative"] = max(1, min(25, alloc))
+            alloc = int(read_allocation(data, 8))
+            data[ALLOCATION_KEY] = max(1, min(25, alloc))
         except (TypeError, ValueError):
-            data["recommended_max_allocation_conservative"] = 8
+            data[ALLOCATION_KEY] = 8
+        data.pop(LEGACY_ALLOCATION_KEY, None)
 
         # Structured macro (new)
         data.setdefault("macro_factors", [])
@@ -610,9 +612,7 @@ class MoatAnalyzer:
         detail.ai_total        = float(cached.get("ai_total", 0))
         detail.ai_reasoning    = cached.get("ai_reasoning", "")
         detail.moat_durability_years = int(cached.get("moat_durability_years", 0))
-        detail.recommended_max_allocation_conservative = int(
-            cached.get("recommended_max_allocation_conservative", 8)
-        )
+        detail.recommended_max_allocation = int(read_allocation(cached, 8))
         detail.macro_factors = cached.get("macro_factors", []) or []
         detail.macro_impact_on_moat_durability = cached.get("macro_impact_on_moat_durability", "")
         detail.ai_available = True

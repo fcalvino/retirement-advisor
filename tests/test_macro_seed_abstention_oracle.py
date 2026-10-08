@@ -69,14 +69,14 @@ def _agent(stance: str) -> str:
 def _fundamental(action: str) -> str:
     return json.dumps({"action": action, "confidence": "HIGH", "rationale": ["ok"],
                        "risks": ["valuación"], "reasoning": "x" * 120,
-                       "recommended_max_allocation_conservative": 5,
+                       "recommended_max_allocation": 5,
                        "macro_factors": []})
 
 
 def _recording_fake(seen: list):
     def call_fn(prompt: str) -> str:
         seen.append(prompt)
-        if '"recommended_max_allocation_conservative"' in prompt:
+        if '"recommended_max_allocation"' in prompt:
             return _fundamental("BUY")
         return _agent("HOLD")
     return call_fn

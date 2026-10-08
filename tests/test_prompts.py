@@ -185,7 +185,7 @@ class TestEquityMoatPrompt:
             "switching_costs",
             "regulatory_ip",
             "moat_durability_years",
-            "recommended_max_allocation_conservative",
+            "recommended_max_allocation",
             "reasoning",
             "macro_factors",
         ]
@@ -228,7 +228,7 @@ class TestEquityDecisionPrompt:
             "confidence",
             "rationale",
             "risks",
-            "recommended_max_allocation_conservative",
+            "recommended_max_allocation",
             "reasoning",
             "macro_factors",
         ]
@@ -329,7 +329,7 @@ class TestCryptoMoatPrompt:
             "institutional_regulatory",
             "tech_resilience",
             "moat_durability_years",
-            "recommended_max_allocation_conservative",
+            "recommended_max_allocation",
             "retirement_risk_summary",
             "reasoning",
             "macro_factors",
@@ -375,7 +375,7 @@ class TestCryptoDecisionPrompt:
             "confidence",
             "rationale",
             "risks",
-            "recommended_max_allocation_conservative",
+            "recommended_max_allocation",
             "reasoning",
             "macro_factors",
         ]

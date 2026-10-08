@@ -25,7 +25,7 @@ from analysis.strategy import (
     effective_decision_score,
 )
 from analysis.technical import TechnicalResult
-from analysis.utils import extract_json_object
+from analysis.utils import extract_json_object, read_allocation
 from config import (
     AI_DECISION_MAX_TOKENS,
     AI_FALLBACK,
@@ -115,13 +115,22 @@ def resolve_optimizer_profile(profile_name: str | None = None):
     """Map OptimizationResult.profile_name (or key) → ProfileConfig (P1 D13).
 
     Pure helper so optimizer-advice prompts use real profile constraints
-    instead of hard-coded moderate/conservative defaults.
+    instead of hard-coded moderate/conservative defaults. Without a name it raises
+    ``ValueError`` (EO-5a). An unknown, non-empty name still falls back to Conservador
+    (left as is on purpose, user decision 2026-10-08: a saved plan can carry a label
+    that no longer exists).
     """
     from config import CONSERVATIVE_PROFILE, OPTIMIZER_PROFILES
 
     raw = (profile_name or "").strip().lower()
     if not raw:
-        return CONSERVATIVE_PROFILE
+        # EO-5a (ADR 0001): sin Perfil no hay Postura, y la app no elige uno por vos —el
+        # mismo criterio con que EO-1b sacó el Perfil por defecto del Optimizer—. Antes
+        # un nombre vacío devolvía en silencio los topes de Conservador.
+        raise ValueError(
+            "resolve_optimizer_profile necesita el nombre de un Perfil: sin Perfil no hay "
+            "Postura (EO-1b), y no se asume Conservador."
+        )
 
     for key, cfg in OPTIMIZER_PROFILES.items():
         if key == raw or cfg.name.lower() == raw:
@@ -715,7 +724,7 @@ class AIAnalyzer:
 
         _alloc = None
         try:
-            _alloc_raw = data.get("recommended_max_allocation_conservative")
+            _alloc_raw = read_allocation(data)
             if _alloc_raw is not None:
                 _alloc = max(0.0, min(STRATEGY.ai_max_allocation_pct, float(_alloc_raw)))
         except (TypeError, ValueError):

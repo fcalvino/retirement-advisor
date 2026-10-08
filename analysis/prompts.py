@@ -381,7 +381,7 @@ def equity_moat_prompt(quant, symbol: str, info: dict) -> str:
         switching_costs             float  0–2
         regulatory_ip               float  0–2
         moat_durability_years       int    5 | 10 | 15 | 20
-        recommended_max_allocation_conservative  int  % of portfolio (1–15)
+        recommended_max_allocation  int  % of portfolio (1–15)
         reasoning                   str    structured paragraph (voice + Tesis/Riesgos/etc)
         macro_factors               list   0-2 structured objects (see _macro_factors_output_spec)
         macro_impact_on_moat_durability  str (optional, when relevant)
@@ -489,7 +489,7 @@ Incluye en el reasoning: (1) la fortaleza central del moat, (2) la limitación o
   "switching_costs": 0.0,
   "regulatory_ip": 0.0,
   "moat_durability_years": 10,
-  "recommended_max_allocation_conservative": 6,
+  "recommended_max_allocation": 6,
   "reasoning": "Análisis con voz propia: (1) Fortaleza central del moat y por qué es estructural. (2) Limitación o riesgo principal (incluyendo macro si aplica y cómo se conecta a los números concretos). (3) Durabilidad estimada en años y evidencia. (4) % máximo de asignación conservadora y el razonamiento detrás (ajustado por macro cuando corresponda).",
   "macro_factors": [],
   "macro_impact_on_moat_durability": ""
@@ -519,7 +519,7 @@ def equity_decision_prompt(fund, tech, macro_context: str = "") -> str:
         confidence      str   HIGH | MEDIUM | LOW
         rationale       list  Positive factors (2–4 items)
         risks           list  Key risks (2–3 items)
-        recommended_max_allocation_conservative  int  % of portfolio (1–15)
+        recommended_max_allocation  int  % of portfolio (1–15)
         reasoning       str   Structured paragraph with: Tesis · Riesgos · Catalizadores · Asignación
         macro_factors   list  0-2 structured objects (see _macro_factors_output_spec)
     """
@@ -627,7 +627,7 @@ Respetá los CONSTRAINTS DUROS y los PASOS DE RAZONAMIENTO de arriba.
   "confidence": "HIGH|MEDIUM|LOW",
   "rationale": ["factor positivo 1", "factor positivo 2"],
   "risks": ["riesgo 1", "riesgo 2"],
-  "recommended_max_allocation_conservative": 6,
+  "recommended_max_allocation": 6,
   "reasoning": "Tesis: visión clara y equilibrada de la oportunidad actual, incluyendo macro relevante solo cuando se conecta a los números. Riesgos: 1-2 riesgos concretos (macro o estructurales). Catalizadores: factores que podrían impulsar la acción al alza en próximos 12-18 meses. Asignación: % máx sugerido según la convicción actual — ej. 0-8%, 8-15% — con el razonamiento detrás; la convicción es MEDIUM porque aunque los fundamentales son sólidos, la valuación está en el percentil alto del sector y los riesgos macro (ej. tasas) no permiten HIGH hasta mayor claridad.",
   "macro_factors": []
 }}"""
@@ -656,7 +656,7 @@ def crypto_moat_prompt(symbol: str, info: dict, metrics: dict) -> str:
         tech_resilience             float  0–1
         total_moat_score            float  sum of above (0–8)
         moat_durability_years       int    5 | 10 | 15 | 20
-        recommended_max_allocation_conservative  int  % of portfolio (1–10)
+        recommended_max_allocation  int  % of portfolio (1–10)
         retirement_risk_summary     str    brief retirement-specific risk statement
         reasoning                   str    structured 5–7 sentence analysis
         macro_factors               list   0-2 structured objects
@@ -750,7 +750,7 @@ Analiza estas 5 dimensiones (sé escéptico — el optimismo del mercado no sust
 **INSTRUCCIÓN CRÍTICA:**
 No des por sentado el futuro de Bitcoin. Evalúa la durabilidad estructural real a 10–20 años. La pregunta clave: "¿Seguirá siendo el activo dominante en su clase en 2040?"
 Indica cuántos años estimás que el moat es durable (`moat_durability_years`: 5, 10, 15 o 20).
-Indica el % máximo de asignación sugerido según la convicción y el perfil de riesgo del activo (`recommended_max_allocation_conservative`).
+Indica el % máximo de asignación sugerido según la convicción y el perfil de riesgo del activo (`recommended_max_allocation`).
 Incluye un resumen objetivo de los riesgos principales del activo (`retirement_risk_summary`).
 Escribí el `reasoning` con tu voz: análisis honesto, directo y con contexto macro cuando sea relevante (no solo repitas la rúbrica).
 
@@ -763,7 +763,7 @@ Escribí el `reasoning` con tu voz: análisis honesto, directo y con contexto ma
   "tech_resilience": 0.0,
   "total_moat_score": 0.0,
   "moat_durability_years": 10,
-  "recommended_max_allocation_conservative": 3,
+  "recommended_max_allocation": 3,
   "retirement_risk_summary": "Resumen objetivo de 2–3 oraciones sobre los riesgos principales de este activo (incluyendo macro cuando aplique).",
   "reasoning": "Análisis con voz propia en español (5–7 oraciones). Incluye: (1) fortaleza central del moat, (2) debilidad o riesgo principal (macro o estructural), (3) durabilidad estimada y por qué, (4) en qué perfil de cartera de jubilación encaja y con qué dimensionamiento conservador.",
   "macro_factors": [],
@@ -790,7 +790,7 @@ def crypto_decision_prompt(fund, tech) -> str:
         confidence      str   HIGH | MEDIUM | LOW
         rationale       list  Positive factors (2–3 items)
         risks           list  Key risks (2–3 items), always includes volatility/drawdown risk
-        recommended_max_allocation_conservative  int  % of portfolio (conviction-based)
+        recommended_max_allocation  int  % of portfolio (conviction-based)
         reasoning       str   Structured: Tesis · Técnico · Riesgo · Asignación
         macro_factors   list  0-2 structured objects
     """
@@ -887,7 +887,7 @@ Respetá CONSTRAINTS DUROS CRYPTO y PASOS DE RAZONAMIENTO.
   "confidence": "HIGH|MEDIUM|LOW",
   "rationale": ["factor positivo 1", "factor positivo 2"],
   "risks": ["riesgo 1", "riesgo 2", "riesgo de volatilidad / drawdown"],
-  "recommended_max_allocation_conservative": 3,
+  "recommended_max_allocation": 3,
   "reasoning": "Tesis: señal técnica y fundamentos incluyendo macro relevante. Técnico: momentum, SMAs, RSI. Riesgo: volatilidad y drawdown + macro. Asignación: % máx sugerido según convicción y por qué (dimensionando el riesgo real); la convicción es MEDIUM porque aunque el moat es sólido y el técnico acompaña, la volatilidad estructural y los riesgos regulatorios no permiten HIGH en un portafolio conservador de jubilación.",
   "macro_factors": []
 }}"""

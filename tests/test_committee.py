@@ -318,7 +318,7 @@ def test_fundamental_prompt_receives_rag_macro(monkeypatch):
 
     fund, tech = _fund_tech()
     CommitteeAnalyzer(call_fn=call_fn, use_cache=False).analyze(fund, tech)
-    fundamental = [p for p in seen if '"recommended_max_allocation_conservative"' in p]
+    fundamental = [p for p in seen if '"recommended_max_allocation"' in p]
     assert len(fundamental) == 1
     assert "[2026-09] FEDFUNDS 4.25%" in fundamental[0]
 

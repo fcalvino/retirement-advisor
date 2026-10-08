@@ -22,7 +22,7 @@ _DECISION_JSON = {
     "confidence": "MEDIUM",
     "rationale": ["Factor positivo 1", "Factor positivo 2"],
     "risks": ["Riesgo 1"],
-    "recommended_max_allocation_conservative": 5,
+    "recommended_max_allocation": 5,
     "reasoning": "Tesis: empresa sólida. Riesgos: riesgo país. Catalizadores: crecimiento LATAM. Asignación: 5%",
 }
 
@@ -32,7 +32,7 @@ _MOAT_JSON = {
     "switching_costs": 0.5,
     "regulatory_ip": 0.0,
     "moat_durability_years": 10,
-    "recommended_max_allocation_conservative": 6,
+    "recommended_max_allocation": 6,
     "reasoning": "El moat de la empresa es sólido.",
 }
 

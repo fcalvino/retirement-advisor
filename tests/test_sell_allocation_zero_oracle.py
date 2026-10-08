@@ -121,7 +121,7 @@ def test_el_parser_acota_con_config(raw_alloc, expected):
     if expected == "techo":
         expected = S.ai_max_allocation_pct
     raw = json.dumps({"action": "BUY", "confidence": "HIGH",
-                      "recommended_max_allocation_conservative": raw_alloc})
+                      "recommended_max_allocation": raw_alloc})
     d = AIAnalyzer(AIConfig(provider="groq", model="m", api_key="k"))._parse_response(
         raw, _fund(STRONG, dq={"level": "good"}), _tech())
     assert d.recommended_max_allocation_pct == expected

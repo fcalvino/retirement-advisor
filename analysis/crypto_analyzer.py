@@ -36,7 +36,12 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from analysis.utils import extract_json_object
+from analysis.utils import (
+    ALLOCATION_KEY,
+    LEGACY_ALLOCATION_KEY,
+    extract_json_object,
+    read_allocation,
+)
 from config import CRYPTO_MOAT, AIConfig
 
 # ---------------------------------------------------------------------------
@@ -434,9 +439,7 @@ class CryptoAnalyzer:
                 moat.tech_resilience           = parsed["tech_resilience"]
                 moat.ai_reasoning              = parsed.get("reasoning", "")
                 moat.ai_available              = True
-                moat.recommended_max_allocation_pct = float(
-                    parsed.get("recommended_max_allocation_conservative", 5)
-                )
+                moat.recommended_max_allocation_pct = float(read_allocation(parsed, 5))
                 moat.moat_durability_years   = parsed.get("moat_durability_years", 10)
                 moat.retirement_risk_summary = parsed.get("retirement_risk_summary", "")
                 moat.macro_factors = parsed.get("macro_factors", []) or []
@@ -558,10 +561,11 @@ class CryptoAnalyzer:
 
         # Optional fields — graceful defaults if LLM omits them
         try:
-            alloc_raw = data.get("recommended_max_allocation_conservative", 5)
-            data["recommended_max_allocation_conservative"] = int(max(1, min(20, int(alloc_raw))))
+            alloc_raw = read_allocation(data, 5)
+            data[ALLOCATION_KEY] = int(max(1, min(20, int(alloc_raw))))
         except (TypeError, ValueError):
-            data["recommended_max_allocation_conservative"] = 5
+            data[ALLOCATION_KEY] = 5
+        data.pop(LEGACY_ALLOCATION_KEY, None)
 
         try:
             dur = int(data.get("moat_durability_years", 10))

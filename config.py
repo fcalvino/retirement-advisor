@@ -509,7 +509,7 @@ class StrategyConfig:
     # el modelo había pensado para una compra. El overlay lo pone en 0; REDUCE queda
     # afuera a propósito: reducir no es salir. `None` (sin sugerencia) no se toca.
     ai_allocation_zero_actions: Tuple[str, ...] = ("SELL", "AVOID")
-    # Techo del `recommended_max_allocation_conservative` del modelo: el contrato
+    # Techo del `recommended_max_allocation` del modelo (EO-5a; antes `..._conservative`): el contrato
     # del prompt pide «1–15» (`analysis/prompts.py`), igual que
     # `EVAL.conservative_alloc_cap_pct` en el banco de eval.
     ai_max_allocation_pct: float = 15.0
@@ -3089,7 +3089,12 @@ class CommitteeConfig:
     # macro_factors (con «si es material» quedó afuera 3 de 6 veces).
     # 2026-09-30a: U1-9b — el ratio bajista del comité de cartera es un Sortino
     # (MAR = tasa libre de riesgo); sale la advertencia «no es un Sortino».
-    prompt_version: str = "2026-09-30a"
+    # 2026-10-08a: EO-5a — el prompt del Fundamental (y el de Stock Analysis, que lo
+    # reusa) pide la clave `recommended_max_allocation` en vez de
+    # `recommended_max_allocation_conservative`. Mismo sentido y mismo parser (la clave
+    # vieja se sigue leyendo); se sube porque el texto del prompt cambió y la regla de
+    # arriba lo exige, no porque los veredictos cacheados sean distintos.
+    prompt_version: str = "2026-10-08a"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a
