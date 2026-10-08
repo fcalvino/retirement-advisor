@@ -11,13 +11,16 @@ adjusted_score = min(fundamental + consistency + piotroski_bonus, 100).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 
+from analysis import sector_medians
 from analysis.utils import extract_financial_row
 from config import CONSISTENCY, PIOTROSKI, ConsistencyThresholds, PiotroskiConfig
+
+_DIM_LABEL = {"roe": "ROE", "eps": "Crecimiento de utilidades", "margin": "Márgenes netos"}
 
 
 @dataclass
@@ -27,6 +30,12 @@ class ConsistencyDetail:
     margin_score: float     # 0–5
     total: float            # 0–15
     notes: List[str] = field(default_factory=list)
+    # EO-6b-2: las dimensiones (roe / eps / margin) sin datos suficientes, y qué se puso
+    # en su lugar. ``missing`` aparece aunque no se haya imputado (fondos, cripto, sin
+    # tabla): es lo que lee ``scripts/refresh_sector_medians.py`` para no medianar un
+    # valor imputado.
+    missing: List[str] = field(default_factory=list)
+    imputed: Dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -102,12 +111,16 @@ class EnhancedScoring:
         income_stmt: pd.DataFrame,
         balance_sheet: pd.DataFrame,
         cashflow: pd.DataFrame = None,
+        sector: Optional[str] = None,
+        asset_class: Optional[str] = None,
     ) -> EnhancedScore:
         result = EnhancedScore(fundamental_score=fundamental_score)
         recs: List[str] = []
 
         # --- Consistency ---
-        c_detail = self._consistency_score(income_stmt, balance_sheet)
+        c_detail = self._consistency_score(
+            income_stmt, balance_sheet, sector=sector, asset_class=asset_class
+        )
         result.consistency_score = round(c_detail.total, 1)
         result.consistency_detail = c_detail
         recs.extend(c_detail.notes)
@@ -141,19 +154,46 @@ class EnhancedScoring:
         self,
         income_stmt: pd.DataFrame,
         balance_sheet: pd.DataFrame,
+        sector: Optional[str] = None,
+        asset_class: Optional[str] = None,
     ) -> ConsistencyDetail:
         """
         Three signals, 5 pts each:
           ROE stability   — actual ROE (NI/Equity) std over available years
           EPS stability   — growth rate CV of net income (EPS proxy)
           Margin stability — net margin std over available years
+
+        EO-6b-2: a signal without enough data (``None`` from its scorer) is not scored
+        with 0 any more: an equity gets the median of that signal in its sector
+        (``analysis.sector_medians``). Funds and crypto, a missing table or
+        ``impute_from_sector_median`` off keep ``missing_data_score``.
         """
-        roe_score = self._roe_stability(income_stmt, balance_sheet)
-        eps_score = self._eps_stability(income_stmt)
-        margin_score = self._margin_stability(income_stmt)
+        raw = {
+            "roe": self._roe_stability(income_stmt, balance_sheet),
+            "eps": self._eps_stability(income_stmt),
+            "margin": self._margin_stability(income_stmt),
+        }
+        missing = [dim for dim, v in raw.items() if v is None]
+        scores: Dict[str, float] = {}
+        imputed: Dict[str, float] = {}
+        notes: List[str] = []
+        for dim, v in raw.items():
+            if v is not None:
+                scores[dim] = v
+                continue
+            fill = self._impute(dim, sector, asset_class)
+            if fill is None:
+                scores[dim] = self.ct.missing_data_score
+            else:
+                scores[dim] = fill.value
+                imputed[dim] = fill.value
+                notes.append(
+                    f"{_DIM_LABEL[dim]} sin datos suficientes: se imputó {fill.value:.1f}/5, la "
+                    f"mediana de {fill.source} (n={fill.n})"
+                )
+        roe_score, eps_score, margin_score = scores["roe"], scores["eps"], scores["margin"]
         total = min(roe_score + eps_score + margin_score, 15.0)
 
-        notes: List[str] = []
         if roe_score < 3:
             notes.append("ROE inconsistente entre años")
         if eps_score < 3:
@@ -167,9 +207,22 @@ class EnhancedScoring:
             margin_score=round(margin_score, 1),
             total=round(total, 1),
             notes=notes,
+            missing=missing,
+            imputed={k: round(v, 1) for k, v in imputed.items()},
         )
 
-    def _roe_stability(self, income_stmt: pd.DataFrame, balance_sheet: pd.DataFrame) -> float:
+    def _impute(
+        self, dim: str, sector: Optional[str], asset_class: Optional[str]
+    ) -> Optional[sector_medians.Imputation]:
+        """La mediana de ``dim`` para un equity, o None si no corresponde imputar."""
+        if not self.ct.impute_from_sector_median or asset_class != "equity":
+            return None
+        table = sector_medians.load_shipped()
+        if table is None:
+            return None
+        return table.lookup(dim, sector, min_tickers=self.ct.sector_median_min_tickers)
+
+    def _roe_stability(self, income_stmt: pd.DataFrame, balance_sheet: pd.DataFrame) -> Optional[float]:
         """ROE = Net Income / Stockholders Equity. Scores stability (std) over years."""
         ni = self._extract(income_stmt, ["Net Income"])
         equity = self._extract(
@@ -177,16 +230,16 @@ class EnhancedScoring:
             ["Stockholders Equity", "Total Stockholder Equity", "Common Stock Equity"],
         )
         if ni is None or equity is None:
-            return self.ct.missing_data_score
+            return None
 
         common = ni.index.intersection(equity.index)
         if len(common) < 2:
-            return self.ct.missing_data_score
+            return None
 
         eq_clean = equity[common].replace(0, np.nan)
         roe = (ni[common] / eq_clean * 100).dropna()
         if len(roe) < 2:
-            return self.ct.missing_data_score
+            return None
 
         std = roe.std()
         if std <= self.ct.roe_std_max_excellent:
@@ -197,21 +250,21 @@ class EnhancedScoring:
             return 1.5
         return 0.5
 
-    def _eps_stability(self, income_stmt: pd.DataFrame) -> float:
+    def _eps_stability(self, income_stmt: pd.DataFrame) -> Optional[float]:
         """Stability of net income growth rates (EPS proxy). CV of YoY growth."""
         ni = self._extract(income_stmt, ["Net Income"])
         if ni is None or len(ni) < 3:
-            return self.ct.missing_data_score  # need ≥3 years for 2 growth rates
+            return None  # need ≥3 years for 2 growth rates
 
         ni_sorted = ni.sort_index()  # ascending for pct_change
         growth = ni_sorted.pct_change().dropna()
         if len(growth) < 2:
-            return self.ct.missing_data_score
+            return None
 
         # Remove outliers (> 500% change) that skew std
         growth = growth[growth.abs() <= 5.0]
         if len(growth) < 2:
-            return self.ct.missing_data_score
+            return None
 
         cv = growth.std() / (growth.abs().mean() + 1e-9)
 
@@ -225,21 +278,21 @@ class EnhancedScoring:
             return 1.0
         return 0.0
 
-    def _margin_stability(self, income_stmt: pd.DataFrame) -> float:
+    def _margin_stability(self, income_stmt: pd.DataFrame) -> Optional[float]:
         """Net margin = Net Income / Revenue. Scores std of margin over years."""
         ni = self._extract(income_stmt, ["Net Income"])
         rev = self._extract(income_stmt, ["Total Revenue", "Revenue"])
         if ni is None or rev is None:
-            return self.ct.missing_data_score
+            return None
 
         common = ni.index.intersection(rev.index)
         if len(common) < 2:
-            return self.ct.missing_data_score
+            return None
 
         rev_clean = rev[common].replace(0, np.nan)
         margins = (ni[common] / rev_clean * 100).dropna()
         if len(margins) < 2:
-            return self.ct.missing_data_score
+            return None
 
         std = margins.std()
         if std <= self.ct.margin_volatility_max:

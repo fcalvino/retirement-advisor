@@ -21,7 +21,7 @@ usan la Estimación objetiva rotulada «no calibrable» (decisiones del usuario,
 1. ~~**Sincronización** — este orden, el ADR 0001 y el glosario llegan a `main` (sólo docs).~~
 2. ~~**SIM-GAP-PCT + KATEX-DOLLAR-PLAN** — banda 4, un PR: el mismo bloque «Dos escenarios».~~
 3. ~~**EO-0 → EO-1a → EO-1b → EO-1c → EO-2a → EO-2b → EO-2c → EO-3 → EO-4a → EO-4b → EO-4c-1 → EO-4c-2 → EO-4d**: el riesgo país argentino entra a la Estimación de los ADRs (EO-4a el Monte Carlo, EO-4b el Optimizer, EO-4c-1 el motor de Escenarios, EO-4c-2 su UI y EO-4d el riesgo país, cerrados). Ver bloque 6.~~
-4. ~~**EO-6a**~~ → ~~**EO-6b-1**~~ → **EO-6b-2** (faltantes por la mediana del sector; espera Fuente y medición); **EO-5** después de EO-6b-2. Ver bloque 6.
+4. ~~**EO-6a**~~ → ~~**EO-6b-1**~~ → ~~**EO-6b-2**~~ → **EO-5**. Ver bloque 6.
 
 Esperan disparador: U5-1b y COM-*. Sin orden: STREAMLIT-1.65 (sin banda), PORTFOLIO-FX,
 COM-LOG-TESTS, IDEA-4, IDEA-5, PIT-TOOLS y GOAL-PRIORITY-TEXT. Espera Fuente: SCORE-CONTRACCION.
@@ -421,7 +421,7 @@ Toda etapa que mueva μ o el Monte Carlo sube `ENGINE_VERSION`.
   `resolve_optimizer_profile` (`ai_analyzer.py`), que sin nombre de perfil sigue
   cayendo en Conservador: EO-1b lo dejó para acá (desde EO-1b el Optimizer no
   produce un resultado sin perfil, así que el fallback ya no se alcanza desde ahí).
-- **EO-6 — Señales**, en dos PRs (decisión del usuario, 2026-10-07): **EO-6a** el sello de versión del método de señales en el track record (sin mover ninguna señal) y **EO-6b** los cambios de señales, partido a su vez en **EO-6b-1** (tope y atenuación simétricos, rótulo; cerrada 2026-10-07) y **EO-6b-2** (imputación por la mediana del sector). `ai_action_capped_by_score_ladder` (`config.py:472`) pasa a
+- **EO-6 — Señales**, en dos PRs (decisión del usuario, 2026-10-07): **EO-6a** el sello de versión del método de señales en el track record (sin mover ninguna señal) y **EO-6b** los cambios de señales, partido a su vez en **EO-6b-1** (tope y atenuación simétricos, rótulo; cerrada 2026-10-07) y **EO-6b-2** (imputación por la mediana del sector; cerrada 2026-10-08). `ai_action_capped_by_score_ladder` (`config.py:472`) pasa a
   simétrico, un escalón; la asimetría vuelve sólo si el track record muestra que las
   subas de la IA aciertan menos que sus bajas. `missing_data_score` deja el 0 por la
   mediana del sector. Con datos parciales la señal se atenúa hacia HOLD en las dos

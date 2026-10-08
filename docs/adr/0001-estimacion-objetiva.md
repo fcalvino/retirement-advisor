@@ -231,3 +231,12 @@ el motor sólo vale desde el techo de la escalera, sin pasar de BUY ni para un c
 vetos de `decide()` (BEARISH, margen de seguridad, techo cripto, data quality) siguen
 siendo duros. Los umbrales de señal se rotulan «ranking relativo, no calibrado». La
 imputación de faltantes por la mediana del sector queda para EO-6b-2. La decisión no cambia.
+
+## Nota (2026-10-08, EO-6b-2)
+
+Un dato faltante del Consistency Score deja el 0 y recibe la mediana de su sector,
+tomada del universo cacheado y sin red (decisión del usuario). Mínimo de 5 datos por
+sector; con menos, la mediana de todos los equities. Fondos y cripto no se imputan. La
+mediana es una tabla derivada y versionada, no un cálculo al vuelo: el universo cacheado
+es distinto en cada instalación. Medido, el efecto es de un ticker de 189 equities, sin
+cambio de señal. Con esto EO-6 queda cerrado; sigue EO-5. La decisión no cambia.

@@ -1036,6 +1036,7 @@ class FundamentalAnalyzer:
         enhanced = EnhancedScoring().get_enhanced_score(
             result.total_score, info, income_stmt, balance_sheet,
             cashflow=cashflow,
+            sector=result.sector, asset_class=result.asset_class,
         )
         result.consistency_score = enhanced.consistency_score
         result.piotroski_score = enhanced.piotroski_score

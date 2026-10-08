@@ -1,0 +1,174 @@
+{
+  "as_of": "2026-10-08",
+  "universe_n": 189,
+  "sectors": {
+    "Basic Materials": {
+      "roe": {
+        "median": 5.0,
+        "n": 12
+      },
+      "eps": {
+        "median": 1.0,
+        "n": 12
+      },
+      "margin": {
+        "median": 5.0,
+        "n": 12
+      }
+    },
+    "Communication Services": {
+      "roe": {
+        "median": 3.0,
+        "n": 12
+      },
+      "eps": {
+        "median": 1.0,
+        "n": 12
+      },
+      "margin": {
+        "median": 5.0,
+        "n": 12
+      }
+    },
+    "Consumer Cyclical": {
+      "roe": {
+        "median": 5.0,
+        "n": 18
+      },
+      "eps": {
+        "median": 1.5,
+        "n": 18
+      },
+      "margin": {
+        "median": 5.0,
+        "n": 18
+      }
+    },
+    "Consumer Defensive": {
+      "roe": {
+        "median": 5.0,
+        "n": 14
+      },
+      "eps": {
+        "median": 1.0,
+        "n": 14
+      },
+      "margin": {
+        "median": 5.0,
+        "n": 14
+      }
+    },
+    "Energy": {
+      "roe": {
+        "median": 3.0,
+        "n": 10
+      },
+      "eps": {
+        "median": 2.0,
+        "n": 10
+      },
+      "margin": {
+        "median": 5.0,
+        "n": 10
+      }
+    },
+    "Financial Services": {
+      "roe": {
+        "median": 5.0,
+        "n": 34
+      },
+      "eps": {
+        "median": 2.0,
+        "n": 34
+      },
+      "margin": {
+        "median": 5.0,
+        "n": 34
+      }
+    },
+    "Healthcare": {
+      "roe": {
+        "median": 1.5,
+        "n": 24
+      },
+      "eps": {
+        "median": 1.0,
+        "n": 24
+      },
+      "margin": {
+        "median": 4.0,
+        "n": 24
+      }
+    },
+    "Industrials": {
+      "roe": {
+        "median": 5.0,
+        "n": 25
+      },
+      "eps": {
+        "median": 1.0,
+        "n": 25
+      },
+      "margin": {
+        "median": 5.0,
+        "n": 25
+      }
+    },
+    "Real Estate": {
+      "roe": {
+        "median": 4.0,
+        "n": 4
+      },
+      "eps": {
+        "median": 1.0,
+        "n": 4
+      },
+      "margin": {
+        "median": 4.0,
+        "n": 4
+      }
+    },
+    "Technology": {
+      "roe": {
+        "median": 3.0,
+        "n": 27
+      },
+      "eps": {
+        "median": 1.0,
+        "n": 27
+      },
+      "margin": {
+        "median": 5.0,
+        "n": 27
+      }
+    },
+    "Utilities": {
+      "roe": {
+        "median": 4.0,
+        "n": 8
+      },
+      "eps": {
+        "median": 1.0,
+        "n": 8
+      },
+      "margin": {
+        "median": 4.0,
+        "n": 8
+      }
+    }
+  },
+  "all_equity": {
+    "roe": {
+      "median": 5.0,
+      "n": 188
+    },
+    "eps": {
+      "median": 1.0,
+      "n": 188
+    },
+    "margin": {
+      "median": 5.0,
+      "n": 188
+    }
+  }
+}
