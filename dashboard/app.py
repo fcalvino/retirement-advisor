@@ -41,6 +41,7 @@ from dashboard.shared import (
     unread_alert_count,
 )
 from data.preferences import _PREFS_PATH, UserPreferences
+from data.product_ux import track_page_entry
 from data.universe_loader import UNIVERSE_META, list_universes
 
 # ------------------------------------------------------------------ #
@@ -533,4 +534,6 @@ except Exception:
 #  Run selected page                                                   #
 # ------------------------------------------------------------------ #
 
+# STREAMLIT-1.65: cada página sabe si la sesión acaba de llegar a ella (`PAGE_ENTERED_KEY`).
+track_page_entry(st.session_state, getattr(pg, "url_path", None) or pg.title)
 pg.run()
