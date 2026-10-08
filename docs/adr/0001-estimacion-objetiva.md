@@ -248,3 +248,14 @@ del modelo pasa de `recommended_max_allocation_conservative` a `recommended_max_
 (la clave vieja se sigue leyendo) y `resolve_optimizer_profile` sin nombre levanta un
 error en vez de asumir Conservador. 5b trae la redacción calibrada, el PM con Postura,
 el Perfil en la clave de caché del comité y el banco en vivo. La decisión no cambia.
+
+## Nota (2026-10-08, EO-5b)
+
+La IA se calibra, no se modera. Salen las instrucciones conservadoras de los prompts
+(comité, decisión, plan, chat): el registro es decir lo que la evidencia sostiene, con su
+incertidumbre. La prudencia es la Postura del Perfil, que ahora llega al Portfolio Manager
+—sin Perfil elegido no hay Postura y no dimensiona— y entra a la clave de caché del
+comité. El Abogado del Diablo se queda como método: el voto es simétrico y su disenso
+fuerte baja la confianza un escalón, nunca la acción. Un barrido de los prompts impide que
+«conservador» vuelva como instrucción. Con esto «Qué se decidió» queda implementado salvo
+la contracción por score (SCORE-CONTRACCION). La decisión no cambia.

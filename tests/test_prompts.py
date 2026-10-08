@@ -564,10 +564,12 @@ class TestPlanLevelNarrativePrompt:
         assert "Retiro 2045" in p
         assert "Moderado" in p
 
-    def test_spanish_and_conservative_voice(self):
+    def test_spanish_and_calibrated_voice(self):
+        """EO-5b: la voz es la evidencia con su incertidumbre, no «conservador»."""
         p = _plan_prompt().lower()
         assert "español" in p
-        assert "no se arruine" in p or "conservador" in p
+        assert "lo que la evidencia sostiene, con su incertidumbre" in p
+        assert "conservador" not in p
 
     def test_personal_and_goals_surfaced(self):
         p = _plan_prompt()

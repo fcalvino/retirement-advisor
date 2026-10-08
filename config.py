@@ -511,7 +511,7 @@ class StrategyConfig:
     ai_allocation_zero_actions: Tuple[str, ...] = ("SELL", "AVOID")
     # Techo del `recommended_max_allocation` del modelo (EO-5a; antes `..._conservative`): el contrato
     # del prompt pide «1–15» (`analysis/prompts.py`), igual que
-    # `EVAL.conservative_alloc_cap_pct` en el banco de eval.
+    # `EVAL.alloc_cap_pct` en el banco de eval.
     ai_max_allocation_pct: float = 15.0
 
     # Margin of Safety: only buy when price < intrinsic value estimate
@@ -1392,15 +1392,15 @@ class CryptoCommitteeConfig:
     ``fund.notes`` — sólo el Analista Fundamental las veía, así que Macro, PM y
     Coach argumentaban sin un solo dato propio del activo.
 
-    ``sizing_profile`` ancla el techo que cita el PM. El comité no recibe el
-    perfil del inversor, y su prompt ya declara "filosofía conservadora
-    (preservación de capital primero)": tomar otro perfil contradiría el encuadre.
+    EO-5b (ADR 0001): el techo que cita el PM es el del Perfil del inversor
+    (``ProfileConfig.max_crypto_pct``, que llega por la Postura); ya no hay un
+    ``sizing_profile`` fijo en Conservador. Sin Perfil elegido no hay Postura y el PM
+    no dimensiona.
 
     ``context_note_keys`` son las claves de ``fund.notes`` que escribe
     ``CryptoAnalyzer``; el orden es el orden en que se imprimen.
     """
 
-    sizing_profile: str = "conservative"
     context_note_keys: tuple = (
         "crypto_vol", "crypto_dd", "crypto_cagr", "crypto_supply", "crypto_halving",
     )
@@ -2916,9 +2916,10 @@ class EvalConfig:
     harness, mirroring the rest of the project.
 
     Fields:
-      conservative_alloc_cap_pct — a single conservative recommendation should
-                                   never suggest more than this % in one name;
-                                   above it is a red flag for a retirement tool.
+      alloc_cap_pct              — (EO-5b: was ``conservative_alloc_cap_pct``) a single
+                                   recommendation should never suggest more than this %
+                                   in one name; above it is a red flag for a
+                                   retirement tool, whatever the Perfil.
       min_reasoning_chars        — narrative shorter than this counts as "empty".
       max_macro_factors          — hard cap on macro_factors list length (matches
                                    the prompt spec: 0, 1 or máximo 2).
@@ -2944,7 +2945,7 @@ class EvalConfig:
                                    "material" threshold lives here on purpose —
                                    that is the decision the measurement enables.
     """
-    conservative_alloc_cap_pct: float = 15.0
+    alloc_cap_pct: float = 15.0
     min_reasoning_chars: int = 80
     max_macro_factors: int = 2
     case_pass_threshold: float = 1.0
@@ -2961,7 +2962,7 @@ class EvalConfig:
 
     def as_dict(self) -> dict:
         return {
-            "conservative_alloc_cap_pct": self.conservative_alloc_cap_pct,
+            "alloc_cap_pct": self.alloc_cap_pct,
             "min_reasoning_chars": self.min_reasoning_chars,
             "max_macro_factors": self.max_macro_factors,
             "case_pass_threshold": self.case_pass_threshold,
@@ -3019,7 +3020,8 @@ class CommitteeConfig:
                           Re-measure (scripts/committee_stability.py) after
                           changing the model or the committee prompts.
       downgrade_confidence_on_strong_dissent — when the bear case is strong, drop
-                          the verdict confidence one notch (conservative bias).
+                          the verdict confidence one notch (the Devil's Advocate's
+                          strong dissent is part of the method, not a bias: EO-5b).
       prompt_version     — part of the verdict cache key. Bump it whenever a
                           committee prompt changes, or cached verdicts built by
                           the old prompt keep being served until they expire.
@@ -3094,7 +3096,10 @@ class CommitteeConfig:
     # `recommended_max_allocation_conservative`. Mismo sentido y mismo parser (la clave
     # vieja se sigue leyendo); se sube porque el texto del prompt cambió y la regla de
     # arriba lo exige, no porque los veredictos cacheados sean distintos.
-    prompt_version: str = "2026-10-08a"
+    # 2026-10-08b: EO-5b — la IA se calibra, no se modera (ADR 0001): los prompts de rol
+    # dejan de declarar «filosofía conservadora», el PM recibe la Postura del Perfil
+    # (y sin Perfil no dimensiona) y el Perfil entra a la clave de caché del veredicto.
+    prompt_version: str = "2026-10-08b"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a

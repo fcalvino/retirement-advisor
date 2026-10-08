@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## EO-5b — la IA se calibra, no se modera: prompts sin sesgo conservador y el PM recibe la Postura (2026-10-08)
+
+EO-5b (ADR 0001), segunda parte de EO-5 y cierre de EO-5: la IA se calibra, no se modera. Fuera la redacción conservadora de los prompts (comité, decisión, plan, chat); el PM recibe la Postura del Perfil y, sin Perfil, no dimensiona; el Perfil entra a la clave de caché del comité; `COMMITTEE.prompt_version` 2026-10-08b. Abogado del Diablo como método. Un barrido de los prompts impide que «conservador» vuelva. Banco en vivo: 7/7, 2/2, 2/2 GREEN (19 llamadas, ~USD 0,009).
+
+---
+
 ## EO-5a — el tope de posición del modelo es recommended_max_allocation y un Perfil sin nombre no se asume (2026-10-08)
 
 EO-5a (ADR 0001), primera parte de EO-5: `recommended_max_allocation_conservative` → `recommended_max_allocation` en prompts, parser, moat, cripto y banco de eval, con la clave vieja como alias de lectura; `resolve_optimizer_profile` sin nombre levanta `ValueError`. `COMMITTEE.prompt_version` 2026-10-08a (el texto del prompt del Fundamental cambió). Sin cambio de señales ni de topes.

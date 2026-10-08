@@ -142,4 +142,4 @@ def test_the_committee_prompt_version_moved_with_the_prompt_text():
     del tope de posición), así que la versión sube y el caché de veredictos se reinicia."""
     from config import COMMITTEE
 
-    assert COMMITTEE.prompt_version == "2026-10-08a"
+    assert COMMITTEE.prompt_version >= "2026-10-08a"        # EO-5b la subió a 2026-10-08b

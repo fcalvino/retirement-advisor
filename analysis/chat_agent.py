@@ -135,7 +135,7 @@ class ChatAgent:
     def _narrate(self, question: str, tool_name: str, data: dict) -> str:
         prompt = (
             f"{_NARRATE_MARKER}\n"
-            "Sos un asesor de inversiones para retiro, conservador y claro. Respondé la pregunta "
+            "Sos un asesor de inversiones para retiro, claro y calibrado: decí lo que los datos sostienen, con su incertidumbre. Respondé la pregunta "
             "del usuario en lenguaje natural, en español, breve y directo.\n"
             "REGLA CRÍTICA: usá EXCLUSIVAMENTE los datos provistos abajo. NO inventes ninguna "
             "cifra que no esté en los datos. Si los datos traen un error, explicá la limitación "
