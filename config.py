@@ -3012,11 +3012,20 @@ class CommitteeConfig:
                           panels × 5 runs) measured 0/30 action changes but a
                           run-to-run lean σ up to ``lean_run_to_run_stdev``, with
                           MSFT and BTC ≤ 0.07 from a threshold: the risk lives at
-                          the edges, so the warning goes only there.
+                          the edges, so the warning goes only there. Re-measured
+                          2026-10-08 (prompt 2026-10-08b, same bank, 170 calls): 1/30
+                          action changes (MSFT BUY→HOLD, lean 0.6136 vs 0.4773, the
+                          Dividend voice), σ up to 0.084. The review trigger of this
+                          margin was met; user decision 2026-10-08: it stays at 0.10
+                          (MSFT's usual lean sat 0.114 from the BUY threshold, just
+                          outside it), and is revised again if a re-measurement
+                          repeats a change. The bank runs without a Perfil, so the PM
+                          with a Postura is not measured.
       lean_run_to_run_stdev — the largest lean σ measured, quoted in the warning.
                           0.12 at prompt 2026-09-27e; 0.21 at 2026-09-29c (XYZ,
                           whose prompt did not change — at n=5 per case the σ
-                          itself is noisy, so the largest seen is kept).
+                          itself is noisy, so the largest seen is kept); 0.084 at
+                          2026-10-08b, so the value is unchanged.
                           Re-measure (scripts/committee_stability.py) after
                           changing the model or the committee prompts.
       downgrade_confidence_on_strong_dissent — when the bear case is strong, drop
