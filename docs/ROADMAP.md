@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## ESTAB-COMITE — la estabilidad del comité se re-mide con el prompt de EO-5b (2026-10-08)
+
+Estabilidad del comité re-medida con el prompt `2026-10-08b`: 1/30 cambios de acción (MSFT), σ del lean máximo 0,084. Se cumplió el disparador de revisión del margen `lean_near_threshold_margin`; el usuario lo deja en 0,10. Sólo documentación.
+
+---
+
 ## STREAMLIT-1.65 — volver a Simulaciones muestra lo editado con Streamlit 1.65 y el tope sube a 1.66 (2026-10-08)
 
 STREAMLIT-1.65: restaurar la memoria de Simulaciones sobre las claves de los widgets al llegar a la página (marca de llegada en `dashboard/app.py`, `restore_sim_sidebar`) y subir el tope de Streamlit de `<1.65` a `<1.66`. Reproducido en un venv aislado y en un navegador real con 1.65.0. La suite pasa en 1.57.0, 1.61.1, 1.64.0 y 1.65.0. Deja el Orden actual sin pasos abiertos.
