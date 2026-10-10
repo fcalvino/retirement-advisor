@@ -1,4 +1,4 @@
-"""Portfolio Optimizer — Mean-Variance con universos múltiples y presets de retiro."""
+"""Portfolio Optimizer — Mean-Variance con universos múltiples y perfiles de retiro."""
 
 from __future__ import annotations
 
@@ -74,33 +74,6 @@ _MOAT_BADGES = {
 
 _DONUT_THRESHOLD_DEFAULT = 1.5
 
-_PRESETS = [
-    {
-        "label":       "💰 Alto Dividendo",
-        "universe":    "dividend_focus",
-        "profile":     "conservative",
-        "description": "Dividend Aristocrats + REITs. Ingreso pasivo con bajo riesgo.",
-    },
-    {
-        "label":       "⚖️ Balanced Quality",
-        "universe":    "us_quality",
-        "profile":     "moderate",
-        "description": "Blue chips US de calidad. Crecimiento balanceado con ingreso.",
-    },
-    {
-        "label":       "🚀 Growth con Moat",
-        "universe":    "us_quality",
-        "profile":     "aggressive",
-        "description": "Tech + Healthcare + Consumer. Ventaja competitiva duradera.",
-    },
-    {
-        "label":       "🌎 LATAM + ADRs",
-        "universe":    "latam_adrs",
-        "profile":     "moderate",
-        "description": "ADRs latinoamericanos. Alto potencial, mayor volatilidad.",
-    },
-]
-
 # Static benchmark reference data (annualized avg ~2014–2024)
 _BENCHMARKS = {
     "SPY (S&P 500)":   {"return": 10.5, "vol": 15.2, "sharpe": 0.52, "div": 1.35, "max_dd": -22.8},
@@ -160,46 +133,20 @@ seed_session_defaults_from_profile(_prefs)
 #  Helpers                                                             #
 # ------------------------------------------------------------------ #
 
-def _apply_preset(universe_key: str, profile_key: str) -> None:
-    """Switch universe + profile atomically via pending keys (avoids widget-state conflict)."""
-    st.session_state["_preset_universe_key"] = universe_key
-    st.session_state["_preset_profile_key"]  = profile_key
-    _prefs.active_universe = universe_key
-    _prefs.choose_profile(OPTIMIZER_PROFILES[profile_key].name)   # a preset is a choice
-    for k in [
-        "optimizer_scored", "optimizer_universe",
-        "optimizer_result", "optimizer_result_key",
-        "optimizer_prev_result", "optimizer_prev_result_key",
-        "optimizer_extra_universes", "optimizer_comparison_results",
-        "optimizer_comparison_profile",
-    ]:
-        st.session_state.pop(k, None)
-    st.rerun()
+def _pick_profile(profile_key: str) -> None:
+    """Welcome-card click: set the sidebar radio before it is instantiated.
 
+    Runs as an on_click callback, so the radio picks the new label up on this
+    rerun and the usual save path (choose_profile + toast) handles it.
+    """
+    st.session_state["optimizer_profile_label"] = _PROFILE_LABELS[profile_key]
 
-# ------------------------------------------------------------------ #
-#  Sidebar — Presets                                                   #
-# ------------------------------------------------------------------ #
-
-st.sidebar.subheader("🎯 Presets de retiro")
-_pcols = st.sidebar.columns(2)
-for _i, _preset in enumerate(_PRESETS):
-    with _pcols[_i % 2]:
-        if st.button(
-            _preset["label"],
-            key=f"preset_{_i}",
-            width="stretch",
-            help=_preset["description"],
-        ):
-            _apply_preset(_preset["universe"], _preset["profile"])
-
-st.sidebar.divider()
 
 # ------------------------------------------------------------------ #
 #  Sidebar — Profile selector                                          #
 # ------------------------------------------------------------------ #
 
-# Consume pending profile from preset before widget instantiation
+# Consume pending profile from a loaded plan before widget instantiation
 if "_preset_profile_key" in st.session_state:
     _ppk = st.session_state.pop("_preset_profile_key")
     if _ppk in _PROFILE_LABELS:
@@ -475,18 +422,20 @@ if not run_now and not has_valid_result:
                 unsafe_allow_html=True,
             )
 
-    st.markdown("&nbsp;", unsafe_allow_html=True)
-    st.markdown("##### O elegí un preset de retiro:")
-    _qcols = st.columns(len(_PRESETS))
-    for _qi, _preset in enumerate(_PRESETS):
-        with _qcols[_qi]:
-            if st.button(
-                _preset["label"],
-                key=f"welcome_preset_{_qi}",
+            st.button(
+                "✅ Elegido" if _active else f"Elegir {_pcfg.name}",
+                key=f"welcome_profile_{_pk}",
                 width="stretch",
-                help=_preset["description"],
-            ):
-                _apply_preset(_preset["universe"], _preset["profile"])
+                type="primary" if _active else "secondary",
+                disabled=_active,
+                on_click=_pick_profile,
+                args=(_pk,),
+            )
+
+    st.caption(
+        f"🗂️ Universo: **{_display_universe}** · cambialo con el selector "
+        "**Universo** de la barra lateral."
+    )
     st.stop()
 
 # ------------------------------------------------------------------ #
