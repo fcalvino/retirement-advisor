@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -20,7 +21,13 @@ from typing import List
 
 from loguru import logger
 
-_PREFS_PATH = Path(__file__).parent / "user_preferences.json"
+# TEST-PREFS-ISOLATION: the suite points this elsewhere (``tests/conftest.py``), the
+# way ``RETIREMENT_ADVISOR_DB_PATH`` moves the database; without the variable it is
+# the file next to this module, as always.
+_PREFS_PATH = Path(
+    os.environ.get("RETIREMENT_ADVISOR_PREFS_PATH")
+    or Path(__file__).parent / "user_preferences.json"
+)
 
 # Format of a symbol the user may type: letters, digits, "." and "-" (BRK-B,
 # 7203.T, BTC-USD). Format only — whether the feed knows it is `is_empty_feed`'s job.
