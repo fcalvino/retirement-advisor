@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## IDEA5-REGLAS — IDEA-5: las reglas de la ganancia de capital en Argentina y las decisiones del usuario (2026-10-10)
+
+Las reglas de IDEA-5 quedaron investigadas contra la ley, su reglamento y ARCA, con cada afirmación citada y lo no confirmado marcado como tal, y el usuario tomó las 13 decisiones de diseño. El paso siguiente es de código: lotes y «Registrar venta» en el Portfolio para las acciones y ETFs del exterior. No es asesoramiento fiscal. Ningún número del motor cambia.
+
+---
+
 ## REPRIORIZACION-19 — decimonovena repriorización: IDEA-5, ganancia de capital en Argentina (2026-10-10)
 
 El Orden pasa a la decimonovena repriorización: IDEA-5 IMPUESTOS, acotada a la ganancia de capital de un residente fiscal argentino, por decisión del usuario. PORTFOLIO-FX e IDEA-4 quedan sin orden, y VENV-PRUNE entra esperando su disparador. Ningún número del motor cambia.
