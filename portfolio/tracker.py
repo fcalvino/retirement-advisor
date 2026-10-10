@@ -15,7 +15,7 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -57,18 +57,95 @@ ANNUALIZED_RETURN_CAVEAT = (
 )
 
 
+#: Defaults for a lot that does not say where or what it was (IDEA-5, D10): the
+#: user's holdings are shares in a broker abroad. They decide, in PR 2, whether a
+#: sale is exempt or taxed — never inferred from the ticker.
+DEFAULT_LOT_MARKET = "broker del exterior"
+DEFAULT_LOT_INSTRUMENT = "acción"
+#: A position from before IDEA5-LOTES only had a weighted average: its single
+#: lot carries this label so nobody reads it as a real purchase (D8).
+MIGRATED_LOT_LABEL = "costo promedio migrado"
+
+
 @dataclass
-class Position:
-    symbol: str
+class Lot:
+    """One purchase. The law takes cost by FIFO (LIG arts. 149 and 65), so each
+    buy is kept on its own instead of being averaged into the position."""
+
+    date: str                # ISO format YYYY-MM-DD
     shares: float
-    avg_cost: float          # USD per share
-    purchase_date: str       # ISO format YYYY-MM-DD
-    sector: str = "Unknown"
-    notes: str = ""
+    price_usd: float         # USD per share
+    market: str = DEFAULT_LOT_MARKET
+    instrument: str = DEFAULT_LOT_INSTRUMENT
+    label: str = ""
+
+
+class Position:
+    """A holding as a list of lots (IDEA5-LOTES).
+
+    ``shares``, ``avg_cost``, ``cost_basis`` and ``purchase_date`` are derived
+    from the lots, so the thirteen modules that read them did not change. It
+    still accepts the old arguments (``shares``, ``avg_cost``,
+    ``purchase_date``), which build a single lot.
+    """
+
+    def __init__(
+        self,
+        symbol: str,
+        shares: Optional[float] = None,
+        avg_cost: Optional[float] = None,
+        purchase_date: Optional[str] = None,
+        sector: str = "Unknown",
+        notes: str = "",
+        lots: Optional[List[Lot]] = None,
+    ):
+        self.symbol = symbol
+        self.sector = sector
+        self.notes = notes
+        if lots is None:
+            lots = [Lot(date=purchase_date or "", shares=float(shares or 0.0),
+                        price_usd=float(avg_cost or 0.0))]
+        self.lots: List[Lot] = list(lots)
+
+    @property
+    def shares(self) -> float:
+        return sum(lot.shares for lot in self.lots)
 
     @property
     def cost_basis(self) -> float:
-        return self.shares * self.avg_cost
+        return sum(lot.shares * lot.price_usd for lot in self.lots)
+
+    @property
+    def avg_cost(self) -> float:
+        """USD per share, weighted over the lots — what the average used to store."""
+        shares = self.shares
+        return self.cost_basis / shares if shares else 0.0
+
+    @property
+    def purchase_date(self) -> str:
+        """The oldest lot's date: the first purchase, as before (``_held_from``)."""
+        dates = [lot.date for lot in self.lots if lot.date]
+        return min(dates) if dates else ""
+
+    def to_dict(self) -> Dict:
+        return {"symbol": self.symbol, "sector": self.sector, "notes": self.notes,
+                "lots": [asdict(lot) for lot in self.lots]}
+
+    @classmethod
+    def from_dict(cls, raw: Dict) -> "Position":
+        """Read either format: ``lots`` (new) or ``shares``/``avg_cost`` (old)."""
+        if "lots" in raw:
+            return cls(symbol=raw["symbol"], sector=raw.get("sector", "Unknown"),
+                       notes=raw.get("notes", ""), lots=[Lot(**lot) for lot in raw["lots"]])
+        pos = cls(symbol=raw["symbol"], shares=raw["shares"], avg_cost=raw["avg_cost"],
+                  purchase_date=raw["purchase_date"], sector=raw.get("sector", "Unknown"),
+                  notes=raw.get("notes", ""))
+        pos.lots[0].label = MIGRATED_LOT_LABEL
+        return pos
+
+    def __repr__(self) -> str:
+        return (f"Position({self.symbol!r}, shares={self.shares}, avg_cost={self.avg_cost}, "
+                f"lots={len(self.lots)})")
 
 
 @dataclass
@@ -121,7 +198,7 @@ class Portfolio:
         purchase_date: str,
         notes: str = "",
     ) -> Optional[str]:
-        """Add (or average into) a position. Returns ``None`` when it was added,
+        """Add a position, or a new lot to one already held. Returns ``None`` when it was added,
         or the reason it was not — see ``position_currency_skip_reason``."""
         symbol = symbol.upper()
         info = get_info(symbol)
@@ -132,13 +209,12 @@ class Portfolio:
         sector = info.get("sector", "Unknown")
 
         if symbol in self.positions:
-            # Average down/up
+            # IDEA5-LOTES: a new buy is a new lot, not an average (FIFO needs each one).
             existing = self.positions[symbol]
-            total_shares = existing.shares + shares
-            total_cost = existing.cost_basis + shares * avg_cost
-            existing.shares = total_shares
-            existing.avg_cost = total_cost / total_shares
-            logger.info(f"Updated {symbol}: {total_shares:.2f} shares @ ${existing.avg_cost:.2f}")
+            existing.lots.append(Lot(date=purchase_date, shares=shares, price_usd=avg_cost))
+            logger.info(
+                f"Added a lot to {symbol}: {existing.shares:.2f} shares @ ${existing.avg_cost:.2f}"
+            )
         else:
             self.positions[symbol] = Position(
                 symbol=symbol,
@@ -163,11 +239,14 @@ class Portfolio:
         """
         Overwrite an existing position's editable fields and persist.
 
-        Unlike add_position (which averages cost into an existing holding),
+        Unlike add_position (which adds a lot to an existing holding),
         this sets the values directly — used by the "Editar posición" UI.
         Cost basis, P&L and weights recompute on demand from these values.
 
-        Returns True on success, False if the symbol is not held.
+        With more than one lot only the notes change (IDEA5-LOTES), and it
+        returns False: setting shares and cost would average the lots away.
+
+        Returns True on success, False if the symbol is not held or has lots.
         """
         symbol = symbol.upper()
         if symbol not in self.positions:
@@ -175,12 +254,21 @@ class Portfolio:
             return False
 
         pos = self.positions[symbol]
-        pos.shares = shares
-        pos.avg_cost = avg_cost
-        if purchase_date is not None:
-            pos.purchase_date = purchase_date
         if notes is not None:
             pos.notes = notes
+        if len(pos.lots) > 1:
+            # IDEA5-LOTES (Q2): overwriting shares and cost would average the lots
+            # back into one and lose each purchase. Only the notes change; lots are
+            # edited one by one in IDEA-5's PR 2.
+            self._save()
+            logger.warning(f"{symbol} has {len(pos.lots)} lots — only its notes were updated")
+            return False
+
+        lot = pos.lots[0]
+        lot.shares = shares
+        lot.price_usd = avg_cost
+        if purchase_date is not None:
+            lot.date = purchase_date
 
         self._save()
         logger.info(f"Updated {symbol}: {shares:.2f} shares @ ${avg_cost:.2f}")
@@ -195,7 +283,16 @@ class Portfolio:
             del self.positions[symbol]
             logger.info(f"Closed {symbol}")
         else:
-            self.positions[symbol].shares -= shares
+            # FIFO (LIG arts. 149 and 65): the oldest lots go first.
+            pos = self.positions[symbol]
+            left = shares
+            for lot in sorted(pos.lots, key=lambda lot: lot.date):
+                taken = min(lot.shares, left)
+                lot.shares -= taken
+                left -= taken
+                if left <= 0:
+                    break
+            pos.lots = [lot for lot in pos.lots if lot.shares > 0]
             logger.info(f"Reduced {symbol} by {shares:.2f} shares")
         self._save()
 
@@ -372,13 +469,40 @@ class Portfolio:
         return max(dates) if dates else None
 
     def _save(self) -> None:
-        data = {sym: asdict(pos) for sym, pos in self.positions.items()}
+        if self._legacy_on_disk:
+            # IDEA5-LOTES: the first write in the lots format keeps the old file.
+            backup = self.file_path.with_name(self.file_path.name + ".bak-pre-lotes")
+            if not backup.exists():
+                backup.write_text(self.file_path.read_text())
+                logger.info(f"Portfolio backed up before the lots format: {backup}")
+            self._legacy_on_disk = False
+        if self._unreadable_on_disk:
+            # A file that failed to load would be overwritten with the empty
+            # portfolio in memory: set it aside first, untouched.
+            aside = self.file_path.with_name(
+                f"{self.file_path.name}.unreadable-{datetime.now():%Y%m%d-%H%M%S}"
+            )
+            self.file_path.replace(aside)
+            logger.error(f"Portfolio file could not be read; kept as {aside}")
+            self._unreadable_on_disk = False
+        elif self.file_path.exists():
+            # Rolling backup: if an older checkout overwrites the file (it cannot
+            # read lots and starts empty), the last state written here survives.
+            self.file_path.with_name(self.file_path.name + ".bak").write_text(
+                self.file_path.read_text()
+            )
+        data = {sym: pos.to_dict() for sym, pos in self.positions.items()}
         self.file_path.write_text(json.dumps(data, indent=2))
 
     def _load(self) -> None:
+        self._legacy_on_disk = False
+        self._unreadable_on_disk = False
         if self.file_path.exists():
             try:
                 data = json.loads(self.file_path.read_text())
-                self.positions = {sym: Position(**pos) for sym, pos in data.items()}
+                self.positions = {sym: Position.from_dict(pos) for sym, pos in data.items()}
+                self._legacy_on_disk = any("lots" not in pos for pos in data.values())
             except Exception as exc:
+                self.positions = {}
+                self._unreadable_on_disk = True
                 logger.error(f"Failed to load portfolio: {exc}")

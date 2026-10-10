@@ -432,21 +432,31 @@ def _edit_position_dialog(sym: str) -> None:
 
     st.text_input("Ticker", value=sym, disabled=True)
 
+    # IDEA5-LOTES: with several lots, overwriting shares and cost would average
+    # them back into one; only the notes are editable until lots are, one by one.
+    many_lots = len(pos.lots) > 1
+    if many_lots:
+        st.info(
+            f"{sym} tiene {len(pos.lots)} compras guardadas por separado. Cantidad, costo "
+            "y fecha no se editan desde acá, para no promediarlas en una sola.",
+            icon="🧾",
+        )
+
     c1, c2 = st.columns(2)
     new_shares = c1.number_input(
         "Cantidad de Shares", min_value=0.0, value=float(pos.shares),
-        step=1.0, format="%.4f",
+        step=1.0, format="%.4f", disabled=many_lots,
     )
     new_cost = c2.number_input(
         "Avg Cost (USD)", min_value=0.0, value=float(pos.avg_cost),
-        step=0.01, format="%.2f",
+        step=0.01, format="%.2f", disabled=many_lots,
     )
 
     try:
         _pd_val = date.fromisoformat(pos.purchase_date)
     except (ValueError, TypeError):
         _pd_val = date.today()
-    new_date = st.date_input("Fecha de compra (opcional)", value=_pd_val)
+    new_date = st.date_input("Fecha de compra (opcional)", value=_pd_val, disabled=many_lots)
     new_notes = st.text_area("Notas (opcional)", value=pos.notes or "")
 
     st.caption(f"Nuevo Cost Basis: **${new_shares * new_cost:,.2f}**")
