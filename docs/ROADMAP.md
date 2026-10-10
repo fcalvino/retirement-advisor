@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## CACHE-RACE-IT — hilos sobre un par FX vencido reciben todos su tipo de cambio (2026-10-10)
+
+Un test de integración protege CACHE-RACE por el camino que rompía la cartera (CACHE-RACE-IT, 2026-10-10): varios hilos llaman a `get_fx_history("EUR")` con `history:EURUSD=X:2y:1wk` vencida, `yf.Ticker` stubeado y una `threading.Barrier` dentro del stub, de modo que todos llegan juntos a `cache.set`. Se afirma que ninguno recibe `None`, que la clave queda cacheada y que no se loguea `IntegrityError`. Con el `data/cache.py` de `a4f2f25` falla 3 de 3 (4 a 6 de 8 hilos sin tipo de cambio, «EURUSD=X no se pudo bajar — IntegrityError»); con main pasa. Solo tests. El BACKLOG pasa a la decimoctava repriorización y suma TR-RACE (track record y macro RAG con el mismo «leer y después insertar», sin daño medido). `tests/test_cache_race_it_oracle.py`
+
+---
+
 ## CACHE-RACE — la caché aguanta hilos que comparten clave y el FX de EURUSD ya no se pierde (2026-10-10)
 
 Dos hilos que pedían la misma clave de la caché chocaban (CACHE-RACE, 2026-10-10): el optimizador baja precios en paralelo y cada ticker en EUR pide el mismo par FX. `DataCache.set` leía y después insertaba, así que uno chocaba con `UNIQUE` y `get_fx_history` lo logueaba como «no se pudo bajar» aunque la descarga había funcionado. `get` borraba la fila vencida con el ORM y daba un `SAWarning` de 0 filas. Ahora `set` es un upsert atómico (`INSERT … ON CONFLICT DO UPDATE` del dialecto SQLite de SQLAlchemy) y `get` borra por condición (clave y `cached_at` vencido), así que no se lleva una fila recién refrescada. Los avisos de `drop_fx_spikes` sobre CADUSD son barras malas de Yahoo y el filtro queda igual. `tests/test_cache_race_oracle.py`

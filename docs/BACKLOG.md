@@ -13,24 +13,17 @@
 
 ## Orden actual
 
-Decimoséptima repriorización (2026-10-08, sobre `7a92e46`): el bloque 6 (Estimación
-objetiva) cerró con EO-5b y sólo queda SCORE-CONTRACCION, que espera una Fuente. Abre una
-tanda de higiene antes de cualquier idea nueva. (Decimosexta, 2026-10-05: EO-3 cerró con
-acciones EE.UU. calibradas y bonos EE.UU. no; el usuario decidió el alcance de EO-4 y lo
-partió en cuatro PRs. Bonos conservan el haircut, rotulado «no calibrado»; ex-EE.UU.,
-emergentes y REITs usan la Estimación objetiva rotulada «no calibrable», decisiones del
-usuario, 2026-10-05.)
+Decimoctava repriorización (2026-10-10, sobre `a7fe27a`): CACHE-RACE (#251) cerró y su QA en
+vivo mostró que el choque, con el código viejo, sacaba un ticker de la cartera. Antes de
+cualquier idea nueva, dos PRs chicos. (Decimoséptima, 2026-10-08: cerró el bloque 6 salvo
+SCORE-CONTRACCION; tanda de higiene.)
 
-1. ~~**Sincronización** — este orden, el ADR 0001 y el glosario llegan a `main` (sólo docs).~~
-2. ~~**SIM-GAP-PCT + KATEX-DOLLAR-PLAN** — banda 4, un PR: el mismo bloque «Dos escenarios».~~
-3. ~~**EO-0 → EO-1a → EO-1b → EO-1c → EO-2a → EO-2b → EO-2c → EO-3 → EO-4a → EO-4b → EO-4c-1 → EO-4c-2 → EO-4d**: el riesgo país argentino entra a la Estimación de los ADRs (EO-4a el Monte Carlo, EO-4b el Optimizer, EO-4c-1 el motor de Escenarios, EO-4c-2 su UI y EO-4d el riesgo país, cerrados). Ver bloque 6.~~
-4. ~~**EO-6a**~~ → ~~**EO-6b-1**~~ → ~~**EO-6b-2**~~ → ~~**EO-5a**~~ → ~~**EO-5b**~~. Cerrado el bloque 6 salvo SCORE-CONTRACCION (espera Fuente). Ver bloque 6.
+1. ~~**CACHE-RACE-IT**: banda 5. Test de integración: hilos sobre `get_fx_history` con la misma clave vencida y yfinance stubeado; ninguno recibe `None`. Un PR, solo tests.~~
+2. **GOAL-PRIORITY-TEXT**: banda 5. Una prioridad en texto se convierte con el mapeo que ratificó el usuario el 2026-10-02. Un PR.
+3. Repriorización: PORTFOLIO-FX, IDEA-4 o IDEA-5, que decide el usuario.
 
-5. ~~**COM-LOG-TESTS**~~ — banda 3: la suite escribía en `logs/retirement_advisor.log` del clon real y ensuciaba la medición de COM-QUORUM-MEDICION. Un PR, sin llamadas pagas.
-6. ~~**STREAMLIT-1.65**~~ — restaurar la memoria de los widgets al entrar a la página y levantar el tope `streamlit<1.65`. Un PR. **Con esto el Orden actual queda sin pasos abiertos**: lo que sigue exige una repriorización (la decimoctava), que decide el usuario.
-
-Esperan disparador: U5-1b y COM-*. Sin orden: PORTFOLIO-FX, IDEA-4, IDEA-5, PIT-TOOLS y
-GOAL-PRIORITY-TEXT. Espera Fuente: SCORE-CONTRACCION.
+Esperan disparador: U5-1b, COM-* y TR-RACE. Sin orden: PIT-TOOLS. Espera Fuente:
+SCORE-CONTRACCION.
 
 ---
 
@@ -105,6 +98,7 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **IDEA-5 IMPUESTOS** | 5 | Módulo de impuestos personales —bienes personales, retención de dividendos, ganancia de capital— (idea 5 de `DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`; `TaxConfig` sólo modela el impuesto corporativo). Sin alcance ni orden. Ver bloque 4 |
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **GOAL-PRIORITY-TEXT** | 5 | Una meta importada a mano con la prioridad en texto («esencial») llega a `goals_list` sin convertir y «Simular» la pasa por `int()`. Residual declarado de PLAN-GOALS-KEYS (#214); ningún export de la app la escribe así. Anotado el 2026-10-02, **no priorizado**. Ver bloque 4 |
+| **TR-RACE** | 5 | `analysis/track_record.py` (deduplicación por día, upsert de outcomes) y `analysis/macro_rag.py:129` hacen «leer y después insertar», como `DataCache` antes de CACHE-RACE. Sin daño medido el 2026-10-10: 0 duplicados a menos de 5 s en `recommendation_log`; los 74 del 2026-08-28 son anteriores a la deduplicación. **Reabrir** si aparece un duplicado a menos de 5 s o si un escritor del track record pasa a correr en hilos o en dos procesos a la vez. |
 | **SCORE-CONTRACCION** | ? | La contracción de la Estimación de cada activo hacia la de su Clase según el score, que el ADR 0001 prevé y EO-4b no hizo (decisión del usuario, 2026-10-06): U6-1 midió que el score ordena el rendimiento (p<0,0001) pero no lo cotiza, así que hoy un peso sería un número sin Fuente. Con la contracción en 0, dos acciones de la misma Clase tienen el mismo μ y el score sólo elige los candidatos. **Reabrir** con una medición point-in-time que dé un peso con su banda (no recalibrar sobre la misma historia que U6-1). Anotado el 2026-10-06, **sin banda** |
 
 Las filas cerradas están en [`ROADMAP.md`](ROADMAP.md): una entrada por fila, con su commit.
