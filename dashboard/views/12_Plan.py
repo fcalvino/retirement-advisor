@@ -42,7 +42,14 @@ from dashboard.shared import (
     track_record_home_line,
 )
 from data.env_provenance import format_drift
-from data.plan_context import activate_plan, compute_alignment_trades, deactivate_plan
+from data.plan_context import (
+    activate_plan,
+    compute_alignment_trades,
+    deactivate_plan,
+    get_active_plan,
+    is_sample_plan,
+    session_plan_is_unsaved_target,
+)
 from data.plan_store import PlanSnapshot, _slugify, optimizer_metrics, plan_store, unique_plan_id
 from data.product_ux import (
     MAX_DD_ESTIMATE_SHORT,
@@ -182,6 +189,15 @@ def _core_table(core_holdings: list, from_ai: bool) -> None:
 
 st.divider()
 st.subheader("📍 Plan actual (esta sesión)")
+_active_snap_now = get_active_plan(prefs)
+if session_plan_is_unsaved_target(opt_result, _active_snap_now):
+    # PLAN-SESION-ACTIVO: Portfolio, alertas y comité miden contra el activo.
+    st.caption(
+        "📌 **Borrador sin activar.** 💼 Portfolio, las alertas y el comité miden contra "
+        + (f"tu plan activo, **{_active_snap_now.name}**." if _active_snap_now is not None
+           else "un plan activo, y todavía no tenés uno.")
+        + " Guardalo abajo con «Usar como mi plan activo» para que sea tu objetivo."
+    )
 
 if not (opt_result and getattr(opt_result, "tickers", [])):
     # Guided empty state (Fase E): show the journey instead of a dead end.
@@ -312,6 +328,14 @@ else:
             help="Guardar con un nombre existente actualiza ese plan.",
         )
         _existing = plan_store.get(_slugify(plan_name))
+        # PLAN-SESION-ACTIVO: guardar no activaba; sin plan propio activo, sugerirlo.
+        _activate_on_save = st.checkbox(
+            "Usar como mi plan activo",
+            value=(_active_snap_now is None or is_sample_plan(_active_snap_now)),
+            key="plan_save_activate",
+            help="El plan activo es el objetivo contra el que 💼 Portfolio, las alertas "
+                 "y el comité miden tu portafolio real.",
+        )
         with _sc2:
             st.markdown("&nbsp;")
             if st.button("💾 Guardar", type="primary", width="stretch", key="plan_save_btn"):
@@ -343,7 +367,10 @@ else:
                     run_params=_run,   # PLAN-LOAD-SAVINGS: savings and assumptions of the run
                 )
                 plan_store.upsert(snap)
-                st.toast(f"✅ Plan guardado: {snap.name}", icon="🗺️")
+                if _activate_on_save and activate_plan(snap.id, prefs):
+                    st.toast(f"✅ Plan guardado y activado: {snap.name}", icon="🎯")
+                else:
+                    st.toast(f"✅ Plan guardado: {snap.name}", icon="🗺️")
                 st.rerun()
         if _existing:
             st.caption(f"⚠️ Ya existe un plan **{_existing.name}** — guardar lo **actualiza**.")

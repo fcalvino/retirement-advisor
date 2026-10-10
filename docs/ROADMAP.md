@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## PLAN-SESION-ACTIVO — mi Plan y Portfolio dicen cuándo el plan de la sesión no es el activo (2026-10-10)
+
+Mi Plan y Portfolio hablaban de planes distintos sin decirlo: la sesión no es el plan activo y guardar no activaba. Ahora las dos pantallas lo avisan, el guardado ofrece «Usar como mi plan activo» y un plan de ejemplo activo ya no pide rebalancear.
+
+---
+
 ## IDEA5-LOTES — el Portfolio guarda cada compra como un lote (2026-10-10)
 
 El Portfolio deja de promediar: cada compra queda como un lote con su fecha y su precio, que es lo que el cálculo del impuesto (PEPS) va a necesitar en el PR 2. Las posiciones existentes pasan a un lote único rotulado «costo promedio migrado», con un respaldo del archivo viejo, y ningún número visible cambia. Ningún número del motor cambia.
