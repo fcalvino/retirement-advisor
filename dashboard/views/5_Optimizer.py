@@ -18,6 +18,7 @@ from dashboard.shared import (
     _get_ai_config,
     cached_asset_classes,
     ensure_session_defaults,
+    escape_html,
     seed_session_defaults_from_profile,
     stop_view,
     tailwind_badge,
@@ -393,14 +394,35 @@ if not run_now and not has_valid_result:
     st.markdown("---")
     st.markdown("### Seleccioná un perfil y ejecutá la optimización")
 
+    # The whole card is the click target: the button sits on top of the HTML
+    # card, transparent, inside a keyed container (`.st-key-*` is the class
+    # Streamlit derives from `key`). Its label stays for screen readers.
+    st.markdown(
+        """<style>
+        [class*="st-key-profile_card_"] { position: relative; }
+        [class*="st-key-profile_card_"] div:not(.profile-card):not(.profile-card *) {
+            position: static;
+        }
+        [class*="st-key-profile_card_"] button {
+            position: absolute; inset: 0; width: 100%; height: 100%;
+            opacity: 0; cursor: pointer; z-index: 1;
+        }
+        [class*="st-key-profile_card_"] button:disabled { cursor: default; }
+        [class*="st-key-profile_card_"]:has(button:focus-visible) .profile-card {
+            outline: 3px solid #1e88e5; outline-offset: 2px;
+        }
+        </style>""",
+        unsafe_allow_html=True,
+    )
+
     _prof_cards = st.columns(3)
     for _ci, (_pk, _pcfg) in enumerate(OPTIMIZER_PROFILES.items()):
         _active = (_pk == profile_key)
         _clr    = _PROFILE_COLORS[_pk]
         _border = f"3px solid {_clr['border']}" if _active else f"1px solid {_clr['border']}88"
-        with _prof_cards[_ci]:
+        with _prof_cards[_ci], st.container(key=f"profile_card_{_pk}"):
             st.markdown(
-                f"""<div style="
+                f"""<div class="profile-card" style="
                     border:{_border};
                     border-radius:12px;
                     padding:20px 16px;
@@ -409,9 +431,9 @@ if not run_now and not has_valid_result:
                 ">
                     <div style="font-size:2em;margin-bottom:4px">{_clr['icon']}</div>
                     <div style="font-size:1.1em;font-weight:700;color:{_clr['accent']}">
-                        {"✅ " if _active else ""}{_pcfg.name}
+                        {"✅ " if _active else ""}{escape_html(_pcfg.name)}
                     </div>
-                    <div style="font-size:0.82em;color:#555;margin:6px 0 10px">{_pcfg.description}</div>
+                    <div style="font-size:0.82em;color:#555;margin:6px 0 10px">{escape_html(_pcfg.description)}</div>
                     <div style="font-size:0.78em;color:{_clr['accent']}">
                         📊 Vol ≤ <b>{_pcfg.max_volatility_pct:.0f}%</b> &nbsp;
                         💰 Div ≥ <b>{_pcfg.min_dividend_yield_pct:.1f}%</b><br>
@@ -421,12 +443,9 @@ if not run_now and not has_valid_result:
                 </div>""",
                 unsafe_allow_html=True,
             )
-
             st.button(
-                "✅ Elegido" if _active else f"Elegir {_pcfg.name}",
+                f"{_pcfg.name} (elegido)" if _active else f"Elegir {_pcfg.name}",
                 key=f"welcome_profile_{_pk}",
-                width="stretch",
-                type="primary" if _active else "secondary",
                 disabled=_active,
                 on_click=_pick_profile,
                 args=(_pk,),
