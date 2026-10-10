@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## OPT-PROFILE-CARDS — las tarjetas de perfil del Optimizer eligen el perfil; sin presets de retiro (2026-10-10)
+
+Las tarjetas de perfil de la bienvenida del Optimizer no eran clickeables y los presets de retiro cubrían 4 de las 18 combinaciones universo × perfil, pisando el perfil elegido. Decisión del usuario: un clic en cualquier parte de la tarjeta elige el perfil (no ejecuta; sin botón visible: el botón queda transparente encima, elegido sobre `st.radio` con estilo de tarjeta, `st.pills` y un componente propio), el radio del sidebar se queda sincronizado, los presets se sacan (bienvenida y sidebar) y el universo se elige con el selector global, que la bienvenida nombra. Ningún número del motor cambia.
+
+---
+
 ## STREAMLIT-ALIGN — un solo juego de versiones para el CI, Docker y el venv (2026-10-10)
 
 El CI, la imagen de Docker y el venv local corrían tres versiones de Streamlit distintas, y el lock no instalaba en Linux porque se compilaba resuelto para macOS. Ahora el lock se compila con `--universal`, se regeneró desde cero con las mismas versiones que el CI ya probaba (Streamlit 1.65.0), y el CI instala desde el lock, así que el verde del CI dice algo sobre lo que corre Docker y el venv. Las 5 fallas locales de Simulaciones no eran de la versión: las cierra TEST-PREFS-ISOLATION (#256). Ningún número del motor cambia.
