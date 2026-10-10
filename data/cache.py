@@ -5,7 +5,8 @@ from datetime import timedelta
 from typing import Any, Optional
 
 from loguru import logger
-from sqlalchemy import Column, DateTime, String, Text, create_engine
+from sqlalchemy import Column, DateTime, String, Text, create_engine, delete
+from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from sqlalchemy.pool import NullPool
 
@@ -40,7 +41,14 @@ class DataCache:
             if entry is None:
                 return None
             if utc_now() - entry.cached_at > self.ttl:
-                session.delete(entry)
+                # Borrado por condición, no ``session.delete``: otro hilo pudo
+                # borrarla (0 filas, sin SAWarning) o refrescarla recién (el filtro
+                # por ``cached_at`` no se lleva la fila nueva). CACHE-RACE.
+                session.execute(
+                    delete(CacheEntry)
+                    .where(CacheEntry.key == key)
+                    .where(CacheEntry.cached_at < utc_now() - self.ttl)
+                )
                 session.commit()
                 return None
             try:
@@ -54,13 +62,16 @@ class DataCache:
         except (TypeError, ValueError) as exc:
             logger.warning(f"Cache: cannot serialize {key}: {exc}")
             return
+        # Upsert atómico: leer y después insertar dejaba a dos hilos con la misma
+        # clave chocando en ``UNIQUE`` (el optimizador pide un par FX por ticker).
+        now = utc_now()
+        stmt = insert(CacheEntry).values(key=key, data=serialized, cached_at=now)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[CacheEntry.key],
+            set_={"data": stmt.excluded.data, "cached_at": stmt.excluded.cached_at},
+        )
         with self._Session() as session:
-            existing = session.get(CacheEntry, key)
-            if existing:
-                existing.data = serialized
-                existing.cached_at = utc_now()
-            else:
-                session.add(CacheEntry(key=key, data=serialized, cached_at=utc_now()))
+            session.execute(stmt)
             session.commit()
 
     def get_age_hours(self, key: str) -> Optional[float]:
