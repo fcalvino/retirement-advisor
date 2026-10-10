@@ -20,7 +20,8 @@ SCORE-CONTRACCION; tanda de higiene.)
 
 1. ~~**CACHE-RACE-IT**: banda 5. Test de integración: hilos sobre `get_fx_history` con la misma clave vencida y yfinance stubeado; ninguno recibe `None`. Un PR, solo tests.~~
 2. ~~**GOAL-PRIORITY-TEXT**: banda 5. Una prioridad en texto se convierte con el mapeo que ratificó el usuario el 2026-10-02. Un PR.~~
-3. Repriorización: PORTFOLIO-FX, IDEA-4 o IDEA-5, que decide el usuario.
+3. ~~**ORDEN-COHERENCIA**: banda 5. Un test hace fallar `make check` si el Orden y las filas del BACKLOG se contradicen o falta archivar una repriorización reemplazada. Un PR, solo docs y tests.~~
+4. Repriorización: PORTFOLIO-FX, IDEA-4 o IDEA-5, que decide el usuario.
 
 Esperan disparador: U5-1b, COM-* y TR-RACE. Sin orden: PIT-TOOLS. Espera Fuente:
 SCORE-CONTRACCION.
@@ -81,7 +82,7 @@ ya están en el diario:
 |---|---|---|---|---|
 | 3 — fórmulas con blast radius | 11 | 11 | 0 | U3-1b cerró (pendiente desconocida es None) |
 | 4 — flujos del motor | 4 | 4 | 0 | N8 cerró (rótulo); el signo invertido del flujo queda como **N8b** |
-| 5 — scoring y config | 20 | 20 | 0 | **U5-1b** (se partió de U5-1; decidida 2026-09-27: mantener, espera disparador) y **U1-9b** (la fórmula del ratio bajista, que U1-9 dejó «para la oleada 5» sin fila) |
+| 5 — scoring y config | 20 | 20 | 0 | **U5-1b** (se partió de U5-1; decidida 2026-09-27: mantener, espera disparador). **U1-9b** (la fórmula del ratio bajista, que U1-9 dejó «para la oleada 5» sin fila) cerró el 2026-09-30 |
 | 6 — dos motores de retorno | 2 | 1 (U6-1) | 0 de defecto | U6-2 es ritual (`ENGINE_VERSION`), no una fila |
 | 7 — UX del dashboard | 2 | 2 | 0 | U7-3 nació y cerró después |
 | **Total origen 3–7** | **39** | **37** | **0** | leftovers aparte |
@@ -506,9 +507,12 @@ objetiva, bloque 6 (ADR 0001).
   BACKLOG no lleva lista de cerradas.
 - **`## Orden actual` se reescribe, no se le agrega.** Lleva la repriorización vigente
   (número, fecha, SHA base), sus pasos en orden y, por id, lo que espera disparador o
-  no tiene orden. Cuando un paso cierra, se tacha de la lista; cuando hay una
-  repriorización nueva, su texto completo va como viñeta a «Archivo del backlog» al
-  final de `ROADMAP.md` y el bloque se reescribe. `tests/test_doc_shape.py` exige que
+  no tiene orden. Cuando un paso cierra, se tacha de la lista; cuando una
+  repriorización nueva reemplaza a la vigente, el texto completo de la
+  **reemplazada** va como viñeta a «Archivo del backlog» al final de `ROADMAP.md`
+  y el bloque se reescribe con la nueva, que vive sólo acá hasta que la reemplacen.
+  `tests/test_doc_shape.py` falla si falta archivar una, o si una línea llama «no
+  priorizado» o «sin orden» a un paso abierto del Orden (ORDEN-COHERENCIA). `tests/test_doc_shape.py` exige que
   esté en las primeras 15 líneas y no pase de 15 líneas.
 - Si un cambio mueve μ o el Monte Carlo, bumpear `ENGINE_VERSION` (U6-2).
 - Este archivo está en la tabla canónica de [`INDEX.md`](INDEX.md); si se renombra,
