@@ -152,7 +152,8 @@ class TestPersistence:
     def test_written_file_is_valid_json(self, portfolio, tmp_path):
         portfolio.add_position("AAPL", 10, 150.0, "2024-01-15")
         data = json.loads((tmp_path / "portfolio.json").read_text())
-        assert data["AAPL"]["shares"] == 10
+        # IDEA5-LOTES: the file keeps each purchase as a lot.
+        assert [lot["shares"] for lot in data["AAPL"]["lots"]] == [10]
 
 
 # ------------------------------------------------------------------ #
