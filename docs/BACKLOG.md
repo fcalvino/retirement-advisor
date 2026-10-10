@@ -13,18 +13,16 @@
 
 ## Orden actual
 
-Decimoctava repriorización (2026-10-10, sobre `a7fe27a`): CACHE-RACE (#251) cerró y su QA en
-vivo mostró que el choque, con el código viejo, sacaba un ticker de la cartera. Antes de
-cualquier idea nueva, dos PRs chicos. (Decimoséptima, 2026-10-08: cerró el bloque 6 salvo
-SCORE-CONTRACCION; tanda de higiene.)
+Decimonovena repriorización (2026-10-10, sobre `638d156`): la decimoctava cerró sus tres
+PRs y, fuera de ese Orden, entraron #255 (OPT-PROFILE-CARDS), #256 (TEST-PREFS-ISOLATION),
+#257 (STREAMLIT-ALIGN) y #258 (VENV-FROM-LOCK). El usuario eligió IDEA-5 con un primer
+alcance: ganancia de capital, Argentina. (Decimoctava, 2026-10-10: CACHE-RACE-IT,
+GOAL-PRIORITY-TEXT y ORDEN-COHERENCIA.)
 
-1. ~~**CACHE-RACE-IT**: banda 5. Test de integración: hilos sobre `get_fx_history` con la misma clave vencida y yfinance stubeado; ninguno recibe `None`. Un PR, solo tests.~~
-2. ~~**GOAL-PRIORITY-TEXT**: banda 5. Una prioridad en texto se convierte con el mapeo que ratificó el usuario el 2026-10-02. Un PR.~~
-3. ~~**ORDEN-COHERENCIA**: banda 5. Un test hace fallar `make check` si el Orden y las filas del BACKLOG se contradicen o falta archivar una repriorización reemplazada. Un PR, solo docs y tests.~~
-4. Repriorización: PORTFOLIO-FX, IDEA-4 o IDEA-5, que decide el usuario.
+1. **IDEA-5 IMPUESTOS**: banda 5. Ganancia de capital de un residente fiscal argentino al vender. Primero, las reglas verificadas contra la fuente oficial y acordadas con el usuario; después el código.
 
-Esperan disparador: U5-1b, COM-* y TR-RACE. Sin orden: PIT-TOOLS. Espera Fuente:
-SCORE-CONTRACCION.
+Esperan disparador: U5-1b, COM-*, TR-RACE y VENV-PRUNE. Sin orden: PIT-TOOLS,
+PORTFOLIO-FX e IDEA-4. Espera Fuente: SCORE-CONTRACCION.
 
 ---
 
@@ -96,9 +94,10 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **PORTFOLIO-FX** | 5 | El Portfolio (`portfolio/tracker.py`) sigue admitiendo sólo `PORTFOLIO.base_currency` (PORTFOLIO-CCY): una posición en yenes no se puede cargar. #154 cerró la conversión en Backtesting, Optimizer, Monte Carlo y Track Record, pero sumar costo y valor de posiciones en otra moneda es otro trabajo (costo en la moneda de compra, valor al tipo de cambio de hoy, P&L separado del cambiario). Anotado el 2026-09-29, **no priorizado** |
 | **COM-VOTO-VACÍO** / **COM-QUORUM-MEDICION** | 5 | Mediciones bloqueadas por volumen (18 corridas orgánicas al 2026-09-29, todas con quórum 100 %; 69 líneas `committee[` únicas al 2026-10-02, en buena parte de la suite (ver COM-LOG-TESTS); umbral 200, no cumplido). **Medido el 2026-10-08**: de las 131 líneas `committee[` del log del clon real, 126 son de la suite —todas del 2026-10-03: MSFT 70, ACME, AIR.PA y BTC-USD 7 cada una, `portfolio:t/h/15ee…` 35— y sólo 5 son de una corrida real (BRK-B, CMCSA, MCO, GOOGL, PG): contar desde el 2026-10-08 o excluir esos símbolos; COM-LOG-TESTS (cerrada) evita que vuelva. Ver bloque 4 |
 | **IDEA-4 CHAT-CONTEXTUAL** | 5 | Botón «preguntale al asesor» en Plan/Simulaciones que abre el Chat con el contexto de esa pantalla (idea 4 de `DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`). Sin alcance ni orden. Ver bloque 4 |
-| **IDEA-5 IMPUESTOS** | 5 | Módulo de impuestos personales —bienes personales, retención de dividendos, ganancia de capital— (idea 5 de `DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`; `TaxConfig` sólo modela el impuesto corporativo). Sin alcance ni orden. Ver bloque 4 |
+| **IDEA-5 IMPUESTOS** | 5 | Módulo de impuestos personales (idea 5 de `DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`; `TaxConfig` sólo modela el impuesto corporativo). **Paso 1 del Orden** (decimonovena, 2026-10-10): primer alcance ganancia de capital, Argentina. Ver bloque 4 |
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **TR-RACE** | 5 | `analysis/track_record.py` (deduplicación por día, upsert de outcomes) y `analysis/macro_rag.py:129` hacen «leer y después insertar», como `DataCache` antes de CACHE-RACE. Sin daño medido el 2026-10-10: 0 duplicados a menos de 5 s en `recommendation_log`; los 74 del 2026-08-28 son anteriores a la deduplicación. **Reabrir** si aparece un duplicado a menos de 5 s o si un escritor del track record pasa a correr en hilos o en dos procesos a la vez. |
+| **VENV-PRUNE** | 5 | `run.sh` instala el lock con `pip install`, que no saca lo que salió del lock (`pandas-ta`/`numba`/`llvmlite`, 2026-10-10). Un sync completo borraría Playwright. Espera disparador: la próxima dependencia que se retire. Ver bloque 4 |
 | **SCORE-CONTRACCION** | ? | La contracción de la Estimación de cada activo hacia la de su Clase según el score, que el ADR 0001 prevé y EO-4b no hizo (decisión del usuario, 2026-10-06): U6-1 midió que el score ordena el rendimiento (p<0,0001) pero no lo cotiza, así que hoy un peso sería un número sin Fuente. Con la contracción en 0, dos acciones de la misma Clase tienen el mismo μ y el score sólo elige los candidatos. **Reabrir** con una medición point-in-time que dé un peso con su banda (no recalibrar sobre la misma historia que U6-1). Anotado el 2026-10-06, **sin banda** |
 
 Las filas cerradas están en [`ROADMAP.md`](ROADMAP.md): una entrada por fila, con su commit.
@@ -272,7 +271,8 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
 - ~~**TEST-ENV-KEY**~~ — *cerrada (2026-09-30)*, ver `ROADMAP.md`. Con el `.env` real, 13 tests de `tests/test_alert_engine.py` pedían la explicación a la IA y el guard de red los cortaba; el CI, sin `.env`, quedaba verde.
 - ~~**CONTEXT-DIR-IGNORE**~~ — *cerrada (2026-09-30)*, ver `ROADMAP.md`. `.context/` no estaba en `.gitignore`: las skills `decidir-proyecto` y `probar-en-vivo` ensuciaban `git status` y ruff escaneaba sus scripts.
 - **IDEA-4 CHAT-CONTEXTUAL — el Chat abierto desde la pantalla donde surge la pregunta** (2026-09-30, sin fila previa; idea 4 de `DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`, marcada `[ ]` ahí). Un botón en Plan y Simulaciones que abre el Chat con el contexto de esa pantalla precargado, paso intermedio antes de «chat como puerta de entrada» (❌ en la tabla de ideación). Reusa `ChatAgent` y sus tools deterministas. Sin alcance: antes de implementar, acordar con el usuario qué contexto viaja y desde qué pantallas.
-- **IDEA-5 IMPUESTOS — impuestos personales del inversor** (2026-09-30, sin fila previa; idea 5 de `DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`, marcada `[ ]` ahí; «Módulo de Impuestos» ❌ en la tabla de ideación). `TaxConfig` sólo modela el impuesto corporativo para NOPAT; falta el del usuario: bienes personales, retención de dividendos, ganancia de capital al vender. Sin alcance: es una decisión de producto, y el primer paso es acordar qué impuesto y de qué país.
+- **IDEA-5 IMPUESTOS — impuestos personales del inversor** (2026-09-30, sin fila previa; idea 5 de `DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`, marcada `[ ]` ahí; «Módulo de Impuestos» ❌ en la tabla de ideación). `TaxConfig` sólo modela el impuesto corporativo para NOPAT; falta el del usuario: bienes personales, retención de dividendos, ganancia de capital al vender. **Alcance acordado** (decimonovena repriorización, 2026-10-10, decisión del usuario): el primer alcance es la **ganancia de capital** al vender, para un residente fiscal **argentino**; bienes personales y retención de dividendos quedan afuera de este primer paso. Antes de escribir código: verificar las reglas contra la fuente oficial (qué ventas gravan, alícuota, en qué moneda se mide la ganancia) y acordarlas con el usuario, y decidir en qué superficies entra (proyección de Simulaciones, Mi Plan, el retiro de Portfolio). Paso 1 del Orden.
+- **VENV-PRUNE — el venv no suelta lo que sale del lock** (2026-10-10, sin fila previa; visto al cerrar VENV-FROM-LOCK). `run.sh` instala el lock con `pip install`, que agrega y actualiza pero no saca: un paquete que sale del lock (como `pandas-ta`/`numba`/`llvmlite` en 2026-10-10) queda en el venv y `pip check` lo marca. Un sync completo borraría Playwright, que la prueba en vivo necesita y no está en el lock. Banda 5. **Disparador**: la próxima dependencia que se retire.
 - ~~**MSI-NET**~~ — *cerrada (2026-09-29)*, ver `ROADMAP.md`. El harness de impacto prometía no salir a la red y salía: `get_financials`/`get_dividends` no cachean una respuesta vacía, así que cada corrida volvía a pedir los estados de los ETFs y cripto.
 - ~~**SCR-DIVYIELD-NONE**~~ — *cerrada sin cambio de código (2026-09-29)*, ver `ROADMAP.md`. BTC mostraba `Div Yield %` = «None» en la tabla de fondos; la fila suponía un dtype `object` y medido no lo era: es cómo Streamlit dibuja cualquier nulo.
 
