@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## CACHE-RACE — la caché aguanta hilos que comparten clave y el FX de EURUSD ya no se pierde (2026-10-10)
+
+Dos hilos que pedían la misma clave de la caché chocaban (CACHE-RACE, 2026-10-10): el optimizador baja precios en paralelo y cada ticker en EUR pide el mismo par FX. `DataCache.set` leía y después insertaba, así que uno chocaba con `UNIQUE` y `get_fx_history` lo logueaba como «no se pudo bajar» aunque la descarga había funcionado. `get` borraba la fila vencida con el ORM y daba un `SAWarning` de 0 filas. Ahora `set` es un upsert atómico (`INSERT … ON CONFLICT DO UPDATE` del dialecto SQLite de SQLAlchemy) y `get` borra por condición (clave y `cached_at` vencido), así que no se lleva una fila recién refrescada. Los avisos de `drop_fx_spikes` sobre CADUSD son barras malas de Yahoo y el filtro queda igual. `tests/test_cache_race_oracle.py`
+
+---
+
 ## ESTAB-COMITE — la estabilidad del comité se re-mide con el prompt de EO-5b (2026-10-08)
 
 Estabilidad del comité re-medida con el prompt `2026-10-08b`: 1/30 cambios de acción (MSFT), σ del lean máximo 0,084. Se cumplió el disparador de revisión del margen `lean_near_threshold_margin`; el usuario lo deja en 0,10. Sólo documentación.
