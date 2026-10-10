@@ -168,6 +168,60 @@ def load_sample_plan(key: str) -> PlanSnapshot:
     return import_plan_from_dict(data)
 
 
+def sample_plan_ids() -> set:
+    """Ids of the bundled example plans (PLAN-SESION-ACTIVO).
+
+    The id lives inside each file (``ejemplo-conservador-30y``), not in the
+    file stem (``conservador_30y``), so it is read from the snapshot.
+    """
+    ids = set()
+    if not _SAMPLE_DIR.exists():
+        return ids
+    for path in _SAMPLE_DIR.glob("*.json"):
+        try:
+            data = _json.loads(path.read_text(encoding="utf-8"))
+            snap_dict = data.get("snapshot") if isinstance(data.get("snapshot"), dict) else data
+            if snap_dict.get("id"):
+                ids.add(str(snap_dict["id"]))
+        except Exception as exc:
+            logger.warning(f"Sample plan '{path.name}' could not be read: {exc}")
+    return ids
+
+
+def is_sample_plan(snap: Optional[PlanSnapshot]) -> bool:
+    """True if ``snap`` is one of the bundled example plans."""
+    return snap is not None and snap.id in sample_plan_ids()
+
+
+def session_weights(opt_result) -> Dict[str, float]:
+    """{symbol: weight_pct} of the session's optimizer run, rounded as saved.
+
+    Same rounding as ``PlanSnapshot.from_session`` (2 decimals), so a session
+    that was saved compares equal to its snapshot.
+    """
+    return {
+        a.symbol: round(float(a.weight_pct), 2)
+        for a in (getattr(opt_result, "tickers", None) or [])
+        if getattr(a, "symbol", "")
+    }
+
+
+def session_plan_is_unsaved_target(opt_result, active: Optional[PlanSnapshot]) -> bool:
+    """True when the session has a run whose weights are not the active plan's.
+
+    That is the case where Mi Plan shows one plan ("esta sesión") and
+    Portfolio, alerts and the committee measure against another
+    (PLAN-SESION-ACTIVO). Without a session run there is nothing to compare.
+    """
+    weights = session_weights(opt_result)
+    if not weights:
+        return False
+    if active is None:
+        return True
+    target = {s: round(float(w), 2) for s, w in active.target_weights().items()}
+    return weights != target
+
+
 def is_active(plan_id: str, prefs=None) -> bool:
     """True if ``plan_id`` is the currently active plan."""
     prefs = _load_prefs(prefs)

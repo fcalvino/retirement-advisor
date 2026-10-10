@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
@@ -18,7 +19,13 @@ from dashboard.shared import (
     run_holdings_committee,
 )
 from data.personal_book_convictions import get_convictions, remove_conviction, set_all
-from data.plan_context import compute_alignment_trades, drift_breakdown, get_active_plan
+from data.plan_context import (
+    compute_alignment_trades,
+    drift_breakdown,
+    get_active_plan,
+    is_sample_plan,
+    session_plan_is_unsaved_target,
+)
 from data.product_ux import (
     DOWNSIDE_RATIO_HELP,
     DOWNSIDE_RATIO_LABEL,
@@ -109,6 +116,24 @@ st.dataframe(
 # ------------------------------------------------------------------ #
 
 _active_plan = get_active_plan()
+_is_sample = is_sample_plan(_active_plan)
+# PLAN-SESION-ACTIVO: Mi Plan muestra la corrida de la sesión; acá se mide
+# contra el plan activo guardado. Si no son el mismo, decirlo.
+_session_opt = st.session_state.get("optimizer_result") or st.session_state.get("optimizer_prev_result")
+if session_plan_is_unsaved_target(_session_opt, _active_plan):
+    st.divider()
+    _sess_profile = getattr(_session_opt, "profile_name", "") or ""
+    _sess_label = f"perfil **{_sess_profile}**" if _sess_profile else "la última optimización"
+    st.info(
+        f"El plan de esta sesión ({_sess_label}, el que ves en 🗺️ Mi Plan) **no es tu plan activo**"
+        + (f": acá se compara contra **{_active_plan.name}**." if _active_plan is not None
+           else ": todavía no tenés un plan activo.")
+        + " Para usarlo como objetivo, guardalo y activalo en Mi Plan.",
+        icon="📌",
+    )
+    if st.button("🗺️ Ir a Mi Plan para guardarlo y activarlo", key="portfolio_go_plan"):
+        st.switch_page(str(Path(__file__).parent / "12_Plan.py"))
+
 if _active_plan is not None:
     _target = _active_plan.target_weights()
     _actual = portfolio.get_position_weights()  # {symbol: weight_pct}
@@ -136,12 +161,19 @@ if _active_plan is not None:
             st.metric(
                 "Deriva total",
                 f"{_avg_drift:.1f}%",
-                delta="rebalancear" if _over else "alineado",
+                delta=("vs. ejemplo" if _is_sample else ("rebalancear" if _over else "alineado")),
                 delta_color="inverse" if _over else "normal",
                 delta_arrow="off",
             )
         with _mc2:
-            if _avg_drift > ALERTS.portfolio_rebalance_threshold_pct:
+            if _is_sample:
+                st.warning(
+                    f"Tu plan activo es un **plan de ejemplo** ({_active_plan.name}): la deriva "
+                    "mide tu portafolio real contra una cartera de demostración, no contra un "
+                    "plan tuyo. Activá un plan propio en 🗺️ Mi Plan antes de rebalancear.",
+                    icon="🎁",
+                )
+            elif _avg_drift > ALERTS.portfolio_rebalance_threshold_pct:
                 st.warning(
                     f"Tu portafolio se desvió **{_avg_drift:.1f}%** de tu plan "
                     f"(umbral {ALERTS.portfolio_rebalance_threshold_pct:.0f}%). "
