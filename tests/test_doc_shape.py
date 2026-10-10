@@ -198,10 +198,15 @@ def unarchived_reprioritizations(backlog: list[str], roadmap: str) -> list[str]:
     first = next(line for line in backlog[start + 1 : end] if line.strip())
     current = _ordinal(first.split()[0])
     assert current, f"el Orden no arranca con el ordinal de su repriorización: {first[:60]!r}"
-    assert ARCHIVE_HEADING in roadmap, f"ROADMAP.md perdió «{ARCHIVE_HEADING}»"
-    archive = roadmap[roadmap.index(ARCHIVE_HEADING):]
-    archive = archive[: archive.find("\n## ", 1)] if "\n## " in archive[1:] else archive
-    reprio = archive[archive.index(REPRIO_HEADING):]
+    # The heading at the start of a line: entries may quote it in their prose.
+    head = re.search(r"^" + re.escape(ARCHIVE_HEADING), roadmap, re.MULTILINE)
+    assert head, f"ROADMAP.md perdió «{ARCHIVE_HEADING}»"
+    archive = roadmap[head.start():]
+    nxt = re.search(r"^## ", archive[1:], re.MULTILINE)
+    archive = archive[: nxt.start() + 1] if nxt else archive
+    sub = re.search(r"^" + re.escape(REPRIO_HEADING), archive, re.MULTILINE)
+    assert sub, f"«{ARCHIVE_HEADING}» perdió «{REPRIO_HEADING}»"
+    reprio = archive[sub.start():]
     heading, _, body = reprio.partition("\n")
     body = body.split("\n### ", 1)[0]
     covered: set[int] = set()
@@ -248,7 +253,9 @@ Decimoctava repriorización (2026-10-10, sobre `a7fe27a`): dos PRs chicos.
 - ~~**CACHE-RACE-IT**~~ — cerrada, sin orden.
 """.split("\n")
 
-_ROADMAP_ARCHIVE = """## Archivo del backlog (hasta 2026-10-02)
+_ROADMAP_ARCHIVE = """## ORDEN-COHERENCIA — una entrada que cita «## Archivo del backlog» en su prosa
+
+## Archivo del backlog (hasta 2026-10-02)
 
 ### Repriorizaciones (`/decidir-proyecto`), de la primera a la decimotercera
 

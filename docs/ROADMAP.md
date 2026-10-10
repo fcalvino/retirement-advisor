@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## ORDEN-COHERENCIA — el Orden actual y el BACKLOG no se contradicen y las repriorizaciones reemplazadas se archivan (2026-10-10)
+
+El `## Orden actual` y el resto del BACKLOG ya no se pueden contradecir sin que falle `make check` (ORDEN-COHERENCIA, 2026-10-10). `tests/test_doc_shape.py` suma dos chequeos: (1) una línea del BACKLOG fuera del Orden que llama «no priorizado», «sin orden» o «sin alcance ni orden» a un paso abierto del Orden, como GOAL-PRIORITY-TEXT en `3dcfa3b` (BACKLOG:100 y :263); (2) una repriorización anterior a la vigente sin entrada en «## Archivo del backlog» de ROADMAP, buscada sólo en esa sección, porque otras entradas nombran repriorizaciones de paso. El archivo se había quedado en la decimocuarta: suma la decimoquinta, la decimosexta y la decimoséptima con su texto completo, sacado de git. BACKLOG «Cómo mantener este archivo» aclara que se archiva la repriorización **reemplazada** (decisión del usuario, 2026-10-10), el Orden suma ORDEN-COHERENCIA como paso 3 y la tabla de oleadas deja de nombrar U1-9b como vivo (cerró el 2026-09-30). Solo docs y tests.
+
+---
+
 ## GOAL-PRIORITY-TEXT — una prioridad escrita en texto entra como número (2026-10-10)
 
 Una prioridad escrita en texto entra como número (GOAL-PRIORITY-TEXT, 2026-10-10): `goal_dict_with_defaults` (`portfolio/goals.py`), la única puerta a `goals_list` además del formulario, convierte «esencial» → 1 e «importante» → 2 (ratificado por el usuario el 2026-10-02), las etiquetas que muestra la app (Alta/Media/Baja, `PRIORITY_LABELS`) y los números en texto. Un valor desconocido toma la prioridad por defecto de `Goal` (Media) con un aviso en el log, para que una meta no tire abajo la simulación del plan. En la QA en vivo, un plan importado con «esencial» hacía caer «Simular plan completo» con `ValueError: invalid literal for int()` cuando la meta no llegaba a la Exigencia, y en silencio la rotulaba «Media», la pesaba 2 en vez de 3 en el reparto de capital y no disparaba la alerta de meta de alta prioridad en riesgo. `tests/test_goal_priority_text_oracle.py`
