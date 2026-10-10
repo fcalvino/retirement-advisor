@@ -135,3 +135,26 @@ def test_editing_a_multi_lot_position_keeps_every_lot_and_saves_the_notes(old_fi
         ("2026-01-05", 10, 100.0), ("2026-03-02", 30, 120.0),
     ]
     assert pos.notes == "dos compras"
+
+
+def test_every_save_keeps_the_previous_file_as_bak(old_file):
+    """D: si un commit viejo pisa el archivo, el último estado de la rama queda en .bak."""
+    p = Portfolio(file_path=old_file)
+    p.add_position("MSFT", 10, 100.0, "2026-01-05")
+    first = old_file.read_text()
+    p.add_position("MSFT", 30, 120.0, "2026-03-02")
+    assert (old_file.parent / "portfolio.json.bak").read_text() == first
+
+
+def test_an_unreadable_file_is_moved_aside_not_overwritten(tmp_path, monkeypatch):
+    """E: un archivo que no se pudo leer no se pisa con la cartera vacía en memoria."""
+    monkeypatch.setattr(tracker_mod, "get_info", lambda sym: {"sector": "Technology", "currency": "USD"})
+    path = tmp_path / "portfolio.json"
+    path.write_text('{"GOOGL": {"symbol": "GOOGL", "unexpected": 1}}')
+    original = path.read_text()
+    p = Portfolio(file_path=path)
+    assert p.positions == {}                                 # the app keeps working, as today
+    p.add_position("MSFT", 1, 400.0, "2026-10-10")
+    [aside] = list(tmp_path.glob("portfolio.json.unreadable-*"))
+    assert aside.read_text() == original
+    assert list(json.loads(path.read_text())) == ["MSFT"]

@@ -476,15 +476,33 @@ class Portfolio:
                 backup.write_text(self.file_path.read_text())
                 logger.info(f"Portfolio backed up before the lots format: {backup}")
             self._legacy_on_disk = False
+        if self._unreadable_on_disk:
+            # A file that failed to load would be overwritten with the empty
+            # portfolio in memory: set it aside first, untouched.
+            aside = self.file_path.with_name(
+                f"{self.file_path.name}.unreadable-{datetime.now():%Y%m%d-%H%M%S}"
+            )
+            self.file_path.replace(aside)
+            logger.error(f"Portfolio file could not be read; kept as {aside}")
+            self._unreadable_on_disk = False
+        elif self.file_path.exists():
+            # Rolling backup: if an older checkout overwrites the file (it cannot
+            # read lots and starts empty), the last state written here survives.
+            self.file_path.with_name(self.file_path.name + ".bak").write_text(
+                self.file_path.read_text()
+            )
         data = {sym: pos.to_dict() for sym, pos in self.positions.items()}
         self.file_path.write_text(json.dumps(data, indent=2))
 
     def _load(self) -> None:
         self._legacy_on_disk = False
+        self._unreadable_on_disk = False
         if self.file_path.exists():
             try:
                 data = json.loads(self.file_path.read_text())
                 self.positions = {sym: Position.from_dict(pos) for sym, pos in data.items()}
                 self._legacy_on_disk = any("lots" not in pos for pos in data.values())
             except Exception as exc:
+                self.positions = {}
+                self._unreadable_on_disk = True
                 logger.error(f"Failed to load portfolio: {exc}")
