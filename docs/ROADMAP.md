@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## VENV-FROM-LOCK — el venv local se instala del mismo lock que el CI y Docker (2026-10-10)
+
+El venv local era el único camino que todavía instalaba desde los rangos de `requirements.txt`, y por eso se separó del lock y del CI sin aviso. Ahora `run.sh` instala el lock con hashes y después las herramientas de desarrollo, y reinstala sólo cuando cambia el contenido de esos archivos; los worktrees, que comparten el venv del clon, no lo tocan. Ningún número del motor cambia.
+
+---
+
 ## OPT-PROFILE-CARDS — las tarjetas de perfil del Optimizer eligen el perfil; sin presets de retiro (2026-10-10)
 
 Las tarjetas de perfil de la bienvenida del Optimizer no eran clickeables y los presets de retiro cubrían 4 de las 18 combinaciones universo × perfil, pisando el perfil elegido. Decisión del usuario: un clic en cualquier parte de la tarjeta elige el perfil (no ejecuta; sin botón visible: el botón queda transparente encima, elegido sobre `st.radio` con estilo de tarjeta, `st.pills` y un componente propio), el radio del sidebar se queda sincronizado, los presets se sacan (bienvenida y sidebar) y el universo se elige con el selector global, que la bienvenida nombra. Ningún número del motor cambia.

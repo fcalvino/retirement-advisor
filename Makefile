@@ -11,7 +11,7 @@ BIN     = $(VENV)/bin
 
 help:
 	@echo "Targets disponibles:"
-	@echo "  make setup   - crear el venv e instalar dependencias (+ requirements-dev.txt: ruff fijado)"
+	@echo "  make setup   - crear el venv e instalar requirements.lock (+ requirements-dev.txt: ruff fijado)"
 	@echo "  make run     - lanzar el dashboard (setup automático si falta)"
 	@echo "  make test    - correr la suite de tests (pytest)"
 	@echo "  make lint    - correr ruff"
@@ -24,8 +24,7 @@ help:
 	@echo "  make launchd-uninstall - (macOS) sacarla"
 
 setup:
-	./run.sh --setup
-	$(BIN)/pip install -q -r requirements-dev.txt
+	./run.sh --setup   # lock + requirements-dev.txt, see run.sh (VENV-FROM-LOCK)
 
 run:
 	./run.sh

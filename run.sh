@@ -31,13 +31,27 @@ fi
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
 
-# Install/refresh dependencies only when requirements changed (or first run).
+# Install from the hash-pinned lock, the same pins CI and the Docker image install
+# (VENV-FROM-LOCK). The stamp keeps the hash of the lock and requirements-dev.txt, so
+# the venv is reinstalled when their content changes — not when requirements.txt or a file date does: a
+# fresh checkout dates every file today. Installing from the ranges is how the venv
+# sat on Streamlit 1.57.0 while the lock said 1.61.1 and CI ran 1.65.0.
+#
+# Worktrees made by `make worktree` link ./venv to the clone's: they never install
+# into it (one on an old commit would downgrade everyone's), they only say so.
 STAMP="$VENV_DIR/.deps-installed"
-if [ ! -f "$STAMP" ] || [ requirements.txt -nt "$STAMP" ]; then
-  echo "⬇️  Instalando dependencias (puede tardar la primera vez) ..."
-  pip install --quiet --upgrade pip
-  pip install --quiet -r requirements.txt
-  touch "$STAMP"
+LOCK_HASH="$(cat requirements.lock requirements-dev.txt | shasum -a 256 | cut -d' ' -f1)"
+if [ "$(cat "$STAMP" 2>/dev/null)" != "$LOCK_HASH" ]; then
+  if [ -L "$VENV_DIR" ]; then
+    echo "⚠️  ./$VENV_DIR es el venv compartido del clon y no coincide con este requirements.lock:"
+    echo "    instalá desde el clon (make setup ahí); este worktree no lo toca."
+  else
+    echo "⬇️  Instalando dependencias desde requirements.lock (puede tardar la primera vez) ..."
+    pip install --quiet --upgrade pip
+    pip install --quiet --require-hashes -r requirements.lock
+    pip install --quiet -r requirements-dev.txt   # ruff fijado (#150) + xlrd, como el CI
+    echo "$LOCK_HASH" > "$STAMP"
+  fi
 fi
 
 if [ ! -f .env ] && [ -f .env.example ]; then
