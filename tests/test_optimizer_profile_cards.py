@@ -6,6 +6,11 @@ elegido). Decisión del usuario (2026-10-10): cada tarjeta tiene un botón que
 elige el perfil —el mismo camino de guardado que el radio—, los presets se
 sacan de la bienvenida y del sidebar, y el universo se elige con el selector
 global, que la bienvenida nombra.
+
+OPT-CARD-CLICK (2026-10-10): sin botón visible. El botón de cada tarjeta queda
+transparente encima de ella (CSS sobre `.st-key-profile_card_*`), así que un
+clic en cualquier parte de la tarjeta lo dispara; su etiqueta queda para lectores
+de pantalla.
 """
 
 from __future__ import annotations
@@ -63,3 +68,10 @@ def test_the_welcome_names_the_universe_and_where_to_change_it(tmp_path, monkeyp
     at, _ = _optimizer(tmp_path, monkeypatch)
     assert any("Universo:" in (c.value or "") and "barra lateral" in (c.value or "")
                for c in at.caption)
+
+
+def test_each_card_button_lives_in_its_keyed_card_container():
+    """El CSS que estira el botón sobre la tarjeta se ancla en esta clave."""
+    src = PAGE.read_text(encoding="utf-8")
+    assert 'st.container(key=f"profile_card_{_pk}")' in src
+    assert '[class*="st-key-profile_card_"] button' in src
