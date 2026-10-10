@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## STREAMLIT-ALIGN — un solo juego de versiones para el CI, Docker y el venv (2026-10-10)
+
+El CI, la imagen de Docker y el venv local corrían tres versiones de Streamlit distintas, y el lock no instalaba en Linux porque se compilaba resuelto para macOS. Ahora el lock se compila con `--universal`, se regeneró desde cero con las mismas versiones que el CI ya probaba (Streamlit 1.65.0), y el CI instala desde el lock, así que el verde del CI dice algo sobre lo que corre Docker y el venv. Las 5 fallas locales de Simulaciones no eran de la versión: las cierra TEST-PREFS-ISOLATION (#256). Ningún número del motor cambia.
+
+---
+
 ## ORDEN-COHERENCIA — el Orden actual y el BACKLOG no se contradicen y las repriorizaciones reemplazadas se archivan (2026-10-10)
 
 El `## Orden actual` y el resto del BACKLOG ya no se pueden contradecir sin que falle `make check` (ORDEN-COHERENCIA, 2026-10-10). `tests/test_doc_shape.py` suma dos chequeos: (1) una línea del BACKLOG fuera del Orden que llama «no priorizado», «sin orden» o «sin alcance ni orden» a un paso abierto del Orden, como GOAL-PRIORITY-TEXT en `3dcfa3b` (BACKLOG:100 y :263); (2) una repriorización anterior a la vigente sin entrada en «## Archivo del backlog» de ROADMAP, buscada sólo en esa sección, porque otras entradas nombran repriorizaciones de paso. El archivo se había quedado en la decimocuarta: suma la decimoquinta, la decimosexta y la decimoséptima con su texto completo, sacado de git. BACKLOG «Cómo mantener este archivo» aclara que se archiva la repriorización **reemplazada** (decisión del usuario, 2026-10-10), el Orden suma ORDEN-COHERENCIA como paso 3 y la tabla de oleadas deja de nombrar U1-9b como vivo (cerró el 2026-09-30). Solo docs y tests.
