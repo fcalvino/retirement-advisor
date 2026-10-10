@@ -23,6 +23,7 @@ from dataclasses import MISSING, dataclass, field, fields, replace
 from typing import Dict, List, Mapping, Optional
 
 import numpy as np
+from loguru import logger
 
 from config import ESTIMACION, GOAL_CARD, MONTE_CARLO
 from data.product_ux import present_value_usd
@@ -35,6 +36,13 @@ from portfolio.monte_carlo import MonteCarloResult, MonteCarloSimulator
 PRIORITY_LABELS = {1: "Alta", 2: "Media", 3: "Baja"}
 PRIORITY_COLORS = {1: "#DC3545", 2: "#FFC107", 3: "#28A745"}
 PRIORITY_EMOJIS = {1: "🔴", 2: "🟡", 3: "🟢"}
+# Words a hand-written plan may use for a priority (GOAL-PRIORITY-TEXT): the app's
+# own labels, plus «esencial»/«importante», ratified by the user on 2026-10-02.
+PRIORITY_WORDS = {
+    **{label.lower(): number for number, label in PRIORITY_LABELS.items()},
+    "esencial": 1,
+    "importante": 2,
+}
 
 GOAL_TYPE_ICONS: Dict[str, str] = {
     "casa":       "🏠",
@@ -141,6 +149,8 @@ def goal_dict_with_defaults(goal: Mapping) -> dict:
     and unknown keys are left as they are; the input is not mutated.
     """
     out = dict(goal)
+    if out.get("priority") is not None:
+        out["priority"] = _priority_number(out["priority"])
     for f in fields(Goal):
         if out.get(f.name) is not None:
             continue
@@ -149,6 +159,26 @@ def goal_dict_with_defaults(goal: Mapping) -> dict:
         elif f.default_factory is not MISSING:
             out[f.name] = f.default_factory()
     return out
+
+
+def _priority_number(raw) -> Optional[int]:
+    """A priority as one of ``PRIORITY_LABELS``' numbers, or ``None`` to take the default.
+
+    A goal from an imported JSON may write it as text («esencial») and «Simular»
+    does ``int(goal.priority)`` (GOAL-PRIORITY-TEXT). An unknown value takes the
+    ``Goal`` default rather than stopping the whole plan, and says so in the log.
+    """
+    text = str(raw).strip().lower()
+    number = PRIORITY_WORDS.get(text)
+    if number is None:
+        try:
+            number = int(float(text))
+        except (ValueError, OverflowError):
+            number = None
+    if number in PRIORITY_LABELS:
+        return number
+    logger.warning(f"Meta con prioridad desconocida {raw!r}: toma la de por defecto")
+    return None
 
 
 # ------------------------------------------------------------------ #

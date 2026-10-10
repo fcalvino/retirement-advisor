@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## GOAL-PRIORITY-TEXT — una prioridad escrita en texto entra como número (2026-10-10)
+
+Una prioridad escrita en texto entra como número (GOAL-PRIORITY-TEXT, 2026-10-10): `goal_dict_with_defaults` (`portfolio/goals.py`), la única puerta a `goals_list` además del formulario, convierte «esencial» → 1 e «importante» → 2 (ratificado por el usuario el 2026-10-02), las etiquetas que muestra la app (Alta/Media/Baja, `PRIORITY_LABELS`) y los números en texto. Un valor desconocido toma la prioridad por defecto de `Goal` (Media) con un aviso en el log, para que una meta no tire abajo la simulación del plan. En la QA en vivo, un plan importado con «esencial» hacía caer «Simular plan completo» con `ValueError: invalid literal for int()` cuando la meta no llegaba a la Exigencia, y en silencio la rotulaba «Media», la pesaba 2 en vez de 3 en el reparto de capital y no disparaba la alerta de meta de alta prioridad en riesgo. `tests/test_goal_priority_text_oracle.py`
+
+---
+
 ## CACHE-RACE-IT — hilos sobre un par FX vencido reciben todos su tipo de cambio (2026-10-10)
 
 Un test de integración protege CACHE-RACE por el camino que rompía la cartera (CACHE-RACE-IT, 2026-10-10): varios hilos llaman a `get_fx_history("EUR")` con `history:EURUSD=X:2y:1wk` vencida, `yf.Ticker` stubeado y una `threading.Barrier` dentro del stub, de modo que todos llegan juntos a `cache.set`. Se afirma que ninguno recibe `None`, que la clave queda cacheada y que no se loguea `IntegrityError`. Con el `data/cache.py` de `a4f2f25` falla 3 de 3 (4 a 6 de 8 hilos sin tipo de cambio, «EURUSD=X no se pudo bajar — IntegrityError»); con main pasa. Solo tests. El BACKLOG pasa a la decimoctava repriorización y suma TR-RACE (track record y macro RAG con el mismo «leer y después insertar», sin daño medido). `tests/test_cache_race_it_oracle.py`
