@@ -79,6 +79,7 @@ Roles:
 | living-guide | `docs/plans/PROMPTS_MULTIMODELO_NEXT_STEPS.md` | Re-verificación 2026-09-15 de los PRs abiertos (4, 5, 6, 7) contra el código real: hallazgos vivos, criterios de aceptación corregidos, orden recomendado (PR 7 primero) y contradicciones plan↔código |
 | living-guide | `docs/plans/PROMPTS_MULTIMODELO_OWNER_DECISIONS.md` | Decisiones técnicas Q1–Q5 (2026-09-15) que desbloquean PR 4, 5 y 7: alcance de PR 7, convención de delimitadores, few-shot, criterios de aceptación reescritos y allowlist del criterio (c) |
 | living-guide | `docs/plans/SIGNAL_REASON_ALIGNMENT_PLAN.md` | SIGNAL-6 (2026-09-12): el camino AI se pisa contra `decide()` y el motivo describe siempre la acción emitida |
+| living-guide | `docs/plans/IDEA5_GANANCIA_CAPITAL_AR.md` | IDEA-5 (2026-10-10): cómo tributa la ganancia de capital de un residente argentino al vender acciones, CEDEARs, ETFs y cripto, con citas a la LIG, su DR y ARCA; qué le falta al Portfolio y las 13 decisiones del usuario |
 | archive | `docs/archive/code.review.md` | Review dump may-2026; **no** es guía de integración actual |
 | how-to | `scripts/migrations/` | Colección: migraciones one-shot ya ejecutadas (idempotentes); índice `README.md` |
 <!-- /catalog-table -->
