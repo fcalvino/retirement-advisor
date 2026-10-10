@@ -49,6 +49,14 @@ os.environ["RETIREMENT_ADVISOR_DB_PATH"] = str(_test_db_dir / "retirement_adviso
 # ``logs/retirement_advisor.log`` mezclado con las corridas reales, y COM-QUORUM-MEDICION
 # cuenta sobre ese archivo. Los hijos heredan la variable.
 os.environ["RETIREMENT_ADVISOR_LOG_PATH"] = str(_test_db_dir / "retirement_advisor.log")
+# TEST-PREFS-ISOLATION: and for the investor profile. ``data/preferences.py`` read
+# ``data/user_preferences.json`` next to the code, which CI does not have (it is
+# gitignored): with the user's file (36 years old, retiring at 60) five Simulaciones
+# tests seeded a 25-year horizon and failed with ``KeyError: 25`` locally, green in
+# CI — and any test that saved a profile without patching wrote the user's file.
+# The path does not exist, so ``UserPreferences.load`` starts from the template, as
+# a fresh clone does. Children inherit it. ``tests/test_prefs_isolation_oracle.py``.
+os.environ["RETIREMENT_ADVISOR_PREFS_PATH"] = str(_test_db_dir / "user_preferences.json")
 # Same for where live eval runs are saved: a developer's own setting must not
 # leak into the suite (``test_runs_dir_is_outside_git`` checks the default).
 os.environ.pop("RETIREMENT_ADVISOR_EVAL_RUNS_DIR", None)
