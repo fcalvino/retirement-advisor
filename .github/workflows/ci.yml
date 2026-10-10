@@ -28,7 +28,11 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r requirements-dev.txt   # requirements.txt + ruff fijado (#150)
+          # The lock first: CI tests the same pins the Docker image and the local venv
+          # install (STREAMLIT-ALIGN). requirements-dev.txt then only adds the dev
+          # tools (ruff, xlrd); its -r requirements.txt is already satisfied.
+          pip install --require-hashes -r requirements.lock
+          pip install -r requirements-dev.txt   # ruff fijado (#150) + xlrd
 
       - name: Lint with ruff
         run: ruff check . --output-format=github

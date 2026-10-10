@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## STREAMLIT-ALIGN — un solo juego de versiones para el CI, Docker y el venv (2026-10-10)
+
+El CI, la imagen de Docker y el venv local corrían tres versiones de Streamlit distintas, y el lock no instalaba en Linux porque se compilaba resuelto para macOS. Ahora el lock se compila con `--universal`, se regeneró desde cero con las mismas versiones que el CI ya probaba (Streamlit 1.65.0), y el CI instala desde el lock, así que el verde del CI dice algo sobre lo que corre Docker y el venv. Las 5 fallas locales de Simulaciones no eran de la versión: las cierra TEST-PREFS-ISOLATION (#256). Ningún número del motor cambia.
+
+---
+
 ## TEST-PREFS-ISOLATION — la suite no lee ni escribe el perfil del usuario (2026-10-10)
 
 El perfil del inversor se resolvía junto al código y la suite lo leía y podía escribirlo: con el archivo del usuario, cinco tests de Simulaciones fallaban localmente y pasaban en el CI, así que el `make check` local dejaba de ser evidencia. Ahora la ruta sale de `RETIREMENT_ADVISOR_PREFS_PATH` cuando está, y `tests/conftest.py` la fija a un temporal, igual que `RETIREMENT_ADVISOR_DB_PATH`. Es la tercera fuga del mismo tipo después de TEST-CACHE y TEST-ENV-KEY. Ningún número del motor cambia.

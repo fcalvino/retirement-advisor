@@ -59,9 +59,11 @@ worktree:
 
 # Audit D5 — regenerate the hash-pinned lockfile. Targets 3.11 (the CI floor) so
 # a single lock installs across the whole supported range; 3.12 resolves from it
-# too. Nothing requires >=3.12 any more since pandas-ta was removed.
+# too. Nothing requires >=3.12 any more since pandas-ta was removed. --universal keeps
+# the platform markers: without it the lock resolved for macOS and dropped greenlet,
+# which SQLAlchemy 2.0 needs on Linux, so the Docker build failed (STREAMLIT-ALIGN).
 lock:
-	uv pip compile requirements.txt --generate-hashes --python-version 3.11 \
+	uv pip compile requirements.txt --universal --generate-hashes --python-version 3.11 \
 		--output-file requirements.lock
 
 clean:
