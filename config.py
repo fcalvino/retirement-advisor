@@ -900,6 +900,10 @@ class FuentesConfig:
     # central de emergentes. Su antigüedad sigue ``stale_warn_months``/``stale_drop_months``.
     country_risk_url: str = "https://api.argentinadatos.com/v1/finanzas/indices/riesgo-pais"
     country_risk_upstream: str = "https://www.ambito.com/contenidos/riesgo-pais.html"
+    # COUNTRY-RISK-AGE: la serie publica a diario pero el archivo curado se refresca a
+    # mano, así que los meses de ``stale_*`` no alcanzan: con más de estos días la nota
+    # del riesgo país nombra la antigüedad. Avisa; no descarta el dato.
+    country_risk_warn_days: int = 7
     history_notes: Mapping[str, str] = field(default_factory=lambda: {
         "VTMGX": ("El índice cambió en el período: MSCI EAFE hasta 2013-05-28, FTSE "
                   "Developed ex North America hasta 2015-12-20 y FTSE Developed All Cap "
