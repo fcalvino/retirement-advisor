@@ -31,7 +31,12 @@ from loguru import logger
 
 from config import ENGINE_VERSION
 from data.env_provenance import env_drift, numeric_env
-from data.product_ux import IGNORED_SAVINGS_KEY, RUN_ASSUMPTIONS_KEY, mc_has_cash_flows
+from data.product_ux import (
+    IGNORED_SAVINGS_KEY,
+    RUN_ASSUMPTIONS_KEY,
+    mc_has_cash_flows,
+    resolve_core,
+)
 
 _PLANS_PATH = Path(__file__).parent / "retirement_plans.json"
 
@@ -104,6 +109,9 @@ class PlanSnapshot:
     # Human-scale core (deterministic, or AI if available)
     core_holdings: List[dict] = field(default_factory=list)   # [{symbol, suggested_weight_pct, why}]
     core_from_ai: bool = False
+    # Quién eligió ese núcleo (NUCLEO-PROCEDENCIA): slug de ``config.CORE_SOURCE``.
+    # "" = plan guardado antes del campo: solo se sabe ``core_from_ai``.
+    core_source: str = ""
 
     # Portfolio-level metrics
     metrics: Dict[str, float] = field(default_factory=dict)
@@ -260,11 +268,11 @@ class PlanSnapshot:
                 entry["tailwind_score"] = round(float(getattr(a, "tailwind_score", 0.0) or 0.0), 1)
             allocation.append(entry)
 
-        # Prefer the AI core when present, else the deterministic profile core.
-        ai_core = getattr(opt_result, "core_holdings_ai", []) or []
-        det_core = getattr(opt_result, "profile_core_holdings", []) or []
-        core_from_ai = bool(ai_core)
-        core_src = ai_core or det_core
+        # Prefer the AI core when present, else the deterministic profile core —
+        # the same rule the Optimizer and Mi Plan render (``resolve_core``).
+        _core = resolve_core(opt_result)
+        core_from_ai = _core.from_ai
+        core_src = _core.holdings
         core_holdings = [
             {
                 "symbol":              c.get("symbol", ""),
@@ -365,6 +373,7 @@ class PlanSnapshot:
             sector_weights={k: round(float(v), 2) for k, v in getattr(opt_result, "sector_weights", {}).items()},
             core_holdings=core_holdings,
             core_from_ai=core_from_ai,
+            core_source=_core.source,
             metrics=metrics,
             goals=list(goals),
             mc_summary=mc_summary,

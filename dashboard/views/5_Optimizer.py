@@ -12,7 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from config import AI_FALLBACK, OPTIMIZER, OPTIMIZER_PROFILES, PORTFOLIO, UNIVERSE
+from config import AI_FALLBACK, CORE_SOURCE, OPTIMIZER, OPTIMIZER_PROFILES, PORTFOLIO, UNIVERSE
 from dashboard.shared import (
     _fetch_universe_parallel,
     _get_ai_config,
@@ -34,6 +34,7 @@ from data.product_ux import (
     max_dd_estimate_help,
     ratio_help,
     ratio_label,
+    resolve_core,
 )
 from data.universe_loader import UNIVERSE_META, list_universes, load_universe
 from portfolio.optimizer import PortfolioOptimizer
@@ -646,14 +647,22 @@ if getattr(_ai_cfg, "enabled", False):
         )
         result.ai_narrative                   = _advice.get("narrative", "")
         result.ai_recommended_max_human_positions = _advice.get("recommended_max_human_positions", 0)
-        result.core_holdings_ai                  = _advice.get("core_holdings", []) or []
+        # NUCLEO-PROCEDENCIA: ``core_holdings_ai`` es solo lo que el modelo eligió;
+        # cuando el núcleo es el de reglas de respaldo, el resultado lo dice.
+        result.core_source                       = _advice.get("core_source", CORE_SOURCE.RESPALDO)
+        result.core_holdings_ai                  = (
+            _advice.get("core_holdings", []) or [] if result.core_source == CORE_SOURCE.IA else []
+        )
+        result.core_notes_ai                     = _advice.get("core_notes", []) or []
         result.dropped_tickers_ai                = _advice.get("dropped_tickers", []) or []
         result.human_review_tips_ai              = _advice.get("human_review_tips", []) or []
         # Why the narrative is rule-based, when it is (PR 0): the slug travels,
         # the sentence is rendered once by AI_FALLBACK.message.
         _ai_fallback_reason = _advice.get("ai_fallback_reason", "") or ""
     except Exception:
-        pass  # deterministic core is still shown below
+        # The deterministic core is still shown below — and says it is the fallback.
+        result.core_source = CORE_SOURCE.RESPALDO
+        result.core_holdings_ai = []
 
 if _ai_fallback_reason:
     # The narrative *is* the fallback sentence; showing it inside an "the AI
@@ -663,9 +672,10 @@ if _ai_fallback_reason:
 
 # Deterministic core — always shown regardless of AI status
 _det_core = getattr(result, "profile_core_holdings", []) or []
-# If AI produced a core, prefer it; otherwise use deterministic
-_display_core  = getattr(result, "core_holdings_ai", []) or _det_core
-_core_from_ai  = bool(getattr(result, "core_holdings_ai", []))
+# If AI produced a core, prefer it; otherwise use deterministic — and say who chose it.
+_core          = resolve_core(result)
+_display_core  = _core.holdings
+_core_from_ai  = _core.from_ai
 
 # ---- AI narrative expander (only if an AI narrative exists) ----
 if getattr(result, "ai_narrative", ""):
@@ -697,7 +707,7 @@ if getattr(result, "ai_narrative", ""):
 
 # ---- Deterministic core — always rendered ----
 if _display_core:
-    _core_label = "🤖 Cartera núcleo (IA)" if _core_from_ai else f"🧠 Cartera núcleo — {prof.name}"
+    _core_label = _core.label
     _core_help   = (
         "Selección de la IA de las posiciones más relevantes para gestión activa."
         if _core_from_ai
@@ -707,6 +717,8 @@ if _display_core:
             "Siempre disponible — no requiere API key."
         )
     )
+    for _note in getattr(result, "core_notes_ai", []) or []:
+        st.warning(_note, icon="⚠️")
     with st.expander(_core_label, expanded=not getattr(result, "ai_narrative", "")):
         if not _core_from_ai:
             st.caption(_core_help)
@@ -714,7 +726,7 @@ if _display_core:
             {
                 "Ticker":             c.get("symbol", ""),
                 "Peso % sugerido":    round(float(c.get("suggested_weight_pct", 0)), 1),
-                "Justificación":      c.get("why", "")[:140],
+                "Justificación":      (c.get("why", "") or "")[:140],
             }
             for c in _display_core
         ]

@@ -12,12 +12,12 @@ No network. Fully unit-testable.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, NamedTuple, Optional, Sequence
 
 # Module-level: the copy constants below are built at import time, so they cannot
 # use the lazy `from config import X as config` the functions in this file do.
 # Safe in both directions — config.py imports nothing from data/.
-from config import CASH_BUFFER_PCT, CRYPTO_MOAT, MOAT, QUOTE_MINOR_MAJOR, TECHNICAL
+from config import CASH_BUFFER_PCT, CORE_SOURCE, CRYPTO_MOAT, MOAT, QUOTE_MINOR_MAJOR, TECHNICAL
 
 # --------------------------------------------------------------------------- #
 #  Señal técnica: el estado "no medible" nunca se muestra crudo (SIGNAL-5)     #
@@ -3551,3 +3551,41 @@ def estimation_caption(estimations: Sequence[Mapping[str, Any]], *,
             f"con el ajuste histórico ({adj}): {', '.join(haircut)}"
         )
     return text + ". De dónde sale cada número: «Supuestos»."
+
+
+# --------------------------------------------------------------------------- #
+#  Cartera núcleo: cuál se muestra y quién la eligió (NUCLEO-PROCEDENCIA)      #
+# --------------------------------------------------------------------------- #
+
+class ResolvedCore(NamedTuple):
+    holdings: List[dict]      # [{symbol, suggested_weight_pct, why}]
+    source: str               # slug de ``config.CORE_SOURCE``; "" = no registrada
+    legacy_from_ai: bool      # hay núcleo IA pero el resultado no dice quién lo eligió
+
+    @property
+    def label(self) -> str:
+        return CORE_SOURCE.label(self.source, legacy_from_ai=self.legacy_from_ai)
+
+    @property
+    def from_ai(self) -> bool:
+        return self.source == CORE_SOURCE.IA or self.legacy_from_ai
+
+
+def resolve_core(opt_result) -> ResolvedCore:
+    """El núcleo que muestra el Optimizer, Mi Plan y el plan guardado, con su procedencia.
+
+    Una sola regla para las tres superficies. Nunca afirma más de lo que sabe: la
+    procedencia es ``ia`` solo si hay un núcleo IA y el resultado no lo desmiente; un
+    resultado de antes del campo (sin ``core_source``) con núcleo IA queda sin
+    procedencia, porque no se puede saber si lo eligió el modelo o fue el respaldo.
+    """
+    ai = list(getattr(opt_result, "core_holdings_ai", []) or [])
+    det = list(getattr(opt_result, "profile_core_holdings", []) or [])
+    declared = getattr(opt_result, "core_source", None)
+    if declared == CORE_SOURCE.RESPALDO:
+        return ResolvedCore(det, CORE_SOURCE.RESPALDO, False)
+    if ai:
+        if declared:
+            return ResolvedCore(ai, CORE_SOURCE.IA, False)
+        return ResolvedCore(ai, "", True)
+    return ResolvedCore(det, CORE_SOURCE.REGLAS, False)

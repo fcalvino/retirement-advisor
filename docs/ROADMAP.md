@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## NUCLEO-PROCEDENCIA — el rótulo de la cartera núcleo dice quién la eligió (2026-10-12)
+
+La pantalla decía «🤖 Cartera núcleo (IA)» también cuando el núcleo era el de reglas de respaldo (más de 45 posiciones, error de API o núcleo vacío), y lo que devolvía el modelo no se comparaba con la cartera. Ahora el rótulo sale de una procedencia explícita (IA, reglas o reglas de respaldo), igual en el Optimizer, en Mi Plan y en los planes guardados; los símbolos de la IA que no están en la cartera se descartan con aviso, los pesos se reescalan a 100 si no suman, y el «por qué» del núcleo de reglas muestra peso, score y factor de moat. Un plan guardado antes del cambio se rotula «IA, procedencia no registrada». Ningún número del motor cambia.
+
+---
+
 ## PLAN-SESION-ACTIVO — mi Plan y Portfolio dicen cuándo el plan de la sesión no es el activo (2026-10-10)
 
 Mi Plan y Portfolio hablaban de planes distintos sin decirlo: la sesión no es el plan activo y guardar no activaba. Ahora las dos pantallas lo avisan, el guardado ofrece «Usar como mi plan activo» y un plan de ejemplo activo ya no pide rebalancear.
