@@ -10,6 +10,7 @@ rule-based engine if the API call fails.
 """
 
 import json
+import math
 import os
 import sys
 from typing import Callable
@@ -30,10 +31,71 @@ from config import (
     AI_DECISION_MAX_TOKENS,
     AI_FALLBACK,
     AI_OAUTH_PROVIDERS,
+    CORE_SOURCE,
     GROQ_BASE_URL,
     GROQ_TRANSPORT,
     STRATEGY,
 )
+
+
+def _validate_core_holdings(raw, portfolio_symbols) -> tuple[list[dict], list[str]]:
+    """Contrasta el núcleo que devolvió el modelo con la cartera optimizada.
+
+    Un símbolo es válido si está en ``portfolio_symbols`` (la cartera completa, no
+    los 15 que vio el prompt), sin importar mayúsculas ni espacios; se queda con la
+    primera aparición. Un peso que no es un número finito y no negativo cuenta como
+    0. Si los pesos que quedan no suman 100 ± ``CORE_SOURCE.weight_sum_tolerance_pct``
+    se renormalizan, como el núcleo de reglas. Devuelve ``(núcleo, avisos)``; el
+    núcleo es ``[]`` si no quedó ningún símbolo de la cartera.
+    """
+    canonical = {str(s).strip().upper(): str(s) for s in portfolio_symbols}
+    kept: list[dict] = []
+    rejected: list[str] = []
+    seen: set[str] = set()
+    for item in raw if isinstance(raw, list) else []:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("symbol") or "").strip().upper()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        if key not in canonical:
+            rejected.append(key)
+            continue
+        try:
+            weight = float(item.get("suggested_weight_pct"))
+        except (TypeError, ValueError):
+            weight = 0.0
+        if not math.isfinite(weight) or weight < 0:
+            weight = 0.0
+        kept.append({
+            "symbol": canonical[key],
+            "suggested_weight_pct": weight,
+            "why": str(item.get("why") or ""),
+        })
+
+    notes: list[str] = []
+    if rejected:
+        notes.append(
+            f"La IA sugirió {', '.join(rejected)}, que no está(n) en la cartera optimizada: "
+            "se descartó/descartaron del núcleo."
+        )
+    if not kept:
+        return [], notes
+
+    total = sum(c["suggested_weight_pct"] for c in kept)
+    if total <= 0:
+        for c in kept:
+            c["suggested_weight_pct"] = round(100.0 / len(kept), 1)
+        notes.append("La IA no dio pesos utilizables para el núcleo: se repartieron en partes iguales.")
+    elif abs(total - 100.0) > CORE_SOURCE.weight_sum_tolerance_pct:
+        for c in kept:
+            c["suggested_weight_pct"] = round(c["suggested_weight_pct"] / total * 100.0, 1)
+        notes.append(
+            f"Los pesos que sugirió la IA para el núcleo sumaban {total:.0f}%: "
+            "se reescalaron a 100%."
+        )
+    return kept, notes
 
 
 class AIUnavailable(RuntimeError):
@@ -483,6 +545,9 @@ class AIAnalyzer:
                 "overall_assessment": "Núcleo generado por reglas del perfil (sin LLM).",
                 # Deliberate skip, not a failure: there is no cause to report.
                 "ai_fallback_reason": "",
+                # ...pero el núcleo lo eligieron las reglas, no el modelo.
+                "core_source":        CORE_SOURCE.RESPALDO,
+                "core_notes":         [],
             }
 
         # Truncate to top-15 for the prompt (bounds token size for 16-45 pos results)
@@ -537,9 +602,21 @@ class AIAnalyzer:
 
             data.setdefault("narrative", "")
             data.setdefault("recommended_max_human_positions", max(5, min(20, num_pos)))
-            # If LLM returned empty core, fall back to deterministic
-            if not data.get("core_holdings"):
+            # NUCLEO-PROCEDENCIA: el núcleo del modelo se contrasta con la cartera
+            # completa. «IA» solo si quedó al menos un símbolo suyo; si no, lo ocupan
+            # las reglas y la procedencia lo dice.
+            core, notes = _validate_core_holdings(
+                data.get("core_holdings"), [h["symbol"] for h in holdings]
+            )
+            if core:
+                data["core_holdings"] = core
+                data["core_source"] = CORE_SOURCE.IA
+            else:
                 data["core_holdings"] = det_core
+                data["core_source"] = CORE_SOURCE.RESPALDO
+                if not notes:
+                    notes = ["La IA no devolvió una cartera núcleo: se muestra la de las reglas del perfil."]
+            data["core_notes"] = notes
             data.setdefault("dropped_tickers", [])
             data.setdefault("human_review_tips", [])
             data.setdefault("overall_assessment", "")
@@ -566,6 +643,8 @@ class AIAnalyzer:
                     f"Núcleo generado por reglas del perfil ({AI_FALLBACK.label(cause)})."
                 ),
                 "ai_fallback_reason":              cause,
+                "core_source":                     CORE_SOURCE.RESPALDO,
+                "core_notes":                      [],
             }
 
     def _call_api(self, prompt: str, max_tokens: int | None = None) -> str:

@@ -21,7 +21,7 @@ import pandas as pd
 import streamlit as st
 from loguru import logger
 
-from config import AI_FALLBACK, AR_FX
+from config import AI_FALLBACK, AR_FX, CORE_SOURCE
 from dashboard.onboarding import render_profile_summary
 from dashboard.shared import (
     _get_ai_config,
@@ -62,6 +62,7 @@ from data.product_ux import (
     projection_scenario_label,
     ratio_help,
     ratio_label,
+    resolve_core,
     scenarios_block_text,
     strategy_ignored_savings_note,
 )
@@ -164,10 +165,9 @@ def _metrics_row(metrics: dict) -> None:
                 help=max_dd_estimate_help())
 
 
-def _core_table(core_holdings: list, from_ai: bool) -> None:
+def _core_table(core_holdings: list, label: str) -> None:
     if not core_holdings:
         return
-    label = "🤖 Cartera núcleo (IA)" if from_ai else "🧠 Cartera núcleo (determinístico)"
     st.markdown(f"**{label}** — {len(core_holdings)} posiciones para gestión activa")
     df = pd.DataFrame([
         {
@@ -271,9 +271,10 @@ else:
     )
     _metrics_row(_live_metrics)
 
-    _ai_core = getattr(opt_result, "core_holdings_ai", []) or []
-    _det_core  = getattr(opt_result, "profile_core_holdings", []) or []
-    _core_table(_ai_core or _det_core, bool(_ai_core))
+    _core = resolve_core(opt_result)   # same rule as the Optimizer and the saved plan
+    for _note in getattr(opt_result, "core_notes_ai", []) or []:
+        st.warning(_note, icon="⚠️")
+    _core_table(_core.holdings, _core.label)
 
     # Narrative
     _live_narrative = getattr(opt_result, "ai_narrative", "") or st.session_state.get("last_plan_narrative", "")
@@ -382,8 +383,8 @@ else:
 
     with _ac1:
         with st.expander("🧺 Lista de compra del núcleo", expanded=False):
-            _core = _ai_core or _det_core
-            if not _core:
+            _buy_core = _core.holdings
+            if not _buy_core:
                 st.caption("No hay núcleo disponible para este plan.")
             else:
                 _cap_default = int(getattr(prefs, "current_capital", 0)) or int(
@@ -393,14 +394,14 @@ else:
                     "Capital a invertir (USD)", min_value=0, value=_cap_default, step=1_000,
                     format="%d", key="plan_buy_capital",
                 )
-                _total_w = sum(float(c.get("suggested_weight_pct", 0)) for c in _core) or 1.0
+                _total_w = sum(float(c.get("suggested_weight_pct", 0)) for c in _buy_core) or 1.0
                 buy_rows = [
                     {
                         "Ticker": c.get("symbol", ""),
                         "Peso %": round(float(c.get("suggested_weight_pct", 0)) / _total_w * 100, 1),
                         "USD a invertir": round(float(c.get("suggested_weight_pct", 0)) / _total_w * buy_capital),
                     }
-                    for c in _core
+                    for c in _buy_core
                 ]
                 _buy_df = pd.DataFrame(buy_rows)
                 st.dataframe(
@@ -522,7 +523,10 @@ def _render_snapshot(snap: PlanSnapshot) -> None:
     )
     _render_engine_staleness(snap)
     _metrics_row(snap.metrics)
-    _core_table(snap.core_holdings, snap.core_from_ai)
+    _core_table(
+        snap.core_holdings,
+        CORE_SOURCE.label(getattr(snap, "core_source", ""), legacy_from_ai=snap.core_from_ai),
+    )
 
     if snap.allocation:
         with st.expander(f"🧺 Cartera completa ({len(snap.allocation)} posiciones)"):

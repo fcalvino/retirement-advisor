@@ -35,6 +35,7 @@ from scipy.optimize import minimize
 from analysis.moat import classify_moat, moat_scale_max
 from config import (
     ARS_RISK,
+    CORE_SOURCE,
     ESTIMACION,
     MONTE_CARLO,
     OPTIMIZER,
@@ -289,6 +290,12 @@ class OptimizationResult:
     ai_narrative: str = ""                     # full AI explanation of the portfolio + macro
     ai_recommended_max_human_positions: int = 0   # how many positions the AI thinks a human can track
     core_holdings_ai: List[dict] = field(default_factory=list)   # [{"symbol": , "suggested_weight_pct": , "why": ""}, ...]
+    #: Quién eligió el núcleo que se muestra (NUCLEO-PROCEDENCIA): un slug de
+    #: ``config.CORE_SOURCE``. ``core_holdings_ai`` solo se llena cuando es ``IA``.
+    core_source: str = CORE_SOURCE.REGLAS
+    #: Avisos de la validación del núcleo IA (símbolos fuera de la cartera, pesos
+    #: renormalizados), listos para mostrar.
+    core_notes_ai: List[str] = field(default_factory=list)
     dropped_tickers_ai: List[dict] = field(default_factory=list)
     human_review_tips_ai: List[str] = field(default_factory=list)
 
@@ -612,11 +619,13 @@ class PortfolioOptimizer:
 
         target = self.cfg.target_max_human_positions
 
-        def _core_rank(a: "TickerAllocation") -> float:
-            moat_factor = moat_rank_factor(          # range 0.5–1.5, de verdad
+        def _moat_factor(a: "TickerAllocation") -> float:
+            return moat_rank_factor(                 # range 0.5–1.5, de verdad
                 a.moat_score, ai_available=_moat_had_ai(a)
             )
-            return a.weight_pct * (a.adjusted_score / 100.0) * moat_factor
+
+        def _core_rank(a: "TickerAllocation") -> float:
+            return a.weight_pct * (a.adjusted_score / 100.0) * _moat_factor(a)
 
         ranked = sorted(allocations, key=_core_rank, reverse=True)
         core = ranked[:target]
@@ -645,7 +654,14 @@ class PortfolioOptimizer:
                 tw_note = "🌬️ Tailwind sector-país · "
             elif _twc == "Headwind":
                 tw_note = "🌪️ Headwind sector-país · "
-            why = f"{moat_label}{tw_note}{div_note}Score {a.adjusted_score:.0f} · {a.sector}"
+            # NUCLEO-PROCEDENCIA: las tres cifras del ranking van primero — las
+            # tablas cortan el «why» a 140 caracteres y la etiqueta es lo que sobra.
+            # El peso es el de la cartera completa, no el reescalado del núcleo.
+            ranking = (
+                f"Rank {_core_rank(a):.1f} = peso {a.weight_pct:.1f}% × "
+                f"score {a.adjusted_score:.0f}/100 × moat ×{_moat_factor(a):.2f} · "
+            )
+            why = f"{ranking}{moat_label}{tw_note}{div_note}{a.sector}"
             result.append({
                 "symbol":              a.symbol,
                 "suggested_weight_pct": rescaled,

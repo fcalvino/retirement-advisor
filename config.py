@@ -1194,6 +1194,41 @@ class AIFallbackConfig:
 AI_FALLBACK = AIFallbackConfig()
 
 
+@dataclass(frozen=True)
+class CoreSourceConfig:
+    """Quién eligió la cartera núcleo. El slug es el contrato motor↔UI (NUCLEO-PROCEDENCIA).
+
+    ``IA`` es solo el caso en que el modelo respondió y quedó al menos un símbolo de
+    la cartera. ``RESPALDO`` es el núcleo de reglas que ocupa su lugar cuando la IA
+    estaba prendida y no eligió (más de 45 posiciones, error de API, núcleo vacío o
+    sin ningún símbolo de la cartera). ``REGLAS`` es la IA apagada. El texto se
+    escribe una sola vez, acá: Optimizer, Mi Plan y los planes guardados lo leen.
+
+    weight_sum_tolerance_pct — los pesos que sugiere el modelo para el núcleo deben
+                               sumar 100 ± esta tolerancia (puntos); fuera de ella
+                               se renormalizan, como el núcleo de reglas, y se avisa.
+    """
+
+    IA = "ia"
+    REGLAS = "reglas"
+    RESPALDO = "reglas_respaldo"
+
+    weight_sum_tolerance_pct: float = 2.0
+
+    def label(self, source: str = "", *, legacy_from_ai: bool = False) -> str:
+        """Rótulo del expander/tabla. Un plan guardado antes del campo no dice quién eligió."""
+        if not source and legacy_from_ai:
+            return "🤖 Cartera núcleo (IA, procedencia no registrada)"
+        if source == self.IA:
+            return "🤖 Cartera núcleo (IA)"
+        if source == self.RESPALDO:
+            return "🧠 Cartera núcleo (reglas del perfil — respaldo, la IA no eligió)"
+        return "🧠 Cartera núcleo (reglas del perfil)"
+
+
+CORE_SOURCE = CoreSourceConfig()
+
+
 @dataclass
 class AIConfig:
     provider: str = field(default_factory=lambda: os.getenv("AI_PROVIDER", "claude"))
