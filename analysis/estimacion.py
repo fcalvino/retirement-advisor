@@ -108,8 +108,14 @@ def _country_adjustment(country: Optional[str], risks: Mapping[str, CountryRisk]
     if status == "fuera":
         return None, (f"riesgo país de {country}: el dato del {cr.as_of.isoformat()} tiene "
                       f"más de {FUENTES.stale_drop_months} meses; la Estimación no lo descuenta")
-    return cr, ("dato viejo (más de "
-                f"{FUENTES.stale_warn_months} meses)" if status == "vieja" else "")
+    avisos = []
+    if status == "vieja":
+        avisos.append(f"dato viejo (más de {FUENTES.stale_warn_months} meses)")
+    days = (today - cr.as_of).days
+    if days > FUENTES.country_risk_warn_days:
+        avisos.append(f"dato de hace {days} días; refrescalo con "
+                      "scripts/refresh_fuentes.py --country-risk-only --write")
+    return cr, "; ".join(avisos)
 
 
 def estimate_asset(symbol: str, asset_class: Optional[str], *,
