@@ -179,16 +179,26 @@ class TestValidacionContraLaCartera:
         assert _symbols(out["core_holdings"]) == ["AAPL", "T19"]
         assert out["core_notes"] == []
 
-    @pytest.mark.parametrize("basura", ["mucho", None, "", float("nan"), -5])
-    def test_un_peso_basura_no_rompe_y_el_simbolo_valido_se_conserva(self, monkeypatch, basura):
+    @pytest.mark.parametrize("basura", ["mucho", None, "", float("nan"), -5, 0])
+    def test_un_peso_basura_descarta_el_simbolo_con_aviso_y_no_rompe(self, monkeypatch, basura):
+        """Un símbolo sin peso utilizable sería una fila de USD 0 en la lista de compra."""
         out = _advice(monkeypatch, [
             {"symbol": "AAPL", "suggested_weight_pct": basura, "why": "a"},
             {"symbol": "KO", "suggested_weight_pct": 50.0, "why": "b"},
         ])
-        for c in out["core_holdings"]:
-            assert isinstance(c["suggested_weight_pct"], float)
-            assert c["suggested_weight_pct"] >= 0.0
-        assert "KO" in _symbols(out["core_holdings"])
+        assert _symbols(out["core_holdings"]) == ["KO"]
+        assert out["core_source"] == CORE_SOURCE.IA
+        assert any("AAPL" in n for n in out["core_notes"])
+        assert out["core_holdings"][0]["suggested_weight_pct"] == pytest.approx(100.0, abs=0.1)
+
+    def test_todos_los_pesos_basura_es_respaldo(self, monkeypatch):
+        opt = _opt()
+        out = _advice(monkeypatch, [
+            {"symbol": "AAPL", "suggested_weight_pct": "mucho", "why": "a"},
+            {"symbol": "KO", "suggested_weight_pct": None, "why": "b"},
+        ], opt)
+        assert out["core_source"] == CORE_SOURCE.RESPALDO
+        assert out["core_holdings"] == opt.profile_core_holdings
 
     def test_pesos_que_no_suman_100_se_renormalizan_con_aviso(self, monkeypatch):
         out = _advice(monkeypatch, [
@@ -332,3 +342,66 @@ class TestWhyDelNucleoDeterministico:
             reverse=True,
         )[: opt.cfg.target_max_human_positions]
         assert _symbols(opt._select_core_holdings(allocs)) == [a.symbol for a in esperado]
+
+
+# --------------------------------------------------------------------------- #
+#  Mi Plan, la página real (AppTest — no es prueba en vivo)                    #
+# --------------------------------------------------------------------------- #
+#  El aviso y el rótulo viajan por ``getattr(result, "core_notes_ai")`` hasta
+#  ``st.warning``: el dict de ``generate_optimizer_advice`` no prueba que la
+#  página los dibuje. Sin red y sin IA: el resultado de la sesión está armado.
+
+from pathlib import Path  # noqa: E402
+
+from streamlit.testing.v1 import AppTest  # noqa: E402
+
+from tests.test_plan_page_runtime import _FakePrefs, stores  # noqa: E402, F401
+
+_PLAN_PAGE = str(Path(__file__).resolve().parents[1] / "dashboard" / "views" / "12_Plan.py")
+
+
+def _plan_texts(at) -> str:
+    chunks = []
+    for coll in (at.markdown, at.caption, at.warning, at.info):
+        chunks += [getattr(e, "value", "") or "" for e in coll]
+    return "\n".join(chunks)
+
+
+def _plan_page(opt) -> AppTest:
+    at = AppTest.from_file(_PLAN_PAGE, default_timeout=60)
+    at.session_state["user_prefs"] = _FakePrefs()
+    at.session_state["optimizer_result"] = opt
+    return at.run()
+
+
+def test_mi_plan_rotula_ia_y_muestra_el_aviso_del_simbolo_descartado(stores):  # noqa: F811
+    opt = _snapshot_opt(
+        core_source=CORE_SOURCE.IA,
+        core_holdings_ai=[{"symbol": "AAPL", "suggested_weight_pct": 100.0, "why": "moat"}],
+        core_notes_ai=["La IA sugirió ZZZZ, que no está(n) en la cartera optimizada."],
+    )
+    at = _plan_page(opt)
+    assert not at.exception, [str(e) for e in at.exception]
+    text = _plan_texts(at)
+    assert f"{CORE_SOURCE.label(CORE_SOURCE.IA)}** — 1 posiciones para gestión activa" in text
+    assert any("ZZZZ" in w.value for w in at.warning)
+
+
+def test_mi_plan_rotula_el_respaldo_y_no_dice_ia(stores):  # noqa: F811
+    opt = _snapshot_opt(core_source=CORE_SOURCE.RESPALDO)
+    at = _plan_page(opt)
+    assert not at.exception, [str(e) for e in at.exception]
+    text = _plan_texts(at)
+    assert CORE_SOURCE.label(CORE_SOURCE.RESPALDO) in text
+    assert CORE_SOURCE.label(CORE_SOURCE.IA) not in text
+
+
+def test_mi_plan_con_un_resultado_sin_el_atributo_no_afirma_ia(stores):  # noqa: F811
+    """``optimizer_prev_result`` de una sesión anterior al cambio: sin ``core_source``."""
+    opt = _snapshot_opt(
+        core_holdings_ai=[{"symbol": "AAPL", "suggested_weight_pct": 100.0, "why": "moat"}],
+    )
+    at = _plan_page(opt)
+    assert not at.exception, [str(e) for e in at.exception]
+    text = _plan_texts(at)
+    assert CORE_SOURCE.label("", legacy_from_ai=True) in text

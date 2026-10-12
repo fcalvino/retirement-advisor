@@ -43,14 +43,16 @@ def _validate_core_holdings(raw, portfolio_symbols) -> tuple[list[dict], list[st
 
     Un símbolo es válido si está en ``portfolio_symbols`` (la cartera completa, no
     los 15 que vio el prompt), sin importar mayúsculas ni espacios; se queda con la
-    primera aparición. Un peso que no es un número finito y no negativo cuenta como
-    0. Si los pesos que quedan no suman 100 ± ``CORE_SOURCE.weight_sum_tolerance_pct``
-    se renormalizan, como el núcleo de reglas. Devuelve ``(núcleo, avisos)``; el
-    núcleo es ``[]`` si no quedó ningún símbolo de la cartera.
+    primera aparición. Un peso que no es un número finito y positivo no sirve ni para
+    la tabla ni para la lista de compra (USD 0): el símbolo se descarta con aviso. Si
+    los pesos que quedan no suman 100 ± ``CORE_SOURCE.weight_sum_tolerance_pct`` se
+    renormalizan, como el núcleo de reglas. Devuelve ``(núcleo, avisos)``; el núcleo
+    es ``[]`` si no quedó ningún símbolo utilizable.
     """
     canonical = {str(s).strip().upper(): str(s) for s in portfolio_symbols}
     kept: list[dict] = []
     rejected: list[str] = []
+    weightless: list[str] = []
     seen: set[str] = set()
     for item in raw if isinstance(raw, list) else []:
         if not isinstance(item, dict):
@@ -66,8 +68,9 @@ def _validate_core_holdings(raw, portfolio_symbols) -> tuple[list[dict], list[st
             weight = float(item.get("suggested_weight_pct"))
         except (TypeError, ValueError):
             weight = 0.0
-        if not math.isfinite(weight) or weight < 0:
-            weight = 0.0
+        if not math.isfinite(weight) or weight <= 0:
+            weightless.append(key)
+            continue
         kept.append({
             "symbol": canonical[key],
             "suggested_weight_pct": weight,
@@ -80,15 +83,15 @@ def _validate_core_holdings(raw, portfolio_symbols) -> tuple[list[dict], list[st
             f"La IA sugirió {', '.join(rejected)}, que no está(n) en la cartera optimizada: "
             "se descartó/descartaron del núcleo."
         )
+    if weightless:
+        notes.append(
+            f"La IA sugirió {', '.join(weightless)} sin un peso utilizable: se descartó/descartaron del núcleo."
+        )
     if not kept:
         return [], notes
 
     total = sum(c["suggested_weight_pct"] for c in kept)
-    if total <= 0:
-        for c in kept:
-            c["suggested_weight_pct"] = round(100.0 / len(kept), 1)
-        notes.append("La IA no dio pesos utilizables para el núcleo: se repartieron en partes iguales.")
-    elif abs(total - 100.0) > CORE_SOURCE.weight_sum_tolerance_pct:
+    if abs(total - 100.0) > CORE_SOURCE.weight_sum_tolerance_pct:
         for c in kept:
             c["suggested_weight_pct"] = round(c["suggested_weight_pct"] / total * 100.0, 1)
         notes.append(
