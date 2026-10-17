@@ -51,6 +51,13 @@ AI_MORE_PRUDENT_REASON = (
     "La IA fue más cauta que las reglas — se respeta su acción"
 )
 
+#: El motivo del gate ``require_technical_uptrend`` cuando la tendencia *se midió*
+#: y no es alcista: el fundamento da para comprar y sólo el precio lo frena. Es una
+#: constante porque el Screener la usa para listar esas filas aparte
+#: (``analysis.ranking.is_held_by_trend``) — comparar contra el literal sería
+#: frágil. El caso no medible tiene otro motivo a propósito (U5-19).
+TREND_GATE_REASON = "Sin tendencia alcista confirmada — no agregar"
+
 
 #: #149: los motivos de REDUCE y SELL de un cripto. Los de equity («Calidad
 #: fundamental en deterioro», «Fundamental deterioration») mienten para un activo
@@ -689,9 +696,7 @@ class RetirementStrategy:
                         "measurable (insufficient price history) — hold, do not add"
                     )
                 else:
-                    decision.decisive_reason = (
-                        "Sin tendencia alcista confirmada — no agregar"
-                    )
+                    decision.decisive_reason = TREND_GATE_REASON
                     decision.rationale.append(
                         "Fundamentals support buying but technical uptrend not confirmed "
                         "(require_technical_uptrend) — hold, do not add"
