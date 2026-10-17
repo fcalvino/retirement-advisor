@@ -22,11 +22,14 @@ from analysis.ranking import (
     apply_filters,
     attach_percentiles,
     build_shortlist,
+    build_trend_watchlist,
     filter_preset,
+    is_held_by_trend,
     percentile_ranks,
     preset_gap,
     strip_badge,
 )
+from analysis.strategy import TREND_GATE_REASON
 from config import SCREENER, ScreenerConfig
 
 # --------------------------------------------------------------------------- #
@@ -402,3 +405,94 @@ def test_apply_filters_honours_the_moat_axis():
     ]
     kept = apply_filters(rows, FilterCriteria(moats=("Wide",)))
     assert [r["Ticker"] for r in kept] == ["MSFT"]
+
+
+# --------------------------------------------------------------------------- #
+#  Held back by the trend gate                                                #
+# --------------------------------------------------------------------------- #
+#
+# US Quality, 2026-10-17: INTU (percentile 99.4) and ADBE (98.1) carried "HOLD"
+# because the uptrend gate held a STRONG BUY back. The funnel dropped them with
+# every other HOLD; this list keeps them in view.
+
+
+def _held(ticker, pct, *, score=None, dq="good", negative_equity=False,
+          signal="🟡 HOLD", reason=TREND_GATE_REASON):
+    return {
+        "Ticker": ticker, "Signal": signal, "Percentil": pct,
+        "Score bruto": score if score is not None else pct, "_why_headline": reason,
+        "_dq": {"level": dq},
+        "_track": {"inputs": {"negative_equity": negative_equity}},
+    }
+
+
+def test_held_by_trend_is_the_gate_reason_on_a_hold():
+    assert is_held_by_trend(_held("INTU", 99.4)) is True
+    # A HOLD that follows from the score band is not waiting for any trend.
+    assert is_held_by_trend(_held("X", 60, reason="Score 66/100: no alcanza para comprar")) is False
+    # The unmeasurable-trend case has its own reason on purpose (U5-19).
+    assert is_held_by_trend(_held(
+        "X", 60, reason="Tendencia no medible — sin historia suficiente, no agregar",
+    )) is False
+    # Same sentence on another action is not this case.
+    assert is_held_by_trend(_held("X", 60, signal="🟩 BUY")) is False
+
+
+def test_held_by_trend_reads_the_truncated_cell_only_as_a_fallback():
+    row = _held("INTU", 99.4)
+    del row["_why_headline"]
+    row["Motivo"] = TREND_GATE_REASON
+    assert is_held_by_trend(row) is True
+
+
+def test_trend_watchlist_applies_the_shortlist_bar():
+    rows = [
+        _held("INTU", 99.4, score=114.7),
+        _held("ADBE", 98.1, score=106.7),
+        _held("LOW", SCREENER.shortlist_percentile - 1),          # below the cut
+        _held("POOR", 95.0, dq="poor"),                            # bad data
+        _held("MCD", 94.0, negative_equity=True),                  # capped anyway
+        _held("CRM", 97.0, reason="Score 66/100: no alcanza para comprar"),
+        _held("GOOGL", 99.9, signal="🟢 STRONG BUY", reason=""),   # in the shortlist
+    ]
+    out = build_trend_watchlist(rows)
+    assert [r["Ticker"] for r in out] == ["INTU", "ADBE"]
+
+
+def test_trend_watchlist_sorts_by_uncapped_score_and_caps():
+    cfg = ScreenerConfig()
+    cfg.shortlist_max_names = 2
+    rows = [_held(f"T{i}", 80.0 + i, score=100.0 + i) for i in range(5)]
+    out = build_trend_watchlist(rows, config=cfg)
+    assert [r["Ticker"] for r in out] == ["T4", "T3"]
+
+
+def test_trend_watchlist_on_an_empty_run():
+    assert build_trend_watchlist([]) == []
+
+
+def test_poor_data_stays_out_even_when_the_shortlist_keeps_it():
+    """The data-quality policy caps a poor row at HOLD regardless of the trend."""
+    cfg = ScreenerConfig()
+    cfg.shortlist_exclude_poor_data = False
+    assert build_trend_watchlist([_held("POOR", 95.0, dq="poor")], config=cfg) == []
+
+
+def test_negative_equity_is_listed_when_its_cap_is_off():
+    from config import StrategyConfig
+
+    strat = StrategyConfig()
+    strat.negative_equity_caps_action = False
+    rows = [_held("MCD", 94.0, negative_equity=True)]
+    assert [r["Ticker"] for r in build_trend_watchlist(rows, strategy=strat)] == ["MCD"]
+    assert build_trend_watchlist(rows) == []
+
+
+def test_negative_equity_key_matches_what_the_row_builder_stores():
+    """`_negative_equity` reads `_track.inputs`; the row builder must write it there."""
+    from types import SimpleNamespace
+
+    from analysis.track_record import snapshot_calibration_inputs
+
+    fund = SimpleNamespace(negative_equity=True, is_crypto=False, asset_class="equity")
+    assert snapshot_calibration_inputs(fund).get("negative_equity") is True

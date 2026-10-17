@@ -76,15 +76,17 @@ def test_custom_column():
 # --------------------------------------------------------------------------- #
 
 
-def test_both_screener_tables_are_selectable():
-    """Shortlist and full table — a click has to work wherever the user clicks."""
-    assert SCREENER.count('on_select="rerun"') == 2
-    assert SCREENER.count('selection_mode="single-row"') == 2
+def test_every_screener_table_is_selectable():
+    """Shortlist, trend-held list and full table — a click has to work wherever the user clicks."""
+    assert SCREENER.count('on_select="rerun"') == 3
+    assert SCREENER.count('selection_mode="single-row"') == 3
+    assert "render_row_actions(_trend_df, _trend_event" in SCREENER
     assert "render_row_actions(_short_df, _short_event" in SCREENER
     assert "render_row_actions(df_view, _all_event" in SCREENER
     # Distinct widget keys, or Streamlit collapses the two tables into one.
     assert 'key="screener_shortlist_select"' in SCREENER
     assert 'key="screener_all_select"' in SCREENER
+    assert 'key="screener_trend_select"' in SCREENER
 
 
 def test_handoff_uses_the_key_stock_analysis_already_reads():

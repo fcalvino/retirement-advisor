@@ -265,7 +265,7 @@ def _engine_reason_literals() -> list[str]:
             continue
         for target in node.targets:
             name = target.attr if isinstance(target, ast.Attribute) else getattr(target, "id", "")
-            if name in ("decisive_reason", "note", "AI_MORE_PRUDENT_REASON"):
+            if name in ("decisive_reason", "note", "AI_MORE_PRUDENT_REASON", "TREND_GATE_REASON"):
                 found.append(text)
     return found
 

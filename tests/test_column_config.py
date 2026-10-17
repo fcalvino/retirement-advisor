@@ -101,9 +101,10 @@ def test_adj_score_is_displayed_so_the_sort_column_is_visible():
     assert '"Percentil"' in cols
 
 
-def test_all_three_tables_get_a_column_config():
-    """Shortlist, full table and the funds table."""
-    assert SCREENER.count("column_config=screener_column_config(") == 3
+def test_every_table_gets_a_column_config():
+    """Shortlist, trend-held list, full table and the funds table."""
+    assert SCREENER.count("column_config=screener_column_config(") == 4
+    assert "screener_column_config(_trend_cols)" in SCREENER
     assert "screener_column_config(_short_cols)" in SCREENER
     assert "screener_column_config(_all_cols)" in SCREENER
     assert "screener_column_config(_other_cols)" in SCREENER
@@ -113,7 +114,7 @@ def test_every_displayed_column_has_a_spec():
     """A column with no spec silently falls back to unformatted output."""
     import re
 
-    for marker in ("_short_cols = [", "_all_cols = [", "_other_cols = ["):
+    for marker in ("_short_cols = [", "_trend_cols = [", "_all_cols = [", "_other_cols = ["):
         start = SCREENER.index(marker)
         block = SCREENER[start : SCREENER.index("]", SCREENER.index('"Datos",', start))]
         for col in re.findall(r'"([^"]+)"', block):
