@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## DIV-ABSTAIN — la voz de Dividendo que no se convoca se anota como abstención (2026-10-18)
+
+El comité por ticker anota la abstención de la voz de Dividendo con su causa (cripto, sin dato o rendimiento bajo), y la página Comité la nombra igual que la del Estratega Macro. Antes un panel sin esa voz se leía como completo. Sin cambio de prompts ni de `prompt_version`.
+
+---
+
 ## TREND-WATCH — el Screener lista aparte las acciones frenadas por la tendencia (2026-10-17)
 
 Una acción en el top del percentil con «HOLD» al lado parecía una contradicción (INTU, ADBE en US Quality, 2026-10-17). Es el gate de tendencia alcista: el fundamento alcanza para comprar y sólo el precio la frena. El Screener ahora las lista en «⏳ Frenadas por la tendencia», con el mismo corte que la lista destacada, como candidatas a vigilar hasta que la tendencia gire. No cambia ninguna señal.

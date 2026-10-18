@@ -26,6 +26,7 @@ in the shared SQLite cache (the committee is reserved for weighty decisions).
 
 from __future__ import annotations
 
+import math
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -63,6 +64,14 @@ MACRO_VOTE_ROLE = "Estratega Macro"
 #: Why the Macro Strategist sits out (MACRO-SEED): its mandate is to reason from
 #: dated macro facts, and without any it would vote from training memory.
 MACRO_ABSTAIN_REASON = "sin hechos macro fechados en el RAG (los docs de ejemplo no cuentan)"
+#: Why the dividend voice sits out (DIV-ABSTAIN): one reason per cause, so the
+#: caption never says "no paga" about an asset whose feed just has no figure.
+DIVIDEND_ABSTAIN_CRYPTO = "un criptoactivo no paga dividendo"
+DIVIDEND_ABSTAIN_NO_DATA = "el feed no informa dividendo para este activo"
+DIVIDEND_ABSTAIN_LOW_YIELD = (
+    "rendimiento por dividendo de {yield_pct:.1f} %, no supera el mínimo de {min_pct:.1f} % "
+    "para convocarla"
+)
 
 _RETRY_IN_SECONDS = re.compile(r"try again in ([0-9.]+)\s*s", re.IGNORECASE)
 
@@ -530,19 +539,33 @@ def _dedupe(items: List[str]) -> List[str]:
     return out
 
 
-def _pays_dividend(fund) -> bool:
-    """The dividend voice only votes when there is a dividend to judge.
+def _dividend_abstain_reason(fund) -> Optional[str]:
+    """Why the dividend voice is not convened, or ``None`` when it votes.
 
-    Crypto and non-payers abstain: an unconvened voice leaves the lean untouched,
-    whereas a forced HOLD would dilute it toward zero.
+    It only votes when there is a dividend to judge. Crypto and non-payers abstain:
+    an unconvened voice leaves the lean untouched, whereas a forced HOLD would
+    dilute it toward zero. The abstention is recorded so the panel does not read as
+    complete with one voice fewer (DIV-ABSTAIN).
     """
     if bool(getattr(fund, "is_crypto", False)):
-        return False
+        return DIVIDEND_ABSTAIN_CRYPTO
+    raw = getattr(fund, "dividend_yield", None)
     try:
-        yld = float(getattr(fund, "dividend_yield", None) or 0.0)
+        yld = float(raw)
     except (TypeError, ValueError):
-        return False
-    return yld > COMMITTEE.dividend_voice_min_yield_pct
+        return DIVIDEND_ABSTAIN_NO_DATA
+    if math.isnan(yld):
+        return DIVIDEND_ABSTAIN_NO_DATA
+    if yld > COMMITTEE.dividend_voice_min_yield_pct:
+        return None
+    return DIVIDEND_ABSTAIN_LOW_YIELD.format(
+        yield_pct=yld, min_pct=COMMITTEE.dividend_voice_min_yield_pct
+    )
+
+
+def _pays_dividend(fund) -> bool:
+    """The dividend voice only votes when there is a dividend to judge."""
+    return _dividend_abstain_reason(fund) is None
 
 
 def build_ticker_portfolio_context(
@@ -965,11 +988,14 @@ class CommitteeAnalyzer:
             "Portfolio Manager": (portfolio_manager_prompt(fund, tech, portfolio_ctx, postura), lambda r: _parse_agent("Portfolio Manager", r)),
             "Behavioral Coach": (behavioral_coach_prompt(fund, tech), lambda r: _parse_agent("Behavioral Coach", r)),
         })
-        if _pays_dividend(fund):
+        dividend_abstain = _dividend_abstain_reason(fund)
+        if dividend_abstain is None:
             jobs[DIVIDEND_VOTE_ROLE] = (
                 dividend_capital_prompt(fund, tech),
                 lambda r: _parse_agent(DIVIDEND_VOTE_ROLE, r),
             )
+        else:
+            abstentions[DIVIDEND_VOTE_ROLE] = dividend_abstain
 
         opinions = self._run_agents(jobs)
         verdict = aggregate(symbol, opinions, data_quality=dq)
