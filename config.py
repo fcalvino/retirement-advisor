@@ -3147,7 +3147,13 @@ class CommitteeConfig:
     # 2026-10-08b: EO-5b — la IA se calibra, no se modera (ADR 0001): los prompts de rol
     # dejan de declarar «filosofía conservadora», el PM recibe la Postura del Perfil
     # (y sin Perfil no dimensiona) y el Perfil entra a la clave de caché del veredicto.
-    prompt_version: str = "2026-10-08b"
+    # 2026-10-18a: COMMITTEE-PROMPTS — el bloque común muestra el score con el que
+    # decide el motor (el ajustado, con el base al lado), la línea de valuación (P/B,
+    # EV/EBITDA, PEG, FCF yield y P/FFO del REIT, con su «no medible» si hay nota de
+    # moneda, que deja de repetirse en las alertas) y el alcance de la verificación
+    # cruzada en «Calidad de datos». El Abogado del Diablo y el Coach dejan de tener
+    # un sesgo de stance: el disenso fuerte baja la confianza en la agregación (EO-5b).
+    prompt_version: str = "2026-10-18a"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a

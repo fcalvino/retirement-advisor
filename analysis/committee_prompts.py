@@ -28,7 +28,9 @@ import re
 from datetime import datetime
 from typing import Mapping, Optional
 
+from analysis.company_type import is_reit
 from analysis.currency_metric_text import currency_metric_note, currency_metric_text
+from analysis.data_reconciliation import CROSS_CHECK_SCOPE_NOTE
 from analysis.prompts import (
     JSON_ONLY_CONTRACT,
     MOAT_NOT_MEASURED_LABEL,
@@ -36,7 +38,8 @@ from analysis.prompts import (
     _tailwind_context_block,
     plan_currency_note,
 )
-from config import CRYPTO_COMMITTEE, CRYPTO_MOAT, STRESS_SCENARIOS
+from analysis.strategy import effective_decision_score
+from config import CRYPTO_COMMITTEE, CRYPTO_MOAT, STRATEGY, STRESS_SCENARIOS
 from data.clock import utc_now
 from data.product_ux import (
     DOWNSIDE_RATIO_LABEL,
@@ -115,7 +118,16 @@ def _score_line(fund, score, is_crypto: bool) -> str:
     comparada con otros activos tradicionales».
     """
     if not is_crypto:
-        return f"Score del motor (determinista): {_num(score)}/100"
+        line = f"Score del motor (determinista): {_num(score)}/100"
+        if STRATEGY.use_adjusted_score_for_decision:
+            # Las voces veían el base mientras la matriz decidía con el ajustado
+            # (103 de 131 tickers en otra banda, 2026-10-18), y el bloque de cola de
+            # viento les decía «bonus ya incluido en el score ajustado».
+            line += (
+                f" (ajustado: el que usa la decisión; base sin ajustes: "
+                f"{_num(getattr(fund, 'total_score', None))})"
+            )
+        return line
     return (
         f"Score del motor (determinista): {_num(score)}/{CRYPTO_MOAT.max_achievable_score():.0f} "
         f"en la ESCALA CRIPTO (adjusted_score = base + técnico − volatilidad − drawdown + moat). "
@@ -142,10 +154,36 @@ def _crypto_metric_lines(fund) -> list:
     return lines
 
 
+#: Múltiplos de la línea de valuación cuya nota de moneda reemplaza al número.
+_VALUATION_METRICS = ("pb_ratio", "ev_ebitda", "fcf_yield", "p_ffo")
+
+
+def _valuation_line(fund) -> str:
+    """P/B, EV/EBITDA, PEG y FCF yield (y P/FFO si es REIT), como los ve el Fundamental.
+
+    Hasta acá las demás voces sólo tenían el P/E: el P/FFO de un REIT, el múltiplo
+    que el motor puntúa, no les llegaba, y un múltiplo «no medible» por moneda
+    aparecía sólo como texto crudo en las alertas. La condición del P/FFO es la de
+    ``equity_decision_prompt`` para que las dos superficies no diverjan.
+    """
+    def metric(name, value, suffix=""):
+        return currency_metric_text(fund, name) or _num(value, suffix)
+
+    parts = [
+        f"P/B: {metric('pb_ratio', getattr(fund, 'pb_ratio', None), 'x')}",
+        f"EV/EBITDA: {metric('ev_ebitda', getattr(fund, 'ev_ebitda', None), 'x')}",
+        f"PEG: {_num(getattr(fund, 'peg_ratio', None))}",
+        f"FCF yield: {metric('fcf_yield', getattr(fund, 'fcf_yield', None), '%')}",
+    ]
+    if is_reit(fund) or currency_metric_text(fund, "p_ffo"):
+        parts.append(f"P/FFO: {metric('p_ffo', getattr(fund, 'p_ffo', None), 'x')}")
+    return "Valuación: " + " | ".join(parts)
+
+
 def committee_context_block(fund, tech) -> str:
     """Compact, hard-numbers context shared by every committee agent."""
     is_crypto = bool(getattr(fund, "is_crypto", False))
-    score = getattr(fund, "adjusted_score", 0.0) if is_crypto else getattr(fund, "total_score", 0.0)
+    score = effective_decision_score(fund)
     lines = [
         f"Activo: {getattr(fund, 'company_name', '') or fund.symbol} ({fund.symbol})",
         f"Sector/Industria: {getattr(fund, 'sector', 'n/d')} / {getattr(fund, 'industry', 'n/d')}",
@@ -166,6 +204,7 @@ def committee_context_block(fund, tech) -> str:
             f"Margen neto: {_num(getattr(fund, 'net_margin', None), '%')}",
             f"D/E: {_num(getattr(fund, 'debt_equity', None))} | P/E: {_num(getattr(fund, 'pe_ratio', None))} | "
             f"Margen de seguridad: {_num(getattr(fund, 'margin_of_safety_pct', None), '%')}",
+            _valuation_line(fund),
             f"CAGR ingresos {getattr(fund, 'revenue_cagr_years', 0) or '?'}a: "
             f"{_num(getattr(fund, 'revenue_cagr_5y', None), '%')} | "
             f"{_eps_growth_label(fund)}: {_num(getattr(fund, 'eps_cagr_5y', None), '%')}",
@@ -174,17 +213,19 @@ def committee_context_block(fund, tech) -> str:
         f"Señal técnica: {getattr(tech, 'signal', 'n/d')} | RSI semanal: {_num(getattr(tech, 'rsi_weekly', None))} | "
         f"vs 52w high: {_num(getattr(tech, 'price_vs_52w_high_pct', None), '%')}",
     ]
-    # Hechos que antes solo veía el Analista Fundamental: sin ellos el Abogado del
-    # Diablo armaba el bear case con menos datos que la tesis que debía refutar.
-    ccy_notes = [n for n in (currency_metric_note(fund, m) for m in ("fcf_yield", "p_ffo")) if n]
-    if ccy_notes:
-        lines.append("Moneda de estados ≠ cotización: " + " ".join(ccy_notes))
     plan_ccy = plan_currency_note(fund)
     if plan_ccy:
         lines.append("Moneda del plan: " + plan_ccy)
-    warnings = list(getattr(fund, "warnings", None) or [])
-    if warnings:
-        lines.append("Alertas del motor: " + "; ".join(str(w) for w in warnings))
+    # Una nota de moneda ya dicha en la línea de valuación no se repite como alerta
+    # (la del FCF de TSM llegaba dos veces), y el alcance de la verificación cruzada
+    # no es una alerta: va en su propia línea.
+    shown = {currency_metric_note(fund, m) for m in _VALUATION_METRICS} - {""}
+    warnings = [str(w) for w in (getattr(fund, "warnings", None) or [])]
+    if CROSS_CHECK_SCOPE_NOTE in warnings:
+        lines.append("Calidad de datos: " + CROSS_CHECK_SCOPE_NOTE)
+    alerts = [w for w in warnings if w not in shown and w != CROSS_CHECK_SCOPE_NOTE]
+    if alerts:
+        lines.append("Alertas del motor: " + "; ".join(alerts))
     tailwind = _tailwind_context_block(fund)
     if tailwind:
         lines.append(tailwind.strip("\n"))
@@ -409,8 +450,10 @@ def devils_advocate_prompt(fund, tech, news=None, drawdowns=None) -> str:
         "Tu mandato es CONSTRUIR EL BEAR CASE más fuerte y honesto posible: buscá "
         "activamente por qué NO comprar o por qué reducir. Cuestioná la tesis optimista, "
         f"señalá fragilidades ({fragilities}). Aunque el activo parezca bueno, tu trabajo "
-        "es el contrapunto: tu stance debe inclinarse a la cautela y tus concerns son el "
-        "núcleo del disenso del comité. No seas complaciente. Usá la caída histórica de su "
+        "es el contrapunto: tus concerns son el núcleo del disenso del comité, y tu stance "
+        "es la acción que los datos sostienen después de pesar ese bear case (EO-5b: el "
+        "disenso fuerte baja la confianza del comité, no inclina tu voto). No seas "
+        "complaciente. Usá la caída histórica de su "
         "sector (y la del propio activo, si figura) para dimensionar cuánto capital podría "
         "perder el inversor en una crisis."
         + "\n".join(facts),
@@ -561,8 +604,8 @@ def behavioral_coach_prompt(fund, tech) -> str:
         "Behavioral Coach",
         "Traducí la situación a lenguaje humano y anclá al plan de largo plazo del inversor. "
         "Tu foco es el comportamiento: evitar el pánico en caídas y la euforia en subas. Tu "
-        "stance debe favorecer la consistencia con un plan de retiro (sesgo a HOLD salvo señal "
-        "clara) y tus concerns apuntan a las trampas conductuales de este caso concreto."
+        "stance debe favorecer la consistencia con un plan de retiro y tus concerns apuntan a "
+        "las trampas conductuales de este caso concreto."
         + traps,
         fund, tech,
     )
