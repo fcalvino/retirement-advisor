@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## TREND-WATCH — el Screener lista aparte las acciones frenadas por la tendencia (2026-10-17)
+
+Una acción en el top del percentil con «HOLD» al lado parecía una contradicción (INTU, ADBE en US Quality, 2026-10-17). Es el gate de tendencia alcista: el fundamento alcanza para comprar y sólo el precio la frena. El Screener ahora las lista en «⏳ Frenadas por la tendencia», con el mismo corte que la lista destacada, como candidatas a vigilar hasta que la tendencia gire. No cambia ninguna señal.
+
+---
+
 ## NUCLEO-PROCEDENCIA — el rótulo de la cartera núcleo dice quién la eligió (2026-10-12)
 
 La pantalla decía «🤖 Cartera núcleo (IA)» también cuando el núcleo era el de reglas de respaldo (más de 45 posiciones, error de API o núcleo vacío), y lo que devolvía el modelo no se comparaba con la cartera. Ahora el rótulo sale de una procedencia explícita (IA, reglas o reglas de respaldo), igual en el Optimizer, en Mi Plan y en los planes guardados; los símbolos de la IA que no están en la cartera se descartan con aviso, los pesos se reescalan a 100 si no suman, y el «por qué» del núcleo de reglas muestra peso, score y factor de moat. Un plan guardado antes del cambio se rotula «IA, procedencia no registrada». Ningún número del motor cambia.

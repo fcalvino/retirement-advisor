@@ -708,3 +708,28 @@ def test_a_row_from_an_older_vintage_is_not_filed_as_a_fund(monkeypatch, tmp_pat
     assert "GOOGL" in list(equity_df["Ticker"]), "an equity was filed under funds"
     assert "GOOGL" not in list(other_df["Ticker"])
     assert "nan" not in {str(c) for c in other_df["Clase"]}
+
+
+def test_names_held_by_the_trend_gate_are_listed_apart(monkeypatch, tmp_path):
+    """INTU/ADBE on US Quality: top percentile, HOLD, and nothing said about it.
+
+    The stored rows predate the section on purpose — it must work on a run the
+    user already has on disk, without re-analysing.
+    """
+    from analysis.strategy import TREND_GATE_REASON
+
+    rows = [_equity_row(t) for t in ("AAA", "BBB", "CCC", "DDD")]
+    held = rows[0]
+    held.update({"Signal": "🟡 HOLD", "Motivo": TREND_GATE_REASON,
+                 "_why_headline": TREND_GATE_REASON, "Score bruto": 110.0})
+    _seed_stored_run(tmp_path, monkeypatch, rows=rows)
+
+    out = _make_app(monkeypatch, [r["Ticker"] for r in rows]).run()
+    assert not out.exception, [str(e) for e in out.exception]
+    assert "Frenadas por la tendencia · 1" in _all_text(out)
+    tables = [list(df.value["Ticker"]) for df in out.dataframe]
+    assert ["AAA"] in tables
+
+
+def test_no_trend_section_when_nothing_is_held(app):
+    assert "Frenadas por la tendencia" not in _all_text(app)

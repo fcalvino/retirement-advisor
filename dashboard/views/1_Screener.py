@@ -16,6 +16,7 @@ from analysis.ranking import (
     apply_filters,
     attach_percentiles,
     build_shortlist,
+    build_trend_watchlist,
     filter_preset,
     preset_gap,
     strip_badge,
@@ -595,6 +596,37 @@ if _shortlist.rows:
         "cambia si cambiás el universo"
     )
     render_row_actions(_short_df, _short_event, prefix="short")
+
+# A top-percentile name with "HOLD" beside it reads as a contradiction (INTU, ADBE
+# on US Quality, 2026-10-17). It is the uptrend gate: the fundamentals clear the
+# buy ladder and only the price trend holds it back. The funnel drops these with
+# every other HOLD; listing them apart turns "why HOLD?" into "watch this one".
+_trend_rows = build_trend_watchlist(_ranked)
+if _trend_rows:
+    st.markdown(f"#### ⏳ Frenadas por la tendencia · {len(_trend_rows)}")
+    st.caption(
+        "El fundamento les alcanza para comprar y están en el top "
+        f"{100 - SCREENER.shortlist_percentile:.0f}% de esta corrida, pero el precio "
+        "no muestra tendencia alcista de largo plazo (ni señal técnica alcista ni "
+        "precio sobre la media de 200 semanas), así que el motor las deja en **HOLD**. "
+        "No son descartes: son candidatas a vigilar hasta que la tendencia gire. "
+        "Precio bajo y fundamentos fuertes también es el perfil de una trampa de valor."
+    )
+    _trend_df = pd.DataFrame(_trend_rows)
+    _trend_cols = [
+        "⭐", "Ticker", "Company", "Sector", "Percentil", "Adj. Score", "Score bruto",
+        "Technical", "MoS %", "Price", "Moneda", "Moat", "Datos",
+    ]
+    _trend_event = st.dataframe(
+        _trend_df[_trend_cols],
+        width="stretch",
+        hide_index=True,
+        column_config=screener_column_config(_trend_cols),
+        on_select="rerun",
+        selection_mode="single-row",
+        key="screener_trend_select",
+    )
+    render_row_actions(_trend_df, _trend_event, prefix="trend")
 
 # ------------------------------------------------------------------ #
 #  Audit item 03 — quality headline computed, not asserted            #

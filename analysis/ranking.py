@@ -28,6 +28,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from analysis.strategy import TREND_GATE_REASON
+
 # --------------------------------------------------------------------------- #
 #  Percentile within the analyzed universe                                    #
 # --------------------------------------------------------------------------- #
@@ -221,6 +223,80 @@ def build_shortlist(
         ))
 
     return ShortlistResult(rows=working, steps=steps, truncated_by_cap=truncated)
+
+
+# --------------------------------------------------------------------------- #
+#  Held back by the trend gate                                                #
+# --------------------------------------------------------------------------- #
+#
+# The funnel's "Con señal de compra" step drops every HOLD, and among them the
+# names whose fundamentals clear the buy ladder and that only the uptrend gate
+# (``STRATEGY.require_technical_uptrend``) holds back. Measured on US Quality
+# (2026-10-17): 8 of 78, INTU and ADBE at the top of the percentile ranking with
+# "HOLD" beside them. They are not rejections — they are the names to watch for
+# the trend to turn — so the page lists them apart instead of letting them vanish
+# into the dropped count.
+
+
+def _negative_equity(row: Mapping[str, Any]) -> bool:
+    track = row.get("_track")
+    inputs = track.get("inputs") if isinstance(track, Mapping) else None
+    return bool(isinstance(inputs, Mapping) and inputs.get("negative_equity"))
+
+
+def is_held_by_trend(row: Mapping[str, Any], *, signal_key: str = "Signal") -> bool:
+    """True when the row is a HOLD whose decisive reason is the uptrend gate.
+
+    Reads ``_why_headline`` (the untruncated reason), so it also works on rows a
+    stored run cached before this existed. The AI path inherits the engine's
+    reason when it lands on the same action (``apply_safety_overlay``), so an AI
+    HOLD that the gate explains counts too; a more cautious AI verdict does not.
+    """
+    if strip_badge(row.get(signal_key)).upper() != "HOLD":
+        return False
+    reason = str(row.get("_why_headline") or row.get("Motivo") or "").strip()
+    return reason == TREND_GATE_REASON
+
+
+def build_trend_watchlist(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    config=None,
+    strategy=None,
+    percentile_key: str = "Percentil",
+) -> List[dict]:
+    """Names the shortlist would keep if the trend gate let them through.
+
+    Same bar as :func:`build_shortlist` — percentile within the run, the same
+    cap — with "held by the trend gate" in place of "has a buy signal". Left out:
+    names a turning trend would not unlock, because another policy also caps them
+    at HOLD — poor data quality always, negative equity while
+    ``STRATEGY.negative_equity_caps_action`` is on. Negative equity is read from
+    ``_track.inputs``; a stored row without it is listed, not guessed at.
+    """
+    if config is None:
+        from config import SCREENER as config  # noqa: N811 — singleton default
+    if strategy is None:
+        from config import STRATEGY as strategy
+
+    caps_negative_equity = bool(getattr(strategy, "negative_equity_caps_action", True))
+    threshold = float(getattr(config, "shortlist_percentile", 75.0))
+    out = [
+        dict(r) for r in rows
+        if is_held_by_trend(r)
+        and _dq_level(r) != "poor"
+        and not (caps_negative_equity and _negative_equity(r))
+        and float(r.get(percentile_key) or 0.0) >= threshold
+    ]
+    out.sort(
+        key=lambda r: (
+            float(r.get("Score bruto") or r.get("Adj. Score") or 0.0),
+            float(r.get(percentile_key) or 0.0),
+        ),
+        reverse=True,
+    )
+    cap = int(getattr(config, "shortlist_max_names", 10))
+    return out[:cap] if cap > 0 else out
 
 
 # --------------------------------------------------------------------------- #

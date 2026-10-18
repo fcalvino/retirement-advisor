@@ -36,13 +36,16 @@ import pandas as pd
 import pytest
 
 import data.fetcher as fetcher
+from analysis.ranking import is_held_by_trend
 from analysis.strategy import (
+    TREND_GATE_REASON,
     RetirementStrategy,
     technical_trend_not_measurable,
     technical_uptrend_confirmed,
 )
 from analysis.technical import TechnicalAnalyzer
 from config import FETCH, STRATEGY, TECHNICAL
+from data.product_ux import decision_explanation
 
 # --------------------------------------------------------------------------- #
 #  Fixtures de precio                                                          #
@@ -302,6 +305,14 @@ def _fund(*, score: float, symbol: str = "TEST") -> SimpleNamespace:
     )
 
 
+def _screener_row(decision) -> dict:
+    """Las dos celdas de la fila del Screener que lee ``is_held_by_trend``."""
+    return {
+        "Signal": f"{decision.action_emoji} {decision.action}",
+        "_why_headline": decision_explanation(decision)["full_headline"],
+    }
+
+
 def _decide(technical) -> object:
     return RetirementStrategy().decide(_fund(score=STRATEGY.buy_score + 5), technical)
 
@@ -347,7 +358,10 @@ class TestTheReasonToldToTheUser:
 
         decision = _decide(technical)
         assert decision.action == "HOLD"
+        assert decision.decisive_reason == TREND_GATE_REASON
         assert decision.decisive_reason == "Sin tendencia alcista confirmada — no agregar"
+        # El Screener lista esta fila aparte («Frenadas por la tendencia").
+        assert is_held_by_trend(_screener_row(decision)) is True
 
     def test_an_unmeasurable_trend_says_so(self):
         """Serie corta: el gate falla, pero no porque el mercado haya dicho algo."""
@@ -361,6 +375,8 @@ class TestTheReasonToldToTheUser:
             "Tendencia no medible — sin historia suficiente, no agregar"
         )
         assert any("not measurable" in r for r in decision.rationale)
+        # Sin medición no hay tendencia que esperar: no va a «Frenadas por la tendencia».
+        assert is_held_by_trend(_screener_row(decision)) is False
 
     @pytest.mark.parametrize(
         "signal, above_sma200, expected",
