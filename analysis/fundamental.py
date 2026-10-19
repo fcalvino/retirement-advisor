@@ -505,6 +505,22 @@ def _has_reported_row(df: pd.DataFrame, names) -> bool:
     return any(name in df.index and not df.loc[name].dropna().empty for name in names)
 
 
+def _first_reported_value(df: pd.DataFrame, names) -> Optional[float]:
+    """Newest reported value of the first row in ``names`` that has one, else None.
+
+    Unlike ``FundamentalAnalyzer._row``, an all-NaN ``EBIT`` row does not stop the
+    search: it falls through to ``Operating Income`` instead of answering 0.0.
+    """
+    if df is None or getattr(df, "empty", True):
+        return None
+    for name in names:
+        if name in df.index:
+            series = df.loc[name].dropna()
+            if not series.empty:
+                return _safe_float(series.iloc[0])
+    return None
+
+
 def _row_value_at(df: pd.DataFrame, names, period: Optional[str]) -> Optional[float]:
     """The value a row reported in one specific period, or ``None``."""
     if df is None or df.empty or not period:
@@ -1301,9 +1317,9 @@ class FundamentalAnalyzer:
         try:
             if income_stmt.empty or balance_sheet.empty:
                 return None
-            if not _has_reported_row(income_stmt, _EBIT_ROWS):
+            ebit = _first_reported_value(income_stmt, _EBIT_ROWS)
+            if ebit is None:
                 return None
-            ebit = self._row(income_stmt, list(_EBIT_ROWS))
             equity = self._row(balance_sheet, ["Stockholders Equity", "Total Stockholder Equity", "Common Stock Equity"])
             ltd = self._row(balance_sheet, ["Long Term Debt", "Long-Term Debt"])
             return roic_pct(ebit, equity, ltd, corporate_tax_rate_pct(country))

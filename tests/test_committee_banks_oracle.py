@@ -43,6 +43,7 @@ from analysis.fundamental import (
     suppressed_quality_fields,
 )
 from analysis.prompts import not_applicable_text
+from config import THRESHOLDS as T
 
 COL = ["2025-12-31 00:00:00"]
 
@@ -97,15 +98,39 @@ def test_no_aplica_no_es_faltante_ni_chequeado():
     assert dq["n_checked"] == 6
 
 
+def _oracle_band(value, bands):
+    """Puntos por la definición: sin valor no hay banda; con valor, la primera
+    banda cuyo piso alcanza paga. No comparte código con el motor."""
+    if value is None:
+        return 0.0
+    for floor, points in bands:
+        if value >= floor:
+            return points
+    return 0.0
+
+
 def test_el_score_de_rentabilidad_no_cambia():
-    """Oráculo de la definición: ROE 12 % y margen neto 25 % pagan sus bandas; ROIC y
-    margen bruto, con 0,0 o sin valor, no pagan nada. Igual que antes del cambio."""
+    """ROE 12 % y margen neto 25 % pagan sus bandas; ROIC y margen bruto, que no
+    aplican, no pagan nada, igual que pagaba su 0,0 antes del cambio."""
     income, balance = _statements()
     score, _ = _profitability(_info(grossMargins=0.0), income, balance)
-    old_result = FundamentalResult(symbol="OLD")
-    old = FundamentalAnalyzer()._score_profitability(
-        _info(), income, balance, old_result)  # sin grossMargins: ese campo no suma
-    assert score == old
+    expected = (
+        _oracle_band(12.0, [(T.roe_excellent, 8.0), (T.roe_good, 5.0), (T.roe_min, 2.0)])
+        + _oracle_band(25.0, [(T.net_margin_excellent, 5.0), (T.net_margin_good, 3.0),
+                              (T.net_margin_min, 1.0)])
+    )
+    assert score == expected
+
+
+def test_una_fila_ebit_vacia_no_tapa_el_resultado_operativo():
+    """Si EBIT viene todo NaN y Operating Income tiene valor, el ROIC se calcula con
+    este último en vez de valer 0,0."""
+    income = pd.DataFrame({"EBIT": [float("nan")], "Operating Income": [2000.0],
+                           "Net Income": [1000.0]}, index=COL).T
+    _, balance = _statements()
+    _, result = _profitability(_info(grossMargins=0.30), income, balance)
+    assert result.roic is not None and result.roic > 0
+    assert "roic_not_applicable" not in result.notes
 
 
 # --------------------------------------------------------------------------- #
