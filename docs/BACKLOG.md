@@ -22,7 +22,7 @@ GOAL-PRIORITY-TEXT y ORDEN-COHERENCIA.)
 1. ~~**COMMITTEE-BANKS**: decisión del usuario (2026-10-18), sigue a COMMITTEE-PROMPTS en el mismo hilo. Medir el impacto en scores antes de cambiar nada.~~
 2. **IDEA-5 IMPUESTOS**: banda 5. Reglas y decisiones en `docs/plans/IDEA5_GANANCIA_CAPITAL_AR.md` (2026-10-10). Sigue: lotes y «Registrar venta» en Portfolio con el impuesto de acciones y ETFs del exterior (§6 de ese plan).
 
-Esperan disparador: U5-1b, COM-*, TR-RACE y VENV-PRUNE. Sin orden: PIT-TOOLS,
+Esperan disparador: U5-1b, COM-*, COUNTRY-RISK-AUTO, TR-RACE y VENV-PRUNE. Sin orden: PIT-TOOLS,
 PORTFOLIO-FX e IDEA-4. Espera Fuente: SCORE-CONTRACCION.
 
 ---
@@ -101,6 +101,7 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **TR-RACE** | 5 | `analysis/track_record.py` (deduplicación por día, upsert de outcomes) y `analysis/macro_rag.py:129` hacen «leer y después insertar», como `DataCache` antes de CACHE-RACE. Sin daño medido el 2026-10-10: 0 duplicados a menos de 5 s en `recommendation_log`; los 74 del 2026-08-28 son anteriores a la deduplicación. **Reabrir** si aparece un duplicado a menos de 5 s o si un escritor del track record pasa a correr en hilos o en dos procesos a la vez. |
 | **VENV-PRUNE** | 5 | `run.sh` instala el lock con `pip install`, que no saca lo que salió del lock (`pandas-ta`/`numba`/`llvmlite`, 2026-10-10). Un sync completo borraría Playwright. Espera disparador: la próxima dependencia que se retire. Ver bloque 4 |
+| **COUNTRY-RISK-AUTO** | 5 | El riesgo país de Argentina lo escribe sólo `scripts/refresh_fuentes.py --country-risk-only --write`, a mano: la serie de ArgentinaDatos publica a diario y el archivo curado queda atrás (589 pb al 2026-10-09 contra 648 pb al 2026-10-16, medido el 2026-10-19; el aviso de `FUENTES.country_risk_warn_days` salió bien, sin bug). Propuesta: un job diario en `scripts/run_scheduler.py` que lo refresque y, si falla la red, deje el archivo intacto y lo registre. Decidir antes cómo se versiona un `--write` diario y actualizar CONTEXT §4/§9 y `config.py` (`country_risk_warn_days`, «se refresca a mano»). Oráculo: el job escribe el último `as_of` de una respuesta simulada y un error de red no toca el archivo |
 | **SCORE-CONTRACCION** | ? | La contracción de la Estimación de cada activo hacia la de su Clase según el score, que el ADR 0001 prevé y EO-4b no hizo (decisión del usuario, 2026-10-06): U6-1 midió que el score ordena el rendimiento (p<0,0001) pero no lo cotiza, así que hoy un peso sería un número sin Fuente. Con la contracción en 0, dos acciones de la misma Clase tienen el mismo μ y el score sólo elige los candidatos. **Reabrir** con una medición point-in-time que dé un peso con su banda (no recalibrar sobre la misma historia que U6-1). Anotado el 2026-10-06, **sin banda** |
 
 Las filas cerradas están en [`ROADMAP.md`](ROADMAP.md): una entrada por fila, con su commit.
