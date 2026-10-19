@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## COMMITTEE-PROMPTS — las voces del comité ven el score de la decisión, la valuación completa y ningún sesgo de stance (2026-10-19)
+
+Lo que el bloque común del comité le mostraba a cinco de las seis voces no coincidía con lo que el motor decidía: veían el score base mientras la matriz usaba el ajustado, no veían el P/FFO de un REIT ni P/B, EV/EBITDA, PEG o FCF yield, recibían un «no medible» por moneda como alerta cruda (y el del FCF dos veces), leían el alcance de la verificación cruzada como alerta, y el Abogado del Diablo y el Coach tenían instrucciones que inclinaban su voto. Ahora ven el score de la decisión con el base al lado, una línea de valuación y una de «Calidad de datos», y ninguna voz inclina su stance por instrucción (EO-5b). `COMMITTEE.prompt_version` 2026-10-18a; banco en vivo 11/11; estabilidad 1/6 casos con cambio (MSFT, voz de Dividendo, por segunda vez), y por eso el aviso de acción frágil pasa a 0,15 del umbral.
+
+---
+
 ## DIV-ABSTAIN — la voz de Dividendo que no se convoca se anota como abstención (2026-10-18)
 
 El comité por ticker anota la abstención de la voz de Dividendo con su causa (cripto, sin dato o rendimiento bajo), y la página Comité la nombra igual que la del Estratega Macro. Antes un panel sin esa voz se leía como completo. Sin cambio de prompts ni de `prompt_version`.
