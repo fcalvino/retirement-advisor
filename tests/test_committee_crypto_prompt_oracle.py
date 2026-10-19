@@ -98,8 +98,10 @@ class TestLaEscalaDelScoreSeDeclara:
         assert "NO la compares con el 0–100 de acciones" in block
 
     def test_una_accion_conserva_su_escala_sobre_100(self):
-        block = committee_context_block(_equity_fund(), _tech())
-        assert "Score del motor (determinista): 70.0/100" in block
+        fund = _equity_fund()
+        block = committee_context_block(fund, _tech())
+        # COMMITTEE-PROMPTS: el número es el ajustado, el que usa la decisión.
+        assert f"Score del motor (determinista): {fund.adjusted_score:.1f}/100" in block
 
 
 class TestElPanelVeLosDatosNativosDelActivo:

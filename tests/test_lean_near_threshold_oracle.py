@@ -53,6 +53,14 @@ def test_upward_crossing_hidden_when_the_engine_already_capped_the_vote():
     assert shared.lean_near_threshold_note(_verdict(0.45, "HOLD"), "REDUCE") is None
 
 
+def test_msft_usual_buy_lean_gets_the_note():
+    """2026-10-08 y 2026-10-19: MSFT oscila entre 0,6136 (BUY) y 0,4773 (HOLD) por un
+    solo voto de Dividendo; el lean BUY, a 0,114 del umbral, tiene que avisar."""
+    assert COMMITTEE.lean_near_threshold_margin == 0.15
+    assert shared.lean_near_threshold_note(_verdict(0.6136, "BUY"), "BUY") is not None
+    assert shared.lean_near_threshold_note(_verdict(0.4773, "HOLD"), "HOLD") is not None
+
+
 def test_far_from_every_threshold_no_note():
     assert shared.lean_near_threshold_note(_verdict(-0.159, "HOLD"), "HOLD") is None
     assert shared.lean_near_threshold_note(_verdict(-0.836, "REDUCE"), "SELL") is None

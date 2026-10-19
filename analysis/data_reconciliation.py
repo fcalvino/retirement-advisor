@@ -238,6 +238,14 @@ def reconcile_sources(symbol: str, sources: List["object"]) -> ReconciliationRep
 
 _LEVELS = ["good", "partial", "poor"]
 
+#: Qué cubre la verificación cruzada. No es una alerta: describe el alcance del
+#: chequeo, y el comité la muestra en su propia línea («Calidad de datos»). Las filas
+#: guardadas del Screener la traen literal, así que el texto no se toca.
+CROSS_CHECK_SCOPE_NOTE = (
+    "Verificación cruzada sobre hechos crudos (revenue, NI, equity, assets), "
+    "no sobre ratios del score (ROE/PE)."
+)
+
 
 def _downgrade(level: str, steps: int = 1) -> str:
     try:
@@ -291,10 +299,6 @@ def data_quality_agent(
     out.setdefault("warnings", [])
     out["warnings"] = list(out["warnings"])  # copy
 
-    _SCOPE_NOTE = (
-        "Verificación cruzada sobre hechos crudos (revenue, NI, equity, assets), "
-        "no sobre ratios del score (ROE/PE)."
-    )
     _STATEMENT_FIELDS = frozenset(
         ("total_revenue", "net_income", "total_equity", "total_assets")
     )
@@ -348,8 +352,8 @@ def data_quality_agent(
         }
         for f in recon.conflicts
     ]
-    if _SCOPE_NOTE not in out["warnings"]:
-        out["warnings"].append(_SCOPE_NOTE)
+    if CROSS_CHECK_SCOPE_NOTE not in out["warnings"]:
+        out["warnings"].append(CROSS_CHECK_SCOPE_NOTE)
 
     note = _uncomparable_warning(recon)
     if note:

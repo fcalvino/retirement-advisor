@@ -3058,13 +3058,19 @@ class CommitteeConfig:
                           margin was met; user decision 2026-10-08: it stays at 0.10
                           (MSFT's usual lean sat 0.114 from the BUY threshold, just
                           outside it), and is revised again if a re-measurement
-                          repeats a change. The bank runs without a Perfil, so the PM
-                          with a Postura is not measured.
+                          repeats a change. It did: 2026-10-19 (prompt 2026-10-18a,
+                          170 calls) MSFT HOLD 3 / BUY 2 with the same two leans,
+                          moved again only by the Dividend voice. User decision
+                          2026-10-19: 0.15, which covers MSFT's 0.114 (one Dividend
+                          vote moves the lean 0.136); no other bank case falls
+                          inside it at 2026-10-18a. The bank runs without a Perfil,
+                          so the PM with a Postura is not measured.
       lean_run_to_run_stdev — the largest lean σ measured, quoted in the warning.
                           0.12 at prompt 2026-09-27e; 0.21 at 2026-09-29c (XYZ,
                           whose prompt did not change — at n=5 per case the σ
                           itself is noisy, so the largest seen is kept); 0.084 at
-                          2026-10-08b, so the value is unchanged.
+                          2026-10-08b and 0.144 at 2026-10-18a (BTC), so the
+                          value is unchanged.
                           Re-measure (scripts/committee_stability.py) after
                           changing the model or the committee prompts.
       downgrade_confidence_on_strong_dissent — when the bear case is strong, drop
@@ -3115,7 +3121,7 @@ class CommitteeConfig:
     buy_lean: float = 0.5
     reduce_lean: float = -0.5
     sell_lean: float = -1.5
-    lean_near_threshold_margin: float = 0.1
+    lean_near_threshold_margin: float = 0.15
     lean_run_to_run_stdev: float = 0.21
     downgrade_confidence_on_strong_dissent: bool = True
     # Sufijo de letra por la convención de versiones del mismo día (2026-09-19a,
@@ -3147,7 +3153,13 @@ class CommitteeConfig:
     # 2026-10-08b: EO-5b — la IA se calibra, no se modera (ADR 0001): los prompts de rol
     # dejan de declarar «filosofía conservadora», el PM recibe la Postura del Perfil
     # (y sin Perfil no dimensiona) y el Perfil entra a la clave de caché del veredicto.
-    prompt_version: str = "2026-10-08b"
+    # 2026-10-18a: COMMITTEE-PROMPTS — el bloque común muestra el score con el que
+    # decide el motor (el ajustado, con el base al lado), la línea de valuación (P/B,
+    # EV/EBITDA, PEG, FCF yield y P/FFO del REIT, con su «no medible» si hay nota de
+    # moneda, que deja de repetirse en las alertas) y el alcance de la verificación
+    # cruzada en «Calidad de datos». El Abogado del Diablo y el Coach dejan de tener
+    # un sesgo de stance: el disenso fuerte baja la confianza en la agregación (EO-5b).
+    prompt_version: str = "2026-10-18a"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a

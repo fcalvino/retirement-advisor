@@ -225,6 +225,6 @@ def test_a_verdict_cached_for_one_perfil_is_not_served_for_another(monkeypatch):
 # --------------------------------------------------------------------------- #
 
 def test_the_prompt_version_moved_and_the_residuals_are_renamed():
-    assert COMMITTEE.prompt_version == "2026-10-08b"
+    assert COMMITTEE.prompt_version >= "2026-10-08b"        # COMMITTEE-PROMPTS la subió a 2026-10-18a
     assert EVAL.alloc_cap_pct == 15.0 and not hasattr(EVAL, "conservative_alloc_cap_pct")
     assert not hasattr(CRYPTO_COMMITTEE, "sizing_profile")
