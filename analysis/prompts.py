@@ -292,6 +292,20 @@ def _payout_block(fund) -> str:
     )
 
 
+def not_applicable_text(fund, field: str, text: str) -> str:
+    """«no aplica» for a key field the engine left empty on purpose, else ``text``.
+
+    A bank has no ROIC, gross margin or current ratio to measure; «N/A» or «n/d»
+    reads as data the feed lost (COMMITTEE-BANKS). Only an empty value is
+    relabelled: a marked company that does report the figure shows it.
+    """
+    dq = getattr(fund, "data_quality", None)
+    na = dq.get("not_applicable") if isinstance(dq, dict) else None
+    if getattr(fund, field, None) is None and field in (na or ()):
+        return "no aplica"
+    return text
+
+
 def _tailwind_context_block(fund) -> str:
     """Inject the computed sector-country structural tailwind (Idea 2) as INPUT data.
 
@@ -583,10 +597,10 @@ PRECIO: {price_text} | MARKET CAP: {market_cap_text}
 {ccy_note}{country_context}
 --- ANÁLISIS FUNDAMENTAL ---
 Profitabilidad ({fund.profitability_score:.0f}/25):
-  ROE={fmt(fund.roe, "%")} | ROIC={fmt(fund.roic, "%")} | Margen Neto={fmt(fund.net_margin, "%")} | Margen Bruto={fmt(fund.gross_margin, "%")}
+  ROE={fmt(fund.roe, "%")} | ROIC={not_applicable_text(fund, "roic", fmt(fund.roic, "%"))} | Margen Neto={fmt(fund.net_margin, "%")} | Margen Bruto={not_applicable_text(fund, "gross_margin", fmt(fund.gross_margin, "%"))}
 
 Salud Financiera ({fund.health_score:.0f}/20):
-  D/E={fmt(fund.debt_equity, "x")} | Current Ratio={fmt(fund.current_ratio)} | Cobertura de Intereses={fmt(fund.interest_coverage, "x")}
+  D/E={not_applicable_text(fund, "debt_equity", fmt(fund.debt_equity, "x"))} | Current Ratio={not_applicable_text(fund, "current_ratio", fmt(fund.current_ratio))} | Cobertura de Intereses={fmt(fund.interest_coverage, "x")}
 
 Valuación ({fund.valuation_score:.0f}/25):
   P/E={fmt(fund.pe_ratio, "x")} | PEG={fmt(fund.peg_ratio)} | EV/EBITDA={ev_text} | P/B={pb_text}{p_ffo_context}

@@ -36,6 +36,7 @@ from analysis.prompts import (
     MOAT_NOT_MEASURED_LABEL,
     _payout_block,
     _tailwind_context_block,
+    not_applicable_text,
     plan_currency_note,
 )
 from analysis.strategy import effective_decision_score
@@ -200,9 +201,10 @@ def committee_context_block(fund, tech) -> str:
         lines += _crypto_metric_lines(fund)
     else:
         lines += [
-            f"ROE: {_num(getattr(fund, 'roe', None), '%')} | ROIC: {_num(getattr(fund, 'roic', None), '%')} | "
+            f"ROE: {_num(getattr(fund, 'roe', None), '%')} | "
+            f"ROIC: {not_applicable_text(fund, 'roic', _num(getattr(fund, 'roic', None), '%'))} | "
             f"Margen neto: {_num(getattr(fund, 'net_margin', None), '%')}",
-            f"D/E: {_num(getattr(fund, 'debt_equity', None))} | P/E: {_num(getattr(fund, 'pe_ratio', None))} | "
+            f"D/E: {not_applicable_text(fund, 'debt_equity', _num(getattr(fund, 'debt_equity', None)))} | P/E: {_num(getattr(fund, 'pe_ratio', None))} | "
             f"Margen de seguridad: {_num(getattr(fund, 'margin_of_safety_pct', None), '%')}",
             _valuation_line(fund),
             f"CAGR ingresos {getattr(fund, 'revenue_cagr_years', 0) or '?'}a: "

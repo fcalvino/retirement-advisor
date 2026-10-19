@@ -490,6 +490,21 @@ def compute_ffo(income_stmt: pd.DataFrame, cashflow: pd.DataFrame) -> Optional[f
     return ffo if ffo > 0 else None
 
 
+#: Rows that carry operating profit, in preference order.
+_EBIT_ROWS = ("EBIT", "Operating Income")
+
+
+def _has_reported_row(df: pd.DataFrame, names) -> bool:
+    """True when some row in ``names`` has at least one reported value.
+
+    ``FundamentalAnalyzer._row`` answers 0.0 for an absent row, which is right for
+    a debt line nobody reports and wrong for EBIT: a bank's ROIC came out 0.0 %.
+    """
+    if df is None or getattr(df, "empty", True):
+        return False
+    return any(name in df.index and not df.loc[name].dropna().empty for name in names)
+
+
 def _row_value_at(df: pd.DataFrame, names, period: Optional[str]) -> Optional[float]:
     """The value a row reported in one specific period, or ``None``."""
     if df is None or df.empty or not period:
@@ -687,9 +702,12 @@ def inapplicable_quality_fields(balance_sheet) -> tuple:
     The marker is the absence of ``Current Assets``, not an industry string —
     the precedent ``_derive_debt_equity`` set and documented, because a label can
     drift with how a feed spells things and a missing balance-sheet line cannot.
-    Measured on the cached universe it selects exactly the nine banks and nobody
-    else; insurers have no current assets either but do report ``debtToEquity``,
-    so they never reach this path.
+    U5-5 measured it selecting exactly the nine banks of its universe; on the
+    197-ticker universe of 2026-10-19 it marks 26 — banks, brokers (GS, MS), AXP and
+    insurers (BRK-B, ZURN.SW, ALV.DE, MUV2.DE, 1299.HK). Insurers report
+    ``debtToEquity``, so for them the working-capital pair rarely matters, and ROIC
+    and gross margin are only dropped where their own cause is present
+    (``ROIC_NOT_APPLICABLE``).
 
     An **absent** balance sheet marks nothing: not knowing is not the same as
     knowing the ratio does not apply.
@@ -699,6 +717,28 @@ def inapplicable_quality_fields(balance_sheet) -> tuple:
     if "Current Assets" in balance_sheet.index:
         return ()
     return _WORKING_CAPITAL_FIELDS
+
+
+#: Why a marked company (no ``Current Assets``) has no ROIC or gross margin, in the
+#: words the surfaces show (COMMITTEE-BANKS). Only set when the cause is there: a
+#: marked company whose statements carry EBIT (BRK-B, ZURN.SW) keeps its ROIC, and
+#: one whose feed reports a real gross margin (GS 81 %) keeps it.
+ROIC_NOT_APPLICABLE = (
+    "ROIC no aplica: los estados no traen EBIT ni resultado operativo, como en un "
+    "banco, donde la deuda es materia prima y no capital invertido."
+)
+GROSS_MARGIN_NOT_APPLICABLE = (
+    "Margen bruto no aplica: el feed lo informa en 0 para una empresa sin costo de "
+    "ventas, como un banco."
+)
+#: ``notes`` key that marks a field as not applicable for this company.
+_NOT_APPLICABLE_NOTE = {"roic": "roic_not_applicable", "gross_margin": "gross_margin_not_applicable"}
+
+
+def suppressed_quality_fields(result) -> tuple:
+    """Key fields the engine left empty because they do not apply (COMMITTEE-BANKS)."""
+    notes = getattr(result, "notes", None) or {}
+    return tuple(f for f, key in _NOT_APPLICABLE_NOTE.items() if notes.get(key))
 
 
 def compute_data_quality(
@@ -772,6 +812,9 @@ def compute_data_quality(
         "missing_fields": missing,
         "n_missing": n_missing,
         "n_checked": len(checked),
+        # Which key fields were left out on purpose, so a surface can say «no
+        # aplica» instead of «n/d» (COMMITTEE-BANKS).
+        "not_applicable": [f for f in _QUALITY_KEY_FIELDS if f in set(not_applicable)],
         "freshness_hours": round(freshness_hours, 1) if freshness_hours is not None else None,
         "stale": stale,
         "warnings": warnings,
@@ -1115,7 +1158,8 @@ class FundamentalAnalyzer:
             result,
             freshness_hours=get_info_age_hours(symbol),
             has_financials=bool(financials),
-            not_applicable=inapplicable_quality_fields(balance_sheet),
+            not_applicable=inapplicable_quality_fields(balance_sheet)
+            + suppressed_quality_fields(result),
         )
         # Multi-source badge (P0.1): fold SEC/yfinance reconciliation into the
         # same data_quality dict. Best-effort; never rewrites scored metrics.
@@ -1171,7 +1215,14 @@ class FundamentalAnalyzer:
         # this one's name. Measured over the cached universe, the fallback fired
         # on 0 of 164 tickers — it was a latent trap, not a live crutch.
         roic = self._compute_roic(income_stmt, balance_sheet, country=info.get("country"))
-        if roic is None:
+        # COMMITTEE-BANKS: a bank has no EBIT row, and `_row` turned that into an
+        # EBIT of 0 → «ROIC 0.0 %» plus a «Low ROIC» alert, counted as a present
+        # metric. Now the absent row is None; for a marked company it does not apply.
+        marked = bool(inapplicable_quality_fields(balance_sheet))
+        if roic is None and marked and not _has_reported_row(income_stmt, _EBIT_ROWS):
+            result.roic = None
+            result.notes[_NOT_APPLICABLE_NOTE["roic"]] = ROIC_NOT_APPLICABLE
+        elif roic is None:
             result.roic = None
             missing.append("ROIC")
         else:
@@ -1207,7 +1258,12 @@ class FundamentalAnalyzer:
 
         # Gross Margin (5 pts). Same omitted-vs-zero split as net margin.
         gm_reported = reported_metric(info, "grossMargins")
-        if gm_reported is None:
+        if gm_reported == 0 and marked:
+            # The feed's 0 for a company with no cost of sales is not a thin
+            # margin (COMMITTEE-BANKS). Elsewhere a reported 0 stays a fact.
+            result.gross_margin = None
+            result.notes[_NOT_APPLICABLE_NOTE["gross_margin"]] = GROSS_MARGIN_NOT_APPLICABLE
+        elif gm_reported is None:
             result.gross_margin = None
             missing.append("Gross margin")
         else:
@@ -1245,7 +1301,9 @@ class FundamentalAnalyzer:
         try:
             if income_stmt.empty or balance_sheet.empty:
                 return None
-            ebit = self._row(income_stmt, ["EBIT", "Operating Income"])
+            if not _has_reported_row(income_stmt, _EBIT_ROWS):
+                return None
+            ebit = self._row(income_stmt, list(_EBIT_ROWS))
             equity = self._row(balance_sheet, ["Stockholders Equity", "Total Stockholder Equity", "Common Stock Equity"])
             ltd = self._row(balance_sheet, ["Long Term Debt", "Long-Term Debt"])
             return roic_pct(ebit, equity, ltd, corporate_tax_rate_pct(country))

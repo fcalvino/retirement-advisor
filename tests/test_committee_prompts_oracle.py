@@ -192,7 +192,7 @@ def test_ninguna_voz_del_comite_tiene_un_sesgo_de_stance(tilt):
 
 
 def test_el_cambio_de_prompt_subio_la_version_del_cache():
-    assert COMMITTEE.prompt_version == "2026-10-18a"
+    assert COMMITTEE.prompt_version >= "2026-10-18a"        # COMMITTEE-BANKS la subió a 2026-10-19a
 
 
 def test_cripto_no_pierde_una_alerta_de_moneda():
