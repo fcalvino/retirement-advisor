@@ -385,7 +385,7 @@ ALERT_FREQUENCY_MODE=daily     # daily | weekly | critical_only
 ALERT_AI_EXPLANATIONS=true     # habilitar explicaciones con IA
 REPORT_DAY=1                   # día del mes para el reporte
 EMAIL_FROM=...                 # habilita alertas por email
-TELEGRAM_TOKEN=...             # habilita alertas por Telegram
+TELEGRAM_BOT_TOKEN=...         # habilita alertas por Telegram
 ```
 
 Para correr en background (macOS/Linux):

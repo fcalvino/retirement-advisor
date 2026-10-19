@@ -19,7 +19,13 @@ from typing import List, Tuple
 
 from loguru import logger
 
-from config import AI_OAUTH_PROVIDERS, AI_PROVIDER_KEY_ENV, resolve_api_key
+from config import (
+    AI_OAUTH_PROVIDERS,
+    AI_PROVIDER_KEY_ENV,
+    TELEGRAM_TOKEN_ENV,
+    resolve_api_key,
+    resolve_telegram_token,
+)
 
 Issue = Tuple[str, str]   # (level, message)
 
@@ -126,14 +132,15 @@ def validate_config() -> List[Issue]:
     # ------------------------------------------------------------------ #
     #  Telegram alerts                                                     #
     # ------------------------------------------------------------------ #
-    tg_token   = os.getenv("TELEGRAM_TOKEN", "")
+    # Same resolution as ``ALERTS.telegram_token`` (TELEGRAM-TOKEN).
+    tg_token   = resolve_telegram_token()
     tg_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
 
     if tg_token or tg_chat_id:
         if not tg_token:
-            issues.append(("warning", "TELEGRAM_CHAT_ID configurado pero falta TELEGRAM_TOKEN."))
+            issues.append(("warning", f"TELEGRAM_CHAT_ID configurado pero falta {TELEGRAM_TOKEN_ENV}."))
         elif not tg_chat_id:
-            issues.append(("warning", "TELEGRAM_TOKEN configurado pero falta TELEGRAM_CHAT_ID."))
+            issues.append(("warning", f"{TELEGRAM_TOKEN_ENV} configurado pero falta TELEGRAM_CHAT_ID."))
         else:
             issues.append(("info", "Telegram configurado."))
 
