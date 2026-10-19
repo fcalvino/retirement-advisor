@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## COMMITTEE-BANKS — en un banco, ROIC y margen bruto no aplican en vez de valer 0,0 (2026-10-19)
+
+En un banco el comité leía «ROIC 0.0 %» y «Thin gross margin: 0.0%» como hechos: el estado de resultados de un banco no trae EBIT y el feed informa su margen bruto en 0, y como 0,0 no es un dato ausente, la calidad de datos los contaba presentes. Ahora un ROIC sin EBIT queda sin valor, y en un banco (sin `Current Assets`) ese ROIC y un margen bruto informado en 0 no aplican: sin alerta, fuera de los chequeados y con «no aplica» en el comité, el Fundamental y Stock Analysis. Ningún score, señal ni nivel de calidad cambió en 197 tickers.
+
+---
+
 ## COMMITTEE-PROMPTS — las voces del comité ven el score de la decisión, la valuación completa y ningún sesgo de stance (2026-10-19)
 
 Lo que el bloque común del comité le mostraba a cinco de las seis voces no coincidía con lo que el motor decidía: veían el score base mientras la matriz usaba el ajustado, no veían el P/FFO de un REIT ni P/B, EV/EBITDA, PEG o FCF yield, recibían un «no medible» por moneda como alerta cruda (y el del FCF dos veces), leían el alcance de la verificación cruzada como alerta, y el Abogado del Diablo y el Coach tenían instrucciones que inclinaban su voto. Ahora ven el score de la decisión con el base al lado, una línea de valuación y una de «Calidad de datos», y ninguna voz inclina su stance por instrucción (EO-5b). `COMMITTEE.prompt_version` 2026-10-18a; banco en vivo 11/11; estabilidad 1/6 casos con cambio (MSFT, voz de Dividendo, por segunda vez), y por eso el aviso de acción frágil pasa a 0,15 del umbral.

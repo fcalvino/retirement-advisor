@@ -3159,7 +3159,11 @@ class CommitteeConfig:
     # moneda, que deja de repetirse en las alertas) y el alcance de la verificación
     # cruzada en «Calidad de datos». El Abogado del Diablo y el Coach dejan de tener
     # un sesgo de stance: el disenso fuerte baja la confianza en la agregación (EO-5b).
-    prompt_version: str = "2026-10-18a"
+    # 2026-10-19a: COMMITTEE-BANKS — en un banco (sin Current Assets ni EBIT) el
+    # bloque común y el Fundamental dicen «ROIC: no aplica» / «Margen Bruto: no
+    # aplica» en vez de 0.0 %, y las alertas «Low ROIC: 0.0%» y «Thin gross margin:
+    # 0.0%» desaparecen. Solo cambia el prompt de esas empresas.
+    prompt_version: str = "2026-10-19a"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a

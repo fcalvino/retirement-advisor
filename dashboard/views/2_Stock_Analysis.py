@@ -8,6 +8,7 @@ from loguru import logger
 
 from analysis.currency_metric_text import currency_metric_note
 from analysis.fundamental import eps_growth_label
+from analysis.prompts import not_applicable_text
 from config import AI_FALLBACK, CRYPTO_MOAT, MOAT
 from dashboard.shared import (
     _MOAT_DESCRIPTION,
@@ -712,6 +713,8 @@ if symbol:
                 ("Payout Ratio",     fund.payout_ratio,     "%"),
                 *([("Payout s/ FFO", fund.ffo_payout_pct,   "%")] if fund.ffo_payout_pct else []),
             ]
+            _na_field = {"ROIC": "roic", "Gross Margin": "gross_margin",
+                         "Debt/Equity": "debt_equity", "Current Ratio": "current_ratio"}
             for i, (label, value, unit) in enumerate(metrics):
                 with cols[i % 3]:
                     currency_key = {
@@ -723,6 +726,13 @@ if symbol:
                         st.metric(label, "no medible", help=note)
                     elif value is not None:
                         st.metric(label, f"{value:.2f}{unit}")
+                    elif _na_field.get(label) and not_applicable_text(
+                        fund, _na_field[label], ""
+                    ) == "no aplica":
+                        # COMMITTEE-BANKS: a bank has no ROIC or gross margin to lose.
+                        st.metric(label, "no aplica", help=fund.notes.get(
+                            f"{_na_field[label]}_not_applicable"
+                        ) or None)
                     else:
                         st.metric(label, "N/A")
 
