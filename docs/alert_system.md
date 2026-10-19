@@ -117,7 +117,7 @@ Para Gmail: usar App Password (no la contraseña de cuenta). Activar 2FA y gener
 
 ### Telegram
 
-`Notifier._send_telegram()` llama a `https://api.telegram.org/bot{TOKEN}/sendMessage`. Requiere `TELEGRAM_TOKEN` y `TELEGRAM_CHAT_ID`.
+`Notifier._send_telegram()` llama a `https://api.telegram.org/bot{TOKEN}/sendMessage`. Requiere `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` (`TELEGRAM_TOKEN` se acepta como alias; `config.resolve_telegram_token`).
 
 Para obtener el chat_id: enviar cualquier mensaje al bot y consultar `https://api.telegram.org/bot{TOKEN}/getUpdates`.
 

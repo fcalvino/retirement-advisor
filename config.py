@@ -540,6 +540,19 @@ class StrategyConfig:
     min_positions: int = 10           # minimum diversification
 
 
+TELEGRAM_TOKEN_ENV = "TELEGRAM_BOT_TOKEN"   # canonical; ``TELEGRAM_TOKEN`` is the legacy alias
+
+
+def resolve_telegram_token() -> str:
+    """Telegram bot token: ``TELEGRAM_BOT_TOKEN``, else the ``TELEGRAM_TOKEN`` alias.
+
+    The notifier (through ``ALERTS``) and ``config_validator`` both resolve it here:
+    the validator used to read only the alias and warned on every start that a
+    ``.env`` with ``TELEGRAM_BOT_TOKEN`` lacked the token (TELEGRAM-TOKEN).
+    """
+    return os.getenv(TELEGRAM_TOKEN_ENV) or os.getenv("TELEGRAM_TOKEN", "")
+
+
 @dataclass
 class AlertConfig:
     email_enabled: bool = bool(os.getenv("EMAIL_FROM"))
@@ -561,8 +574,8 @@ class AlertConfig:
             self.email_enabled and self.email_from and self.email_to and self.smtp_password
         )
 
-    telegram_enabled: bool = bool(os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN"))
-    telegram_token: str = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN", "")
+    telegram_enabled: bool = bool(resolve_telegram_token())
+    telegram_token: str = resolve_telegram_token()
     telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "")
 
     # Alert engine thresholds (adjustable without touching code)

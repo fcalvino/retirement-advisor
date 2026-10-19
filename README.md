@@ -239,7 +239,7 @@ SMTP_PORT=587
 SMTP_PASSWORD=tu_app_password
 
 # Alertas por Telegram (opcional)
-TELEGRAM_TOKEN=tu_bot_token
+TELEGRAM_BOT_TOKEN=tu_bot_token   # TELEGRAM_TOKEN se acepta como alias
 TELEGRAM_CHAT_ID=tu_chat_id
 
 # Reportes PDF
