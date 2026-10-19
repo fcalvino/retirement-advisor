@@ -21,6 +21,7 @@ Auditoría del 2026-10-18 sobre prompts renderizados de TSM, BSBR, MSFT, O, YPF,
 from __future__ import annotations
 
 import copy
+from types import SimpleNamespace
 
 import pytest
 
@@ -34,6 +35,7 @@ from analysis.committee_prompts import (
 )
 from analysis.data_reconciliation import CROSS_CHECK_SCOPE_NOTE
 from analysis.eval_cases import golden_cases
+from config import COMMITTEE
 
 SINGLE_SOURCE = "Solo una fuente de datos disponible — sin verificación cruzada."
 # Textos literales del motor para TSM (2026-10-18): la alerta es la misma cadena que la nota.
@@ -102,11 +104,14 @@ def test_con_la_decision_por_score_base_se_ve_el_base(monkeypatch):
 def test_la_cola_de_viento_incluida_en_el_ajustado_viene_con_el_ajustado():
     """El bloque de cola de viento dice «ya incluido en el score ajustado»: el score de
     ese mismo prompt tiene que ser el ajustado, no el base que no lo incluye."""
-    fund, tech = _fund(total_score=68.0, adjusted_score=96.7)
+    tailwind = SimpleNamespace(tailwind_score=4.0, bonus=3.2, durability_years=6,
+                               last_reviewed="2026-06", explanation="capex en IA")
+    fund, tech = _fund(total_score=68.0, adjusted_score=96.7,
+                       tailwind_detail=tailwind, tailwind_classification="Moderate")
     for name, build in VOICES.items():
         prompt = build(fund, tech)
-        if "incluido en el score ajustado" in prompt:
-            assert "96.7/100" in prompt, name
+        assert "incluido en el score ajustado" in prompt, name
+        assert "Score del motor (determinista): 96.7/100" in prompt, name
 
 
 # --------------------------------------------------------------------------- #
@@ -184,6 +189,19 @@ def test_ninguna_voz_del_comite_tiene_un_sesgo_de_stance(tilt):
     fund, tech = _fund()
     for name, build in VOICES.items():
         assert tilt not in build(fund, tech), name
+
+
+def test_el_cambio_de_prompt_subio_la_version_del_cache():
+    assert COMMITTEE.prompt_version == "2026-10-18a"
+
+
+def test_cripto_no_pierde_una_alerta_de_moneda():
+    """Sin línea de valuación (cripto), una nota de moneda sigue siendo alerta."""
+    fund, tech = _fund(is_crypto=True, notes={"fcf_yield_currency": FCF_NOTE},
+                       warnings=[FCF_NOTE])
+    assert _line(committee_context_block(fund, tech), "Alertas del motor:") == (
+        "Alertas del motor: " + FCF_NOTE
+    )
 
 
 def test_el_abogado_del_diablo_conserva_su_mandato():

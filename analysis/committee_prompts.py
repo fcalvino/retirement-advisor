@@ -219,7 +219,7 @@ def committee_context_block(fund, tech) -> str:
     # Una nota de moneda ya dicha en la línea de valuación no se repite como alerta
     # (la del FCF de TSM llegaba dos veces), y el alcance de la verificación cruzada
     # no es una alerta: va en su propia línea.
-    shown = {currency_metric_note(fund, m) for m in _VALUATION_METRICS} - {""}
+    shown = set() if is_crypto else {currency_metric_note(fund, m) for m in _VALUATION_METRICS} - {""}
     warnings = [str(w) for w in (getattr(fund, "warnings", None) or [])]
     if CROSS_CHECK_SCOPE_NOTE in warnings:
         lines.append("Calidad de datos: " + CROSS_CHECK_SCOPE_NOTE)
