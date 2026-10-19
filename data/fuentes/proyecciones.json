@@ -279,11 +279,11 @@
   "country_risk": [
     {
       "country": "Argentina",
-      "value_bp": 589,
+      "value_bp": 648,
       "unit": "pb",
-      "as_of": "2026-10-09",
+      "as_of": "2026-10-16",
       "source": "https://api.argentinadatos.com/v1/finanzas/indices/riesgo-pais",
-      "edition": "ArgentinaDatos, observación del 2026-10-09",
+      "edition": "ArgentinaDatos, observación del 2026-10-16",
       "note": "EMBI de J.P. Morgan para Argentina (spread de la deuda soberana en USD sobre el Tesoro de EE.UU.) que publica Ámbito (https://www.ambito.com/contenidos/riesgo-pais.html); ArgentinaDatos lo extrae de Ámbito a diario (API comunitaria, no oficial; Ámbito bloquea el acceso directo). No es un rendimiento esperado: no entra al central de emergentes."
     }
   ],

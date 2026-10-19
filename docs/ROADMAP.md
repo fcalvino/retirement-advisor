@@ -10,6 +10,13 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## COUNTRY-RISK-REFRESH — refresco del riesgo país de Argentina a 648 pb (2026-10-19)
+
+- **Datos** (`data/fuentes/proyecciones.json`): `country_risk` de Argentina 648 pb al 2026-10-16, por `scripts/refresh_fuentes.py --country-risk-only --write`.
+- **Backlog:** fila COUNTRY-RISK-AUTO (refresco diario en `scripts/run_scheduler.py`), sin orden.
+
+---
+
 ## COMMITTEE-BANKS — en un banco, ROIC y margen bruto no aplican en vez de valer 0,0 (2026-10-19)
 
 En un banco el comité leía «ROIC 0.0 %» y «Thin gross margin: 0.0%» como hechos: el estado de resultados de un banco no trae EBIT y el feed informa su margen bruto en 0, y como 0,0 no es un dato ausente, la calidad de datos los contaba presentes. Ahora un ROIC sin EBIT queda sin valor, y en un banco (sin `Current Assets`) ese ROIC y un margen bruto informado en 0 no aplican: sin alerta, fuera de los chequeados y con «no aplica» en el comité, el Fundamental y Stock Analysis. Ningún score, señal ni nivel de calidad cambió en 197 tickers.
