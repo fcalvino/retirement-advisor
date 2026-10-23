@@ -4,7 +4,8 @@ Mi Plan de Retiro — orquestación + persistencia de escenarios (Fase B).
 Consolida en un solo lugar el trabajo que hoy vive fragmentado en
 Optimizer (cartera + núcleo + narrativa IA), Simulaciones (Monte Carlo +
 Mis Metas) y el perfil personal. Permite:
-  - Ver el "plan actual" de la sesión (cartera + núcleo + métricas + metas + MC + narrativa).
+  - Ver el "plan actual" de la sesión (cartera + núcleo + métricas + metas + MC + narrativa)
+    o, sin optimización en la sesión, el plan activo guardado (PLAN-ACTIVO-ARRIBA).
   - Guardar el escenario como un plan nombrado (persistente).
   - Cargar / comparar / borrar planes guardados.
   - Generar el PDF del plan y una "lista de compra" accionable del núcleo.
@@ -188,8 +189,28 @@ def _core_table(core_holdings: list, label: str) -> None:
 # ------------------------------------------------------------------ #
 
 st.divider()
-st.subheader("📍 Plan actual (esta sesión)")
 _active_snap_now = get_active_plan(prefs)
+_has_session_run = bool(opt_result and getattr(opt_result, "tickers", []))
+# PLAN-ACTIVO-ARRIBA: the session run lives in the browser session, lost on every
+# reload, new tab or port. Without one, the saved active plan is the plan.
+_active_on_top = _active_snap_now if not _has_session_run else None
+# Filled once _render_snapshot is defined, further down the script.
+_active_top_slot = st.container()
+
+if _active_on_top is not None:
+    with _active_top_slot:
+        st.subheader("🎯 Tu plan activo")
+        _at1, _at2 = st.columns([3, 1])
+        _at1.caption(
+            (f"🎁 **{_active_on_top.name}** — un plan de ejemplo, no tuyo. Para armar el tuyo, "
+             if is_sample_plan(_active_on_top) else
+             f"**{_active_on_top.name}** — tu plan guardado. Para armar uno nuevo, ")
+            + "optimizá en 📈 Optimizer y guardalo acá."
+        )
+        if _at2.button("📈 Ir al Optimizer", width="stretch", key="plan_active_opt"):
+            st.switch_page(str(Path(__file__).parent / "5_Optimizer.py"))
+else:
+    st.subheader("📍 Plan actual (esta sesión)")
 if session_plan_is_unsaved_target(opt_result, _active_snap_now):
     # PLAN-SESION-ACTIVO: Portfolio, alertas y comité miden contra el activo.
     st.caption(
@@ -199,7 +220,7 @@ if session_plan_is_unsaved_target(opt_result, _active_snap_now):
         + " Guardalo abajo con «Usar como mi plan activo» para que sea tu objetivo."
     )
 
-if not (opt_result and getattr(opt_result, "tickers", [])):
+if not _has_session_run and _active_on_top is None:
     # Guided empty state (Fase E): show the journey instead of a dead end.
     from dashboard.shared import plan_journey_status
 
@@ -263,7 +284,7 @@ if not (opt_result and getattr(opt_result, "tickers", [])):
                     st.rerun()
                 except Exception as exc:
                     st.error(f"No se pudo cargar el ejemplo: {exc}")
-else:
+elif _has_session_run:
     _live_metrics = optimizer_metrics(opt_result)
     st.caption(
         f"Universo **{_active_name}** · perfil **{getattr(opt_result, 'profile_name', '—')}** · "
@@ -934,7 +955,9 @@ def _render_plan_ai(snap: PlanSnapshot) -> None:
                         # Don't persist a fallback sentence as if it were the
                         # plan's narrative — say why, and leave the plan alone.
                         st.warning(AI_FALLBACK.message(_reason, getattr(_ai_cfg, "provider", "")))
-                        st.stop()
+                        # return, not st.stop(): the active plan renders on top
+                        # (PLAN-ACTIVO-ARRIBA) and a stop would blank the plan list.
+                        return
                     snap.narrative = _result.get("narrative", "") or snap.narrative
                     snap.macro_risks = _result.get("macro_risks", []) or []
                     # NOTE: deliberately does *not* stamp ``last_refreshed_at``.
@@ -985,6 +1008,11 @@ def _render_load_plan(snap: PlanSnapshot) -> None:
         ), plan_name=snap.name, notes=_notes)
 
         st.toast(f"📥 Plan «{snap.name}» cargado — andá a 📈 Optimizer o 🎲 Simulaciones y ejecutá.", icon="✅")
+
+
+if _active_on_top is not None:
+    with _active_top_slot:
+        _render_snapshot(_active_on_top)
 
 
 # ------------------------------------------------------------------ #
@@ -1206,8 +1234,12 @@ else:
                         activate_plan(p.id, prefs)
                         st.toast(f"🎯 Plan activo: {p.name}", icon="🎯")
                         st.rerun()
+            # Drawn on top already: a second render would repeat its widget keys.
+            _shown_on_top = _active_on_top is not None and p.id == _active_on_top.id
             with _c3:
-                if st.button("👁️ Ver", key=f"view_{p.id}", width="stretch"):
+                if _shown_on_top:
+                    st.caption("⬆️ Arriba")
+                elif st.button("👁️ Ver", key=f"view_{p.id}", width="stretch"):
                     st.session_state["plan_view_id"] = (
                         None if st.session_state.get("plan_view_id") == p.id else p.id
                     )
@@ -1243,6 +1275,6 @@ else:
                     "Restaurar plan» arriba — sobrevive reinstalaciones y cambios de máquina."
                 )
 
-            if st.session_state.get("plan_view_id") == p.id:
+            if st.session_state.get("plan_view_id") == p.id and not _shown_on_top:
                 st.divider()
                 _render_snapshot(p)

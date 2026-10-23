@@ -607,18 +607,24 @@ def plan_journey_status(prefs) -> list[dict]:
     Returns the 4 canonical steps with a ``done`` flag each, so Home and
     Mi Plan can render progress + the next-step CTA consistently:
       1. Personal profile (onboarding wizard)
-      2. Optimized portfolio in session (Optimizer)
+      2. Optimized portfolio in session, or a saved plan (Optimizer)
       3. At least one saved plan (Mi Plan → Guardar)
       4. An active plan (Mi Plan → Activar)
     """
+    from data.plan_context import sample_plan_ids
     from data.plan_store import plan_store
 
     has_profile = bool(getattr(prefs, "is_onboarded", False))
+    saved = plan_store.list()
+    has_saved = bool(saved)
+    # PLAN-ACTIVO-ARRIBA: a plan of yours was saved from an optimization, so a
+    # new session (no ``optimizer_result``) must not send you back to optimize.
+    # A bundled example was never optimized by you, so it does not count.
+    _samples = sample_plan_ids()
     has_opt = bool(
         st.session_state.get("optimizer_result")
         or st.session_state.get("optimizer_prev_result")
-    )
-    has_saved = bool(plan_store.list())
+    ) or any(getattr(p, "id", None) not in _samples for p in saved)
     has_active = bool((getattr(prefs, "active_plan_id", "") or "").strip())
 
     return [
