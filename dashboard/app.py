@@ -496,19 +496,17 @@ if _wl:
         _badge += f" · 🔔 {_alerts_triggered} alerta{'s' if _alerts_triggered != 1 else ''}"
     st.sidebar.caption(_badge)
 
-# Alert badge (Phase 6) — unread alert count, clickeable via link.
+# Alert badge (Phase 6) — unread alert count, a button that opens the alerts page.
+# A markdown link to ``#alertas`` was here too: no page has that anchor, so the
+# click only rewrote the URL and left the user where they were.
 # Count comes from dashboard.shared.unread_alert_count (@st.cache_data): one
 # SQLite read per rerun, shared with the home hub (P2), no direct alerts.store
 # import here (O6).
 try:
     _unread = unread_alert_count()
     if _unread > 0:
-        st.sidebar.markdown(
-            f"[🔴 **{_unread} alerta{'s' if _unread != 1 else ''} sin leer** →](#alertas)",
-            unsafe_allow_html=False,
-        )
         if st.sidebar.button(
-            f"🔔 Ver {_unread} alerta{'s' if _unread != 1 else ''} sin leer",
+            f"🔴 Ver {_unread} alerta{'s' if _unread != 1 else ''} sin leer",
             key="_sidebar_alert_badge",
             type="primary",
             width="stretch",

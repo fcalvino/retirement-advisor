@@ -10,6 +10,14 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## ALERT-BADGE-LINK — el aviso de alertas sin leer del sidebar lleva a las alertas (2026-10-23)
+
+El link «🔴 N alertas sin leer →» del sidebar apuntaba a `#alertas`, un ancla que ninguna página tiene: el click sólo cambiaba la URL. Se quitó y queda un solo control, el botón «🔴 Ver N alertas sin leer», que lleva a `20_Seguimiento.py` (pestaña Alertas) desde cualquier página.
+
+- **Aparte, sin tocar:** `unread_alert_count` (`ttl=300`) no se invalida al marcar las alertas como leídas, así que el aviso queda desactualizado hasta 5 min.
+
+---
+
 ## PLAN-ACTIVO-ARRIBA — mi Plan muestra el plan activo guardado en una sesión nueva (2026-10-23)
 
 Mi Plan ya no pide optimizar en cada sesión nueva: sin corrida del Optimizer en la sesión, muestra arriba el plan activo guardado (métricas, núcleo, Monte Carlo, salud, trades) y el camino guiado da por hecho «Optimizá tu cartera» cuando hay un plan propio guardado. La causa era que el bloque de arriba leía sólo `st.session_state["optimizer_result"]`, que se pierde con cada recarga, pestaña o puerto.
