@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## PLAN-ACTIVO-ARRIBA — mi Plan muestra el plan activo guardado en una sesión nueva (2026-10-23)
+
+Mi Plan ya no pide optimizar en cada sesión nueva: sin corrida del Optimizer en la sesión, muestra arriba el plan activo guardado (métricas, núcleo, Monte Carlo, salud, trades) y el camino guiado da por hecho «Optimizá tu cartera» cuando hay un plan propio guardado. La causa era que el bloque de arriba leía sólo `st.session_state["optimizer_result"]`, que se pierde con cada recarga, pestaña o puerto.
+
+---
+
 ## COUNTRY-RISK-REFRESH — refresco del riesgo país de Argentina a 648 pb (2026-10-19)
 
 - **Datos** (`data/fuentes/proyecciones.json`): `country_risk` de Argentina 648 pb al 2026-10-16, por `scripts/refresh_fuentes.py --country-risk-only --write`.

@@ -227,7 +227,8 @@ def test_refresh_stamps_the_clock_that_home_reads(stores):
     stores.plans.upsert(_snap())
     assert _days_since_iso(stores.plans.get("retiro-2045").last_refreshed_at) is None
 
-    at = _open_snapshot(_app(_FakePrefs(active_plan_id="retiro-2045")), "retiro-2045")
+    # The active plan is drawn on top of Mi Plan, no «Ver» (PLAN-ACTIVO-ARRIBA).
+    at = _app(_FakePrefs(active_plan_id="retiro-2045"))
     at.button(key="refresh_retiro-2045").click().run()
 
     assert _days_since_iso(stores.plans.get("retiro-2045").last_refreshed_at) == 0
@@ -259,8 +260,7 @@ def test_refreshed_plan_unlocks_the_rebalance_action(stores):
     assert "Revisá alineación plan vs cartera" in _all_text(at)
     assert "desvío material" not in _all_text(at)
 
-    _open_snapshot(at, "retiro-2045")
-    at.button(key="refresh_retiro-2045").click().run()
+    at.button(key="refresh_retiro-2045").click().run()   # active plan: on top
 
     assert "Rebalanceá hacia el plan (desvío material)" in _all_text(at)
 

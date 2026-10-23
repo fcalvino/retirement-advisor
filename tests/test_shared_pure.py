@@ -154,6 +154,20 @@ class TestPlanJourneyStatus:
         steps = shared.plan_journey_status(_prefs())
         assert steps[1]["done"] is True
 
+    def test_a_saved_plan_means_the_portfolio_was_already_optimized(self, fake_session, stub_plan_store):
+        # PLAN-ACTIVO-ARRIBA: a plan is saved from an optimization, so a new
+        # session with no ``optimizer_result`` must not send you back to optimize.
+        stub_plan_store.append(object())
+        steps = shared.plan_journey_status(_prefs(is_onboarded=True, active_plan_id="plan-1"))
+        assert steps[1]["done"] is True
+
+    def test_a_saved_example_plan_does_not_count_as_optimized(self, fake_session, stub_plan_store, monkeypatch):
+        # An example loaded from Home was never optimized by the user.
+        monkeypatch.setattr("data.plan_context.sample_plan_ids", lambda: {"ejemplo-1"})
+        stub_plan_store.append(SimpleNamespace(id="ejemplo-1"))
+        steps = shared.plan_journey_status(_prefs(is_onboarded=True, active_plan_id="ejemplo-1"))
+        assert steps[1]["done"] is False
+
     def test_active_plan_id_whitespace_only_is_not_active(self, fake_session, stub_plan_store):
         steps = shared.plan_journey_status(_prefs(active_plan_id="   "))
         assert steps[3]["done"] is False
