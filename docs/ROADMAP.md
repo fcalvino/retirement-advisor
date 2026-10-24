@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## COMBINAR-UNIVERSOS — el combo «Combinar universos» elige todos los universos y su «x» borra (2026-10-24)
+
+Se saca `max_selections=2` del multiselect de universos extra del Optimizer, se deduplica `_combined` entre extras y se ancla con CSS el botón «Clear all» (defecto de Streamlit 1.65 con etiquetas largas; mitigación, no corrección de raíz). Verificado en vivo: 5 universos = 262 tickers y la «x» vacía la selección. Pendiente: medir la optimización con 262 tickers.
+
+---
+
 ## ALERT-BADGE-LINK — el aviso de alertas sin leer del sidebar lleva a las alertas (2026-10-23)
 
 El link «🔴 N alertas sin leer →» del sidebar apuntaba a `#alertas`, un ancla que ninguna página tiene: el click sólo cambiaba la URL. Se quitó y queda un solo control, el botón «🔴 Ver N alertas sin leer», que lleva a `20_Seguimiento.py` (pestaña Alertas) desde cualquier página.
