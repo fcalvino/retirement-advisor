@@ -210,19 +210,30 @@ if _active_key in UNIVERSE.multi_currency:
     )
 
 st.sidebar.subheader("🔗 Combinar universos")
+# Streamlit 1.65: con el campo enfocado y las etiquetas largas (que parten en dos filas
+# en la barra lateral) el botón «Clear all» —centrado— sube al perder el foco en el
+# pointerdown y el pointerup cae fuera: el clic abre el menú y no borra. Anclarlo
+# arriba lo deja quieto. Mitigación de un defecto del frontend de Streamlit, no de esta página.
+st.sidebar.markdown(
+    """<style>
+    [class*="st-key-optimizer_extra_universes"] button[aria-label="Clear all"] {
+        align-self: flex-start; margin-top: 0.5rem;
+    }
+    </style>""",
+    unsafe_allow_html=True,
+)
 _extra_keys: list[str] = st.sidebar.multiselect(
     "Agregar tickers de",
     options=_other_keys,
     format_func=lambda k: f"{UNIVERSE_META[k]['name']} (+{UNIVERSE_META[k]['count']})",
-    help="Se combinan con el universo activo (sin duplicados, máx 2 adicionales).",
+    help="Se combinan con el universo activo (sin duplicados). «Select all» elige todos.",
     key="optimizer_extra_universes",
-    max_selections=2,
     default=[],
 )
 
 _base_tickers  = list(st.session_state.universe)
-_extra_tickers = [t for k in _extra_keys for t in load_universe(k) if t not in _base_tickers]
-_combined      = _base_tickers + _extra_tickers
+# Sin duplicados también entre los extras: un ticker en dos universos extra no se analiza dos veces.
+_combined      = list(dict.fromkeys(_base_tickers + [t for k in _extra_keys for t in load_universe(k)]))
 
 # Item 3 — warn when custom tickers are part of the optimization universe.
 _customs_here = st.session_state.get("custom_tickers_in_universe", []) or []
