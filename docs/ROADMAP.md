@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## COMBINAR-UNIVERSOS-262 — combinar universos con los 5: se mide la corrida de 262 tickers y el campo muestra todos los tags (2026-10-24)
+
+Se mide «Ejecutar Optimización» con 262 tickers (121 s con caché, 160 s sin ella; 45 posiciones; sin costo de IA), se levanta el alto máximo del campo de universos para que se vean los 5 tags y el CSS pasa a `st.sidebar.html` para no dejar un hueco de ~16 px. Pendiente: el aviso «primera vez tarda ~15s» no vale para universos grandes.
+
+---
+
 ## COMBINAR-UNIVERSOS — el combo «Combinar universos» elige todos los universos y su «x» borra (2026-10-24)
 
 Se saca `max_selections=2` del multiselect de universos extra del Optimizer, se deduplica `_combined` entre extras y se ancla con CSS el botón «Clear all» (defecto de Streamlit 1.65 con etiquetas largas; mitigación, no corrección de raíz). Verificado en vivo: 5 universos = 262 tickers y la «x» vacía la selección. Pendiente: medir la optimización con 262 tickers.
