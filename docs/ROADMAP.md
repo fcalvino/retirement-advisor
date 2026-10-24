@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## OPT-AVISO-TIEMPO — el aviso del Optimizer no promete «~15s» en universos grandes (2026-10-24)
+
+El aviso «Analizando N tickers en paralelo» del Optimizer deja de prometer «~15s» (medido: 121–160 s con 262 tickers) y pasa a decir que un universo grande puede tardar unos minutos, sin cifra.
+
+---
+
 ## COMBINAR-UNIVERSOS-262 — combinar universos con los 5: se mide la corrida de 262 tickers y el campo muestra todos los tags (2026-10-24)
 
 Se mide «Ejecutar Optimización» con 262 tickers (121 s con caché, 160 s sin ella; 45 posiciones; sin costo de IA), se levanta el alto máximo del campo de universos para que se vean los 5 tags y el CSS pasa a `st.sidebar.html` para no dejar un hueco de ~16 px. Pendiente: el aviso «primera vez tarda ~15s» no vale para universos grandes.
