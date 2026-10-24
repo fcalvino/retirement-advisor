@@ -503,7 +503,12 @@ if run_now or not has_valid_result:
             # Override: disable use_in_screener for this run without changing user settings
             ai_cfg = dataclasses.replace(ai_cfg, use_in_screener=False)
 
-        st.info(f"⚡ Analizando {n} tickers en paralelo… (primera vez tarda ~15s)")
+        # Sin cifra: tarda lo que tarde el proveedor (262 tickers medidos: 2–3 min) y un
+        # tiempo fijo era falso para cualquier universo grande. El avance va debajo.
+        st.info(
+            f"⚡ Analizando {n} tickers en paralelo… con un universo grande puede tardar "
+            "unos minutos; el avance se ve abajo."
+        )
         prog = st.progress(0)
         stat = st.empty()
         raw  = _fetch_universe_parallel(selected_universe, ai_cfg, prog, stat, label="Optimizer")
