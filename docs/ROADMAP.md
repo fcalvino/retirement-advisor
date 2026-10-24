@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## GOAL-MANUAL-CAPITAL — el capital fijado a mano en una meta no desaparece en silencio (2026-10-24)
+
+El campo «Capital total disponible para el plan» sólo reparte entre las metas con «Capital asignado = 0 (auto)»: una meta con capital propio lo conserva y el total cubre lo que sobra, con piso en 0. Con 14.030 a mano y un total de 1.000 el resumen mostraba $14.030 asignados sin decir que el total no los limitaba. Ahora `GoalPlan.manual_capital_exceeds_total` lo avisa —también con igualdad si hay metas en auto, que quedan en 0— y la tarjeta rotula el capital como manual o auto. No cambia el reparto ni el motor; `ENGINE_VERSION` no se toca.
+
+---
+
 ## OPT-AVISO-TIEMPO — el aviso del Optimizer no promete «~15s» en universos grandes (2026-10-24)
 
 El aviso «Analizando N tickers en paralelo» del Optimizer deja de prometer «~15s» (medido: 121–160 s con 262 tickers) y pasa a decir que un universo grande puede tardar unos minutos, sin cifra.

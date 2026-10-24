@@ -198,6 +198,11 @@ class GoalResult:
         return self.goal.target_nominal
 
     @property
+    def capital_is_manual(self) -> bool:
+        """True when the user set this goal's capital instead of leaving it on auto."""
+        return self.goal.allocated_capital > 0
+
+    @property
     def prob_success_pct(self) -> float:
         return self.mc_result.prob_achieve_target_pct
 
@@ -258,6 +263,24 @@ class GoalPlan:
     capital_gap_today: float = 0.0      # positive = shortfall, in today's USD
     plan_feasibility_score: float = 0.0  # 0–100 weighted by priority
     warnings: List[str] = field(default_factory=list)
+
+    @property
+    def manual_capital_total(self) -> float:
+        """Capital the user fixed by hand on goals; the plan total does not cap it."""
+        return sum(gr.allocated_capital for gr in self.goal_results if gr.capital_is_manual)
+
+    @property
+    def has_auto_goals(self) -> bool:
+        return any(not gr.capital_is_manual for gr in self.goal_results)
+
+    @property
+    def manual_capital_exceeds_total(self) -> bool:
+        """``_allocate_capital`` keeps manual capital and floors the remainder at 0,
+        so a manual sum above ``total_capital`` is absorbed without a trace. With
+        auto goals, a sum *equal* to the total leaves them at 0 just the same."""
+        if self.has_auto_goals:
+            return self.manual_capital_total >= self.total_capital
+        return self.manual_capital_total > self.total_capital
 
     def compute_aggregates(self) -> None:
         """Compute plan-level aggregates from individual goal results."""

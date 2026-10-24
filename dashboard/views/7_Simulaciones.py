@@ -1955,6 +1955,18 @@ def _tab_goals_content():
             # Plan-level warnings
             for w in plan_result.warnings:
                 st.warning(w)
+            if plan_result.manual_capital_exceeds_total:
+                _auto = plan_result.has_auto_goals
+                _cmp = (
+                    "igual al" if plan_result.manual_capital_total == plan_result.total_capital
+                    else "más que el"
+                )
+                st.warning(
+                    f"Tus metas tienen \\${plan_result.manual_capital_total:,.0f} asignados a mano, "
+                    f"{_cmp} capital total del plan (\\${plan_result.total_capital:,.0f}). "
+                    "El total del plan no limita lo que fijaste en cada meta"
+                    + ("; las metas en auto no reciben nada." if _auto else ".")
+                )
 
             # ---------------------------------------------------------------- #
             #  Per-goal results cards                                           #
@@ -1996,7 +2008,10 @@ def _tab_goals_content():
 
                     # KPI row
                     m1, m2, m3, m4, m5 = st.columns(5)
-                    m1.metric("Capital asignado", f"${gr.allocated_capital:,.0f}")
+                    m1.metric(
+                        f"Capital asignado ({'manual' if gr.capital_is_manual else 'auto'})",
+                        f"${gr.allocated_capital:,.0f}",
+                    )
                     m2.metric(
                         "Meta nominal",
                         f"${gr.target_nominal:,.0f}",
