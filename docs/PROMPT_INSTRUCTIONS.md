@@ -26,6 +26,13 @@ Las secciones se ubican con `grep -n '^## ' docs/CONTEXT.md`.
 
 ---
 
+## Si algo no está claro
+
+Revisá el código y lo que conversamos. Si la duda sigue, preguntá. No inventes
+requisitos ni hagas cambios más allá de lo pedido.
+
+---
+
 ## Por qué esto es importante
 
 - `config.py` tiene singletons globales (`THRESHOLDS`, `MONTE_CARLO`, `OPTIMIZER_PROFILES`, etc.) — nunca hardcodees números en el código de análisis
