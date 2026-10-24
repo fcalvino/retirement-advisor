@@ -73,3 +73,17 @@ def test_the_clear_button_is_pinned_so_focus_does_not_move_it():
     src = PAGE.read_text(encoding="utf-8")
     assert '[class*="st-key-optimizer_extra_universes"] button[aria-label="Clear all"]' in src
     assert "align-self: flex-start" in src
+
+
+def test_all_five_tags_stay_visible_and_the_style_leaves_no_gap():
+    """Con los 5 universos el campo no corta el último tag, y el <style> va por `st.html`.
+
+    `st.markdown` deja un elemento de ~16 px de hueco bajo «Combinar universos»; un
+    <style> solo en `st.html` no. El alto máximo de ~155 px del campo (Streamlit 1.65)
+    se levanta en su contenedor. Los dos son layout: la evidencia es la corrida en vivo.
+    """
+    src = PAGE.read_text(encoding="utf-8")
+    assert 'div:has(> [data-testid="stMultiSelectTagsContainer"])' in src
+    assert "max-height: none !important" in src
+    assert "st.sidebar.html(" in src
+    assert "st.sidebar.markdown(\n    \"\"\"<style>" not in src

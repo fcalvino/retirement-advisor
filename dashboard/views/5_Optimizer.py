@@ -214,13 +214,18 @@ st.sidebar.subheader("🔗 Combinar universos")
 # en la barra lateral) el botón «Clear all» —centrado— sube al perder el foco en el
 # pointerdown y el pointerup cae fuera: el clic abre el menú y no borra. Anclarlo
 # arriba lo deja quieto. Mitigación de un defecto del frontend de Streamlit, no de esta página.
-st.sidebar.markdown(
+# El campo trae un alto máximo de ~155 px en su contenedor: con los 5 universos el
+# último tag quedaba cortado y había que scrollear dentro del campo; se lo levanta.
+# `st.html` (no `st.markdown`): un <style> solo no deja el hueco de ~16 px de un elemento.
+st.sidebar.html(
     """<style>
     [class*="st-key-optimizer_extra_universes"] button[aria-label="Clear all"] {
         align-self: flex-start; margin-top: 0.5rem;
     }
-    </style>""",
-    unsafe_allow_html=True,
+    [class*="st-key-optimizer_extra_universes"] div:has(> [data-testid="stMultiSelectTagsContainer"]) {
+        max-height: none !important;
+    }
+    </style>"""
 )
 _extra_keys: list[str] = st.sidebar.multiselect(
     "Agregar tickers de",
