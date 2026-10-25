@@ -1,6 +1,7 @@
 # Adaptación multimodelo de los prompts — estado y plan de lo que sigue
 
-> **Rol:** `living-guide`. Quedan abiertos PR 4, 5, 6 y 7 de la serie.
+> **Rol:** `living-guide`. Quedan abiertos PR 4, 5, 6 y 7 de la serie. En el BACKLOG: PROMPTS-MULTIMODELO,
+> MACRO-SIN-FECHA (B2) y CONFIDENCE-SELL-BAND (punta suelta de SIGNAL-3).
 > **Alcance:** los prompts de `analysis/prompts.py` y `analysis/committee_prompts.py`, y los
 > parámetros de API de `analysis/ai_analyzer.py` que los entregan.
 > **Origen:** este archivo reemplaza a tres (`PROMPTS_MULTIMODELO_PLAN.md`,

@@ -23,7 +23,7 @@ GOAL-PRIORITY-TEXT y ORDEN-COHERENCIA.)
 2. **IDEA-5 IMPUESTOS**: banda 5. Reglas y decisiones en `docs/plans/IDEA5_GANANCIA_CAPITAL_AR.md` (2026-10-10). Sigue: lotes y «Registrar venta» en Portfolio con el impuesto de acciones y ETFs del exterior (§6 de ese plan).
 
 Esperan disparador: U5-1b, COM-*, COUNTRY-RISK-AUTO, TR-RACE y VENV-PRUNE. Sin orden: PIT-TOOLS,
-PORTFOLIO-FX e IDEA-4. Espera Fuente: SCORE-CONTRACCION.
+PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND y MACRO-SIN-FECHA. Espera Fuente: SCORE-CONTRACCION.
 
 ---
 
@@ -98,6 +98,9 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **COM-VOTO-VACÍO** / **COM-QUORUM-MEDICION** | 5 | Mediciones bloqueadas por volumen (18 corridas orgánicas al 2026-09-29, todas con quórum 100 %; 69 líneas `committee[` únicas al 2026-10-02, en buena parte de la suite (ver COM-LOG-TESTS); umbral 200, no cumplido). **Medido el 2026-10-08**: de las 131 líneas `committee[` del log del clon real, 126 son de la suite —todas del 2026-10-03: MSFT 70, ACME, AIR.PA y BTC-USD 7 cada una, `portfolio:t/h/15ee…` 35— y sólo 5 son de una corrida real (BRK-B, CMCSA, MCO, GOOGL, PG): contar desde el 2026-10-08 o excluir esos símbolos; COM-LOG-TESTS (cerrada) evita que vuelva. Ver bloque 4 |
 | **IDEA-4 CHAT-CONTEXTUAL** | 5 | Botón «preguntale al asesor» en Plan/Simulaciones que abre el Chat con el contexto de esa pantalla (idea 4 de `DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`). Sin alcance ni orden. Ver bloque 4 |
 | **IDEA-5 IMPUESTOS** | 5 | Ganancia de capital de un residente argentino. Reglas y decisiones en `docs/plans/IDEA5_GANANCIA_CAPITAL_AR.md` (2026-10-10). **Paso 1 del Orden**: lotes y «Registrar venta» en Portfolio para acciones y ETFs del exterior. Ver bloque 4 |
+| **PROMPTS-MULTIMODELO** | 5 | PR 4, 5, 6 y 7 de la serie multimodelo siguen abiertos (`docs/plans/PROMPTS_MULTIMODELO.md`, verificado contra el código el 2026-10-25): higiene de idioma, negaciones y few-shot (PR 4), delimitador único `=== ===` y orden datos→instrucción (PR 5), narrativa de plan en campos (PR 6) y macro sin memoria (PR 7, parcial). Orden recomendado por la serie: 7 → 4 → 5 → 6. Ver bloque 4 |
+| **CONFIDENCE-SELL-BAND** | 4 | `confidence_for` deriva de la banda de score: con score 87 y técnico BULLISH da `HIGH` para SELL, AVOID, REDUCE y HOLD (medido el 2026-10-25), el «la evidencia sostiene comprar» de la banda de compra junto a una no-compra. Punta suelta de SIGNAL-3. Ver bloque 4 |
+| **MACRO-SIN-FECHA** | 5 | El gate de frescura de `MacroRagStore._fresh_docs` acepta un documento sin `as_of` como fresco. Latente: ningún camino lo crea hoy. Bloquea la opción completa de PROMPTS-MULTIMODELO (B1). Ver bloque 4 |
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **TR-RACE** | 5 | `analysis/track_record.py` (deduplicación por día, upsert de outcomes) y `analysis/macro_rag.py:129` hacen «leer y después insertar», como `DataCache` antes de CACHE-RACE. Sin daño medido el 2026-10-10: 0 duplicados a menos de 5 s en `recommendation_log`; los 74 del 2026-08-28 son anteriores a la deduplicación. **Reabrir** si aparece un duplicado a menos de 5 s o si un escritor del track record pasa a correr en hilos o en dos procesos a la vez. |
 | **VENV-PRUNE** | 5 | `run.sh` instala el lock con `pip install`, que no saca lo que salió del lock (`pandas-ta`/`numba`/`llvmlite`, 2026-10-10). Un sync completo borraría Playwright. Espera disparador: la próxima dependencia que se retire. Ver bloque 4 |
@@ -245,6 +248,41 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
   decía 8 tests y eran 112; la inferencia sobre `pytest-socket` se confirmó
   (`curl_cffi` abre sus sockets en C), por eso el guard parchea su clase además
   del audit hook.
+- **PROMPTS-MULTIMODELO (PR 4, 5, 6, 7 de la serie de prompts multimodelo)**: la serie
+  completa, con sus decisiones Q1–Q5 y los criterios de aceptación ya reescritos, está en
+  `docs/plans/PROMPTS_MULTIMODELO.md`; PR 0, 1, 1.5 y 2 están implementados (#121, #122, `c6181f4`,
+  `0b541c0`). Estado medido el 2026-10-25 sobre `main`: «IDIOMA OBLIGATORIO» 9 veces en 9 prompts
+  de `analysis/prompts.py` (PR 4 lo deja en un candado, no en un arreglo); 15 cabeceras `---`,
+  5 `━━━` y 29 líneas `**Texto**` en `prompts.py` contra `===` en el comité (PR 5); la narrativa
+  de plan sigue devolviendo Markdown dentro de un campo JSON (PR 6). **PR 7 está a medias**:
+  `equity_decision_prompt` ya declara la ausencia de hechos macro fechados, pero cuatro prompts de
+  `prompts.py` (`equity_moat`, `crypto_moat`, `crypto_decision`, `portfolio_optimizer_advice`) siguen
+  pidiendo «usá tu conocimiento actual», y en el comité `macro_strategist_prompt` y el bloque de
+  contexto de portfolio no tienen rama `else` que declare la ausencia (lo mitiga la abstención del
+  Macro, MACRO-SEED). Un factor macro alucinado se persiste en `PlanSnapshot.macro_risks`, así que
+  PR 7 es el de consecuencia financiera. Sin orden: espera que el usuario lo ponga. Enhebrar el
+  `macro_context` real hasta esos cuatro prompts (B1 del doc) ya tiene su disparador cumplido
+  —el scheduler ingiere FRED a diario (#135)—, pero sin `FRED_API_KEY` ingiere 0 documentos y
+  depende de MACRO-SIN-FECHA; falta decidir si se justifica.
+- **CONFIDENCE-SELL-BAND (punta suelta de SIGNAL-3)**: SIGNAL-3 hizo que una compra por debajo de su
+  banda quede en `MEDIUM`, pero el cap es unidireccional. Re-verificado el 2026-10-25 con
+  `confidence_for(action, 87, "BULLISH", blocked=False, downgraded=False,
+  data_quality_level="good", negative_equity=False)`: SELL, AVOID, REDUCE, HOLD y BUY dan `HIGH`. Es
+  alcanzable por el camino AI, que desde SIGNAL-6 admite que la IA sea más prudente que el motor; no
+  aparece en el camino rule-based porque ahí la acción sale de la banda. El motivo de esas filas ya
+  nombra la causa (`AI_MORE_PRUDENT_REASON`). Se dejó abierta a propósito en la serie; falta medir
+  cuántas filas de `recommendation_log` la tocan antes de decidir si vale arreglarla.
+  Relacionada: las filas del track record escritas antes de SIGNAL-5 con `technical_signal =
+  "NEUTRAL"` pueden significar «no se midió»; es una advertencia para
+  `scripts/score_track_record.py`, no un defecto a migrar.
+- **MACRO-SIN-FECHA**: `MacroRagStore._fresh_docs` (`analysis/macro_rag.py`) conserva un documento
+  si `age is None or age <= max_age`, y `_days_old("")` devuelve `None`: un documento sin `as_of`
+  pasa por fresco y llegaría a los prompts como hecho (el render lo marca `[s/f]`, así que el
+  código lo anticipa). Re-verificado el 2026-10-25: es **latente**, porque los únicos dos sitios que
+  crean `MacroDoc` (`example_macro_docs` e `ingest_from_fred`) siempre ponen fecha, y ningún test
+  fija el comportamiento. Pariente de PIT-TOOLS (un documento posterior a `now` también cuenta como
+  fresco) y precondición de PROMPTS-MULTIMODELO B1. Decisión pendiente: si un documento sin fecha se
+  rechaza.
 - **PIT-TOOLS (prerrequisito para reabrir ReAct en el comité)**: `get_news`
   (`data/fetcher.py`) no acepta fecha y lee el feed de hoy; `MacroRagStore.retrieve`
   **sí** acepta `now=`, pero sólo lo usa para descartar lo viejo: `_days_old` hace
