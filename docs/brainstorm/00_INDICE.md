@@ -2,8 +2,7 @@
 
 > Documento de ideación, no de implementación. Acá no se cambia código del
 > producto: se juntan **ideas** para decidir hacia dónde evolucionar.
-> Generado tras navegar **cada pantalla** de la app en vivo (capturas en
-> `_screenshots/`). Última actualización: 2026-06-20.
+> Generado tras navegar **cada pantalla** de la app en vivo. Última actualización: 2026-06-20.
 
 ## Cómo leer esto
 

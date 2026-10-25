@@ -4,7 +4,7 @@
 > AAPL?", "¿cómo viene mi plan?", "¿me alcanza si me jubilo en 15 años?") y el
 > asesor elige la herramienta correcta, corre el cálculo real y responde usando solo
 > esos números (nunca inventa cifras). Arranca como una pantalla en blanco con un
-> campo de texto. Captura: `_screenshots/19_chat.png`
+> campo de texto.
 
 Es potencialmente **la interfaz del futuro del producto**: en vez de 19 pantallas,
 una conversación que te lleva a la respuesta. Hoy desaprovecha eso por arrancar

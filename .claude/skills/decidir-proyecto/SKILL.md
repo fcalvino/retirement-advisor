@@ -66,7 +66,7 @@ para otra tarea; no habilita ejecutarla acá.
 
 ## Decisiones previas
 
-- Antes de decidir, buscá: `docs/plans/*OWNER_DECISIONS*`, «Decisiones tomadas» en los
+- Antes de decidir, buscá: `docs/plans/PROMPTS_MULTIMODELO.md` (decisiones Q1–Q5), «Decisiones tomadas» en los
   issues (`gh issue view N --json body`), `docs/BACKLOG.md`, cuerpos de PR y la memoria
   del usuario.
 - Clasificá cada decisión: **abierta**, **cerrada**, **cerrada con disparador

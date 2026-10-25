@@ -251,7 +251,7 @@ ahí no rompe nada — simplemente el usuario deja de recibir las alertas y nadi
 
 **Hallazgo lateral — dos dependencias muertas** (resuelto 2026-08-14): el resolver no podía satisfacer
 `requirements.txt` en Python 3.11, porque `pandas-ta` ≥0.4.71b0 exige `>=3.12`. Al ir a arreglarlo
-apareció que **`pandas-ta` no se usa**: `docs/DEAD_CODE_AUDIT.md` registra que su import se eliminó de
+apareció que **`pandas-ta` no se usa**: el informe de código muerto (2026-07; `git show 5fb471c:docs/DEAD_CODE_AUDIT.md`) registra que su import se eliminó de
 `analysis/technical.py` hace tiempo (los indicadores se calculan a mano con NumPy/Pandas), pero nadie
 la sacó de `requirements.txt` — y el `>=` la fue subiendo sola hasta llevarse puesto el soporte de
 3.11. El mismo chequeo encontró `pyyaml`, también declarada y nunca importada.

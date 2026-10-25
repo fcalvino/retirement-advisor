@@ -1,8 +1,7 @@
 # 🎨 UX Global — Brainstorming (transversal)
 
 > **Qué es hoy:** Streamlit con un menú lateral de 19 pantallas (colapsa en "ver 9
-> más"), buen lenguaje en español, disclaimers presentes, capturas en
-> `_screenshots/`. La estética es limpia y consistente.
+> más"), buen lenguaje en español, disclaimers presentes. La estética es limpia y consistente.
 
 La crítica principal es estructural: **demasiadas pantallas al mismo nivel** y casi
 todas arrancan vacías. El producto es potentísimo pero pide mucho esfuerzo de

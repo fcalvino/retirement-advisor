@@ -3,7 +3,7 @@
 > **Qué es hoy:** el corazón del producto (44 KB). Consolida cartera + núcleo + metas
 > + Monte Carlo + narrativa en un plan guardable, activable, comparable, con salud
 > vs mercado, trades de alineación, historial de evolución, factores macro, export/
-> import y PDF. Captura: `_screenshots/13_mi_plan.png`
+> import y PDF.
 
 Es la pantalla más estratégica y la mejor pensada. La oportunidad no es agregarle
 features (ya tiene muchas) sino **volverla el centro de gravedad** de toda la app y

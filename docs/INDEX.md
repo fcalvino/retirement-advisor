@@ -32,7 +32,6 @@ Roles:
 | `historical-audit` | Informe cerrado o snapshot; no es el próximo sprint |
 | `historical-plan` | Plan o roadmap de trabajo **ya shipped** |
 | `ideation` | Visión y brainstorm; no es spec de implementación |
-| `archive` | Dump histórico; no es guía de integración actual |
 | `refactor-backlog` | Inventario de deuda técnica estructural; independiente del roadmap de features |
 
 <!-- catalog-table -->
@@ -59,28 +58,19 @@ Roles:
 | historical-plan | `docs/IMPLEMENTATION_PLAN.md` | Plan 2026-06 del Gran Salto — las 5 fases ya están shipped |
 | ideation | `docs/VISION_GRAN_SALTO.md` | Visión de producto 2026-06; las 3 apuestas ya están en el código |
 | ideation | `docs/DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md` | Diagnóstico + brainstorming 2026-09 basado en código; complementa `brainstorm/99_PRIORIZACION.md` |
-| ideation | `docs/ideacion/EVALUACION_SYSTEM_ONE_JEV_2026-09-21.md` | Evaluación 2026-09-21 de "System One models"/Jev (TypeSafe AI): qué demuestra vs. qué afirma, mapeo al comité, y por qué se descarta para el motor |
 | ideation | `docs/prefilter_contract.md` | Contrato del prefiltro (portero): salto → C → 5 puertas → embudo 50–80–120 |
 | ideation | `docs/brainstorm/` | Colección: un archivo por pantalla + capas; índice `00_INDICE.md` |
 | refactor-backlog | `docs/REFACTOR_BACKLOG.md` | Backlog de refactorización: ordenamiento, simplicidad, performance (2026-09-02) |
 | historical-audit | `docs/AUDITORIA_2026-08.md` | Auditoría técnica ago-2026 (Tier 0/1 del motor) |
-| historical-audit | `docs/auditoria_project_owner.md` | Auditoría de producto (project owner) |
 | historical-audit | `docs/AUDIT_DATA_QUALITY.md` | Calidad de datos + estado P0 |
 | historical-audit | `docs/AUDIT_REASONING_QUALITY.md` | Calidad de razonamiento (15/15 cerradas) |
-| historical-audit | `docs/DEAD_CODE_AUDIT.md` | Auditoría de código muerto (2026-07) |
 | historical-audit | `docs/AUDIT_UNIDADES_MONEDA_2026-09.md` | Unidades y moneda del feed (2026-09-24): oráculo de patas + FX, UM-1..UM-4, 1 señal de 186 cambia |
 | historical-audit | `docs/PIT2_EVIDENCIA_2026-09.md` | PIT-2 (2026-09-26): F-Score point-in-time vs exceso a 1 año, fuerte − débil por corte (inconcluso); se regenera con `scripts/pit_evidence_report.py` |
 | historical-audit | `docs/AUDIT_LLM_2026-09.md` | Capa de IA (2026-09-25): inventario de 11 superficies y su guarda, comité sin overlay, titulares sin delimitar, banco de eval congelado (LLM-1..LLM-6) |
 | historical-audit | `docs/universe_coverage_analysis.md` | Cobertura del universo (snapshot 2026-07) |
 | historical-audit | `docs/retro/` | Colección: un informe de `/retro` por fecha (dónde los agentes tardan o leen docs viejos); la cabecera de cada uno dice qué quedó pendiente |
-| historical-audit | `docs/issues/SIGNAL_REASON_CONFIDENCE_ISSUES.md` | Hallazgos 2026-09-12 de la cadena Signal → Motivo → Confidence, listos para abrir como GitHub Issues (tests en `xfail(strict=True)`) |
-| historical-plan | `docs/plans/SIGNAL_REASON_CONFIDENCE_PLAN.md` | Serie `signal_reason_confidence` (cerrada 2026-09-12): cómo se cerraron SIGNAL-1..SIGNAL-5 y las decisiones de diseño |
-| living-guide | `docs/plans/PROMPTS_MULTIMODELO_PLAN.md` | Diagnóstico 2026-09-14 del sesgo a Grok en `analysis/prompts.py` + `committee_prompts.py` y plan de adaptación multimodelo en 8 PRs (contrato de salida portable) |
-| living-guide | `docs/plans/PROMPTS_MULTIMODELO_NEXT_STEPS.md` | Re-verificación 2026-09-15 de los PRs abiertos (4, 5, 6, 7) contra el código real: hallazgos vivos, criterios de aceptación corregidos, orden recomendado (PR 7 primero) y contradicciones plan↔código |
-| living-guide | `docs/plans/PROMPTS_MULTIMODELO_OWNER_DECISIONS.md` | Decisiones técnicas Q1–Q5 (2026-09-15) que desbloquean PR 4, 5 y 7: alcance de PR 7, convención de delimitadores, few-shot, criterios de aceptación reescritos y allowlist del criterio (c) |
-| living-guide | `docs/plans/SIGNAL_REASON_ALIGNMENT_PLAN.md` | SIGNAL-6 (2026-09-12): el camino AI se pisa contra `decide()` y el motivo describe siempre la acción emitida |
+| living-guide | `docs/plans/PROMPTS_MULTIMODELO.md` | Serie multimodelo de prompts (2026-09-14/15): estado, decisiones Q1–Q5 y criterios de aceptación de PR 4, 5, 6 y 7, que siguen abiertos |
 | living-guide | `docs/plans/IDEA5_GANANCIA_CAPITAL_AR.md` | IDEA-5 (2026-10-10): cómo tributa la ganancia de capital de un residente argentino al vender acciones, CEDEARs, ETFs y cripto, con citas a la LIG, su DR y ARCA; qué le falta al Portfolio y las 13 decisiones del usuario |
-| archive | `docs/archive/code.review.md` | Review dump may-2026; **no** es guía de integración actual |
 | how-to | `scripts/migrations/` | Colección: migraciones one-shot ya ejecutadas (idempotentes); índice `README.md` |
 <!-- /catalog-table -->
 
@@ -139,8 +129,7 @@ No usar estos archivos como “el próximo sprint”. El próximo sprint está e
 | [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) | Plan operativo 2026-06 (Fases 1–5 shipped) |
 | [`VISION_GRAN_SALTO.md`](VISION_GRAN_SALTO.md) | Visión 2026-06; las 3 apuestas ya están en el producto |
 | [`DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`](DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md) | Diagnóstico + brainstorming 2026-09 basado en código; complementa `brainstorm/99_PRIORIZACION.md` |
-| [`plans/PROMPTS_MULTIMODELO_NEXT_STEPS.md`](plans/PROMPTS_MULTIMODELO_NEXT_STEPS.md) | Próximos pasos verificados de la serie multimodelo (2026-09-15); se lee junto a `plans/PROMPTS_MULTIMODELO_PLAN.md` |
-| [`plans/PROMPTS_MULTIMODELO_OWNER_DECISIONS.md`](plans/PROMPTS_MULTIMODELO_OWNER_DECISIONS.md) | Resolución Q1–Q5 de la serie multimodelo (2026-09-15); se lee junto a `plans/PROMPTS_MULTIMODELO_PLAN.md` y `plans/PROMPTS_MULTIMODELO_NEXT_STEPS.md` |
+| [`plans/PROMPTS_MULTIMODELO.md`](plans/PROMPTS_MULTIMODELO.md) | Serie multimodelo de prompts: lo hecho (PR 0–2), lo abierto (PR 4–7) y sus decisiones Q1–Q5 (2026-09-15) |
 | [`prefilter_contract.md`](prefilter_contract.md) | Contrato del prefiltro (portero): salto → C → 5 puertas → embudo — no implementado |
 | [`brainstorm/00_INDICE.md`](brainstorm/00_INDICE.md) | Ideación por pantalla y capa |
 
@@ -155,15 +144,12 @@ descripción viva del sistema.
 |-----------|-----------|
 | [`FIX_FCF_YIELD_MONEDA.md`](FIX_FCF_YIELD_MONEDA.md) | Evidencia del cruce de monedas en `fcf_yield`/`p_ffo`; cierre documental 2026-09-11; PR 4 mergeado (#117) |
 | [`AUDITORIA_2026-08.md`](AUDITORIA_2026-08.md) | Motor: D1–D6 (retiros, ruina, μ, oráculos, lockfile, PII) |
-| [`auditoria_project_owner.md`](auditoria_project_owner.md) | Diagnóstico y priorización de producto |
 | [`AUDIT_DATA_QUALITY.md`](AUDIT_DATA_QUALITY.md) | Fuentes, badges, política partial/poor |
 | [`AUDIT_REASONING_QUALITY.md`](AUDIT_REASONING_QUALITY.md) | 15 debilidades de coherencia entre capas |
-| [`DEAD_CODE_AUDIT.md`](DEAD_CODE_AUDIT.md) | Dead code 2026-07 |
 | [`AUDIT_UNIDADES_MONEDA_2026-09.md`](AUDIT_UNIDADES_MONEDA_2026-09.md) | P/B, EV/EBITDA y FCF yield entre monedas y unidades por acción (UM-1..UM-4) |
 | [`PIT2_EVIDENCIA_2026-09.md`](PIT2_EVIDENCIA_2026-09.md) | Evidencia point-in-time del Piotroski a 1 año (PIT-2), insumo de U5-1b |
 | [`AUDIT_LLM_2026-09.md`](AUDIT_LLM_2026-09.md) | Superficies de IA, sus guardas y la evidencia de su calidad (LLM-1..LLM-6) |
 | [`universe_coverage_analysis.md`](universe_coverage_analysis.md) | Cobertura del universo default (2026-07) |
-| [`archive/code.review.md`](archive/code.review.md) | Dump de review may-2026 — **archivo, no guía** |
 
 ---
 

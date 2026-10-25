@@ -3,7 +3,7 @@
 > **Qué es hoy:** la pantalla más grande del producto (60 KB). Construye una cartera
 > óptima (Mean-Variance) según 3 perfiles de riesgo + presets de retiro, con
 > glide path automático, núcleo determinístico, consejo de IA y tabla de
-> asignación con score/viento. Captura: `_screenshots/06_optimizer.png`
+> asignación con score/viento.
 
 Es el motor más sofisticado y el más intimidante. La portada de la pantalla está
 muy bien (tarjetas de perfil + presets), pero después llega una catarata de tabs y

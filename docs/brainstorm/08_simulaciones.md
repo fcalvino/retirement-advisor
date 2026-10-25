@@ -3,8 +3,7 @@
 > **Qué es hoy:** la joya técnica (93 KB). Monte Carlo (block-bootstrap, sesgo
 > conservador, escenario realista vs conservador), stress test histórico, escenario
 > personalizado, comparar perfiles, metas, decumulación (cómo dura tu ingreso),
-> sensibilidad (tornado) y supuestos/drags. Captura: `_screenshots/08_simulaciones.png`
-> (y `_tab1..5`).
+> sensibilidad (tornado) y supuestos/drags.
 
 Tiene una potencia enorme escondida detrás de tabs y un botón "Ejecutar". El
 problema es que **arranca vacío** y la riqueza (decumulación, sensibilidad,

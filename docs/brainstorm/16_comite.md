@@ -4,7 +4,6 @@
 > especializados (Portfolio Manager, Estratega Macro, Coach de Comportamiento y
 > Abogado del Diablo) debate y produce un dictamen con **disenso explícito**. El
 > Abogado del Diablo siempre arma el bear case. Arranca pidiendo un ticker.
-> Captura: `_screenshots/16_comite.png`
 
 Es la feature de IA más vistosa y la que mejor encarna la filosofía conservadora
 (que el desacuerdo quede a la vista). Su debilidad: vive aislada, arranca vacía y

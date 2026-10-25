@@ -169,7 +169,7 @@ class TestOracle:
 class TestNingunaCompraPorDebajoDeSuBanda:
     """El camino AI no re-aplica la escalera, así que el LLM decide la banda.
 
-    Ver `docs/issues/SIGNAL_REASON_CONFIDENCE_ISSUES.md` — SIGNAL-1.
+    Ver `docs/ROADMAP.md`, «SIGNAL-1..6» — SIGNAL-1.
     """
 
     @pytest.mark.parametrize("action", BUY_ACTIONS)

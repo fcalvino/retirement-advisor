@@ -4,7 +4,6 @@
 > señal, caídas de score, riesgos de cartera, drift vs plan y nuevas
 > oportunidades. Tabs: ejecutar análisis, historial, configuración, silenciados.
 > Manda por email/Telegram (vía scheduler) y genera PDF.
-> Captura: `_screenshots/09_alertas.png`
 
 Es lo que puede convertir la app en un hábito ("me avisa, entro"). Pero hoy es muy
 **manual**: hay que apretar "ejecutar análisis ahora" y configurar el scheduler por

@@ -11,7 +11,7 @@ con LLM-4 (#182), sobre el caso adversarial del banco de eval, así que el orác
 la medición en vivo hablan del mismo titular.
 
 Convención de delimitadores: ``=== SECCIÓN ===`` en línea completa
-(``docs/plans/PROMPTS_MULTIMODELO_OWNER_DECISIONS.md``, Q3).
+(``docs/plans/PROMPTS_MULTIMODELO.md``, Q3).
 """
 
 from __future__ import annotations
