@@ -2338,6 +2338,60 @@ class UniverseConfig:
 
 
 @dataclass
+class ListingAliasConfig:
+    """
+    Emisores extranjeros que el universo lista como ADR / listado en EE.UU. en
+    lugar de su cotización local (``data/listing_aliases.py``).
+
+    Un ticker local (``SHEL.L``) y su ADR (``SHEL``) son el mismo emisor con otro
+    precio: otra moneda y, casi siempre, otra cantidad de acciones por título. Esta
+    tabla es la única fuente de verdad de esa equivalencia. Un plan guardado que todavía
+    dice ``SHEL.L`` se lee como ``SHEL`` **sin reescribir el archivo**: el alias se
+    aplica al leer los pesos del plan (``PlanSnapshot.target_weights()``) y en la deriva
+    plan-vs-cartera (``drift_breakdown``, que usan el Portfolio, las alertas y los
+    trades sugeridos). Un ticker que el usuario tipeó o una corrida vieja del Screener
+    no se traducen: se miden con el ticker que tengan.
+
+    Sólo están los 17 emisores cuyos estados vienen en USD (``financialCurrency``).
+    Para ellos el ADR puntúa igual o mejor que el listado local. Un ADR cuyos estados
+    vienen en otra moneda (TM, RY, SAP…) queda afuera a propósito: precio en USD con
+    estados en JPY/CAD/EUR deja FCF yield, P/B y a veces EV/EBITDA en ``None`` por la
+    regla de monedas distintas (CONTEXT §8) y baja el score hasta 13 puntos (medido el
+    2026-10-24, p. ej. 7203.T 52 → TM 39). Sumarlos es cambiar el pipeline, no esta tabla.
+
+    Medido el 2026-10-24 con yfinance (bolsa NYSE/Nasdaq, ``quoteType`` EQUITY,
+    ``financialCurrency`` USD). Un OTC no cuenta como reemplazo.
+
+    Fields:
+      aliases — ``{ticker local: (ADR, acciones locales por ADR)}``. La razón sale de
+                precio ADR ÷ (precio local × FX) y sólo sirve para no mezclar
+                cantidades al convertir una posición; los pesos (%) no la usan.
+    """
+
+    aliases: Dict[str, Tuple[str, float]] = field(
+        default_factory=lambda: {
+            "EQNR.OL": ("EQNR", 1.0),
+            "ABI.BR": ("BUD", 1.0),
+            "BHP.AX": ("BHP", 2.0),
+            "SHEL.L": ("SHEL", 2.0),
+            "NOVN.SW": ("NVS", 1.0),
+            "BP.L": ("BP", 6.0),
+            "TTE.PA": ("TTE", 1.0),
+            "BN.TO": ("BN", 1.0),
+            "AZN.L": ("AZN", 1.0),
+            "UBSG.SW": ("UBS", 1.0),
+            "SHOP.TO": ("SHOP", 1.0),
+            "WDS.AX": ("WDS", 1.0),
+            "DGE.L": ("DEO", 4.0),
+            "HSBA.L": ("HSBC", 5.0),
+            "RIO.L": ("RIO", 1.0),
+            "SQM-B.SN": ("SQM", 1.0),
+            "CEMEXCPO.MX": ("CX", 10.0),
+        }
+    )
+
+
+@dataclass
 class AssetClassConfig:
     """
     Which assets the fundamental scorer is allowed to judge (audit item 01).
@@ -3882,6 +3936,7 @@ FX = FxConfig()
 ASSET_CLASS = AssetClassConfig()
 SCREENER = ScreenerConfig()
 UNIVERSE = UniverseConfig()
+LISTING_ALIASES = ListingAliasConfig()
 TAILWINDS = TailwindConfig()
 DRAGS = EconomicDragConfig()
 WITHDRAWAL = WithdrawalConfig()

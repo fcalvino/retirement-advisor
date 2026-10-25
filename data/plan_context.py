@@ -28,6 +28,7 @@ from typing import Callable, Dict, List, Optional
 
 from loguru import logger
 
+from data.listing_aliases import resolve_listing, resolve_weights
 from data.plan_store import PlanSnapshot, plan_store
 
 PriceLookup = Callable[[str], Optional[float]]
@@ -218,6 +219,9 @@ def session_plan_is_unsaved_target(opt_result, active: Optional[PlanSnapshot]) -
         return False
     if active is None:
         return True
+    # ``target_weights()`` lee un ticker local como su ADR; la corrida de la sesión
+    # puede traer el local (un ticker tipeado, una corrida anterior al alias).
+    weights = {s: round(w, 2) for s, w in resolve_weights(weights).items()}
     target = {s: round(float(w), 2) for s, w in active.target_weights().items()}
     return weights != target
 
@@ -571,8 +575,10 @@ def drift_breakdown(
                   over, another under), hence the halving.
         n_evaluated : ``len(symbols)``
     """
-    target = target_weights or {}
-    actual = actual_weights or {}
+    # Un ticker local y su ADR son el mismo emisor (``config.LISTING_ALIASES``): si el
+    # plan dice ``BHP.AX`` y el tracker ``BHP`` (o al revés), son una sola fila.
+    target = resolve_weights(target_weights or {})
+    actual = resolve_weights(actual_weights or {})
     symbols = sorted(set(target) | set(actual))
 
     rows: List[dict] = []
@@ -654,7 +660,7 @@ def compute_alignment_trades(
         max_trades = ALERTS.alignment_max_trades
 
     target = snap.target_weights()
-    core_symbols = {c.get("symbol", "") for c in snap.core_holdings if c.get("symbol")}
+    core_symbols = {resolve_listing(c["symbol"]) for c in snap.core_holdings if c.get("symbol")}
     breakdown = drift_breakdown(target, current_weights)
 
     candidates: List[dict] = []

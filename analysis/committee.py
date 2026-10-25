@@ -597,10 +597,13 @@ def build_ticker_portfolio_context(
 
     if active_plan is not None:
         try:
+            from data.listing_aliases import resolve_listing
             from data.plan_context import drift_breakdown
 
             target = {str(k).upper(): v for k, v in (active_plan.target_weights() or {}).items()}
-            row = next(r for r in drift_breakdown(target, pw)["rows"] if r["symbol"] == sym)
+            # drift_breakdown lleva un ticker local a su ADR: la fila se busca con esa clave
+            key = resolve_listing(sym)
+            row = next(r for r in drift_breakdown(target, pw)["rows"] if r["symbol"] == key)
             ctx["plan_name"] = getattr(active_plan, "name", "")
             ctx["plan_target_pct"] = round(row["target_pct"], 1)
             ctx["drift_pct"] = round(row["drift_pct"], 1)
