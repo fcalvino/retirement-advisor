@@ -31,6 +31,7 @@ from loguru import logger
 
 from config import ENGINE_VERSION
 from data.env_provenance import env_drift, numeric_env
+from data.listing_aliases import resolve_weights
 from data.product_ux import (
     IGNORED_SAVINGS_KEY,
     RUN_ASSUMPTIONS_KEY,
@@ -180,19 +181,21 @@ class PlanSnapshot:
 
         This is the plan's allocation used as the drift target by the alerts
         engine and the Portfolio alignment view. Falls back to the core
-        holdings when no full allocation was persisted.
+        holdings when no full allocation was persisted. A symbol saved under its
+        local listing (``SHEL.L``) is read as its ADR (``SHEL``): the file is not
+        rewritten (``data/listing_aliases.py``).
         """
         if self.allocation:
-            return {
+            return resolve_weights({
                 a.get("symbol", ""): float(a.get("weight_pct", 0.0))
                 for a in self.allocation
                 if a.get("symbol")
-            }
-        return {
+            })
+        return resolve_weights({
             c.get("symbol", ""): float(c.get("suggested_weight_pct", 0.0))
             for c in self.core_holdings
             if c.get("symbol")
-        }
+        })
 
     @classmethod
     def from_session(
