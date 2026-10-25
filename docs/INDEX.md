@@ -32,7 +32,6 @@ Roles:
 | `historical-audit` | Informe cerrado o snapshot; no es el próximo sprint |
 | `historical-plan` | Plan o roadmap de trabajo **ya shipped** |
 | `ideation` | Visión y brainstorm; no es spec de implementación |
-| `refactor-backlog` | Inventario de deuda técnica estructural; independiente del roadmap de features |
 
 <!-- catalog-table -->
 | Rol | Path | Descripción |
@@ -54,13 +53,13 @@ Roles:
 | ai-context | `CLAUDE.md` | Puntero Claude Code (`@docs/PROMPT_INSTRUCTIONS.md`) |
 | living-guide | `docs/BACKLOG.md` | **Lo que falta hacer** — qué sigue en `## Orden actual`, arriba de todo; repriorización unificada (auditoría + ideación + specs) |
 | historical-audit | `docs/FIX_FCF_YIELD_MONEDA.md` | Evidencia y cierre documental 2026-09-11 de `fcf_yield`/`p_ffo` entre monedas; la serie cerró con PR 4 (#117) |
-| historical-plan | `docs/ROADMAP.md` | Fases ya completadas (no es backlog abierto); al final, el archivo de repriorizaciones y filas cerradas del backlog |
+| historical-plan | `docs/ROADMAP.md` | Entradas cerradas desde 2026-09 (no es backlog abierto); incluye el resumen de REFACTOR-BACKLOG y, al final, el archivo de repriorizaciones y filas cerradas del backlog |
+| historical-plan | `docs/ROADMAP_ARCHIVO.md` | Entradas de ROADMAP hasta 2026-08-31 y fases de 2026-06, movidas sin cambios (poda de docs/, fase 2) |
 | historical-plan | `docs/IMPLEMENTATION_PLAN.md` | Plan 2026-06 del Gran Salto — las 5 fases ya están shipped |
 | ideation | `docs/VISION_GRAN_SALTO.md` | Visión de producto 2026-06; las 3 apuestas ya están en el código |
 | ideation | `docs/DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md` | Diagnóstico + brainstorming 2026-09 basado en código; complementa `brainstorm/99_PRIORIZACION.md` |
 | ideation | `docs/prefilter_contract.md` | Contrato del prefiltro (portero): salto → C → 5 puertas → embudo 50–80–120 |
 | ideation | `docs/brainstorm/` | Colección: un archivo por pantalla + capas; índice `00_INDICE.md` |
-| refactor-backlog | `docs/REFACTOR_BACKLOG.md` | Backlog de refactorización: ordenamiento, simplicidad, performance (2026-09-02) |
 | historical-audit | `docs/AUDITORIA_2026-08.md` | Auditoría técnica ago-2026 (Tier 0/1 del motor) |
 | historical-audit | `docs/AUDIT_DATA_QUALITY.md` | Calidad de datos + estado P0 |
 | historical-audit | `docs/AUDIT_REASONING_QUALITY.md` | Calidad de razonamiento (15/15 cerradas) |
@@ -125,7 +124,8 @@ No usar estos archivos como “el próximo sprint”. El próximo sprint está e
 
 | Documento | Rol |
 |-----------|-----|
-| [`ROADMAP.md`](ROADMAP.md) | Diario de fases **ya completadas** |
+| [`ROADMAP.md`](ROADMAP.md) | Diario de lo ya completado desde 2026-09 |
+| [`ROADMAP_ARCHIVO.md`](ROADMAP_ARCHIVO.md) | Lo completado hasta 2026-08 y las fases de 2026-06 |
 | [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) | Plan operativo 2026-06 (Fases 1–5 shipped) |
 | [`VISION_GRAN_SALTO.md`](VISION_GRAN_SALTO.md) | Visión 2026-06; las 3 apuestas ya están en el producto |
 | [`DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md`](DIAGNOSTICO_PROXIMO_NIVEL_2026-09.md) | Diagnóstico + brainstorming 2026-09 basado en código; complementa `brainstorm/99_PRIORIZACION.md` |

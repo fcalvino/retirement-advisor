@@ -71,7 +71,7 @@ decidir, y que está mal, pesa más que una pantalla incómoda. Siempre.
 Las 39 filas de oleadas 3–7 se verificaron contra `main` una por una. La foto del
 2026-08-28 decía 30 cerradas / 9 abiertas y **ya no vale**: desde entonces
 cerraron U4-3, U4-4, U4-5, U4-1c, U5-7, U5-8, U5-9+10+11, U5-18/b/c/d, U6-1,
-U7-3, U3-2, U3-7b, N1, N2 (retry), N5, N6, N6c y N9 — ver [`ROADMAP.md`](ROADMAP.md).
+U7-3, U3-2, U3-7b, N1, N2 (retry), N5, N6, N6c y N9 — ver [`ROADMAP.md`](ROADMAP.md) (los ids U* y N1–N6 de agosto, en [`ROADMAP_ARCHIVO.md`](ROADMAP_ARCHIVO.md)).
 U0-3 y N4 cerraron en docs; N8 cierra el rótulo de la palanca.
 
 Oleadas de origen, reconstruidas desde las filas que siguen acá y las que
@@ -119,7 +119,7 @@ Cada uno dejó filas nuevas con lo que deliberadamente **no** hizo: **U4-1c** y
 dividendo de 8 tickers no era el de la empresa, y a tres pagadores reales el
 producto les decía que no pagaban. Apareció mientras se decidía si bajar el
 techo de yield que unificó U5-10 — y la respuesta fue que el techo era la perilla
-equivocada. Ver `ROADMAP.md`.
+equivocada. Ver `ROADMAP_ARCHIVO.md`.
 
 ## Bloque 2 — Números que cambian una decisión de compra
 
@@ -148,7 +148,7 @@ con el único retorno observable que el motor calcula (correlación **+0,025** c
 el drift del Monte Carlo) y su R² de 0,116 no sostiene el «7,2 % anual» que se
 mostraba. Se cerró por el rótulo: μ queda intacto y el proxy pasa a presentarse
 como índice 0–100. **Recalibrar el `0.18` quedó descartado con evidencia**, no
-por criterio — ver `ROADMAP.md`.
+por criterio — ver `ROADMAP_ARCHIVO.md`.
 
 Queda anotado lo que deliberadamente **no** hizo: `er_absolute_cap` sigue en 0,14
 y nadie lo calibró tampoco. Hoy casi no muerde (1 ticker de 150), así que no es

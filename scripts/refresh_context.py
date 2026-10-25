@@ -58,14 +58,14 @@ def get_git_log(n: int = 10) -> list[str]:
 
 
 def get_last_roadmap_phase(roadmap_path: Path) -> str:
-    """Extrae la última fase completada del ROADMAP.md."""
+    """Extrae la última fase completada de ROADMAP_ARCHIVO.md (las fases viven ahí desde 2026-10-25)."""
     try:
         content = roadmap_path.read_text()
         lines = content.splitlines()
         phases = [l for l in lines if l.startswith("### Fase") or l.startswith("## Fase")]
         return phases[-1] if phases else "(no encontrado)"
     except Exception:
-        return "(error leyendo ROADMAP.md)"
+        return "(error leyendo ROADMAP_ARCHIVO.md)"
 
 
 def print_section(title: str, content: str) -> None:
@@ -77,7 +77,7 @@ def print_section(title: str, content: str) -> None:
 
 def main() -> None:
     config_path = ROOT / "config.py"
-    roadmap_path = ROOT / "docs" / "ROADMAP.md"
+    roadmap_path = ROOT / "docs" / "ROADMAP_ARCHIVO.md"
 
     if not config_path.exists():
         print(f"ERROR: No se encontró {config_path}", file=sys.stderr)
@@ -115,7 +115,7 @@ def main() -> None:
     # --- Resumen ---
     last_phase = get_last_roadmap_phase(roadmap_path)
     print(f"\n{'='*60}")
-    print(f"  Última fase en ROADMAP.md: {last_phase}")
+    print(f"  Última fase en ROADMAP_ARCHIVO.md: {last_phase}")
     print("  Fecha de hoy para el encabezado de CONTEXT.md:")
     from datetime import date
     print(f"  > Última actualización: {date.today().isoformat()}")

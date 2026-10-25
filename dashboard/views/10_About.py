@@ -411,7 +411,7 @@ st.markdown("""
 - `docs/moat_methodology.md` — Economic Moat: metodología y umbrales
 - `docs/portfolio_optimizer.md` — Optimizer: SLSQP, perfiles, ARS discount
 - `docs/alert_system.md` — Alertas: tipos, cooldowns, scheduler
-- `docs/ROADMAP.md` — Historial de fases (1 → 15)
+- `docs/ROADMAP.md` y `docs/ROADMAP_ARCHIVO.md` — Historial de fases (1 → 15)
 """)
 
 st.divider()

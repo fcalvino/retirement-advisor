@@ -288,7 +288,7 @@ def filter_by_sources(
 # --------------------------------------------------------------------------- #
 
 #: ``source`` de una fila que **nunca fue una recomendación**: salida de un
-#: fixture de la suite que se filtró a la base del usuario (N6, ver `ROADMAP.md`).
+#: fixture de la suite que se filtró a la base del usuario (N6, ver `ROADMAP_ARCHIVO.md`).
 #:
 #: **No es el caso de U5-18b y por eso no se resuelve igual.** Aquellas 80
 #: duplicadas salieron de ``full_analysis`` sobre datos de mercado reales: el
