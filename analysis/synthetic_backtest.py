@@ -10,7 +10,7 @@ against real SEC EDGAR data (``scripts/point_in_time_backtest.py``).
 
 Deliberately a **separate table, separate store class, separate singleton** —
 never ``analysis.track_record.RecommendationLog``/``track_record_store``.
-N6 (see ``docs/ROADMAP.md``) is the reason this isn't a `source=` value on the
+N6 (see ``docs/ROADMAP_ARCHIVO.md``) is the reason this isn't a `source=` value on the
 existing table: that incident showed the "some rows are fixtures/synthetic,
 filter them out by default" pattern (``FIXTURE_SOURCE``, ``include_fixtures``)
 is a **disciplinary** barrier — three read sites had to each remember to

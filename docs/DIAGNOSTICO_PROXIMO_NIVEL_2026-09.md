@@ -11,7 +11,7 @@
 
 **Fortalezas reales (no marketing):**
 - El motor cuantitativo es inusualmente honesto consigo mismo: `config.py` documenta en el propio código *por qué* cada threshold es lo que es, qué evidencia falta para calibrarlo mejor, y qué se decidió no arreglar y por qué (ver docstrings de `StrategyConfig`, `PiotroskiConfig`). Es raro ver esto en un codebase de este tamaño.
-- `REFACTOR_BACKLOG.md` está prácticamente en cero — 40+ de 42 ítems de deuda técnica estructural ya cerrados (God methods, thresholds hardcodeados, cobertura de `shared.py`). El "próximo nivel" **no** es limpieza de código.
+- `REFACTOR_BACKLOG.md` (borrado el 2026-10-25; resumen en `ROADMAP.md`, «REFACTOR-BACKLOG») estaba prácticamente en cero — 40+ de 42 ítems de deuda técnica estructural ya cerrados (God methods, thresholds hardcodeados, cobertura de `shared.py`). El "próximo nivel" **no** es limpieza de código.
 - La cultura de testing es sólida: oráculos independientes (no auto-consistencia), aislamiento de tests contra la DB del usuario (lección de N6), mutation testing en los fixes financieros más delicados.
 - El diseño anti-alucinación de la capa IA (Chat con tool-calling estructurado, narrativa que solo puede citar datos que un tool determinístico ya calculó) es un patrón correcto y ya está implementado, no es aspiracional.
 
