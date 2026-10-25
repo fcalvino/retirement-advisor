@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## DOCS-BACKLOG-PENDIENTES — tres filas abiertas entran al BACKLOG: PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND y MACRO-SIN-FECHA (2026-10-25)
+
+Las tres filas salieron de la poda de `docs/`: PR 4–7 multimodelo, la punta suelta de SIGNAL-3 y el defecto B2 del gate de frescura estaban abiertos pero ausentes del BACKLOG, que es la fuente de «qué sigue». Cada una se volvió a medir contra el código antes de escribirla; la revisión del diff en contexto fresco no encontró errores.
+
+---
+
 ## DOCS-PODA-2 — poda de docs/ fase 2: ROADMAP partido y REFACTOR_BACKLOG resumido (2026-10-25)
 
 Fase 2 de la poda de `docs/`: `ROADMAP.md` pasa de 4.536 a 1.984 líneas (370 → 235 KB) al mover 143 KB de entradas viejas a `ROADMAP_ARCHIVO.md`, y `REFACTOR_BACKLOG.md` se borra con su resumen acá. La revisión del diff en contexto fresco confirmó que ningún ítem del inventario seguía abierto y encontró referencias a ids movidos que apuntaban al archivo equivocado y una nota de O2 que se había perdido; se corrigieron. El «Archivo del backlog» no se movió: es un registro vivo.
