@@ -165,7 +165,7 @@ En macOS, `make launchd-install` (launchd corre el disparo perdido al despertar)
 
 ## 8. Limpieza de código muerto
 
-El informe histórico está en [`docs/DEAD_CODE_AUDIT.md`](DEAD_CODE_AUDIT.md).
+El informe histórico (2026-07) se borró del árbol: `git show 5fb471c:docs/DEAD_CODE_AUDIT.md`.
 Antes de borrar: `ruff check --select F401,F811,F841`, triage manual (páginas
 Streamlit cargadas con `st.Page`, lazy imports, re-exports) y
 `./venv/bin/python3 -m pytest tests/ -q`. No tocar el split crypto/equity ni

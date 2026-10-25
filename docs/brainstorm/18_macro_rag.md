@@ -3,7 +3,7 @@
 > **Qué es hoy:** indexa hechos macro **fechados** (comunicados de la Fed, series de
 > FRED, noticias económicas) y recupera los más relevantes para inyectarlos como
 > contexto fresco en los prompts, en vez de confiar en la memoria (posiblemente
-> vieja) del modelo. Captura: `_screenshots/18_macro_rag.png`
+> vieja) del modelo.
 
 Es infraestructura de IA muy buena (ancla los factores macro a hechos verificables y
 con fecha). Pero como pantalla de usuario es abstracta: poca gente entiende qué es

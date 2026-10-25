@@ -3,7 +3,7 @@
 > **Qué es hoy:** historial auditable de cada recomendación que emitió el motor y su
 > acierto medido contra el benchmark, a horizontes de 30/90/252 días, sin elegir
 > ventanas favorables. En la captura: 8 recomendaciones logueadas, 0 evaluadas
-> todavía (hace falta que pase el tiempo). Captura: `_screenshots/14_track_record.png`
+> todavía (hace falta que pase el tiempo).
 
 Es una idea valiosísima y honesta: "no me creas, mirá mi historial". Su problema es
 el **arranque en frío**: vacío hasta que pasen meses, así que pocos verán su valor a

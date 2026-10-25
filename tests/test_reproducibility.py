@@ -182,7 +182,7 @@ class TestNoDeadDependencies:
     """Every declared requirement must actually be imported somewhere.
 
     ``pandas-ta`` sat in requirements.txt long after its last import was deleted
-    (see docs/DEAD_CODE_AUDIT.md). Nothing noticed, so its unpinned ``>=`` kept
+    (informe 2026-07, borrado: ``git show 5fb471c:docs/DEAD_CODE_AUDIT.md``). Nothing noticed, so its unpinned ``>=`` kept
     resolving upward until it demanded Python >=3.12 and quietly broke the 3.11
     leg of the support matrix — dragging numba and llvmlite along the whole
     time. ``pyyaml`` was dead the same way. A dependency nobody imports is a

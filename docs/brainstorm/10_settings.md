@@ -2,7 +2,6 @@
 
 > **Qué es hoy:** configuración del proveedor de IA + API keys, perfil personal
 > (wizard), universo de tickers, tickers custom, y reset. Es el panel de control.
-> Captura: `_screenshots/10_settings.png`
 
 Funciona, pero mezcla cosas muy distintas (claves técnicas, perfil personal,
 universo) en una sola pantalla larga. Y configurar IA es la barrera técnica más

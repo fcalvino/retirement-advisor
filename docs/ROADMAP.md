@@ -10,6 +10,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## DOCS-PODA-1 — poda de docs/ fase 1: de 5,0 a 1,4 MB sin perder decisiones (2026-10-25)
+
+Fase 1 de la poda de `docs/`: 34 archivos borrados, 31 modificados y 1 nuevo (−4.205 líneas; 5,0 → 1,4 MB). La revisión del diff en contexto fresco encontró pérdidas en la primera fusión multimodelo (criterio 5.4, allowlist de Q5, ramas sin `else` del comité, severidad de SIGNAL-5, dos puntas sueltas) y se restauraron. Queda la fase 2: podar `ROADMAP.md` y `REFACTOR_BACKLOG.md`.
+
+---
+
 ## ADR-GRUPO-A — global_quality lista el ADR de los 17 emisores con estados en USD (2026-10-24)
 
 global_quality lista como ADR los 17 emisores cuyos estados vienen en USD; los 28 con ADR en bolsa y estados en otra moneda, los 14 con ADR OTC y los 31 sin listado en EE.UU. quedan locales. Tabla de alias única y lectura sin reescribir planes guardados.
@@ -4358,6 +4364,65 @@ Refinamiento posterior: salida estructurada `macro_factors` (además del texto l
 | `config.py` | AIConfig, MoatConfig, BacktestConfig, ProfileConfig, OptimizerConfig |
 | `docs/moat_methodology.md` | Documentación del moat |
 | `docs/ROADMAP.md` | Estado del proyecto y fases completadas |
+
+---
+
+## SIGNAL-1..6 — la cadena Signal → Motivo → Confidence del camino AI (cerrada 2026-09-12)
+
+Serie de seis hallazgos sobre la cadena que produce una recomendación de compra: el
+camino AI podía emitir una acción, una confianza y un motivo que el motor rule-based
+rechazaba. Los plan y los informes originales (`docs/plans/SIGNAL_REASON_*.md`,
+`docs/issues/SIGNAL_REASON_CONFIDENCE_ISSUES.md`) se borraron del árbol al colapsarse
+acá; siguen en git (`git show 826ca50:docs/plans/SIGNAL_REASON_CONFIDENCE_PLAN.md`, `…/SIGNAL_REASON_ALIGNMENT_PLAN.md`,
+`826ca50:docs/issues/SIGNAL_REASON_CONFIDENCE_ISSUES.md`).
+Los tests quedaron como oráculos permanentes (`tests/test_decision_coherence_oracle.py`,
+`tests/test_confidence_deterministic_oracle.py`). Principio rector de toda la serie: **el
+LLM puede ser más prudente que el motor, nunca menos.**
+
+- **SIGNAL-1 (crítica, `f6c36ff`)**: el camino AI podía emitir BUY/STRONG BUY por debajo de
+  la banda de score que esa acción afirma. `apply_safety_overlay` capa la acción y
+  re-aplica los vetos técnicos (BEARISH y `require_technical_uptrend`). Se descartó forzar
+  `decide()` sobre el camino AI porque volvía decorativo al LLM.
+- **SIGNAL-2 (crítica, `f157c6d`)**: la rama crypto del overlay no aplicaba las políticas de
+  data quality ni de patrimonio negativo. Salieron del `else` de equity; un activo ya
+  bloqueado no las atraviesa (AVOID es más severo y su motivo es el que se muestra) y el
+  overlay es idempotente sobre crypto (corre dos veces en el pipeline real).
+- **SIGNAL-3 (alta, `e1b69ce`)**: `confidence_for` ignoraba `action`, así que el HIGH de la
+  banda SELL se heredaba en una compra. Una compra sin banda queda en `MEDIUM`; el techo
+  sale de `max_action_for_score`, sin umbral escrito a mano. `SELL` en banda SELL conserva
+  su `HIGH`.
+- **SIGNAL-4 (alta, `f6c36ff`)**: las decisiones del camino AI nunca llevaban
+  `decisive_reason`. Se **deriva** del rule-based sobre el mismo `(fundamental, technical)`;
+  `_parse_response` no lo escribe a propósito, para no crear una segunda fuente de verdad.
+- **SIGNAL-5 (media, `f6c36ff`, motivo en `b39015f`)**: una señal técnica *no medible* viajaba
+  como el literal `NEUTRAL` y satisfacía la confirmación de STRONG BUY. `TechnicalResult.signal`
+  tiene un cuarto estado (`TECHNICAL.signal_not_measurable`, default) y
+  `STRATEGY.strong_buy_technical_signals` define qué confirma la banda máxima. `BUY` sigue
+  permitido (su regla es `tech != "BEARISH"`, una ausencia de veto), para no sacar del
+  shortlist a las empresas de cotización reciente. La UI lo traduce con
+  `data.product_ux.technical_signal_label`.
+- **SIGNAL-6 (alta, `e7ec4f0`)**: salió de la revisión previa al PR y dos de sus cuatro
+  síntomas los introdujo la propia serie: el cap re-aplicaba un subconjunto de la matriz y
+  el motivo podía describir otra acción. El cap pasa a ser un **piso**:
+  `min(acción del LLM, acción de decide())` sobre el mismo par, de modo que toda regla de la
+  matriz vale por construcción; `_cap_action_to_matrix` se borró. El motivo se adopta sólo
+  si las acciones coinciden; si la IA fue más prudente, `AI_MORE_PRUDENT_REASON`. Medido
+  sobre 14.400 combinaciones: acciones del camino AI por encima del motor 92 → 0, motivos
+  que describen otra acción 1.528 → 0, divergencias entre la 1ª y la 2ª pasada 0 → 0; las 92
+  que cambian bajan todas y 80 salen del shortlist.
+- **Puntas sueltas que la serie dejó abiertas a propósito:**
+  - El cap de SIGNAL-3 es unidireccional: `confidence_for("SELL", 87, "BULLISH", …)` devuelve
+    `HIGH`, el HIGH de una banda de compra acompañando una venta. Es alcanzable por el camino AI,
+    que desde SIGNAL-6 admite que la IA sea más prudente que el motor. No se cerró porque no
+    aparece en el camino rule-based y el motivo de esas filas ya nombra la causa
+    (`AI_MORE_PRUDENT_REASON`).
+  - Las filas del track record escritas antes de SIGNAL-5 con `technical_signal = "NEUTRAL"` pueden
+    significar «neutral medido» o «no se midió». `technical_signal` es `String` libre (persistir
+    `NOT_MEASURABLE` no necesita migración); no se reescribe el pasado. Es una advertencia para
+    `scripts/score_track_record.py`.
+- **Decisión de producto (B)**: no se expone en la UI que la acción fue capada respecto del
+  LLM; mostrar «el LLM había dicho STRONG BUY» daría estatus de alternativa a una
+  recomendación que el motor ya rechazó. La celda «Motivo» ya nombra la causa.
 
 ---
 

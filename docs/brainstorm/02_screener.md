@@ -3,7 +3,6 @@
 > **Qué es hoy:** analiza todo el universo (85+ tickers) en fundamental + técnico y
 > arma una tabla rankeada por score, con columnas de calidad de datos y "viento"
 > (tailwind). Arranca **vacío**: hay que apretar "Refresh Analysis" y esperar.
-> Captura: `_screenshots/02_screener.png`
 
 El motor detrás es muy bueno. El problema es de **presentación y entrada**: pantalla
 en blanco, una sola tabla larga, sin filtros ni una historia que guíe la mirada.

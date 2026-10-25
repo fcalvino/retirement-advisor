@@ -3,7 +3,6 @@
 > **Qué es hoy:** la portada. Muestra 4 datos del universo/perfil, un expander de
 > "Mi perfil", el bloque "Tu camino a un plan de retiro activo" (5 pasos con
 > progreso) y un expander de supuestos/limitaciones.
-> Captura: `_screenshots/01_inicio.png`
 
 La portada ya está bien pensada (el journey de 5 pasos es excelente). El problema:
 sigue siendo **informativa, no accionable** — te dice qué hacer pero no te muestra

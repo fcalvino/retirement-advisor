@@ -1,7 +1,6 @@
 # 📋 Watchlist — Brainstorming
 
 > **Qué es hoy:** lista de tickers a seguir, con sus datos clave. Pantalla simple.
-> Captura: `_screenshots/12_watchlist.png`
 
 Es útil pero hoy se siente como una lista pasiva. Puede ser el "estoy mirando esto
 para cuando esté en precio" que conecte descubrimiento, monitoreo y acción.

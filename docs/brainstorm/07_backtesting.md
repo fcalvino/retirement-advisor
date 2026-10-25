@@ -2,7 +2,7 @@
 
 > **Qué es hoy:** corre una cartera contra la historia (5 años por defecto) y muestra
 > equity curve, drawdown, Sharpe/Sortino/Calmar, con rebalanceo configurable y
-> comparación vs benchmark. Captura: `_screenshots/07_backtesting.png`
+> comparación vs benchmark.
 
 Herramienta sólida pero "de analista". Para un inversor de retiro el riesgo es que
 el backtest genere **falsa confianza** ("esto anduvo, entonces andará"). Las ideas

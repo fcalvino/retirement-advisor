@@ -3,7 +3,6 @@
 > **Qué es hoy:** trae los mismos datos crudos de varias fuentes (yfinance + SEC
 > EDGAR, FRED para macro) y marca dónde no coinciden, para que un número
 > silenciosamente mal no se cuele en el análisis. Arranca pidiendo un ticker.
-> Captura: `_screenshots/17_calidad_datos.png`
 
 Es una idea madura y honesta (rara en productos de inversión). Pero hoy es una
 pantalla técnica, manual y de un ticker por vez: el usuario común no la va a usar

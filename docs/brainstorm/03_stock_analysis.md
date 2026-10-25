@@ -3,7 +3,6 @@
 > **Qué es hoy:** la ficha profunda de un ticker — score y sus 5 dimensiones,
 > consistency, Piotroski, moat (cuantitativo + IA), técnico, tailwind, decisión IA
 > con factores macro. Es la pantalla más densa del producto (34 KB de código).
-> Captura: `_screenshots/03_stock_analysis.png`
 
 Tiene muchísima información de calidad. El riesgo es **sobrecarga**: el usuario ve
 todo junto y no sabe qué mirar primero ni qué hacer después.

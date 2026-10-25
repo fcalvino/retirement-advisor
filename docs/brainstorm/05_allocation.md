@@ -2,7 +2,6 @@
 
 > **Qué es hoy:** pantalla chica (2.6 KB) que sugiere un reparto por clase de activo
 > según la edad/edad de retiro (regla tipo "glide path" simple).
-> Captura: `_screenshots/05_allocation.png`
 
 Es la pantalla más liviana y la que más se siente "de relleno". Hay dos caminos:
 hacerla mucho más rica, o fusionarla con Optimizer/Mi Plan.

@@ -1,7 +1,7 @@
 # ℹ️ About — Brainstorming
 
 > **Qué es hoy:** página informativa: qué es el producto, metodología, disclaimers,
-> limitaciones. Captura: `_screenshots/11_about.png`
+> limitaciones.
 
 Cumple una función legal/educativa, pero es una pantalla "muerta": se lee una vez y
 nunca más. Puede dar mucho más valor.

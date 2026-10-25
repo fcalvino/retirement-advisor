@@ -3,7 +3,6 @@
 > **Qué es hoy:** carga tus posiciones reales y muestra valor, P&L, métricas de
 > riesgo (Sharpe, Sortino, beta, drawdown), alineación vs el plan activo (deriva +
 > trades sugeridos) y la sección del "libro personal" (sizing por convicción).
-> Captura: `_screenshots/04_portfolio.png`
 
 Es una de las pantallas más completas. Observación de la captura: la "deriva total"
 marcaba **98%** porque las posiciones reales (GOOGL, INTU) no se superponen con el

@@ -3,7 +3,7 @@
 > **Qué es hoy:** harness que mide la *calidad* de las decisiones de IA contra casos
 > "golden", con chequeos (estructura válida, acción esperada, scores
 > determinísticos, esquema macro, tope conservador, riesgos presentes). Sirve para
-> cambiar un prompt y ver si mejoró o empeoró. Captura: `_screenshots/15_eval_ia.png`
+> cambiar un prompt y ver si mejoró o empeoró.
 
 Es una herramienta de **desarrollador**, no de inversor. Está perfecto que exista,
 pero probablemente no debería ocupar un lugar en el menú principal del usuario final.

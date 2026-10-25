@@ -42,7 +42,6 @@ def test_catalog_covers_every_first_party_product_md():
         "historical-audit",
         "historical-plan",
         "ideation",
-        "archive",
     ):
         assert required_role in report.role_counts, required_role
 
