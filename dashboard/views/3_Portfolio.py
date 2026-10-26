@@ -418,9 +418,10 @@ if PERSONAL_BOOK.enabled:
                 st.markdown("**Por qué (drivers):**")
                 for _b in _r.justification_bullets:
                     st.markdown(f"- {_b}")
-                st.markdown(
-                    f"> **🎯 Tesis de concentración (ventaja personal):** {_r.concentration_thesis}"
-                )
+                if _r.concentration_thesis:
+                    st.markdown(
+                        f"> **🎯 Tesis de concentración (ventaja personal):** {_r.concentration_thesis}"
+                    )
                 if _r.risk_notes:
                     st.markdown("**⚠️ Riesgos:**")
                     for _n in _r.risk_notes:

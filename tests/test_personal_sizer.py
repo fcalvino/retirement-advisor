@@ -16,6 +16,7 @@ from portfolio.personal_sizer import (
     ACUMULAR_MODERADO,
     AGREGAR_EN_DEBILIDAD,
     HOLDEAR,
+    REVISAR_URGENTE,
     TRIM_PARCIAL,
     VENDER_PARTE,
     VENDER_TODO,
@@ -298,6 +299,56 @@ def test_enrich_failure_degrades_gracefully():
     assert rec.action  # produjo algo válido
 
 
+@pytest.mark.parametrize("weight", [12.0, PERSONAL_BOOK.high_concentration_risk_note_pct, 45.0])
+def test_enrich_failure_never_recommends_selling(weight):
+    """Sin datos no hay tesis rota: una caída de red o de datos no puede mandar a vender.
+
+    Oráculo: la compuerta dura de ``_decide_sizing`` vende cuando ``score < sell_all_score``
+    o moat "None". Una vista sin datos tiene score 0 y moat "None" por default, así que
+    la falla de ``enrich`` caía ahí y la posición más pesada salía como VENDER_TODO.
+    """
+    def boom(sym):
+        raise RuntimeError("network down")
+
+    a = analyze_personal_book(
+        {"NET": _pos("NET", weight)}, {"NET": "HIGH"}, enrich_fn=boom
+    )
+    rec = _rec_for(a, "NET")
+    assert rec.action == REVISAR_URGENTE
+    assert rec.action not in (VENDER_TODO, VENDER_PARTE, TRIM_PARCIAL)
+    assert rec.suggested_target_weight_pct is None
+    assert rec.data_quality_level == "poor"
+    # No inventa un score ni una tesis: el aviso dice que faltan datos, y no hay nota de impuestos
+    # (no se está recortando nada).
+    assert any("datos" in n.lower() for n in rec.risk_notes)
+    assert not any("impuesto" in n.lower() for n in rec.risk_notes)
+    assert rec.base_score_drivers["adjusted_score"] is None
+    assert "datos" in a.overall_summary.lower()
+
+
+def test_enrich_failure_of_one_name_does_not_change_the_others():
+    """La falla de un ticker deja la recomendación de los demás igual a la de un libro sano."""
+    good = _view(score=79, moat="Wide", tailwind="Strong")
+
+    def flaky(sym):
+        if sym == "BAD":
+            raise RuntimeError("timeout")
+        return good
+
+    positions = {"OK": _pos("OK", 10.0), "BAD": _pos("BAD", 30.0)}
+    convs = {"OK": "HIGH", "BAD": "HIGH"}
+    mixed = analyze_personal_book(
+        {k: dict(v) for k, v in positions.items()}, convs, enrich_fn=flaky
+    )
+    healthy = analyze_personal_book(
+        {k: dict(v) for k, v in positions.items()}, convs, enrich_fn=lambda s: good
+    )
+    assert _rec_for(mixed, "OK").action == _rec_for(healthy, "OK").action
+    assert _rec_for(mixed, "OK").suggested_target_weight_pct == \
+        _rec_for(healthy, "OK").suggested_target_weight_pct
+    assert _rec_for(mixed, "BAD").action == REVISAR_URGENTE
+
+
 # ------------------------------------------------------------------ #
 #  15. Serialización a dict (export JSON)                            #
 # ------------------------------------------------------------------ #
@@ -313,3 +364,63 @@ def test_analysis_serializes_to_dict():
     assert "action_label" in d["recommendations"][0]
     import json
     json.dumps(d)  # no debe lanzar
+
+
+# ------------------------------------------------------------------ #
+#  "Sin datos" en producción no lanza: es un resultado por defecto      #
+# ------------------------------------------------------------------ #
+
+def _empty_feed_analysis(monkeypatch):
+    """Lo que ``full_analysis`` devuelve cuando yfinance no trae nada del emisor.
+
+    ``FundamentalAnalyzer.analyze`` corta con ``get_info`` vacío y devuelve un
+    ``FundamentalResult`` por defecto —score 0, moat "None", ``company_name`` vacío—
+    sin lanzar. Se arma con el analizador real, sin red.
+    """
+    from types import SimpleNamespace
+
+    import analysis.fundamental as fundamental
+    import analysis.strategy as strategy
+
+    monkeypatch.setattr(fundamental, "get_info", lambda symbol: {})
+    fund = fundamental.FundamentalAnalyzer().analyze("ZZZ")
+    tech = SimpleNamespace()
+    decision = SimpleNamespace(action="SELL", has_margin_of_safety=False)
+    monkeypatch.setattr(strategy, "full_analysis", lambda symbol, ai_config=None: (fund, tech, decision))
+    return fund
+
+
+@pytest.mark.parametrize("weight", [12.0, 60.0])
+def test_empty_feed_with_the_real_enrich_does_not_recommend_selling(monkeypatch, weight):
+    from portfolio.personal_sizer import _default_enrich
+
+    fund = _empty_feed_analysis(monkeypatch)
+    assert fund.adjusted_score == 0.0 and fund.moat_classification == "None"  # el escenario es el real
+
+    a = analyze_personal_book({"ZZZ": _pos("ZZZ", weight)}, {"ZZZ": "HIGH"}, enrich_fn=_default_enrich)
+    rec = _rec_for(a, "ZZZ")
+    assert rec.action == REVISAR_URGENTE
+    assert rec.data_quality_level == "poor"
+
+
+def test_the_dashboard_enrich_shares_the_no_data_detection(monkeypatch):
+    """``dashboard.shared`` armaba su propio dict y no marcaba ``has_data``."""
+    from types import SimpleNamespace
+
+    from portfolio.personal_sizer import raw_from_analysis
+
+    fund = _empty_feed_analysis(monkeypatch)
+    assert raw_from_analysis(fund, SimpleNamespace(), SimpleNamespace())["has_data"] is False
+    good = SimpleNamespace(company_name="Acme Inc", adjusted_score=70.0, moat_classification="Wide")
+    assert raw_from_analysis(good, SimpleNamespace(), SimpleNamespace())["has_data"] is True
+
+
+def test_empty_dict_from_enrich_is_no_data():
+    a = analyze_personal_book({"E": _pos("E", 40.0)}, {"E": "HIGH"}, enrich_fn=lambda s: {})
+    assert _rec_for(a, "E").action == REVISAR_URGENTE
+
+
+def test_a_view_without_the_has_data_key_still_goes_through_the_normal_path():
+    """Los mocks que arman la vista a mano (y callers viejos) no traen ``has_data``."""
+    a = analyze_personal_book({"A": _pos("A", 10.0)}, {"A": "HIGH"}, enrich_fn=lambda s: _view())
+    assert _rec_for(a, "A").action != REVISAR_URGENTE
