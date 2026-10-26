@@ -17,6 +17,7 @@ import requests
 from loguru import logger
 
 from config import ALERTS
+from data.redact import redact_secrets
 
 _HTML_TEMPLATE = """\
 <!DOCTYPE html>
@@ -162,4 +163,8 @@ class Notifier:
             resp.raise_for_status()
             logger.info("Telegram alert sent")
         except Exception as exc:
-            logger.error(f"Telegram alert failed: {exc}")
+            # The text of a requests error carries the URL, and Telegram puts the bot token in
+            # its path: log it redacted (AUDIT-TELEGRAM-LOG).
+            logger.error(
+                f"Telegram alert failed: {redact_secrets(str(exc), ALERTS.telegram_token)}"
+            )

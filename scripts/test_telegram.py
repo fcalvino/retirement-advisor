@@ -8,6 +8,7 @@ from pathlib import Path
 
 # Cargar .env explícitamente desde la raíz del proyecto
 root = Path(__file__).parent.parent
+sys.path.insert(0, str(root))
 env_path = root / ".env"
 print(f"Buscando .env en: {env_path}")
 print(f".env existe: {env_path.exists()}")
@@ -19,7 +20,9 @@ load_dotenv(dotenv_path=env_path, override=True)
 token   = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN", "")
 chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
 
-print(f"\nToken encontrado : {'SÍ (' + token[:20] + '...)' if token else 'NO — no está en .env'}")
+# Only the bot id (the part before ":"), never any of the secret half: this prints to a terminal
+# that gets pasted into chats and issues.
+print(f"\nToken encontrado : {'SÍ (bot ' + token.split(':')[0] + ', secreto oculto)' if token else 'NO — no está en .env'}")
 print(f"Chat ID encontrado: {'SÍ (' + chat_id + ')' if chat_id else 'NO — no está en .env'}")
 
 if not token or not chat_id:
@@ -53,4 +56,6 @@ try:
 except requests.exceptions.ConnectionError:
     print("❌ Sin conexión a internet o api.telegram.org bloqueado.")
 except Exception as e:
-    print(f"❌ Error inesperado: {e}")
+    from data.redact import redact_secrets
+
+    print(f"❌ Error inesperado: {redact_secrets(str(e), token)}")

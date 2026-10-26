@@ -23,8 +23,8 @@ GOAL-PRIORITY-TEXT y ORDEN-COHERENCIA.)
 2. **IDEA-5 IMPUESTOS**: banda 5. Reglas y decisiones en `docs/plans/IDEA5_GANANCIA_CAPITAL_AR.md` (2026-10-10). Sigue: lotes y «Registrar venta» en Portfolio con el impuesto de acciones y ETFs del exterior (§6 de ese plan).
 
 Esperan disparador: U5-1b, COM-*, COUNTRY-RISK-AUTO, TR-RACE y VENV-PRUNE. Sin orden: PIT-TOOLS,
-PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND, MACRO-SIN-FECHA y la serie AUDIT-* (14 filas, auditoría
-2026-10-26). Espera Fuente: SCORE-CONTRACCION.
+PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND, MACRO-SIN-FECHA y la serie AUDIT-* (13 filas abiertas, auditoría
+2026-10-26; AUDIT-TELEGRAM-LOG ya cerró). Espera Fuente: SCORE-CONTRACCION.
 
 ---
 
@@ -104,7 +104,6 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **MACRO-SIN-FECHA** | 5 | El gate de frescura de `MacroRagStore._fresh_docs` acepta un documento sin `as_of` como fresco. Latente: ningún camino lo crea hoy. Bloquea la opción completa de PROMPTS-MULTIMODELO (B1). Ver bloque 4 |
 | **AUDIT-SCHEDULER-FEED** | 5 | El job diario analiza los tickers sin `is_empty_feed`: un feed vacío entra a `scored` con score 0, moat «None» y SELL (y su recuperación dispara un BUY que sí entra al track record); y el retorno de cartera del drift cuenta una cotización faltante como 0 en el valor pero no en el costo. Auditoría 2026-10-26. Ver bloque 4 |
 | **AUDIT-ALERTAS-DESPACHO** | 5 | Las alertas del plan (SORR, GOAL_RISK, salud del plan, coach de caída) se registran con `_fire` pero no se despachan por email/Telegram; la severidad mínima por perfil está hardcodeada (tres campos de config sin lectores); `ALERT_AI_MIN_SEVERITY=WARNING` lanza `ValueError`. Ver bloque 4 |
-| **AUDIT-TELEGRAM-LOG** | 4 | `_send_telegram` loguea la excepción de `requests`, cuyo texto lleva la URL con el token del bot. Lo medido en el log local: ver bloque 4. **La acción es del usuario: rotar el token.** |
 | **AUDIT-MOAT-IA** | 5 | NaN en un campo del JSON de la IA se limita a 2,0 (el máximo) en el moat y en el cripto; un objeto JSON vacío `{}` se cachea 7 días como cuatro ceros; el prompt cripto del moat dice «Bitcoin (BTC)» para cualquier cripto (ETH incluido). Ver bloque 4 |
 | **AUDIT-PIT-CERO** | 5 | El backtest point-in-time persiste Piotroski 0 para un corte sin estados reconstruidos y la evidencia lo agrupa como «débil»: contamina PIT-2 con filas sin dato. Falta medirlo con un SELECT sobre la base. Ver bloque 4 |
 | **AUDIT-OPTIMIZER-LIMITES** | 5 | El respaldo score-weighted ignora los topes de sector y, al renormalizar, el de posición; ningún perfil puede sumar 100 % con su tope (80 / 96 / 90 %) y el water-filling del respaldo no converge; la nube de la frontera viola el tope; código muerto en la poda de pesos. Ver bloque 4 |
@@ -334,17 +333,6 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
     llaman sin otro: con `ALERT_AI_MIN_SEVERITY=WARNING` en mayúsculas lanza `ValueError` (reproducido:
     el enum son `info/warning/critical`) y aborta `AlertEngine.run` entero, hasta que lo atrapa el
     `except` del job. Falta decidir si el plan debe avisar por canal.
-  - **AUDIT-TELEGRAM-LOG** (robustez; seguridad). `alerts/notifier.py:164-165` hace
-    `logger.error(f"Telegram alert failed: {exc}")` y el texto de una excepción de `requests` incluye la
-    URL (`.../bot<TOKEN>/sendMessage`; reproducido con un token falso: tanto `ConnectTimeout` como
-    `HTTPError` la traen). El 2026-10-25 se contaron **10 líneas** con ese patrón en el log local de
-    `launchd` (git-ignorado, no entra al repo; no se copió ninguna; el revisor no pudo verificar el
-    conteo porque no debía leer `logs/`). TELEGRAM-TOKEN (#269) arregló cómo se *resuelve* el token, no
-    lo que se loguea. Riesgo análogo, no medido: `data/data_sources.py:399` (FRED, `api_key` en la query)
-    y `:443`, `:451` (FMP, `apikey`) loguean `{exc}` a nivel debug (`:415`, `:466`), y el scheduler corre
-    con el stderr por defecto de loguru (debug), que `launchd` captura. Arreglo: loguear el tipo de
-    excepción y el código HTTP, nunca la URL. **Pendiente del usuario, independiente del arreglo: rotar el
-    token**, porque corregir el código no invalida lo que ya quedó escrito.
   - **AUDIT-MOAT-IA** (robustez). `analysis/moat.py:574` y `analysis/crypto_analyzer.py:557` hacen
     `max(lo, min(hi, float(raw)))`: con `NaN` da `hi` (reproducido: `max(0.0, min(2.0, nan)) = 2.0`; en el
     cripto, `network_adoption` 2,0), o sea que un campo `NaN` del JSON de la IA puntúa lo máximo.
