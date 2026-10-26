@@ -23,7 +23,8 @@ GOAL-PRIORITY-TEXT y ORDEN-COHERENCIA.)
 2. **IDEA-5 IMPUESTOS**: banda 5. Reglas y decisiones en `docs/plans/IDEA5_GANANCIA_CAPITAL_AR.md` (2026-10-10). Sigue: lotes y «Registrar venta» en Portfolio con el impuesto de acciones y ETFs del exterior (§6 de ese plan).
 
 Esperan disparador: U5-1b, COM-*, COUNTRY-RISK-AUTO, TR-RACE y VENV-PRUNE. Sin orden: PIT-TOOLS,
-PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND y MACRO-SIN-FECHA. Espera Fuente: SCORE-CONTRACCION.
+PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND, MACRO-SIN-FECHA y la serie AUDIT-* (14 filas, auditoría
+2026-10-26). Espera Fuente: SCORE-CONTRACCION.
 
 ---
 
@@ -101,6 +102,20 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **PROMPTS-MULTIMODELO** | 5 | PR 4, 5, 6 y 7 de la serie multimodelo siguen abiertos (`docs/plans/PROMPTS_MULTIMODELO.md`, verificado contra el código el 2026-10-25): higiene de idioma, negaciones y few-shot (PR 4), delimitador único `=== ===` y orden datos→instrucción (PR 5), narrativa de plan en campos (PR 6) y macro sin memoria (PR 7, parcial). Orden recomendado por la serie: 7 → 4 → 5 → 6. Ver bloque 4 |
 | **CONFIDENCE-SELL-BAND** | 4 | `confidence_for` deriva de la banda de score: con score 87 y técnico BULLISH da `HIGH` para SELL, AVOID, REDUCE y HOLD (medido el 2026-10-25), el «la evidencia sostiene comprar» de la banda de compra junto a una no-compra. Punta suelta de SIGNAL-3. Ver bloque 4 |
 | **MACRO-SIN-FECHA** | 5 | El gate de frescura de `MacroRagStore._fresh_docs` acepta un documento sin `as_of` como fresco. Latente: ningún camino lo crea hoy. Bloquea la opción completa de PROMPTS-MULTIMODELO (B1). Ver bloque 4 |
+| **AUDIT-SCHEDULER-FEED** | 5 | El job diario analiza los tickers sin `is_empty_feed`: un feed vacío entra a `scored` con score 0, moat «None» y SELL (y su recuperación dispara un BUY que sí entra al track record); y el retorno de cartera del drift cuenta una cotización faltante como 0 en el valor pero no en el costo. Auditoría 2026-10-26. Ver bloque 4 |
+| **AUDIT-ALERTAS-DESPACHO** | 5 | Las alertas del plan (SORR, GOAL_RISK, salud del plan, coach de caída) se registran con `_fire` pero no se despachan por email/Telegram; la severidad mínima por perfil está hardcodeada (tres campos de config sin lectores); `ALERT_AI_MIN_SEVERITY=WARNING` lanza `ValueError`. Ver bloque 4 |
+| **AUDIT-TELEGRAM-LOG** | 4 | `_send_telegram` loguea la excepción de `requests`, cuyo texto lleva la URL con el token del bot. Lo medido en el log local: ver bloque 4. **La acción es del usuario: rotar el token.** |
+| **AUDIT-MOAT-IA** | 5 | NaN en un campo del JSON de la IA se limita a 2,0 (el máximo) en el moat y en el cripto; un objeto JSON vacío `{}` se cachea 7 días como cuatro ceros; el prompt cripto del moat dice «Bitcoin (BTC)» para cualquier cripto (ETH incluido). Ver bloque 4 |
+| **AUDIT-PIT-CERO** | 5 | El backtest point-in-time persiste Piotroski 0 para un corte sin estados reconstruidos y la evidencia lo agrupa como «débil»: contamina PIT-2 con filas sin dato. Falta medirlo con un SELECT sobre la base. Ver bloque 4 |
+| **AUDIT-OPTIMIZER-LIMITES** | 5 | El respaldo score-weighted ignora los topes de sector y, al renormalizar, el de posición; ningún perfil puede sumar 100 % con su tope (80 / 96 / 90 %) y el water-filling del respaldo no converge; la nube de la frontera viola el tope; código muerto en la poda de pesos. Ver bloque 4 |
+| **AUDIT-STRESS-SECTORES** | 5 | Los escenarios de estrés usan «Financials» y «Materials»; yfinance dice «Financial Services» y «Basic Materials»: esos dos sectores caen al shock por defecto. Ver bloque 4 |
+| **AUDIT-UI-VERDAD** | 5 | Cinco pantallas dicen algo que el motor no hizo: la fuente «ai» del track record, la narrativa del plan, el `ai_enabled` de Settings, el color de un Backtesting negativo y un margen de 0 %. Ver bloque 4 |
+| **AUDIT-CHAT-PROYECCION** | 5 | La herramienta `retirement_projection` del chat proyecta con aporte, retiro y meta que elige el LLM (por defecto 0), no con los del plan activo. Ver bloque 4 |
+| **AUDIT-MC-ROBUSTEZ** | 5 | Monte Carlo: `log1p` sin guarda; y, reportado por subagentes sin re-verificar, el borde del bootstrap, la riqueza NaN en semanas extremas, `_asset_hist` viejo, Guardrails del año 1; más mutantes sin fijar (percentiles, escala de `prob_achieve_target_pct`). Ver bloque 4 |
+| **AUDIT-DATOS** | 5 | `compute_cagr` y `compute_cagr_available` (el CAGR de ingresos y EPS del score) con un NaN interior cuentan puntos, no años; y, reportado por subagentes, el desempate SEC 10-K/10-K/A, errores de SQLite sin aislar en `fetcher`, un 429 de SEC tratado como «sin datos» y `local_day_start_utc` en el cambio de horario. Ver bloque 4 |
+| **AUDIT-TESTS** | 5 | Dos tests que siempre se saltean, `personal_book_convictions` sin tests y con escritura no atómica; y, reportado por subagentes, tests que fallan según el orden (B1/B2, ésta con la causa del fallo intermitente de `test_sim_gap_katex_oracle`). Ver bloque 4 |
+| **AUDIT-UI-ESTADO** | 5 | Reportado por subagentes con AppTest, sin re-verificar: en «Mis Metas» la prioridad no cambia con ⬆️/⬇️ y el resultado del plan sobrevive a la edición; el Optimizer llama al LLM en cada rerun; el rerun de Macro RAG borra el mensaje de éxito; el chat renderiza `$` sin `escape_dollars`. Ver bloque 4 |
+| **AUDIT-RESIDUALES** | 5 | Lo que los arreglos de #283–#290 dejaron dicho y sin cerrar: ventas parciales y lotes sin fecha en la curva del tracker, un NI diminuto con OCF negativo en el moat, el ancla que retrocede del Piotroski y las fechas exactas, el borde del `earningsGrowth` en Graham, y las dos bases del track record. Ver bloque 4 |
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **TR-RACE** | 5 | `analysis/track_record.py` (deduplicación por día, upsert de outcomes) y `analysis/macro_rag.py:129` hacen «leer y después insertar», como `DataCache` antes de CACHE-RACE. Sin daño medido el 2026-10-10: 0 duplicados a menos de 5 s en `recommendation_log`; los 74 del 2026-08-28 son anteriores a la deduplicación. **Reabrir** si aparece un duplicado a menos de 5 s o si un escritor del track record pasa a correr en hilos o en dos procesos a la vez. |
 | **VENV-PRUNE** | 5 | `run.sh` instala el lock con `pip install`, que no saca lo que salió del lock (`pandas-ta`/`numba`/`llvmlite`, 2026-10-10). Un sync completo borraría Playwright. Espera disparador: la próxima dependencia que se retire. Ver bloque 4 |
@@ -283,6 +298,166 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
   fija el comportamiento. Pariente de PIT-TOOLS (un documento posterior a `now` también cuenta como
   fresco) y precondición de PROMPTS-MULTIMODELO B1. Decisión pendiente: si un documento sin fecha se
   rechaza.
+- **Serie AUDIT-* (auditoría de código de solo lectura, 2026-10-26, sobre `e3074f3`)**: tres rondas de
+  subagentes sobre todo el repo, con los ocho arreglos que ya salieron (#283 `plan_store`, #284 sizer sin
+  datos, #285 optimizer sin exceso sobre rf, #286 Piotroski, #287 Graham, #288 curva del tracker, #289
+  retorno del track record, #290 conversión de caja del moat). Cada fila se **re-verificó contra `main`
+  el 2026-10-26**: la leí en el código y, donde se indica, la reproduje, y un revisor independiente (sin
+  el contexto de la auditoría) intentó refutarla; lo que ese revisor no alcanzó a verificar y lo que un
+  subagente reportó y nadie re-leyó va rotulado «sin re-verificar». Dos afirmaciones de subagentes
+  **resultaron falsas** al re-verificarlas y no entran: que `fan_paths[horizon_years]` falla con el
+  preset de 8 años (`_fan_paths` genera las claves de 0 a `horizon_years`, así que 8 existe) y que una
+  respuesta de IA *vacía* se cachea 7 días como ceros (vacía o no-JSON lanza `MoatParseError`; sólo el
+  objeto `{}` se cachea). Ninguna fila tiene orden: las pone el usuario.
+  - **AUDIT-SCHEDULER-FEED** (corrección). `scripts/run_scheduler.py:51-68` llama a `full_analysis` y
+    junta el resultado en `scored` sin mirar `is_empty_feed` (`data/screener_store.py:301`; 0 usos en el
+    archivo, a diferencia de `analysis/track_record.py:368` y de las páginas): `analyze` no lanza ante un
+    `get_info` vacío, devuelve un resultado por defecto (score 0, moat «None», acción SELL; reproducido,
+    y `is_empty_feed(fund)` da True), y el `try` sólo atrapa excepciones. Es la misma clase de
+    EMPTY-FEED-SA y del sizer (#284), en el job que alimenta las alertas: el snapshot queda en 0 y genera
+    alertas falsas de SELL y de caída de score; cuando el feed se recupera al día siguiente salta un
+    «score surge» y un BUY, y ése sí entra al track record porque `_log_track_record`
+    (`alerts/engine.py:207`) pasa un objeto sin precio y `is_empty_feed` no lo frena (razonado por el
+    revisor, no reproducido de punta a punta). Aparte, `:256-262` hace `px = float(... or 0)`: una
+    cotización faltante suma al costo (`shares * avg`) y no al valor, así que `portfolio_return_pct` baja
+    por la posición que no se pudo cotizar. Falta decidir qué hace el job con un feed vacío (saltear, o
+    contarlo como fallo).
+  - **AUDIT-ALERTAS-DESPACHO** (corrección). `AlertEngine.run` despacha un resumen con las alertas por
+    símbolo (`alerts/engine.py:220`) y las tres de cartera (`:263-268`); `check_sorr` (`:272`),
+    `check_goal_risk` (`:305`), `check_plan_health_degradation` (`:337`) y `check_market_drop_coach`
+    (`:370`) sólo hacen `_fire` —registrar y poner cooldown— y el scheduler (`scripts/run_scheduler.py:278,
+    318, 345, 369`) sólo loguea «alert fired»: nada las manda por email ni Telegram. Además
+    `_min_severity_for_profile` (`:80-85`) hardcodea «conservador → WARNING» y
+    `AlertConfig.min_severity_conservador/moderado/agresivo` (`config.py:607-609`) no los lee nadie
+    (reproducido: 0 lectores fuera de `config.py`). Y `_get_ai_explanation` hace
+    `AlertSeverity(ALERTS.ai_explanations_min_severity)` (`:95`) antes de su `try`, y los `check_*` lo
+    llaman sin otro: con `ALERT_AI_MIN_SEVERITY=WARNING` en mayúsculas lanza `ValueError` (reproducido:
+    el enum son `info/warning/critical`) y aborta `AlertEngine.run` entero, hasta que lo atrapa el
+    `except` del job. Falta decidir si el plan debe avisar por canal.
+  - **AUDIT-TELEGRAM-LOG** (robustez; seguridad). `alerts/notifier.py:164-165` hace
+    `logger.error(f"Telegram alert failed: {exc}")` y el texto de una excepción de `requests` incluye la
+    URL (`.../bot<TOKEN>/sendMessage`; reproducido con un token falso: tanto `ConnectTimeout` como
+    `HTTPError` la traen). El 2026-10-25 se contaron **10 líneas** con ese patrón en el log local de
+    `launchd` (git-ignorado, no entra al repo; no se copió ninguna; el revisor no pudo verificar el
+    conteo porque no debía leer `logs/`). TELEGRAM-TOKEN (#269) arregló cómo se *resuelve* el token, no
+    lo que se loguea. Riesgo análogo, no medido: `data/data_sources.py:399` (FRED, `api_key` en la query)
+    y `:443`, `:451` (FMP, `apikey`) loguean `{exc}` a nivel debug (`:415`, `:466`), y el scheduler corre
+    con el stderr por defecto de loguru (debug), que `launchd` captura. Arreglo: loguear el tipo de
+    excepción y el código HTTP, nunca la URL. **Pendiente del usuario, independiente del arreglo: rotar el
+    token**, porque corregir el código no invalida lo que ya quedó escrito.
+  - **AUDIT-MOAT-IA** (robustez). `analysis/moat.py:574` y `analysis/crypto_analyzer.py:557` hacen
+    `max(lo, min(hi, float(raw)))`: con `NaN` da `hi` (reproducido: `max(0.0, min(2.0, nan)) = 2.0`; en el
+    cripto, `network_adoption` 2,0), o sea que un campo `NaN` del JSON de la IA puntúa lo máximo.
+    `_parse_ai_response("{}")` devuelve cuatro ceros válidos, `ai_available = True`, y `moat.py:396` los
+    cachea 168 h; el cripto hace lo mismo (`crypto_analyzer.py:455`, con `moat_durability_years` 10).
+    Una respuesta vacía o no-JSON, en cambio, lanza `MoatParseError` y no se cachea. `crypto_moat_prompt`
+    (`analysis/prompts.py:655`; el texto, `:703`) dice «Estás analizando el Economic Moat de **Bitcoin
+    (BTC)**» y trae suministro y ETFs spot de BTC para cualquier símbolo (reproducido con ETH-USD: «120,000,000
+    BTC de 21.000.000 máximo»), y `ETH` está en `CRYPTO_TICKERS`.
+  - **AUDIT-PIT-CERO** (corrección). `piotroski_as_of({}, cutoff)` devuelve score 0 con los tres estados
+    vacíos (reproducido: sin excepción, las nueve banderas en False);
+    `scripts/point_in_time_backtest.py:302` lo persiste con `log_piotroski` sin guarda y
+    `analysis/synthetic_evidence.py:76` lo agrupa con `group_for(0) = «débil»` (umbrales 7 y 5). Un corte
+    sin datos reconstruidos sale como «Piotroski débil» con su exceso medido. Más amplio (razonado, no
+    medido): un filer sin `us-gaap` (IFRS/20-F con CIK) devuelve `us_gaap == {}` y no es `_NO_SEC_DATA`,
+    así que daría 0 en todos sus cortes. **Medición pendiente** (necesita la base real, no se leyó):
+    `SELECT symbol, as_of FROM synthetic_recommendation WHERE piotroski_score = 0 AND
+    excess_return_pct IS NOT NULL`, para ver cuántas filas del grupo «débil» de PIT-2 son vacías.
+  - **AUDIT-OPTIMIZER-LIMITES** (corrección). `_score_weighted_optimize` (`portfolio/optimizer.py:1079`)
+    no tiene ningún tope de sector (el SLSQP sí, `:972`) y su water-filling **no converge cuando
+    `n × tope < 1`** (`under = ~over` incluye a los que ya están en el tope): ninguno de los tres perfiles
+    puede sumar 100 % con su tope (`min_positions × max_position_pct`: Conservador 10 × 8 % = 80 %,
+    Moderado 96 %, Agresivo 90 %; reproducido desde `OPTIMIZER_PROFILES`), y el SLSQP sí lo contempla
+    (`max(max_position_pct/100, 1/n)`). Reproducido por el revisor: con Conservador, n = 10 y scores
+    desiguales, el respaldo devuelve [28 %, 8 %, 8 %, …]; Agresivo n = 5 da 20,5 % (tope 18 %) y Moderado
+    n = 8 da 13,3 % (tope 12 %); con scores iguales da 10 % cada uno. El comentario «converge en ≤ n
+    iteraciones» es falso en ese caso. Además `w[w < lb * 0.5] = 0` (`:1029`) es código muerto: viene justo
+    después de `np.clip(res.x, lb, ub_arr)`, que lleva todo a ≥ `lb`. Y la nube de la frontera viola el tope
+    por posición (confirmado por el revisor: `:1135-1137` hace clip y renormaliza; 500 de 500 muestras con
+    n = 20 y tope 8 % lo superan). Subagente, sin re-verificar: la lista de compra del núcleo y
+    `target_weights()` no coinciden.
+  - **AUDIT-STRESS-SECTORES** (corrección). Los seis escenarios de `STRESS_SCENARIOS` (`config.py:3756`)
+    tienen claves `Financials` y `Materials`; yfinance entrega `Financial Services` y `Basic Materials`
+    (reproducido contra `yfinance.const`: de los 11 sectores, esos dos no tienen clave), y
+    `portfolio/stress_test.py:102` hace `sector_shocks.get(sector, default_shock)` sin alias. Un banco o un
+    minero recibe el shock genérico en vez del de su sector. (`stress_test.py:9` y `config.py:684` también
+    usan «Financials»; no se rastreó de dónde sale el sector real que recibe `StressTester.run`.)
+  - **AUDIT-UI-VERDAD** (corrección). (1) `dashboard/views/2_Stock_Analysis.py:191`:
+    `_track_source = "ai" if ai_cfg.enabled else "rule_based"` rotula la fuente por la configuración y no
+    por si la IA decidió; existe `Decision.ai_used` (`analysis/strategy.py:526-528`, puesto en True en
+    `analysis/ai_analyzer.py:331`) y la pantalla no lo lee: con `enrich_only` o con el respaldo por reglas
+    rotula «ai» una decisión del motor. (2) `dashboard/views/12_Plan.py:301`: la narrativa cae a
+    `st.session_state["last_plan_narrative"]` cuando el resultado vivo no trae; esa clave la escribe
+    Simulaciones (`7_Simulaciones.py:856`) y nada la liga a un plan ni a una corrida, así que puede
+    mostrarse la de otra corrida o de otro plan dentro del expander «Narrativa del plan» con la insignia de
+    IA. (3) `dashboard/views/9_Settings.py:280-282`: elegir `nous` o `xai` pone `ai_enabled = True` en la
+    sesión en cada render, sin «Guardar» (`:324`); no se persiste, pero `dashboard/shared.py:1504` lo lee y
+    `_get_ai_config()` activa la IA en las demás páginas de la sesión antes de guardar. (4)
+    `dashboard/views/6_Backtesting.py:164` y `:185`: con exceso negativo `delta_color="inverse"` pinta de
+    verde el retorno por debajo del benchmark (leído, por la semántica de Streamlit; no se renderizó). (5)
+    `data/product_ux.py:3467` hace `if override:` y `9_Settings.py:80` `int(_prefs.margin_pct or ...)`: un
+    margen de 0 % (el `number_input` tiene `min_value=0`, `:78`) se persiste como `float(0)` y al releerlo se
+    interpreta como «no elegido» y vuelve al del perfil.
+  - **AUDIT-CHAT-PROYECCION** (corrección). `analysis/chat_tools.py:151-173`: `initial_value` y
+    `horizon_years` caen al plan (`personal`: `current_capital`, `primary_horizon_years`), pero
+    `annual_withdrawal`, `annual_contribution` y `target_value` son `_arg_float(name, 0.0)`: salen de los
+    argumentos del LLM y no consultan el plan en ningún caso. Una pregunta como «¿me alcanza?» proyecta sin
+    el ahorro del plan activo salvo que el modelo lo pase (no se leyó el schema de la herramienta ni qué
+    claves de `personal` hay para el ahorro mensual).
+  - **AUDIT-MC-ROBUSTEZ** (robustez). `portfolio/monte_carlo.py:843` hace `np.log1p(port_dev)` sin guarda
+    (reproducido: `log1p(-1.0)` da `-inf` y `log1p(-1.2)` da `nan`). En esa rama `port_dev` es
+    `Σ w·(r−m)·vol_scale` (`:834`): con `vol_scale` 1,15 hace falta que el portafolio pierda ≈ 87 % en una
+    semana, así que es **latente** y casi inalcanzable fuera de un activo único con extremos. Subagente, sin
+    re-verificar: el borde del bootstrap queda sub-cubierto (mediana −1,2 pp en historiales cortos o con
+    muchos extremos), `_asset_hist` queda viejo tras el respaldo a SPY, Guardrails evalúa el año 1 a las 4
+    semanas y `p10_intra_min` da 0 para quien arranca sin ahorros. Mutantes sobrevivientes del barrido
+    (subagente; 354 mutantes, 110 sobrevivieron sin triage de equivalentes; las líneas sí están en esos
+    sitios): los percentiles y los `base_*` (`:548-562`), la escala de `prob_achieve_target_pct` (`:555`,
+    `:564`; `×100 → ×110` sobrevive), el signo de `decumulation_years` (`:1089`), `initial_value / basis`
+    (`:1095`) y `vol_scale ≠ 1` en el bootstrap: ningún test los fija.
+  - **AUDIT-DATOS** (robustez). `data/fetcher.py:335-339` (`compute_cagr`) y `:369-376`
+    (`compute_cagr_available`) hacen `series.dropna()` y después `series.iloc[years]`: con un NaN interior
+    el exponente cuenta puntos, no años. Reproducido con `[146.41, 133.1, nan, 110, 100]` y fechas anuales
+    2024→2020 (cuatro años de tramo): ambas dan 13,55 % con 3 años, y el CAGR real de 2020 a 2024 es 10,0 %;
+    el `years_used` que informa `compute_cagr_available` también miente. `compute_cagr_available` alimenta
+    el CAGR de ingresos (`analysis/fundamental.py:1673`), el de EPS (`:1716`), el respaldo de Net Income
+    (`:1722`) y, por el EPS, el `g` de Graham (`:1075`); `compute_cagr` tiene dos llamadores
+    (`fundamental.py:1810`, `data/crypto_fetcher.py:226`). `_extract_annual_series` (`fundamental.py:1964`)
+    no hace nada con los huecos. Falta contar cuántos tickers del universo tienen un hueco interior (leído y
+    reproducido, no medido sobre la base). Subagente, sin re-verificar: un 10-K y un 10-K/A con el mismo
+    `end` se resuelven según el orden del array (`data/data_sources.py:341`), los errores de SQLite no se
+    aíslan en los getters de `fetcher`, un 429 de SEC se trata como «sin datos» y `local_day_start_utc` falla
+    en el cambio de horario.
+  - **AUDIT-TESTS** (robustez). `tests/test_backtesting.py:397` («no saved backtest in
+    data/db/backtests/») y `tests/test_config_single_home_oracle.py:432` («fields removed — inertness is now
+    structural») son los dos `skipped` del baseline (reproducido: `pytest` sobre esos dos archivos da
+    `62 passed, 2 skipped`; el baseline completo, 5917 passed y 2 skipped, se midió el 2026-10-25); el
+    primero se saltea siempre porque `RESULTS_DIR` cae bajo la base temporal de la suite, con 0 backtests
+    versionados (esa causa no se re-verificó). `data/personal_book_convictions.py:61-66` escribe con
+    `write_text` directo (no atómico) y el único test que lo menciona es `tests/test_reproducibility.py`.
+    Subagente, sin re-verificar: dos órdenes de ejecución que fallan (B1: los tests de reintento y respaldo
+    de `fetch`; B2: `test_sim_gap_katex_oracle` después de `test_plan_load_savings_oracle`, por estado
+    compartido del archivo de preferencias —la causa del fallo intermitente que se vio—) y que `get_stats`,
+    `keys_with_prefix` y `get_age_hours` de `data/cache.py` no tienen tests.
+  - **AUDIT-UI-ESTADO** (corrección). El `st.rerun()` de Macro RAG borra el mensaje de éxito
+    (`dashboard/views/17_Macro_RAG.py:32-36`, y el mensaje de FRED en `:42-45`; leído). El Optimizer
+    llama a `generate_optimizer_advice` en cada ejecución del script cuando la IA está activa, sin botón de
+    por medio (`5_Optimizer.py:663-664`; falta ver si cachea por dentro: si cachea, el costo no es el que
+    dice la fila). Subagente con AppTest, sin re-verificar: en «Mis Metas» (Simulaciones) la prioridad no
+    cambia con ⬆️/⬇️ y `goal_plan_result` sobrevive a editar la meta, y el chat renderiza montos con `$` sin
+    `escape_dollars` (KaTeX no se probó en navegador).
+  - **AUDIT-RESIDUALES**. Lo que los PRs ya mergeados dejaron escrito (de sus descripciones y revisiones;
+    el revisor de este registro verificó algunas y no otras): (#288) un lote sin fecha legible deja sin
+    filtro a todo el libro (`_held_from` devuelve `None`; verificado) y una venta parcial posterior al lote
+    más nuevo deja las acciones de hoy en toda la ventana de la curva (el modelo no guarda ventas: IDEA-5
+    PR 2; sin re-verificar); (#290) un NI positivo diminuto con OCF muy negativo sigue dando un cociente
+    muy negativo que hunde el promedio (el `clip` sólo topa hacia arriba; verificado); (#286) cada señal del
+    Piotroski ancla en sus propias filas y puede retroceder y ocultar el último año (la dilución de un año
+    con otro en blanco), y las fechas se cruzan por igualdad exacta (sin re-verificar por el revisor);
+    (#287) un `earningsGrowth` positivo diminuto se redondea a 0,0 y se valúa como cero medido, mientras
+    que exactamente 0,0 queda sin tasa (verificado); (#289) el track record mezcla dos bases (las filas
+    anteriores a 2026-10-26 parten del precio del momento) y no se re-puntúa (sin re-verificar por el
+    revisor).
 - **PIT-TOOLS (prerrequisito para reabrir ReAct en el comité)**: `get_news`
   (`data/fetcher.py`) no acepta fecha y lee el feed de hoy; `MacroRagStore.retrieve`
   **sí** acepta `now=`, pero sólo lo usa para descartar lo viejo: `_days_old` hace
