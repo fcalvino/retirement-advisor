@@ -50,6 +50,7 @@ qa/out_*.json
 # data/user_preferences.example.json; preferences.py seeds from it on first run.
 data/user_preferences.json
 data/retirement_plans.json
+data/retirement_plans.corrupt-*.json
 data/plan_health_history.json
 data/personal_book_convictions.json
 # Derived cache of the last Screener run (safe to delete; rebuilt on demand).

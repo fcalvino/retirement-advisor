@@ -455,3 +455,140 @@ class TestUniquePlanId:
         assert {p.id for p in store.list()} == {"retiro-2045", "retiro-2045-2"}
         assert store.get("retiro-2045").n_positions == 3   # untouched
         assert store.get("retiro-2045-2").n_positions == 9
+
+
+# ------------------------------------------------------------------ #
+#  Un archivo ilegible no se pisa: se aparta antes de escribir          #
+# ------------------------------------------------------------------ #
+
+def _snap(name: str) -> PlanSnapshot:
+    return PlanSnapshot.from_session(
+        name=name, opt_result=_fake_opt_result(),
+        mc_result=_fake_mc_result(with_drags=False),
+        mc_params={"horizon_years": 15, "initial_value": 50_000},
+    )
+
+
+def _apartados(tmp_path):
+    return sorted(tmp_path.glob("plans.corrupt-*.json"))
+
+
+@pytest.mark.parametrize(
+    "contenido",
+    ['[{"id": "viejo", "name": "Retiro"', "{}", "\x00\x01 no es json"],
+    ids=["json-truncado", "no-es-lista", "basura"],
+)
+def test_upsert_over_unreadable_file_keeps_the_original_bytes(tmp_path, contenido):
+    """Oráculo: los bytes que el usuario tenía siguen en disco después de guardar otro plan.
+
+    Antes, ``_read_raw`` devolvía ``[]`` ante un JSON ilegible y el ``upsert`` siguiente
+    escribía solo el plan nuevo: los demás se perdían sin aviso.
+    """
+    path = tmp_path / "plans.json"
+    path.write_text(contenido, encoding="utf-8")
+    store = PlanStore(path=path)
+
+    store.upsert(_snap("nuevo"))
+
+    apartados = _apartados(tmp_path)
+    assert len(apartados) == 1
+    assert apartados[0].read_text(encoding="utf-8") == contenido
+    assert [s.id for s in store.list()] == ["nuevo"]
+
+
+def test_listing_an_unreadable_file_moves_it_aside_once(tmp_path):
+    path = tmp_path / "plans.json"
+    path.write_text('[{"id": "a"', encoding="utf-8")
+    store = PlanStore(path=path)
+
+    assert store.list() == []
+    assert store.list() == []          # la segunda lectura no genera otro apartado
+    assert len(_apartados(tmp_path)) == 1
+    assert not path.exists()           # nada que pisar: el próximo guardado crea uno limpio
+
+
+def test_readable_file_is_never_moved_aside(tmp_path):
+    store = PlanStore(path=tmp_path / "plans.json")
+    store.upsert(_snap("uno"))
+    store.upsert(_snap("dos"))
+    assert sorted(s.id for s in store.list()) == ["dos", "uno"]
+    assert _apartados(tmp_path) == []
+
+
+def test_failed_write_is_not_reported_as_saved(tmp_path, monkeypatch):
+    from loguru import logger
+
+    store = PlanStore(path=tmp_path / "plans.json")
+    monkeypatch.setattr(
+        type(tmp_path), "replace",
+        lambda self, target: (_ for _ in ()).throw(OSError("disco lleno")),
+    )
+    mensajes = []
+    sink = logger.add(lambda m: mensajes.append(str(m)), level="INFO")
+    try:
+        store.upsert(_snap("no-se-guarda"))
+    finally:
+        logger.remove(sink)
+    assert not any("Plan saved" in m for m in mensajes)
+    assert any("Could not save plans" in m for m in mensajes)
+
+
+def test_empty_file_has_nothing_to_keep(tmp_path):
+    path = tmp_path / "plans.json"
+    path.write_text("  \n", encoding="utf-8")
+    store = PlanStore(path=path)
+    store.upsert(_snap("nuevo"))
+    assert _apartados(tmp_path) == []
+    assert [s.id for s in store.list()] == ["nuevo"]
+
+
+def test_a_transient_read_error_leaves_the_healthy_file_alone(tmp_path, monkeypatch):
+    """Un error de E/S (permisos, EMFILE) no es corrupción: el archivo sano no se aparta."""
+    path = tmp_path / "plans.json"
+    store = PlanStore(path=path)
+    store.upsert(_snap("uno"))
+    before = path.read_bytes()
+
+    real = type(path).read_text
+    monkeypatch.setattr(type(path), "read_text",
+                        lambda self, *a, **k: (_ for _ in ()).throw(PermissionError("denegado"))
+                        if self == path else real(self, *a, **k))
+    assert store.list() == []
+    store.upsert(_snap("dos"))            # no puede leer: no escribe encima
+    assert store.delete("uno") is False
+    monkeypatch.undo()
+
+    assert path.read_bytes() == before
+    assert _apartados(tmp_path) == []
+    assert [s.id for s in store.list()] == ["uno"]
+
+
+def test_a_file_that_became_valid_in_between_is_not_moved(tmp_path):
+    """Otra sesión guardó uno válido después de que ésta lo leyó ilegible: no se lo lleva."""
+    path = tmp_path / "plans.json"
+    store = PlanStore(path=path)
+    store.upsert(_snap("uno"))
+    assert store._set_aside_unreadable("lectura vieja") == store._read_raw()
+    assert path.exists() and _apartados(tmp_path) == []
+
+
+def test_delete_reports_a_failed_write(tmp_path, monkeypatch):
+    store = PlanStore(path=tmp_path / "plans.json")
+    store.upsert(_snap("uno"))
+    monkeypatch.setattr(
+        type(tmp_path), "replace",
+        lambda self, target: (_ for _ in ()).throw(OSError("disco lleno")),
+    )
+    assert store.delete("uno") is False
+
+
+def test_the_suite_does_not_resolve_the_users_plans_file():
+    import os
+    from pathlib import Path
+
+    from data import plan_store
+
+    user_file = Path(__file__).resolve().parents[1] / "data" / "retirement_plans.json"
+    assert plan_store._PLANS_PATH.resolve() != user_file
+    assert str(plan_store._PLANS_PATH) == os.environ["RETIREMENT_ADVISOR_PLANS_PATH"]
+    assert plan_store.plan_store.path == plan_store._PLANS_PATH

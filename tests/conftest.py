@@ -57,6 +57,9 @@ os.environ["RETIREMENT_ADVISOR_LOG_PATH"] = str(_test_db_dir / "retirement_advis
 # The path does not exist, so ``UserPreferences.load`` starts from the template, as
 # a fresh clone does. Children inherit it. ``tests/test_prefs_isolation_oracle.py``.
 os.environ["RETIREMENT_ADVISOR_PREFS_PATH"] = str(_test_db_dir / "user_preferences.json")
+# And for the saved plans (``data/retirement_plans.json``): reading them can now move
+# an unreadable file aside, so a test must never resolve the user's own copy.
+os.environ["RETIREMENT_ADVISOR_PLANS_PATH"] = str(_test_db_dir / "retirement_plans.json")
 # Same for where live eval runs are saved: a developer's own setting must not
 # leak into the suite (``test_runs_dir_is_outside_git`` checks the default).
 os.environ.pop("RETIREMENT_ADVISOR_EVAL_RUNS_DIR", None)
