@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from analysis import sector_medians
-from analysis.utils import extract_financial_row
+from analysis.utils import aligned_window, extract_financial_row
 from config import CONSISTENCY, PIOTROSKI, ConsistencyThresholds, PiotroskiConfig
 
 _DIM_LABEL = {"roe": "ROE", "eps": "Crecimiento de utilidades", "margin": "Márgenes netos"}
@@ -316,28 +316,39 @@ class EnhancedScoring:
     ) -> PiotroskiDetail:
         d = PiotroskiDetail()
 
-        # Pre-extract series once (descending: iloc[0]=current, iloc[1]=prior year)
-        ni = self._extract(income_stmt, ["Net Income"])
-        rev = self._extract(income_stmt, ["Total Revenue", "Revenue"])
-        gross_profit = self._extract(income_stmt, ["Gross Profit"])
-        total_assets = self._extract(balance_sheet, ["Total Assets"])
-        ltd = self._extract(balance_sheet, ["Long Term Debt", "Long-Term Debt"])
-        current_assets = self._extract(balance_sheet, ["Current Assets"])
-        current_liab = self._extract(balance_sheet, ["Current Liabilities"])
+        # Row names, one place: each check below reads its rows through
+        # ``aligned_window`` so a ratio or a year-over-year comparison never mixes
+        # fiscal years (see ``tests/test_piotroski_alignment_oracle.py``).
+        NI = (income_stmt, ["Net Income"])
+        REV = (income_stmt, ["Total Revenue", "Revenue"])
+        GROSS_PROFIT = (income_stmt, ["Gross Profit"])
+        TOTAL_ASSETS = (balance_sheet, ["Total Assets"])
+        LTD = (balance_sheet, ["Long Term Debt", "Long-Term Debt"])
+        CURRENT_ASSETS = (balance_sheet, ["Current Assets"])
+        CURRENT_LIAB = (balance_sheet, ["Current Liabilities"])
         # U5-3: no ``Common Stock`` fallback — that row is a CURRENCY AMOUNT, not a
         # share count, and the two are not even off by a constant factor (AAPL
         # 93.6bn against 14.8bn shares, KO 1.76bn against 4.3bn). Comparing par
         # value year over year says nothing about dilution. ``Ordinary Shares
         # Number`` is present in 150 of 150 cached balance sheets, so the fallback
         # never ran; without a real count the signal has no answer and says so.
-        shares = self._extract(balance_sheet, ["Ordinary Shares Number", "Share Issued"])
-        ocf = self._extract(cashflow, ["Operating Cash Flow", "Cash Flow From Continuing Operating Activities"]) if cashflow is not None and not cashflow.empty else None
+        SHARES = (balance_sheet, ["Ordinary Shares Number", "Share Issued"])
+        OCF = (cashflow, ["Operating Cash Flow", "Cash Flow From Continuing Operating Activities"])
+
+        # Only F2 and the F9 fallback still read a bare series (newest reported value).
+        ni = self._extract(income_stmt, NI[1])
+        ocf = self._extract(cashflow, OCF[1]) if cashflow is not None and not cashflow.empty else None
 
         # === F1: ROA > 0 (current year) ===
+        def _same_year(*rows):
+            return aligned_window(list(rows), 1)
+
+        def _yoy(*rows):
+            return aligned_window(list(rows), 2)
+
         d.f1_roa_positive = self._safe(lambda: (
-            ni is not None and total_assets is not None
-            and len(ni) >= 1 and total_assets.iloc[0] > 0
-            and ni.iloc[0] / total_assets.iloc[0] > 0
+            (w := _same_year(NI, TOTAL_ASSETS)) is not None
+            and w[0][1] > 0 and w[0][0] / w[0][1] > 0
         ))
 
         # === F2: Operating Cash Flow > 0 ===
@@ -348,10 +359,9 @@ class EnhancedScoring:
 
         # === F3: ROA improved YoY ===
         d.f3_roa_improving = self._safe(lambda: (
-            ni is not None and total_assets is not None
-            and len(ni) >= 2 and len(total_assets) >= 2
-            and total_assets.iloc[0] > 0 and total_assets.iloc[1] > 0
-            and (ni.iloc[0] / total_assets.iloc[0]) > (ni.iloc[1] / total_assets.iloc[1])
+            (w := _yoy(NI, TOTAL_ASSETS)) is not None
+            and w[0][1] > 0 and w[1][1] > 0
+            and (w[0][0] / w[0][1]) > (w[1][0] / w[1][1])
         ))
 
         # === F4: Leverage (LTD/TotalAssets) decreased YoY ===
@@ -362,21 +372,19 @@ class EnhancedScoring:
         # holding leverage flat at 30 % genuinely did not improve, which is what
         # Piotroski's F_LEVER asks. Only the degenerate case is exempted.
         d.f4_leverage_decreasing = self._safe(lambda: (
-            ltd is not None and total_assets is not None
-            and len(ltd) >= 2 and len(total_assets) >= 2
-            and total_assets.iloc[0] > 0 and total_assets.iloc[1] > 0
+            (w := _yoy(LTD, TOTAL_ASSETS)) is not None
+            and w[0][1] > 0 and w[1][1] > 0
             and (
-                (ltd.iloc[0] / total_assets.iloc[0]) < (ltd.iloc[1] / total_assets.iloc[1])
-                or (ltd.iloc[0] == 0 and ltd.iloc[1] == 0)
+                (w[0][0] / w[0][1]) < (w[1][0] / w[1][1])
+                or (w[0][0] == 0 and w[1][0] == 0)
             )
         ))
 
         # === F5: Current Ratio improved YoY ===
         d.f5_liquidity_improving = self._safe(lambda: (
-            current_assets is not None and current_liab is not None
-            and len(current_assets) >= 2 and len(current_liab) >= 2
-            and current_liab.iloc[0] > 0 and current_liab.iloc[1] > 0
-            and (current_assets.iloc[0] / current_liab.iloc[0]) > (current_assets.iloc[1] / current_liab.iloc[1])
+            (w := _yoy(CURRENT_ASSETS, CURRENT_LIAB)) is not None
+            and w[0][1] > 0 and w[1][1] > 0
+            and (w[0][0] / w[0][1]) > (w[1][0] / w[1][1])
         ))
 
         # === F6: No new shares issued (dilution within PIOTROSKI.max_dilution_pct) ===
@@ -384,30 +392,30 @@ class EnhancedScoring:
         # of the comparison.
         _dilution_cap = 1.0 + self.pc.max_dilution_pct / 100.0
         d.f6_no_dilution = self._safe(lambda: (
-            shares is not None and len(shares) >= 2
-            and shares.iloc[1] > 0
-            and shares.iloc[0] <= shares.iloc[1] * _dilution_cap
+            (w := _yoy(SHARES)) is not None
+            and w[1][0] > 0
+            and w[0][0] <= w[1][0] * _dilution_cap
         ))
 
         # === F7: Gross Margin improved YoY ===
         d.f7_gross_margin_improving = self._safe(lambda: (
-            gross_profit is not None and rev is not None
-            and len(gross_profit) >= 2 and len(rev) >= 2
-            and rev.iloc[0] > 0 and rev.iloc[1] > 0
-            and (gross_profit.iloc[0] / rev.iloc[0]) > (gross_profit.iloc[1] / rev.iloc[1])
+            (w := _yoy(GROSS_PROFIT, REV)) is not None
+            and w[0][1] > 0 and w[1][1] > 0
+            and (w[0][0] / w[0][1]) > (w[1][0] / w[1][1])
         ))
 
         # === F8: Asset Turnover improved YoY ===
         d.f8_asset_turnover_improving = self._safe(lambda: (
-            rev is not None and total_assets is not None
-            and len(rev) >= 2 and len(total_assets) >= 2
-            and total_assets.iloc[0] > 0 and total_assets.iloc[1] > 0
-            and (rev.iloc[0] / total_assets.iloc[0]) > (rev.iloc[1] / total_assets.iloc[1])
+            (w := _yoy(REV, TOTAL_ASSETS)) is not None
+            and w[0][1] > 0 and w[1][1] > 0
+            and (w[0][0] / w[0][1]) > (w[1][0] / w[1][1])
         ))
 
         # === F9: OCF > Net Income (accruals quality — cash earnings beat accounting earnings) ===
         if ocf is not None and len(ocf) >= 1 and ni is not None and len(ni) >= 1:
-            d.f9_accruals_quality = self._safe(lambda: float(ocf.iloc[0]) > float(ni.iloc[0]))
+            d.f9_accruals_quality = self._safe(lambda: (
+                (w := _same_year(OCF, NI)) is not None and w[0][0] > w[0][1]
+            ))
         else:
             # `info.get(...) or 0` would conflate "the feed didn't report this"
             # with "the feed reports zero" — the same class of bug P1-2 fixed
