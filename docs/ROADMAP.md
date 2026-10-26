@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## PIOTROSKI-AÑOS-ALINEADOS — cada señal del Piotroski compara los mismos años fiscales (2026-10-26)
+
+Hallazgo de la auditoría de código de 2026-10-26 (`analysis/scoring.py::_piotroski_score`). Cada señal compara ahora los mismos años fiscales (`aligned_window`, junto a `aligned_latest`). Oráculo independiente con barrido de 1000 estados aleatorios con celdas vacías; medido sobre el universo cacheado: 1 F-score cambia y ningún `adjusted_score` se mueve (como U3-9/U3-10, el defecto era un número mal en pantalla, no un puntaje mal).
+
+---
+
 ## OPTIMIZER-SIN-EXCESO-RF — sin exceso sobre rf el optimizador minimiza la volatilidad, no la maximiza (2026-10-26)
 
 Hallazgo de la auditoría de código de 2026-10-26 (`portfolio/optimizer.py`, `neg_sharpe` en `_run_slsqp`). Sin exceso de atractivo sobre rf se minimiza la volatilidad en vez de maximizarla. La revisión independiente encontró una etiqueta que rompía `test_return_label_contract` (el motor no llama «Sharpe» a su objetivo) y el caso de la mínima varianza sin convergencia; ambos corregidos. La frontera eficiente no tiene el problema (genera carteras aleatorias, no optimiza).
