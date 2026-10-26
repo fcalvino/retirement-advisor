@@ -23,8 +23,8 @@ GOAL-PRIORITY-TEXT y ORDEN-COHERENCIA.)
 2. **IDEA-5 IMPUESTOS**: banda 5. Reglas y decisiones en `docs/plans/IDEA5_GANANCIA_CAPITAL_AR.md` (2026-10-10). Sigue: lotes y «Registrar venta» en Portfolio con el impuesto de acciones y ETFs del exterior (§6 de ese plan).
 
 Esperan disparador: U5-1b, COM-*, COUNTRY-RISK-AUTO, TR-RACE y VENV-PRUNE. Sin orden: PIT-TOOLS,
-PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND, MACRO-SIN-FECHA y la serie AUDIT-* (13 filas abiertas, auditoría
-2026-10-26; AUDIT-TELEGRAM-LOG ya cerró). Espera Fuente: SCORE-CONTRACCION.
+PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND, MACRO-SIN-FECHA y la serie AUDIT-* (12 filas abiertas, auditoría
+2026-10-26; AUDIT-TELEGRAM-LOG y AUDIT-SCHEDULER-FEED ya cerraron). Espera Fuente: SCORE-CONTRACCION.
 
 ---
 
@@ -102,7 +102,6 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **PROMPTS-MULTIMODELO** | 5 | PR 4, 5, 6 y 7 de la serie multimodelo siguen abiertos (`docs/plans/PROMPTS_MULTIMODELO.md`, verificado contra el código el 2026-10-25): higiene de idioma, negaciones y few-shot (PR 4), delimitador único `=== ===` y orden datos→instrucción (PR 5), narrativa de plan en campos (PR 6) y macro sin memoria (PR 7, parcial). Orden recomendado por la serie: 7 → 4 → 5 → 6. Ver bloque 4 |
 | **CONFIDENCE-SELL-BAND** | 4 | `confidence_for` deriva de la banda de score: con score 87 y técnico BULLISH da `HIGH` para SELL, AVOID, REDUCE y HOLD (medido el 2026-10-25), el «la evidencia sostiene comprar» de la banda de compra junto a una no-compra. Punta suelta de SIGNAL-3. Ver bloque 4 |
 | **MACRO-SIN-FECHA** | 5 | El gate de frescura de `MacroRagStore._fresh_docs` acepta un documento sin `as_of` como fresco. Latente: ningún camino lo crea hoy. Bloquea la opción completa de PROMPTS-MULTIMODELO (B1). Ver bloque 4 |
-| **AUDIT-SCHEDULER-FEED** | 5 | El job diario analiza los tickers sin `is_empty_feed`: un feed vacío entra a `scored` con score 0, moat «None» y SELL (y su recuperación dispara un BUY que sí entra al track record); y el retorno de cartera del drift cuenta una cotización faltante como 0 en el valor pero no en el costo. Auditoría 2026-10-26. Ver bloque 4 |
 | **AUDIT-ALERTAS-DESPACHO** | 5 | Las alertas del plan (SORR, GOAL_RISK, salud del plan, coach de caída) se registran con `_fire` pero no se despachan por email/Telegram; la severidad mínima por perfil está hardcodeada (tres campos de config sin lectores); `ALERT_AI_MIN_SEVERITY=WARNING` lanza `ValueError`. Ver bloque 4 |
 | **AUDIT-MOAT-IA** | 5 | NaN en un campo del JSON de la IA se limita a 2,0 (el máximo) en el moat y en el cripto; un objeto JSON vacío `{}` se cachea 7 días como cuatro ceros; el prompt cripto del moat dice «Bitcoin (BTC)» para cualquier cripto (ETH incluido). Ver bloque 4 |
 | **AUDIT-PIT-CERO** | 5 | El backtest point-in-time persiste Piotroski 0 para un corte sin estados reconstruidos y la evidencia lo agrupa como «débil»: contamina PIT-2 con filas sin dato. Falta medirlo con un SELECT sobre la base. Ver bloque 4 |
@@ -308,19 +307,6 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
   preset de 8 años (`_fan_paths` genera las claves de 0 a `horizon_years`, así que 8 existe) y que una
   respuesta de IA *vacía* se cachea 7 días como ceros (vacía o no-JSON lanza `MoatParseError`; sólo el
   objeto `{}` se cachea). Ninguna fila tiene orden: las pone el usuario.
-  - **AUDIT-SCHEDULER-FEED** (corrección). `scripts/run_scheduler.py:51-68` llama a `full_analysis` y
-    junta el resultado en `scored` sin mirar `is_empty_feed` (`data/screener_store.py:301`; 0 usos en el
-    archivo, a diferencia de `analysis/track_record.py:368` y de las páginas): `analyze` no lanza ante un
-    `get_info` vacío, devuelve un resultado por defecto (score 0, moat «None», acción SELL; reproducido,
-    y `is_empty_feed(fund)` da True), y el `try` sólo atrapa excepciones. Es la misma clase de
-    EMPTY-FEED-SA y del sizer (#284), en el job que alimenta las alertas: el snapshot queda en 0 y genera
-    alertas falsas de SELL y de caída de score; cuando el feed se recupera al día siguiente salta un
-    «score surge» y un BUY, y ése sí entra al track record porque `_log_track_record`
-    (`alerts/engine.py:207`) pasa un objeto sin precio y `is_empty_feed` no lo frena (razonado por el
-    revisor, no reproducido de punta a punta). Aparte, `:256-262` hace `px = float(... or 0)`: una
-    cotización faltante suma al costo (`shares * avg`) y no al valor, así que `portfolio_return_pct` baja
-    por la posición que no se pudo cotizar. Falta decidir qué hace el job con un feed vacío (saltear, o
-    contarlo como fallo).
   - **AUDIT-ALERTAS-DESPACHO** (corrección). `AlertEngine.run` despacha un resumen con las alertas por
     símbolo (`alerts/engine.py:220`) y las tres de cartera (`:263-268`); `check_sorr` (`:272`),
     `check_goal_risk` (`:305`), `check_plan_health_degradation` (`:337`) y `check_market_drop_coach`

@@ -397,6 +397,32 @@ class TestMarketDropCoach:
         sched._check_market_drop_coach(engine, drift)
         assert engine.calls["check_market_drop_coach"]["portfolio_return_pct"] == pytest.approx(-20.0)
 
+    def test_a_position_without_a_quote_is_left_out_of_cost_and_value(self, stub_plan_context):
+        """AUDIT-SCHEDULER-FEED: sin cotización la posición no se mide, no vale 0.
+
+        A sube 10 % (cost 1000, value 1100); B no tiene cotización. Contar el costo de B
+        (1000) pero no su valor daba 1100/2000 - 1 = -45 %: una caída que no ocurrió.
+        La cartera medible es sólo A: +10 %.
+        """
+        stub_plan_context.get_active_plan = lambda: _Plan()
+        drift = (
+            {"A": {"shares": 10, "avg_cost": 100.0}, "B": {"shares": 10, "avg_cost": 100.0}},
+            {"A": 110.0},                                  # B: clave ausente
+            {}, "l",
+        )
+        engine = _Engine(fire={"check_market_drop_coach"})
+        sched._check_market_drop_coach(engine, drift)
+        assert engine.calls["check_market_drop_coach"]["portfolio_return_pct"] == pytest.approx(10.0)
+
+    def test_no_quotes_at_all_falls_back_instead_of_reporting_a_total_loss(self, stub_plan_context):
+        stub_plan_context.get_active_plan = lambda: _Plan(
+            refreshed={"summary": {"weighted_delta_pct": -3.0}}
+        )
+        drift = ({"A": {"shares": 10, "avg_cost": 100.0}}, {}, {}, "l")
+        engine = _Engine()
+        sched._check_market_drop_coach(engine, drift)
+        assert engine.calls["check_market_drop_coach"]["portfolio_return_pct"] == pytest.approx(-3.0)
+
 
 # ------------------------------------------------------------------ #
 #  Screener adapter                                                    #
@@ -423,6 +449,33 @@ class TestScreenerAdapter:
         assert [s["symbol"] for s in scored] == ["AAPL", "KO"]
         assert scored[0]["signal"] == "BUY"
         assert scored[0]["moat_classification"] == "Wide"
+
+    def test_an_empty_feed_ticker_is_not_scored(self, monkeypatch):
+        """AUDIT-SCHEDULER-FEED: un feed vacío no es un veredicto.
+
+        ``full_analysis`` no lanza ante un ``get_info`` vacío: devuelve score 0, moat
+        «None» y SELL. Si entra a ``scored``, el snapshot queda en 0, salta una alerta
+        falsa de SELL y, al recuperarse el feed, un BUY que entra al track record.
+        """
+        import analysis.strategy as strategy_mod
+
+        def fake_full_analysis(sym, ai_config=None):
+            empty = sym == "NODATA.DE"
+            fund = types.SimpleNamespace(
+                company_name=sym, adjusted_score=0.0 if empty else 70.0,
+                total_score=0.0 if empty else 65.0, moat_bonus=0.0,
+                moat_classification="None" if empty else "Wide", moat_score=0.0,
+                dividend_yield=None, sector="Unknown" if empty else "Technology",
+                current_price=0.0 if empty else 100.0,
+                data_quality={"level": "poor" if empty else "good"},
+            )
+            return fund, None, types.SimpleNamespace(action="SELL" if empty else "BUY")
+
+        monkeypatch.setattr(strategy_mod, "full_analysis", fake_full_analysis)
+        monkeypatch.setattr(sched, "DEFAULT_TICKERS", ["AAPL", "NODATA.DE", "KO"])
+
+        scored = sched._run_screener_for_alerts()
+        assert [s["symbol"] for s in scored] == ["AAPL", "KO"]
 
 
 if __name__ == "__main__":

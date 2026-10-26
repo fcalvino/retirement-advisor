@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-SCHEDULER-FEED — el scheduler no puntúa un feed vacío ni cuenta una posición sin cotización como pérdida (2026-10-26)
+
+AUDIT-SCHEDULER-FEED (serie AUDIT-*, auditoría de 2026-10-26). El scheduler diario ya no puntúa un ticker cuyo feed vino vacío: lo saltea con un aviso y conserva su snapshot anterior, en vez de tratar el resultado por defecto (score 0, SELL) como un veredicto. Reproducido de punta a punta antes de arreglar: en `main` un día de feed vacío disparaba tres alertas falsas y la recuperación del día siguiente metía un BUY falso en el track record. El retorno de cartera que usa el coach de caídas también deja de contar una posición sin cotización como pérdida.
+
+---
+
 ## AUDIT-TELEGRAM-LOG — un error de request no escribe su credencial en el log (2026-10-26)
 
 AUDIT-TELEGRAM-LOG (serie AUDIT-*, auditoría de 2026-10-26). Un error de request ya no escribe su credencial en el log: `data/redact.py::redact_secrets` en los tres sitios que logueaban la excepción completa (Telegram, FRED, FMP) y el script manual de diagnóstico. Reproducido con secretos de mentira antes de arreglar: el código anterior escribía el token en las tres formas de falla de Telegram (conexión, HTTP 401, timeout) y las claves de FRED y FMP. La revisión independiente no encontró otros caminos que impriman una credencial; los proveedores de IA llevan la clave en headers y no en la URL.

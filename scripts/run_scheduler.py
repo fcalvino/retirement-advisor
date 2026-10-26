@@ -43,14 +43,23 @@ from config import AI_CONFIG, ALERTS, DEFAULT_TICKERS, MACRO_RAG, REPORT
 def _run_screener_for_alerts() -> list[dict]:
     """Run fundamental analysis on the default universe and return scored tickers."""
     from analysis.strategy import full_analysis
+    from data.screener_store import is_empty_feed
 
     ai_cfg = AI_CONFIG if AI_CONFIG.enabled else None
     scored = []
+    empty: list[str] = []
     logger.info(f"Scheduler: analysing {len(DEFAULT_TICKERS)} tickers…")
 
     for sym in DEFAULT_TICKERS:
         try:
             fund, _tech, dec = full_analysis(sym, ai_config=ai_cfg)
+            # An empty feed does not raise: the analyzer returns score 0, moat "None"
+            # and SELL. That is a failed fetch, not a verdict — scored, it would zero
+            # the snapshot (false SELL / score-drop alerts) and, the day the feed
+            # recovers, fire a BUY that enters the track record.
+            if is_empty_feed(fund):
+                empty.append(sym)
+                continue
             scored.append({
                 "symbol":              sym,
                 "company_name":        fund.company_name,
@@ -69,6 +78,11 @@ def _run_screener_for_alerts() -> list[dict]:
         except Exception as exc:
             logger.error(f"Scheduler: failed to analyse {sym}: {exc}")
 
+    if empty:
+        logger.warning(
+            f"Scheduler: {len(empty)} tickers skipped — the feed answered with no data "
+            f"({', '.join(empty)}); their last snapshot is kept"
+        )
     logger.info(f"Scheduler: {len(scored)} tickers analysed")
     return scored
 
@@ -257,6 +271,10 @@ def _check_market_drop_coach(engine, drift_inputs) -> None:
                 avg = float(pos.get("avg_cost") or 0)
                 px = float((current_prices or {}).get(sym) or 0)
             except (TypeError, ValueError):
+                continue
+            # No quote → the position cannot be measured: it leaves cost *and* value.
+            # Counting only its cost read an unquoted holding as a total loss.
+            if px <= 0:
                 continue
             cost += shares * avg
             value += shares * px
