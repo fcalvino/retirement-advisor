@@ -123,7 +123,11 @@ class Position:
 
     @property
     def purchase_date(self) -> str:
-        """The oldest lot's date: the first purchase, as before (``_held_from``)."""
+        """The oldest lot's date: the first purchase, i.e. how long the position has been held.
+
+        Not the date it reached the size it has today — that is its newest lot, and it is
+        what the risk curve needs (``Portfolio._held_from``).
+        """
         dates = [lot.date for lot in self.lots if lot.date]
         return min(dates) if dates else ""
 
@@ -359,10 +363,20 @@ class Portfolio:
         equity_curve = self._build_equity_curve()
         metrics.risk_curve_points = 0 if equity_curve is None else len(equity_curve)
         if metrics.risk_curve_points < min_points:
-            held_from = self._held_from()
-            if held_from is not None:
+            # The curve is short for one of two reasons. Usually the newest lot: it opens
+            # on the first weekly bar after that purchase, and the date is the purchase
+            # plus the missing weeks. But a position whose feed has fewer bars than the
+            # window (a recent listing) opens the curve LATER than the purchase, and a
+            # date counted from the purchase would be in the past — "measurable from
+            # 2025-02-03" in October 2026. Then the first bar of the curve is the anchor.
+            anchor = self._held_from()
+            if equity_curve is not None and len(equity_curve):
+                first_bar = equity_curve.index[0]
+                if anchor is None or first_bar - anchor > pd.Timedelta(weeks=1):
+                    anchor = first_bar
+            if anchor is not None:
                 metrics.risk_measurable_from = (
-                    held_from + pd.Timedelta(weeks=min_points - 1)
+                    anchor + pd.Timedelta(weeks=min_points - 1)
                 ).date().isoformat()
         if equity_curve is not None and len(equity_curve) >= min_points:
             returns = equity_curve.pct_change().dropna()
@@ -428,10 +442,14 @@ class Portfolio:
         size. Sharpe, the downside-vol ratio, max drawdown and beta are all read
         off this series, so the fabricated history reached four metrics at once.
 
-        The window therefore starts at the **latest** purchase date. Shorter is
-        the honest answer, and ``compute_metrics`` leaves the metrics ``None`` when
-        too little of it survives rather than estimating from it — ``None``, not
-        the 0 / beta 1.0 defaults it used to leave (PORTFOLIO-RISK-CERO).
+        The window therefore starts at the **latest** purchase date — of any *lot*,
+        not of any position: ``pos.shares`` sums every lot, so a position with 10
+        shares from 2022 and 10 more from last month entered every week since 2022
+        at 20 shares (IDEA5-LOTES reintroduced the fabrication inside a position;
+        see ``_held_from``). Shorter is the honest answer, and ``compute_metrics``
+        leaves the metrics ``None`` when too little of it survives rather than
+        estimating from it — ``None``, not the 0 / beta 1.0 defaults it used to
+        leave (PORTFOLIO-RISK-CERO).
 
         Zeroing each position before its own purchase is the other way to keep the
         share counts honest, and it is worse: a purchase would enter the series as
@@ -448,7 +466,12 @@ class Portfolio:
                 curves.append(weighted)
             if not curves:
                 return None
-            combined = pd.concat(curves, axis=1).sum(axis=1).dropna()
+            # Only the weeks in which EVERY position has a price. ``sum(axis=1)`` skips
+            # NaN, so a missing price used to count that position as 0: 0700.HK and
+            # 7203.T have no bar for the current week until their market opens, and the
+            # whole value of the position vanished in the curve's last point. (The
+            # ``.dropna()`` that sat after the sum never fired — a sum of NaN is 0.)
+            combined = pd.concat(curves, axis=1).dropna(how="any").sum(axis=1)
 
             held_from = self._held_from()
             if held_from is not None:
@@ -459,13 +482,22 @@ class Portfolio:
             return None
 
     def _held_from(self) -> Optional[pd.Timestamp]:
-        """The date from which every current position was already held."""
+        """The date from which every position was held at the size it has today.
+
+        That is the date of the newest **lot** of any position: ``Position.shares``
+        sums every lot, and a lot bought last month was not in the portfolio three
+        years ago. The oldest lot (``Position.purchase_date``) is the right date for
+        "how long have I held this" and the wrong one here. A lot with no readable
+        date means no filter (``None``): there is no way to say when those shares
+        entered.
+        """
         dates = []
         for pos in self.positions.values():
-            try:
-                dates.append(pd.Timestamp(datetime.fromisoformat(pos.purchase_date)))
-            except (TypeError, ValueError):
-                return None
+            for lot in pos.lots:
+                try:
+                    dates.append(pd.Timestamp(datetime.fromisoformat(lot.date)))
+                except (TypeError, ValueError):
+                    return None
         return max(dates) if dates else None
 
     def _save(self) -> None:
