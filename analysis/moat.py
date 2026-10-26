@@ -768,6 +768,17 @@ class MoatAnalyzer:
         """
         Average OCF / Net Income ratio over available years.
         Values > 1.0 indicate earnings are fully backed by operating cash flow.
+
+        The ratio only measures that when the earnings are positive. With a loss it is a
+        ratio of signs: OCF -130 over NI -100 is +1.30 — a company burning more cash than
+        it loses cleared the "excellent" bar and took the full 2 points — and a loss year
+        with positive cash read as -0.8. A year with no positive net income has no earnings
+        for cash to back, so its conversion is 0: it stays in the average (dropping it would
+        hand a company one profitable year's points) and adds nothing. A year's ratio is
+        capped at ``MOAT.fcf_conversion_year_cap``: with the loss years no longer pulling the
+        mean down, one year of a sliver of positive earnings (ratio 6, or 60) could lift it
+        over the excellent bar alone. Years with positive net income and a ratio under the
+        cap are unchanged.
         """
         try:
             ni = self._row_series(income_stmt, ["Net Income"])
@@ -780,8 +791,14 @@ class MoatAnalyzer:
             common = ni.index.intersection(ocf.index)
             if len(common) < 1:
                 return None
-            ni_v = ni[common].replace(0, np.nan)
-            return float((ocf[common] / ni_v).dropna().mean())
+            ni_v, ocf_v = ni[common], ocf[common]
+            earns = ni_v > 0
+            conversion = pd.Series(0.0, index=common)
+            # Capped per year: a sliver of positive earnings must not decide the mean.
+            conversion[earns] = (ocf_v[earns] / ni_v[earns]).clip(
+                upper=self.cfg.fcf_conversion_year_cap
+            )
+            return float(conversion.mean())
         except Exception:
             return None
 

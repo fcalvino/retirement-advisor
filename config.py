@@ -1687,6 +1687,11 @@ class MoatConfig:
     fcf_conversion_excellent: float = 1.2
     fcf_conversion_good: float = 0.9
     fcf_conversion_min: float = 0.6
+    # Per-year ceiling on OCF / NI. A year with a sliver of positive earnings gives a ratio
+    # of 6 or 60 and, now that a loss year counts 0 instead of a negative ratio, one such
+    # year could lift a four-year mean over the "excellent" bar on its own (NI -50 x3 and 5:
+    # OCF 30 -> mean 1.5 -> 2 points). Twice the excellent bar says everything a year can say.
+    fcf_conversion_year_cap: float = 2.4
     # S4: FCF Margin (FCF / Revenue, percentage)
     fcf_margin_excellent: float = 20.0
     fcf_margin_good: float = 10.0

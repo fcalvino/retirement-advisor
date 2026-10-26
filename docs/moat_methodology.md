@@ -26,7 +26,7 @@ Calculado automáticamente a partir de estados financieros (yfinance). **Sin lla
 | Gross Margin estabilidad | 0–2 | Durabilidad del pricing power | std ≤3pp=2, ≤8pp=1, ≤15pp=0.5 |
 | ROIC sostenido | 0–2 | Capital allocation moat | spread vs costo de equity proxy: ≥10pp=2, ≥4pp=1, ≥0pp=0.5 |
 | Revenue defensividad | 0–2 | Resiliencia ante recesiones | 0 años negativos=2, 1 año=1, ≤2=0.5 |
-| FCF Conversion | 0–2 | Calidad de ganancias | OCF/NI ≥1.2=2, ≥0.9=1, ≥0.6=0.5 |
+| FCF Conversion | 0–2 | Calidad de ganancias | OCF/NI ≥1.2=2, ≥0.9=1, ≥0.6=0.5 (promedio por año; un año sin ganancia cuenta 0 y cada año se topa en 2,4) |
 | FCF Margin | 0–2 | Escalabilidad del modelo | FCF/Rev ≥20%=2, ≥10%=1, ≥5%=0.5 |
 
 #### El umbral del ROIC: costo de equity proxy (no es un WACC)
