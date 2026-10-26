@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## GRAHAM-SIN-CRECIMIENTO — graham no valúa a una empresa cuyo crecimiento no se midió (2026-10-26)
+
+Hallazgo de la auditoría de código de 2026-10-26 (`analysis/fundamental.py`, bloque de Graham). Sin tasa de crecimiento medida no hay valor de Graham ni margen de seguridad; un cero medido (U3-3) sigue valuándose. La revisión independiente encontró que el motivo «esperar una baja» presentaba una ausencia como lectura de mercado y que la ficha ocultaba el bloque sin decir por qué; ambos corregidos en el mismo PR. Oráculo con CAGR calculado dentro del test, turnaround, fallback por net income, cap y GBp.
+
+---
+
 ## PIOTROSKI-AÑOS-ALINEADOS — cada señal del Piotroski compara los mismos años fiscales (2026-10-26)
 
 Hallazgo de la auditoría de código de 2026-10-26 (`analysis/scoring.py::_piotroski_score`). Cada señal compara ahora los mismos años fiscales (`aligned_window`, junto a `aligned_latest`). Oráculo independiente con barrido de 1000 estados aleatorios con celdas vacías; medido sobre el universo cacheado: 1 F-score cambia y ningún `adjusted_score` se mueve (como U3-9/U3-10, el defecto era un número mal en pantalla, no un puntaje mal).
