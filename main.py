@@ -26,6 +26,7 @@ from loguru import logger
 
 from analysis.strategy import full_analysis
 from config import DEFAULT_TICKERS
+from data.product_ux import risk_metric_text
 from portfolio.tracker import Portfolio
 
 
@@ -127,9 +128,11 @@ def cmd_portfolio() -> None:
     print(f"  Total Value  : ${metrics.total_value:,.0f}")
     print(f"  Total P&L    : ${metrics.total_pnl:,.0f} ({metrics.total_pnl_pct:.1f}%)")
     print(f"  Ann. Return  : {metrics.annualized_return_pct:.1f}%")
-    print(f"  Sharpe Ratio : {metrics.sharpe_ratio:.2f}")
-    print(f"  Max Drawdown : {metrics.max_drawdown_pct:.1f}%")
-    print(f"  Beta         : {metrics.beta:.2f}")
+    # Risk metrics are None until the shared curve is long enough (PORTFOLIO-RISK-CERO):
+    # formatting None with ":.2f" raised TypeError, the same as the page's dash.
+    print(f"  Sharpe Ratio : {risk_metric_text(metrics.sharpe_ratio, '{:.2f}')}")
+    print(f"  Max Drawdown : {risk_metric_text(metrics.max_drawdown_pct, '{:.1f}%')}")
+    print(f"  Beta         : {risk_metric_text(metrics.beta, '{:.2f}')}")
 
 
 def cmd_dashboard() -> None:
