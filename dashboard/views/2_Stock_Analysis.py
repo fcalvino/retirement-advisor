@@ -736,6 +736,11 @@ if symbol:
                     else:
                         st.metric(label, "N/A")
 
+            if not fund.graham_value and fund.asset_class == "equity" and fund.eps_cagr_5y is None:
+                st.caption(
+                    "Graham: sin crecimiento de ganancias medido, no se publica valor intrínseco "
+                    "ni margen de seguridad (que falte el dato no es que la empresa no crezca)."
+                )
             if fund.graham_value:
                 st.divider()
                 col1, col2 = st.columns(2)
