@@ -21,6 +21,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -30,6 +31,7 @@ from typing import Callable, Dict, List, Optional
 from loguru import logger
 
 from config import ENGINE_VERSION
+from data.clock import utc_now
 from data.env_provenance import env_drift, numeric_env
 from data.listing_aliases import resolve_weights
 from data.product_ux import (
@@ -39,7 +41,12 @@ from data.product_ux import (
     resolve_core,
 )
 
-_PLANS_PATH = Path(__file__).parent / "retirement_plans.json"
+# Same as ``data.preferences``: the suite points this at a temp file
+# (``tests/conftest.py``), so a test can never read or move the user's plans.
+_PLANS_PATH = Path(
+    os.environ.get("RETIREMENT_ADVISOR_PLANS_PATH")
+    or Path(__file__).parent / "retirement_plans.json"
+)
 
 
 def _slugify(name: str) -> str:
@@ -434,24 +441,75 @@ class PlanStore:
     def __init__(self, path: Path = _PLANS_PATH) -> None:
         self.path = path
 
-    def _read_raw(self) -> List[dict]:
+    def _read_items(self) -> Optional[List[dict]]:
+        """Los planes guardados. ``[]`` si no hay archivo; ``None`` si no se pudo leer.
+
+        ``None`` es un error transitorio (permisos, EMFILE, disco): el archivo está
+        ahí y puede estar sano, así que ni se aparta ni se debe escribir encima.
+        """
         if not self.path.exists():
             return []
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
-            return data if isinstance(data, list) else []
-        except Exception as exc:
-            logger.warning(f"Could not load plans ({exc}) — starting empty")
-            return []
+        except (ValueError, UnicodeDecodeError) as exc:  # JSONDecodeError es un ValueError
+            return self._set_aside_unreadable(str(exc))
+        except OSError as exc:
+            logger.error(f"Could not read plans ({exc}) — file left in place")
+            return None
+        if isinstance(data, list):
+            return data
+        return self._set_aside_unreadable(f"se esperaba una lista y hay {type(data).__name__}")
 
-    def _write_raw(self, items: List[dict]) -> None:
+    def _read_raw(self) -> List[dict]:
+        return self._read_items() or []
+
+    def _set_aside_unreadable(self, reason: str) -> Optional[List[dict]]:
+        """Aparta un archivo ilegible en vez de dejar que el próximo guardado lo pise.
+
+        Leerlo como ``[]`` está bien para mostrar la lista, pero ``upsert`` y ``delete``
+        reescriben el archivo entero a partir de esa lectura: sin esto, un JSON truncado
+        (corte de luz, disco lleno) borraba todos los planes guardados en el siguiente
+        "Guardar plan". Moverlo deja los bytes intactos y el archivo libre para uno limpio.
+        Un archivo vacío no tiene nada que conservar.
+
+        Vuelve a leer antes de mover: otra sesión pudo apartarlo y guardar uno válido
+        entre la primera lectura y ésta, y ese archivo nuevo no se toca.
+        """
+        try:
+            raw = self.path.read_bytes()
+        except FileNotFoundError:
+            return []
+        except OSError as exc:
+            logger.error(f"Plans file unreadable ({reason}) and re-read failed: {exc}")
+            return None
+        try:
+            again = json.loads(raw.decode("utf-8"))
+            if isinstance(again, list):
+                return again
+        except (ValueError, UnicodeDecodeError):
+            pass
+        if not raw.strip():
+            return []
+        try:
+            stamp = utc_now().strftime("%Y%m%dT%H%M%S%f")
+            aside = self.path.with_name(f"{self.path.stem}.corrupt-{stamp}{self.path.suffix}")
+            self.path.replace(aside)
+        except OSError as exc:
+            logger.error(f"Plans file unreadable ({reason}) and could not be moved aside: {exc}")
+            return None
+        logger.error(f"Plans file unreadable ({reason}) — moved to {aside.name}; starting empty")
+        return []
+
+    def _write_raw(self, items: List[dict]) -> bool:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.path.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(items, indent=2, ensure_ascii=False), encoding="utf-8")
             tmp.replace(self.path)
+            return True
         except Exception as exc:
             logger.error(f"Could not save plans: {exc}")
+            return False
 
     def list(self) -> List[PlanSnapshot]:
         """Return all snapshots, newest updated first."""
@@ -468,18 +526,23 @@ class PlanStore:
 
     def upsert(self, snapshot: PlanSnapshot) -> None:
         """Insert or replace a snapshot by id."""
-        items = [d for d in self._read_raw() if d.get("id") != snapshot.id]
+        current = self._read_items()
+        if current is None:
+            logger.error(f"Plan not saved: could not read the existing plans ({snapshot.id})")
+            return
+        items = [d for d in current if d.get("id") != snapshot.id]
         items.append(snapshot.to_dict())
-        self._write_raw(items)
-        logger.info(f"Plan saved: {snapshot.name} ({snapshot.id})")
+        if self._write_raw(items):
+            logger.info(f"Plan saved: {snapshot.name} ({snapshot.id})")
 
     def delete(self, plan_id: str) -> bool:
-        items = self._read_raw()
+        items = self._read_items()
+        if items is None:
+            return False
         remaining = [d for d in items if d.get("id") != plan_id]
         if len(remaining) == len(items):
             return False
-        self._write_raw(remaining)
-        return True
+        return self._write_raw(remaining)
 
 
 # Module-level singleton (mirrors data.preferences pattern)
