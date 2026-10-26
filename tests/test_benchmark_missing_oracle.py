@@ -193,7 +193,7 @@ def test_a_benchmark_lookup_failure_is_never_persisted_as_beating_the_market(sto
     _log_due(store, symbol="NVDA", action="BUY", price_at_rec=100.0, created=created)
 
     # NVDA is priceable; SPY is not (no rows for it at all).
-    lookup = _lookup_from({("NVDA", horizon_date.date()): 110.0})
+    lookup = _lookup_from({("NVDA", created.date()): 100.0, ("NVDA", horizon_date.date()): 110.0})
 
     score_due_recommendations(store, price_lookup=lookup)
 
@@ -221,7 +221,7 @@ def test_a2_the_counters_separate_partial_from_fully_scored(store):
     _log_due(store, symbol="NVDA", action="BUY", price_at_rec=100.0, created=created)
 
     res = score_due_recommendations(
-        store, price_lookup=_lookup_from({("NVDA", horizon_date.date()): 110.0})
+        store, price_lookup=_lookup_from({("NVDA", created.date()): 100.0, ("NVDA", horizon_date.date()): 110.0})
     )
     assert res["scored"] == 0, "una fila sin benchmark no está puntuada"
     assert res["partial"] == 1
@@ -253,6 +253,7 @@ def test_b_engine_agrees_with_the_reference_when_the_benchmark_resolves(
 
     lookup = _lookup_from(
         {
+            ("NVDA", created.date()): 100.0,
             ("NVDA", horizon_date.date()): price_now,
             ("SPY", created.date()): 400.0,
             ("SPY", horizon_date.date()): bench_now,
@@ -416,7 +417,7 @@ def test_f_a_partial_outcome_is_completed_by_a_later_run(store):
     horizon_date = created + timedelta(days=30)
     _log_due(store, symbol="NVDA", action="BUY", price_at_rec=100.0, created=created)
 
-    prices = {("NVDA", horizon_date.date()): 110.0}
+    prices = {("NVDA", created.date()): 100.0, ("NVDA", horizon_date.date()): 110.0}
 
     first = score_due_recommendations(store, price_lookup=_lookup_from(prices))
     assert first["partial"] == 1
@@ -444,6 +445,7 @@ def test_f2_a_completed_outcome_is_not_rescored(store):
 
     lookup = _lookup_from(
         {
+            ("NVDA", created.date()): 100.0,
             ("NVDA", horizon_date.date()): 110.0,
             ("SPY", created.date()): 400.0,
             ("SPY", horizon_date.date()): 420.0,
@@ -466,7 +468,7 @@ def test_g_hold_keeps_its_hit_without_a_benchmark(store):
 
     # +2 %: inside the hold band, and knowable without the market.
     score_due_recommendations(
-        store, price_lookup=_lookup_from({("KO", horizon_date.date()): 102.0})
+        store, price_lookup=_lookup_from({("KO", created.date()): 100.0, ("KO", horizon_date.date()): 102.0})
     )
 
     row = store.get_scored_rows(30)[0]

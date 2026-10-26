@@ -148,7 +148,17 @@ def score_due_recommendations(
         for rec in pending:
             horizon_date = rec.created_at + timedelta(days=horizon)
 
-            price_then = rec.price_at_rec or price_lookup(rec.symbol, rec.created_at)
+            # Both ends from the SAME series: the daily history, which is split- and
+            # dividend-adjusted and so a total return, like the benchmark's below.
+            # ``rec.price_at_rec`` is the price at the moment of the recommendation, in that
+            # day's scale; against a history that gets rescaled by every later split or
+            # dividend it read a 2:1 split inside the window as a -45 % crash and left the
+            # stock's own dividends out of a return whose benchmark included them. It also
+            # started the stock at an intraday price while the benchmark started at the day's
+            # close. It stays what the user saw («Precio inicial»); it is not an input to the
+            # grade. No history at the recommendation date is "cannot score yet", never the
+            # stored price.
+            price_then = price_lookup(rec.symbol, rec.created_at)
             price_now = price_lookup(rec.symbol, horizon_date)
             if not price_then or not price_now:
                 skipped += 1
