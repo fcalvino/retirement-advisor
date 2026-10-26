@@ -501,7 +501,7 @@ if symbol:
                 ("Revenue defensividad",     _moat_detail.revenue_defensiveness,
                  "Años con caída de ingresos (0 años=2, 1 año=1) — resiliencia ante recesiones"),
                 ("FCF Conversion",           _moat_detail.fcf_conversion,
-                 "Promedio OCF/Net Income (≥1.2=2, ≥0.9=1) — ganancias respaldadas por caja real"),
+                 "Promedio OCF/Net Income (≥1.2=2, ≥0.9=1; un año sin ganancia cuenta 0) — ganancias respaldadas por caja real"),
                 ("FCF Margin",               _moat_detail.fcf_margin,
                  "FCF/Revenue promedio % (≥20%=2, ≥10%=1) — escalabilidad del modelo de negocio"),
             ]
