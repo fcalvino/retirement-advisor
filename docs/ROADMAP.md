@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## PLAN-STORE-CORRUPTO — un plan guardado ilegible se aparta y ya no se pisa (2026-10-26)
+
+Hallazgo de la auditoría de código de 2026-10-26 (`data/plan_store.py`, `_read_raw`). Corrección en `PlanStore`: un JSON ilegible se mueve en vez de pisarse, sin tocar el archivo ante errores de E/S transitorios. Tests nuevos del comportamiento, de `delete` y del aislamiento de la ruta en la suite. Sin cambio de formato del archivo.
+
+---
+
 ## DOCS-BACKLOG-PENDIENTES — tres filas abiertas entran al BACKLOG: PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND y MACRO-SIN-FECHA (2026-10-25)
 
 Las tres filas salieron de la poda de `docs/`: PR 4–7 multimodelo, la punta suelta de SIGNAL-3 y el defecto B2 del gate de frescura estaban abiertos pero ausentes del BACKLOG, que es la fuente de «qué sigue». Cada una se volvió a medir contra el código antes de escribirla; la revisión del diff en contexto fresco no encontró errores.
