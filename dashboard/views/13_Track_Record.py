@@ -309,6 +309,14 @@ if not detail.empty:
             f"está en su moneda de cotización y el retorno, el benchmark y el exceso en "
             f"{PORTFOLIO.base_currency}, con el tipo de cambio de cada punta."
         )
+    st.caption(
+        "«Retorno %» y «Benchmark %» son retornos **totales** (incluyen dividendos y splits): "
+        "van del cierre del día de la recomendación al del horizonte, sobre la misma serie "
+        "ajustada de precios para el ticker y para el benchmark. «Precio inicial» es el precio "
+        "del momento de la recomendación, sin ajustar: no reproduce el retorno de la fila. "
+        "Las filas puntuadas antes del 2026-10-26 partían de ese precio del momento y no del "
+        "cierre; se conservan como se registraron."
+    )
     detail = detail[
         [
             "created_at", "symbol", "action", "confidence", "source",

@@ -137,7 +137,9 @@ def test_scoring_is_idempotent_and_correct(store):
 
     table, add, lookup = _price_lookup_factory()
     horizon_date = created + timedelta(days=30)
-    # NVDA +20%, SPY +5% over the horizon.
+    # NVDA +20%, SPY +5% over the horizon. Both ends come from the history, not from
+    # the stored price (the stock's price on the recommendation date is added too).
+    add("NVDA", created, 100.0)
     add("NVDA", horizon_date, 120.0)
     add("SPY", created, 400.0)
     add("SPY", horizon_date, 420.0)

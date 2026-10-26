@@ -123,7 +123,7 @@ class TestScoringInDollars:
     def test_flat_in_yen_with_the_yen_up_is_graded_in_dollars(self, store):
         rid, created = _log_due(store, "7203.T", "JPY", 3000.0)
         h = created + timedelta(days=30)
-        prices = _table({("7203.T", h.date()): 3000.0,
+        prices = _table({("7203.T", created.date()): 3000.0, ("7203.T", h.date()): 3000.0,
                          ("SPY", created.date()): 500.0, ("SPY", h.date()): 510.0})
         fx = _table({("JPY", created.date()): 0.0064, ("JPY", h.date()): 0.0070})
         res = score_due_recommendations(store, price_lookup=prices, fx_lookup=fx)
@@ -138,7 +138,7 @@ class TestScoringInDollars:
     def test_the_price_at_horizon_stays_in_the_quote_currency(self, store):
         rid, created = _log_due(store, "7203.T", "JPY", 3000.0)
         h = created + timedelta(days=30)
-        prices = _table({("7203.T", h.date()): 3150.0,
+        prices = _table({("7203.T", created.date()): 3000.0, ("7203.T", h.date()): 3150.0,
                          ("SPY", created.date()): 500.0, ("SPY", h.date()): 500.0})
         fx = _table({("JPY", created.date()): 0.0064, ("JPY", h.date()): 0.0064})
         score_due_recommendations(store, price_lookup=prices, fx_lookup=fx)
@@ -151,7 +151,7 @@ class TestScoringInDollars:
     def test_pence_cancel_and_the_pound_is_what_counts(self, store):
         rid, created = _log_due(store, "SHEL.L", "GBp", 2600.0)
         h = created + timedelta(days=30)
-        prices = _table({("SHEL.L", h.date()): 2600.0,
+        prices = _table({("SHEL.L", created.date()): 2600.0, ("SHEL.L", h.date()): 2600.0,
                          ("SPY", created.date()): 500.0, ("SPY", h.date()): 500.0})
         fx = _table({("GBp", created.date()): 0.0130, ("GBp", h.date()): 0.0117})
         score_due_recommendations(store, price_lookup=prices, fx_lookup=fx)
@@ -160,7 +160,7 @@ class TestScoringInDollars:
     def test_a_missing_rate_is_skipped_and_stays_pending_never_graded_as_dollars(self, store):
         rid, created = _log_due(store, "7203.T", "JPY", 3000.0)
         h = created + timedelta(days=30)
-        prices = _table({("7203.T", h.date()): 3300.0,
+        prices = _table({("7203.T", created.date()): 3000.0, ("7203.T", h.date()): 3300.0,
                          ("SPY", created.date()): 500.0, ("SPY", h.date()): 500.0})
         fx = _table({("JPY", created.date()): 0.0064})                   # no rate at horizon
         res = score_due_recommendations(store, price_lookup=prices, fx_lookup=fx)
@@ -173,7 +173,7 @@ class TestRowsWithoutACurrency:
     def test_a_us_listing_is_scored_exactly_as_before_without_any_rate(self, store):
         rid, created = _log_due(store, "AAPL", None, 200.0)
         h = created + timedelta(days=30)
-        prices = _table({("AAPL", h.date()): 220.0,
+        prices = _table({("AAPL", created.date()): 200.0, ("AAPL", h.date()): 220.0,
                          ("SPY", created.date()): 500.0, ("SPY", h.date()): 505.0})
 
         def no_fx(currency, when):
@@ -190,7 +190,7 @@ class TestRowsWithoutACurrency:
         monkeypatch.setattr(fx_mod, "get_info", lambda s: {"currency": "EUR"})
         rid, created = _log_due(store, "SAP.DE", None, 200.0)
         h = created + timedelta(days=30)
-        prices = _table({("SAP.DE", h.date()): 200.0,
+        prices = _table({("SAP.DE", created.date()): 200.0, ("SAP.DE", h.date()): 200.0,
                          ("SPY", created.date()): 500.0, ("SPY", h.date()): 500.0})
         fx = _table({("EUR", created.date()): 1.10, ("EUR", h.date()): 1.21})
         score_due_recommendations(store, price_lookup=prices, fx_lookup=fx)
@@ -198,9 +198,13 @@ class TestRowsWithoutACurrency:
 
     def test_an_unconfirmable_currency_is_skipped(self, store, monkeypatch):
         monkeypatch.setattr(fx_mod, "get_info", lambda s: {})
-        _log_due(store, "SAP.DE", None, 200.0)
+        _, created = _log_due(store, "SAP.DE", None, 200.0)
+        h = created + timedelta(days=30)
+        # Priced on both dates, so the skip can only come from the currency check.
+        prices = _table({("SAP.DE", created.date()): 200.0, ("SAP.DE", h.date()): 210.0,
+                         ("SPY", created.date()): 500.0, ("SPY", h.date()): 500.0})
         res = score_due_recommendations(
-            store, price_lookup=_table({}), fx_lookup=_table({}))
+            store, price_lookup=prices, fx_lookup=_table({}))
         assert res["skipped"] == 1
         assert store.get_scored_rows(30) == []
 
