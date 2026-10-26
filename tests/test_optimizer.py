@@ -599,3 +599,88 @@ class TestLargeN:
         assert result.n_eligible <= 70
         assert result.n_candidates <= opt.cfg.pre_filter_top_k
         assert result.build_matrix_ms >= 0
+
+
+# ------------------------------------------------------------------ #
+#  Sin exceso de retorno, el Sharpe no se maximiza: se minimiza la vol  #
+# ------------------------------------------------------------------ #
+
+def _min_variance_box(sigma: np.ndarray, lb: float, ub: float) -> np.ndarray:
+    """Oráculo independiente: mínima varianza con cov diagonal y cotas [lb, ub].
+
+    KKT: w_i = clip(λ / σ_i², lb, ub) con λ tal que sum(w) = 1 (bisección). No usa SLSQP.
+    """
+    inv = 1.0 / sigma**2
+    lo, hi = 0.0, 1.0
+    while (np.clip(hi * inv, lb, ub)).sum() < 1.0:
+        hi *= 2.0
+    for _ in range(200):
+        mid = (lo + hi) / 2.0
+        if np.clip(mid * inv, lb, ub).sum() < 1.0:
+            lo = mid
+        else:
+            hi = mid
+    return np.clip(hi * inv, lb, ub)
+
+
+class TestNoExcessReturnMinimisesVolatility:
+    """Con todo μ ≤ rf, ``-(μ-rf)/σ`` es positivo y minimizarlo *sube* σ: el optimizador
+    ponía el 12 % en los activos más volátiles y el piso en los más estables."""
+
+    @staticmethod
+    def _setup(profile: str, mu_gap: float):
+        opt = PortfolioOptimizer(profile)
+        sectors = ["Tech", "Health", "Staples", "Energy", "Utilities", "Fin"]
+        n = 12
+        tickers = [_ticker(f"S{i:02d}", div=3.0, sector=sectors[i % 6]) for i in range(n)]
+        sigma = np.linspace(0.10, 0.30, n)
+        mu = np.full(n, opt.opt.risk_free_rate + mu_gap)
+        return opt, tickers, sigma, mu
+
+    @pytest.mark.parametrize("profile", ["moderate", "aggressive"])
+    def test_all_below_risk_free_gets_the_minimum_variance_portfolio(self, profile):
+        opt, tickers, sigma, mu = self._setup(profile, mu_gap=-0.03)
+        w = opt._run_slsqp(mu, np.diag(sigma**2), tickers)
+        assert w is not None
+        lb = opt.opt.min_weight_pct / 100
+        ub = max(opt.cfg.max_position_pct / 100, 1.0 / len(tickers))
+        ref = _min_variance_box(sigma, lb, ub)
+        vol = float(np.sqrt(w @ np.diag(sigma**2) @ w))
+        ref_vol = float(np.sqrt(ref @ np.diag(sigma**2) @ ref))
+        assert vol == pytest.approx(ref_vol, rel=1e-3)
+        # The calmest name gets more weight than the wildest one, never the reverse.
+        assert w[0] > w[-1]
+
+    def test_warns_that_the_sharpe_was_not_maximised(self):
+        opt, tickers, sigma, mu = self._setup("moderate", mu_gap=-0.03)
+        opt._run_slsqp(mu, np.diag(sigma**2), tickers)
+        assert opt._slsqp_note and "tasa libre de riesgo" in opt._slsqp_note
+        assert "Sharpe" not in opt._slsqp_note   # etiqueta del proxy: ratio atractivo/vol
+
+    def test_positive_excess_still_maximises_sharpe(self):
+        """Regresión: con μ > rf el camino de siempre no cambia ni avisa."""
+        opt, tickers, sigma, _ = self._setup("moderate", mu_gap=0.0)
+        mu = opt.opt.risk_free_rate + np.linspace(0.02, 0.10, len(tickers))
+        cov = np.diag(sigma**2)
+        w = opt._run_slsqp(mu, cov, tickers)
+        assert w is not None and opt._slsqp_note is None
+        sharpe = lambda x: (mu @ x - opt.opt.risk_free_rate) / np.sqrt(x @ cov @ x)  # noqa: E731
+        assert sharpe(w) > sharpe(np.ones(len(tickers)) / len(tickers))
+
+    def test_if_min_variance_does_not_converge_the_volatile_solution_is_not_returned(self, monkeypatch):
+        """Sin la mínima varianza, devolver la cartera de máxima vol sería el defecto original."""
+        import portfolio.optimizer as optimizer_module
+
+        opt, tickers, sigma, mu = self._setup("moderate", mu_gap=-0.03)
+        real_minimize = optimizer_module.minimize
+        calls = {"n": 0}
+
+        def flaky(fun, x0, **kw):
+            calls["n"] += 1
+            res = real_minimize(fun, x0, **kw)
+            if fun.__name__ == "port_vol":      # the min-variance objective never converges
+                res.success = False
+            return res
+
+        monkeypatch.setattr(optimizer_module, "minimize", flaky)
+        assert opt._run_slsqp(mu, np.diag(sigma**2), tickers) is None

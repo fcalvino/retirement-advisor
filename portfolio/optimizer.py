@@ -331,6 +331,7 @@ class PortfolioOptimizer:
         # EO-4b: symbol → Clase, resolved by the caller (``shared.cached_asset_classes``)
         # so the optimizer stays off the network. None → the score proxy of before.
         self._asset_classes = dict(asset_classes) if asset_classes is not None else None
+        self._slsqp_note: Optional[str] = None   # aviso de la última corrida de SLSQP
         self.cfg: ProfileConfig = OPTIMIZER_PROFILES.get(profile, OPTIMIZER_PROFILES["conservative"])
         self.opt = OPTIMIZER
         self._converted: Dict[str, str] = {}
@@ -441,8 +442,11 @@ class PortfolioOptimizer:
 
         # 5 — Optimize
         weights = None
+        self._slsqp_note = None
         if cov_available:
             weights = self._run_slsqp(mu, cov, eligible_filtered)
+            if weights is not None and self._slsqp_note:
+                result.warnings.append(self._slsqp_note)
 
         if weights is None:
             result.method = "score-weighted"
@@ -1006,9 +1010,9 @@ class PortfolioOptimizer:
         w0 = np.clip(w0, lb, ub_arr)
         w0 /= w0.sum()
 
-        def _try_minimize(start: np.ndarray) -> Optional[np.ndarray]:
+        def _try_minimize(start: np.ndarray, objective=neg_sharpe) -> Optional[np.ndarray]:
             res = minimize(
-                neg_sharpe,
+                objective,
                 start,
                 method="SLSQP",
                 bounds=bounds,
@@ -1025,16 +1029,41 @@ class PortfolioOptimizer:
                     w[w < lb * 0.5] = 0
                     if w.sum() > 0:
                         w /= w.sum()
-                logger.info(f"SLSQP converged — proxy/vol ratio {-res.fun:.3f}")
+                if objective is neg_sharpe:
+                    logger.info(f"SLSQP converged — proxy/vol ratio {-res.fun:.3f}")
+                else:
+                    logger.info(f"SLSQP converged — min-variance, vol {res.fun * 100:.2f}%")
                 return w
             return None
 
+        def _solve(start: np.ndarray) -> Optional[np.ndarray]:
+            w = _try_minimize(start)
+            if w is None or float(mu @ w) > rf:
+                return w
+            # Sin exceso de atractivo sobre rf, ``-(μ-rf)/σ`` es positivo y *crece* al bajar σ:
+            # minimizarlo sube la volatilidad hasta el techo del perfil. El ratio atractivo/vol
+            # no sirve de objetivo acá; la respuesta defendible es la de mínima varianza.
+            w_mv = _try_minimize(start, objective=port_vol)
+            if w_mv is None:
+                # Devolver ``w`` sería devolver justo la cartera de máxima volatilidad que
+                # esto evita; sin solución, el llamador cae al score-weighted (y lo avisa).
+                logger.warning("SLSQP min-variance fallback did not converge — discarding the solution")
+                return None
+            self._slsqp_note = (
+                "Ningún portafolio factible supera la tasa libre de riesgo con el atractivo "
+                "estimado actual: se minimizó la volatilidad en vez de maximizar el "
+                "ratio atractivo/vol."
+            )
+            logger.warning(self._slsqp_note)
+            return w_mv
+
+        self._slsqp_note = None
         try:
-            w = _try_minimize(w0)
+            w = _solve(w0)
             if w is not None:
                 return w
             # Retry with equal-weight starting point if div-biased start failed
-            w = _try_minimize(np.ones(n) / n)
+            w = _solve(np.ones(n) / n)
             if w is not None:
                 return w
             logger.warning("SLSQP did not converge after 2 attempts")

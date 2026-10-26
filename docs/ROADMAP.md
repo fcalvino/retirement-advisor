@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## OPTIMIZER-SIN-EXCESO-RF — sin exceso sobre rf el optimizador minimiza la volatilidad, no la maximiza (2026-10-26)
+
+Hallazgo de la auditoría de código de 2026-10-26 (`portfolio/optimizer.py`, `neg_sharpe` en `_run_slsqp`). Sin exceso de atractivo sobre rf se minimiza la volatilidad en vez de maximizarla. La revisión independiente encontró una etiqueta que rompía `test_return_label_contract` (el motor no llama «Sharpe» a su objetivo) y el caso de la mínima varianza sin convergencia; ambos corregidos. La frontera eficiente no tiene el problema (genera carteras aleatorias, no optimiza).
+
+---
+
 ## PERSONAL-SIZER-SIN-DATOS — sin datos, el libro personal no manda a vender: pide revisar (2026-10-26)
 
 Hallazgo de la auditoría de código de 2026-10-26 (`portfolio/personal_sizer.py`, enrich fallido). El revisor independiente mostró que la primera versión sólo cubría la excepción y no el camino real (resultado por defecto sin lanzar); el fix final detecta «sin datos» en un helper compartido. Tests nuevos con el analizador real y `get_info` vacío; fallan con el código anterior.
