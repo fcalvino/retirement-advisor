@@ -108,13 +108,13 @@ def _build_statement(
     Every row is looked up against the *same* ``period_ends`` — computed once
     in :func:`piotroski_statements_as_of` from the whole payload, not derived
     independently per concept here. ``EnhancedScoring._piotroski_score``
-    compares rows positionally (``ni.iloc[0] / total_assets.iloc[0]``, across
-    *different* DataFrames too — income_stmt vs balance_sheet), so a shared
-    axis is what keeps ``iloc[0]`` meaning the same fiscal year everywhere;
-    letting each concept pick its own most-recent-available dates would let a
-    company that omits one tag for a single year (routine — e.g. no reported
-    long-term debt) silently misalign two same-length rows onto different
-    years.
+    pairs rows by fiscal period (``analysis.utils.aligned_window``, across
+    *different* DataFrames too — income_stmt vs balance_sheet) and matches the
+    period-end **dates exactly**, so a shared axis is what keeps the same date
+    on every statement; letting each concept pick its own most-recent-available
+    dates would let a company that omits one tag for a single year (routine —
+    e.g. no reported long-term debt) land its rows on different dates, and the
+    checks that cross statements would find no period they share.
 
     ``period_ends`` is walked newest-first and a concept's values stop at the
     first gap, rather than skipping it and keeping any older value that

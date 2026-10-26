@@ -268,6 +268,67 @@ def aligned_latest(
     return values, str(period)
 
 
+def aligned_window(
+    frames_rows: "list[tuple[Any, list]]",
+    periods: int = 1,
+) -> "Optional[list[list[float]]]":
+    """Values on the newest run of ``periods`` consecutive fiscal years that **every** row reported.
+
+    Returns ``[[row values at the newest year], [... at the year before], ...]`` in the
+    order the rows were asked for, or ``None`` when no such run exists.
+
+    ``aligned_latest`` answers "which single year do these rows share"; a year-over-year
+    comparison needs two *adjacent* years on every row. Taking ``iloc[0]`` / ``iloc[1]`` of
+    each row's own ``dropna()`` pairs a year with whatever that row last reported, so a row
+    blank in the newest column compares this year's assets with last year's debt — and a
+    row blank in the middle turns "year over year" into a two-year change. Adjacency is read
+    from the statements' own column calendar (the union of the frames' columns, newest first),
+    not from the dates a row happens to report: a year that is a column but blank in every
+    row is a gap, not a neighbour. A year that is no column of any statement at all leaves
+    its neighbours adjacent — the same as the positional reading did before.
+
+    Periods are matched by **exact date**. Statements that close a day apart (12-30 against
+    12-31) share no period, and a check that crosses them has no answer — it is not "nearly
+    the same year". yfinance gives one close date per fiscal year across the three statements,
+    and the point-in-time rebuild builds them on one axis; ``aligned_latest`` makes the same
+    assumption.
+
+    Like ``aligned_latest`` it anchors instead of discarding: it steps back to the newest run
+    on which all rows reported, and only a genuine absence of one yields ``None``. A row
+    whose candidates are all blank counts as absent (the ``_extract`` convention).
+    """
+    import pandas as pd
+
+    per_side = []
+    calendar = set()
+    for df, names in frames_rows:
+        if df is None or getattr(df, "empty", True):
+            return None
+        reported = None
+        for name in names:
+            if name not in df.index:
+                continue
+            values = {
+                pd.Timestamp(col): float(value)
+                for col, value in df.loc[name].items()
+                if pd.notna(value)
+            }
+            if values:
+                reported = values
+                break
+        if reported is None:
+            return None
+        per_side.append(reported)
+        calendar.update(pd.Timestamp(col) for col in df.columns)
+
+    ordered = sorted(calendar, reverse=True)
+    for start in range(len(ordered) - periods + 1):
+        window = ordered[start:start + periods]
+        if all(period in side for side in per_side for period in window):
+            return [[side[period] for side in per_side] for period in window]
+    return None
+
+
 def downside_deviation(
     returns: "pd.Series",
     mar_annual: float,
