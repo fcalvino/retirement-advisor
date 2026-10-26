@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## TRACK-RECORD-PRECIOS — el retorno del track record sale de una sola serie de precios (2026-10-26)
+
+Hallazgo de la auditoría de código de 2026-10-26 (`analysis/track_record_scorer.py`, `price_then` de `price_at_rec` contra una historia ajustada). Un solo precio de partida y una sola serie para ticker y benchmark. Honesto sobre su tamaño: en la base real los dos defectos de fondo (splits, dividendos) son latentes y el efecto medido es sobre todo el cambio de convención del precio inicial; el hit rate agregado casi no se mueve. Las filas ya puntuadas no se re-puntúan.
+
+---
+
 ## TRACKER-CURVA-LOTES — la curva de riesgo cuenta las acciones desde que se tuvieron (2026-10-26)
 
 Hallazgo de la auditoría de código de 2026-10-26 (`portfolio/tracker.py`, `_build_equity_curve` / `_held_from`). La curva de riesgo cuenta las acciones desde que se tuvieron y no trata un precio faltante como una posición en 0. Costo explícito: quien compra todos los meses queda con la ventana desde su última compra y sus métricas pasan a «no medible» hasta reunir 11 semanas; el retorno ponderado por tiempo que neutralizaría cada compra es un diseño aparte. Límite conocido que este fix no cierra: una venta parcial posterior al lote más nuevo deja las acciones de hoy en toda la ventana (el modelo no guarda historial de ventas; IDEA-5 PR 2).
