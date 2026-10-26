@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## DOCS-BACKLOG-AUDITORIA — el inventario de la auditoría de código de 2026-10-26 entra al BACKLOG como la serie AUDIT-* (2026-10-26)
+
+Registro del inventario de la auditoría de código de 2026-10-26 como la serie AUDIT-* del BACKLOG (14 filas), después de los ocho arreglos #283–#290. Un hallazgo de la auditoría resultó más amplio al re-verificarlo (`compute_cagr_available` comparte el defecto del NaN interior y alimenta el CAGR de ingresos, el de EPS y el `g` de Graham), otro más chico (el defecto del moat de dos negativos toca a 3 tickers; el dominante era el contrario), y dos afirmaciones de subagentes eran falsas. Sin código.
+
+---
+
 ## MOAT-FCF-CONVERSION — un año sin ganancias no convierte ganancias en caja (2026-10-26)
 
 Hallazgo de la auditoría de código de 2026-10-26 (`analysis/moat.py::_fcf_conversion`). La medición invirtió la hipótesis de la auditoría: el defecto citado (dos negativos = conversión «excelente») toca a 3 tickers del universo cacheado, mientras que el caso dominante es el contrario (22 tickers con un año de pérdida y caja positiva, castigados por un cociente muy negativo). La revisión independiente encontró que, sin ese amortiguador, un año de ganancia mínima podía inflar el promedio; se agregó un tope por año en config. El tope se incorporó a partir de la revisión y no tuvo una segunda ronda. Residual conocido: un NI positivo diminuto con OCF muy negativo sigue dando un cociente muy negativo (comportamiento previo).
