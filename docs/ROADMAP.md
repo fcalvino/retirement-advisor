@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## MOAT-FCF-CONVERSION — un año sin ganancias no convierte ganancias en caja (2026-10-26)
+
+Hallazgo de la auditoría de código de 2026-10-26 (`analysis/moat.py::_fcf_conversion`). La medición invirtió la hipótesis de la auditoría: el defecto citado (dos negativos = conversión «excelente») toca a 3 tickers del universo cacheado, mientras que el caso dominante es el contrario (22 tickers con un año de pérdida y caja positiva, castigados por un cociente muy negativo). La revisión independiente encontró que, sin ese amortiguador, un año de ganancia mínima podía inflar el promedio; se agregó un tope por año en config. El tope se incorporó a partir de la revisión y no tuvo una segunda ronda. Residual conocido: un NI positivo diminuto con OCF muy negativo sigue dando un cociente muy negativo (comportamiento previo).
+
+---
+
 ## TRACK-RECORD-PRECIOS — el retorno del track record sale de una sola serie de precios (2026-10-26)
 
 Hallazgo de la auditoría de código de 2026-10-26 (`analysis/track_record_scorer.py`, `price_then` de `price_at_rec` contra una historia ajustada). Un solo precio de partida y una sola serie para ticker y benchmark. Honesto sobre su tamaño: en la base real los dos defectos de fondo (splits, dividendos) son latentes y el efecto medido es sobre todo el cambio de convención del precio inicial; el hit rate agregado casi no se mueve. Las filas ya puntuadas no se re-puntúan.
