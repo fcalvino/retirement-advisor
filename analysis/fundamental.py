@@ -1067,7 +1067,13 @@ class FundamentalAnalyzer:
         # reads to unlock STRONG BUY. The cap lives in the formula only; the growth
         # rate reported elsewhere is never truncated.
         eps = _safe_float(info.get("trailingEps"))
-        growth_estimate = float(result.eps_cagr_5y or 0.0)
+        # ``None`` is "growth was never measured" (statements too short, no quarterly
+        # figure, or a falling one — the yoy fallback only records a positive rate), and
+        # ``or 0.0`` priced it as a flat company: 41.56 for EPS 5, a ~40 % margin of safety
+        # at P/E 5, for a business that may well be shrinking. A missing figure is not a
+        # flat one; only a MEASURED zero is (U3-3), so without a rate there is no value.
+        growth_known = result.eps_cagr_5y is not None
+        growth_estimate = float(result.eps_cagr_5y) if growth_known else 0.0
         g_cap = float(getattr(T, "graham_max_growth_pct", 15.0) or 15.0)
         growth_used = min(growth_estimate, g_cap)
         y_aaa = float(getattr(T, "graham_aaa_yield_pct", 4.5) or 4.5)
@@ -1080,7 +1086,7 @@ class FundamentalAnalyzer:
         # profitable, not growing. A DECLINING company still gets no value — the
         # formula is not a valuation there, and the multiple itself turns
         # negative below g = −4.25.
-        if eps > 0 and growth_used >= 0:
+        if eps > 0 and growth_known and growth_used >= 0:
             graham = eps * (8.5 + 2 * growth_used) * 4.4 / y_aaa
             # Express the value in the unit the price is quoted in: EPS arrives
             # in the major unit (pounds) while a London price is in pence.

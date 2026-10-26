@@ -631,6 +631,19 @@ class RetirementStrategy:
         if score >= ladder.strong_buy and technical_confirms_strong_buy(tech):
             if fundamental.is_value_stock() or not CFG.require_margin_of_safety:
                 decision.action = "STRONG BUY"
+            elif fundamental.margin_of_safety_pct is None:
+                # Un margen que no se pudo calcular (EPS no positivo, o crecimiento de
+                # ganancias sin medir: sin tasa no hay valor de Graham) no es un margen
+                # insuficiente — decir «esperá una baja» presenta una ausencia como una
+                # lectura de mercado, el mismo defecto que SIGNAL-5 corrigió en el técnico.
+                decision.action = "BUY"
+                decision.decisive_reason = (
+                    "Margen de seguridad no medible — BUY, no STRONG BUY"
+                )
+                decision.rationale.append(
+                    "Strong fundamentals but the margin of safety is not measurable "
+                    "(no earnings growth measured for the Graham value) — BUY, not STRONG BUY"
+                )
             else:
                 decision.action = "BUY"
                 decision.decisive_reason = (

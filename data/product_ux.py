@@ -2371,7 +2371,9 @@ def graham_value_help(thresholds: Any = None) -> str:
         f"· **g** es el crecimiento por acción, topeado en {g_cap:g} % para la fórmula.\n\n"
         "· Con **g = 0** la fórmula sigue definida (multiplicador 8,5): una empresa "
         "estable y rentable que no crece **sí** tiene valor. Con g < 0 no se publica "
-        "ninguno."
+        "ninguno.\n\n"
+        "· **Sin g medido tampoco se publica** (estados cortos, o ganancias que cayeron "
+        "sin historial para un CAGR): que falte el dato no es que la empresa no crezca."
     )
 
 
