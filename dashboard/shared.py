@@ -1573,7 +1573,7 @@ def cached_personal_book_analysis(
     # Same key as `cached_full_analysis`: a scoring rewrite must not keep
     # serving a stale personal-book result for the remaining 30m TTL.
     _ = engine_version
-    from portfolio.personal_sizer import analyze_personal_book
+    from portfolio.personal_sizer import analyze_personal_book, raw_from_analysis
 
     positions = {
         p[0]: {
@@ -1593,22 +1593,7 @@ def cached_personal_book_analysis(
         fund, tech, decision = cached_full_analysis(
             symbol, ai_provider, ai_model, ai_enabled, ai_api_key
         )
-        dq = getattr(fund, "data_quality", None) or {}
-        return {
-            "adjusted_score": getattr(fund, "adjusted_score", 0.0) or getattr(fund, "total_score", 0.0),
-            "moat_classification": getattr(fund, "moat_classification", "None"),
-            "tailwind_classification": getattr(fund, "tailwind_classification", "Neutral"),
-            "has_margin_of_safety": bool(getattr(decision, "has_margin_of_safety", False)),
-            "margin_of_safety_pct": getattr(fund, "margin_of_safety_pct", None),
-            "data_quality_level": (dq.get("level") if isinstance(dq, dict) else "good") or "good",
-            "rsi_weekly": getattr(tech, "rsi_weekly", None),
-            # Sin bool(): None significa "sin historial", y coercionarlo lo
-            # convertiría en "debajo de la media" (U3-1).
-            "above_sma200": getattr(tech, "above_sma200", True),
-            "sma200_slope_pct": getattr(tech, "sma200_slope_pct", None),
-            "price_vs_52w_high_pct": getattr(tech, "price_vs_52w_high_pct", 0.0),
-            "retirement_action": getattr(decision, "action", "HOLD"),
-        }
+        return raw_from_analysis(fund, tech, decision)
 
     return analyze_personal_book(positions, convictions, enrich_fn=_enrich)
 

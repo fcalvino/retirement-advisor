@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## PERSONAL-SIZER-SIN-DATOS — sin datos, el libro personal no manda a vender: pide revisar (2026-10-26)
+
+Hallazgo de la auditoría de código de 2026-10-26 (`portfolio/personal_sizer.py`, enrich fallido). El revisor independiente mostró que la primera versión sólo cubría la excepción y no el camino real (resultado por defecto sin lanzar); el fix final detecta «sin datos» en un helper compartido. Tests nuevos con el analizador real y `get_info` vacío; fallan con el código anterior.
+
+---
+
 ## PLAN-STORE-CORRUPTO — un plan guardado ilegible se aparta y ya no se pisa (2026-10-26)
 
 Hallazgo de la auditoría de código de 2026-10-26 (`data/plan_store.py`, `_read_raw`). Corrección en `PlanStore`: un JSON ilegible se mueve en vez de pisarse, sin tocar el archivo ante errores de E/S transitorios. Tests nuevos del comportamiento, de `delete` y del aislamiento de la ruta en la suite. Sin cambio de formato del archivo.

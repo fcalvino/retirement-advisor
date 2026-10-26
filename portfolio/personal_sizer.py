@@ -229,16 +229,19 @@ _ACTION_EMOJI = {
 # --------------------------------------------------------------------------- #
 
 
-def _default_enrich(symbol: str, ai_config: Any = None) -> Dict[str, Any]:
+def raw_from_analysis(fund: Any, tech: Any, decision: Any) -> Dict[str, Any]:
     """
-    Enrichment real vía ``analysis.strategy.full_analysis``. Import perezoso para
-    que el módulo se pueda importar/test-ear sin red ni dependencias pesadas.
-    """
-    from analysis.strategy import full_analysis
+    Dict que ``AnalysisView.from_enrich`` espera, a partir del resultado de
+    ``full_analysis``. Lo usan ``_default_enrich`` y el dashboard, para que "sin datos"
+    se detecte en un solo lugar.
 
-    fund, tech, decision = full_analysis(symbol, ai_config=ai_config)
+    ``has_data`` es False cuando el feed no devolvió nada del emisor: ``analyze``
+    no lanza en ese caso, devuelve un resultado por defecto (score 0, moat "None",
+    ``company_name`` vacío) que es indistinguible de una tesis rota si no se marca.
+    """
     dq = getattr(fund, "data_quality", None) or {}
     return {
+        "has_data": bool(getattr(fund, "company_name", "")),
         "adjusted_score": getattr(fund, "adjusted_score", 0.0) or getattr(fund, "total_score", 0.0),
         "moat_classification": getattr(fund, "moat_classification", "None"),
         "tailwind_classification": getattr(fund, "tailwind_classification", "Neutral"),
@@ -251,6 +254,17 @@ def _default_enrich(symbol: str, ai_config: Any = None) -> Dict[str, Any]:
         "price_vs_52w_high_pct": getattr(tech, "price_vs_52w_high_pct", 0.0),
         "retirement_action": getattr(decision, "action", "HOLD"),
     }
+
+
+def _default_enrich(symbol: str, ai_config: Any = None) -> Dict[str, Any]:
+    """
+    Enrichment real vía ``analysis.strategy.full_analysis``. Import perezoso para
+    que el módulo se pueda importar/test-ear sin red ni dependencias pesadas.
+    """
+    from analysis.strategy import full_analysis
+
+    fund, tech, decision = full_analysis(symbol, ai_config=ai_config)
+    return raw_from_analysis(fund, tech, decision)
 
 
 # --------------------------------------------------------------------------- #
@@ -525,6 +539,57 @@ def _decide_sizing(
     )
 
 
+def _no_data_recommendation(
+    pos: Dict[str, Any],
+    symbol: str,
+    conviction: str,
+    cfg: PersonalBookConfig,
+) -> SizingRecommendation:
+    """
+    Recomendación cuando ``enrich`` falló y no hay análisis de la posición.
+
+    Sin datos no hay tesis rota: la vista vacía tiene score 0 y moat "None", que
+    es justo lo que dispara la compuerta dura de ``_decide_sizing`` (VENDER_*).
+    Acá no se decide tamaño: se pide revisar la posición, sin target ni nota de
+    impuestos (no se está recortando nada).
+    """
+    weight = float(pos.get("weight_pct", 0.0) or 0.0)
+    risks = [
+        "Sin datos: el análisis de esta posición falló (red o feed). No hay score ni "
+        "moat para justificar un cambio de tamaño; revisá fundamentals y precio antes de "
+        "operar y volvé a ejecutar el análisis."
+    ]
+    if weight >= cfg.high_concentration_risk_note_pct:
+        impact = _estimate_drawdown_impact(weight, cfg.drawdown_shock_pct)
+        risks.append(
+            f"Posición ya grande ({weight:.1f}%): un -{cfg.drawdown_shock_pct:.0f}% aquí mueve el "
+            f"libro completo ≈ -{impact:.1f} puntos. Asegurate de poder tolerarlo sin vender."
+        )
+    return SizingRecommendation(
+        symbol=symbol,
+        action=REVISAR_URGENTE,
+        current_weight_pct=round(weight, 1),
+        suggested_target_weight_pct=None,
+        suggested_action_detail="No se pudo analizar esta posición: revisala a mano antes de decidir.",
+        conviction_used=conviction,
+        justification_bullets=[
+            "El análisis no devolvió datos, así que el sistema no recomienda ni comprar ni vender."
+        ],
+        concentration_thesis="",
+        risk_notes=risks,
+        base_score_drivers={
+            "adjusted_score": None,
+            "moat": None,
+            "tailwind": None,
+            "has_margin_of_safety": None,
+            "conviction": conviction,
+            "weight_pct": round(weight, 1),
+            "data_quality": "poor",
+        },
+        data_quality_level="poor",
+    )
+
+
 def _build_concentration_thesis(
     view: AnalysisView,
     conviction: str,
@@ -615,6 +680,7 @@ def _build_overall_summary(
     n_trim = sum(1 for r in recs if r.action in (TRIM_PARCIAL, VENDER_PARTE))
     n_sell = sum(1 for r in recs if r.action == VENDER_TODO)
     n_hold = sum(1 for r in recs if r.action == HOLDEAR)
+    n_review = sum(1 for r in recs if r.action == REVISAR_URGENTE)
 
     parts = [
         f"Libro personal de {ctx.num_positions} posiciones (valor ≈ ${ctx.total_value:,.0f}). "
@@ -624,6 +690,11 @@ def _build_overall_summary(
         f"Acciones sugeridas: {n_acum} acumular, {n_hold} holdear, {n_trim} recortar, "
         f"{n_sell} vender. Convicciones HIGH declaradas: {ctx.num_high_conviction}/{ctx.num_positions}."
     )
+    if n_review:
+        parts.append(
+            f"{n_review} posición(es) sin datos (el análisis falló): revisalas a mano; "
+            "no se recomienda ni comprar ni vender sin datos."
+        )
     if ctx.num_high_conviction >= max(4, ctx.num_positions):
         parts.append(
             "Ojo con el sesgo de convicción inflada: marcaste HIGH en casi todo. Si todo es "
@@ -752,9 +823,16 @@ def analyze_personal_book(
         conviction = _normalize_conviction(convictions.get(sym.upper()), config)
         try:
             raw = enrich(sym)
-        except Exception as exc:  # degradar gracefully ante fallos de red/datos
+        except Exception as exc:  # sin datos no se decide tamaño: se pide revisar
             logger.warning(f"personal_sizer: enrich falló para {sym}: {exc}")
-            raw = {"data_quality_level": "poor"}
+            raw = None
+        if not raw or raw.get("has_data") is False:
+            # Falla (excepción) o feed vacío (dict vacío / ``has_data`` False): en ningún caso
+            # hay una tesis rota que justifique VENDER_*.
+            rec = _no_data_recommendation(pos, sym, conviction, config)
+            recs.append(rec)
+            logger.info(f"personal_sizer: {sym} → {rec.action} (sin datos, peso {rec.current_weight_pct}%)")
+            continue
         view = AnalysisView.from_enrich(sym, raw)
         rec = _decide_sizing(pos, view, conviction, ctx, config)
         recs.append(rec)
