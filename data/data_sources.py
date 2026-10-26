@@ -35,6 +35,7 @@ from loguru import logger
 
 from config import FETCH, MULTI_SOURCE
 from data.cache import cache
+from data.redact import redact_secrets
 
 
 @dataclass
@@ -414,7 +415,10 @@ class FredSource(DataSource):
                 return None
             return SourceValue(series_id, v, self.name, as_of=obs[0].get("date"))
         except Exception as exc:
-            logger.debug(f"FredSource: {series_id} failed — {exc}")
+            # The query string carries the FRED key; the error text carries the query string.
+            logger.debug(
+                f"FredSource: {series_id} failed — {redact_secrets(str(exc), MULTI_SOURCE.fred_api_key)}"
+            )
             return None
 
 
@@ -460,7 +464,9 @@ class FmpSource(DataSource):
                         out[fld] = SourceValue(fld, v, self.name, as_of=as_of, unit="USD")
             return out
         except Exception as exc:
-            logger.debug(f"FmpSource: {symbol} failed — {exc}")
+            logger.debug(
+                f"FmpSource: {symbol} failed — {redact_secrets(str(exc), MULTI_SOURCE.fmp_api_key)}"
+            )
             return {}
 
 
