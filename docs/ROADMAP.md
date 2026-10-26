@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## TRACKER-CURVA-LOTES — la curva de riesgo cuenta las acciones desde que se tuvieron (2026-10-26)
+
+Hallazgo de la auditoría de código de 2026-10-26 (`portfolio/tracker.py`, `_build_equity_curve` / `_held_from`). La curva de riesgo cuenta las acciones desde que se tuvieron y no trata un precio faltante como una posición en 0. Costo explícito: quien compra todos los meses queda con la ventana desde su última compra y sus métricas pasan a «no medible» hasta reunir 11 semanas; el retorno ponderado por tiempo que neutralizaría cada compra es un diseño aparte. Límite conocido que este fix no cierra: una venta parcial posterior al lote más nuevo deja las acciones de hoy en toda la ventana (el modelo no guarda historial de ventas; IDEA-5 PR 2).
+
+---
+
 ## GRAHAM-SIN-CRECIMIENTO — graham no valúa a una empresa cuyo crecimiento no se midió (2026-10-26)
 
 Hallazgo de la auditoría de código de 2026-10-26 (`analysis/fundamental.py`, bloque de Graham). Sin tasa de crecimiento medida no hay valor de Graham ni margen de seguridad; un cero medido (U3-3) sigue valuándose. La revisión independiente encontró que el motivo «esperar una baja» presentaba una ausencia como lectura de mercado y que la ficha ocultaba el bloque sin decir por qué; ambos corregidos en el mismo PR. Oráculo con CAGR calculado dentro del test, turnaround, fallback por net income, cap y GBp.
