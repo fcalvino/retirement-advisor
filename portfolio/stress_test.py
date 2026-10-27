@@ -99,7 +99,7 @@ class StressTester:
         portfolio_dd = 0.0
 
         for sector, weight in weights_frac.items():
-            shock = scenario.sector_shocks.get(sector, scenario.default_shock)
+            shock = scenario.shock_for(sector)
             sector_impact[sector] = round(shock, 1)
             portfolio_dd += weight * shock
 

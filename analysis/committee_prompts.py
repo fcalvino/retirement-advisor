@@ -293,7 +293,7 @@ def sector_stress_shocks(sector: str) -> list[tuple[str, float]]:
     list reaches the Portfolio Manager (with a book) and the Devil's Advocate.
     """
     shocks = [
-        (sc.name, float(sc.sector_shocks.get(sector, sc.default_shock)))
+        (sc.name, float(sc.shock_for(sector)))
         for sc in STRESS_SCENARIOS
     ]
     return sorted(shocks, key=lambda t: t[1])
