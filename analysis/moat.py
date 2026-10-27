@@ -62,6 +62,7 @@ from analysis.utils import (
     corporate_tax_rate_pct,
     extract_financial_row,
     extract_json_object,
+    finite_float,
     read_allocation,
     roic_pct,
 )
@@ -567,26 +568,35 @@ class MoatAnalyzer:
                 f"JSON extraction failed for {symbol}: {exc} — raw: {text[:200]!r}"
             ) from exc
 
-        # Clamp all score fields to valid range
+        # Clamp all score fields to valid range. A field that is not a finite number
+        # (missing, text, NaN, Infinity) is *not measured*: 0 with a warning, never
+        # ``hi`` — ``min(2.0, nan)`` is 2.0.
+        usable = 0
         for key in ("brand_strength", "network_effects", "switching_costs", "regulatory_ip"):
-            raw_val = data.get(key, 0.0)
-            try:
-                data[key] = round(max(0.0, min(2.0, float(raw_val))), 1)
-            except (TypeError, ValueError):
-                logger.warning(f"{symbol}: moat field {key!r} has invalid value {raw_val!r}, defaulting to 0")
+            raw_val = data.get(key)
+            val = finite_float(raw_val)
+            if val is None:
+                if key in data:
+                    logger.warning(f"{symbol}: moat field {key!r} has invalid value {raw_val!r}, defaulting to 0")
                 data[key] = 0.0
+            else:
+                usable += 1
+                data[key] = round(max(0.0, min(2.0, val)), 1)
+        if usable == 0:
+            # ``{}`` is not four zeros: nobody measured anything, and a "measurement" gets cached.
+            raise MoatParseError(f"AI response for {symbol} has no usable score field — raw: {text[:200]!r}")
 
         # Optional new fields — graceful defaults if LLM omits them
         try:
             dur = int(data.get("moat_durability_years", 0))
             data["moat_durability_years"] = max(0, min(30, dur))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             data["moat_durability_years"] = 0
 
         try:
             alloc = int(read_allocation(data, 8))
             data[ALLOCATION_KEY] = max(1, min(25, alloc))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             data[ALLOCATION_KEY] = 8
         data.pop(LEGACY_ALLOCATION_KEY, None)
 

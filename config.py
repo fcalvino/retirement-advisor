@@ -629,6 +629,10 @@ CACHE_TTL_HOURS: int = int(os.getenv("CACHE_TTL_HOURS", "24"))
 # All accepted ticker forms for known crypto assets (case-insensitive at runtime)
 CRYPTO_TICKERS: Set[str] = {"BTC", "BTC-USD", "BITCOIN", "ETH", "ETH-USD", "ETHEREUM"}
 
+# The forms of Bitcoin: the crypto moat rubric (halving, hash rate, 21M supply, Lightning)
+# is written for it alone, so any other crypto asset has no measured moat.
+BITCOIN_TICKERS: Set[str] = {"BTC", "BTC-USD", "BITCOIN"}
+
 # Canonical form accepted by yfinance for each crypto
 _CRYPTO_NORM: Dict[str, str] = {
     "BTC":      "BTC-USD",

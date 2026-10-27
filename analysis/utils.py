@@ -9,6 +9,7 @@ two behaviours (see ``roic_pct``).
 from __future__ import annotations
 
 import json
+import math
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
@@ -366,6 +367,20 @@ def downside_deviation(
 #: análisis y corridas guardadas de ``data/eval_runs/`` la traen— y nunca se escribe.
 ALLOCATION_KEY = "recommended_max_allocation"
 LEGACY_ALLOCATION_KEY = "recommended_max_allocation_conservative"
+
+
+def finite_float(raw: Any) -> Optional[float]:
+    """``float(raw)`` only when it is a finite number; ``None`` for anything else.
+
+    The model's JSON can carry ``NaN`` / ``Infinity`` (Python's parser accepts both), and
+    ``max(lo, min(hi, nan))`` is ``hi``: a clamp does not turn a missing measurement into
+    a low one, it turns it into the maximum.
+    """
+    try:
+        value = float(raw)
+    except (TypeError, ValueError, OverflowError):   # OverflowError: a JSON int of 400 digits
+        return None
+    return value if math.isfinite(value) else None
 
 
 def read_allocation(data: Any, default: Any = None) -> Any:
