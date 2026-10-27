@@ -393,6 +393,11 @@ class FundamentalThresholds:
     # silently killed the 7 revenue-growth points. See compute_cagr_available().
     cagr_target_years: int = 5
     cagr_min_years: int = 3
+    # AUDIT-DATOS: with a date index the CAGR window is measured in calendar years.
+    # A point counts as "N years back" only if its real distance is within this many
+    # years of N: a 52/53-week close (a few days off) qualifies, a transition-year
+    # statement (a 6-month stub after a fiscal-year change) does not.
+    cagr_date_tolerance_years: float = 0.25
     # Sanity ceiling for a *normalized* dividend yield, in percent. Nothing real
     # sustains this; a value above it means the feed field was read in the wrong
     # unit (yfinance mixes fractions and percents across its dividend fields —

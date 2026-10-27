@@ -44,7 +44,7 @@ formato deja de ser una decisión que cada módulo toma por su cuenta.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 
 __all__ = ["utc_now", "local_day_start_utc", "LOCAL_DAY_NOTE"]
 
@@ -77,7 +77,10 @@ def local_day_start_utc(now: datetime | None = None) -> datetime:
     """
     now = utc_now() if now is None else now
     local = now.replace(tzinfo=timezone.utc).astimezone()
-    medianoche_local = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    # La medianoche se arma como hora de pared *naive* y recién ahí se le pide su
+    # offset: `local.replace(hour=0)` arrastraba el offset del instante `now`, y el
+    # día que cambia el horario esa medianoche se convertía una hora corrida.
+    medianoche_local = datetime.combine(local.date(), time.min)
     return medianoche_local.astimezone(timezone.utc).replace(tzinfo=None)
 
 

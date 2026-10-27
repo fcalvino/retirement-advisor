@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-DATOS — el CAGR mide años de calendario y el corte del día local respeta el cambio de horario (2026-10-27)
+
+AUDIT-DATOS (serie AUDIT-*, auditoría de 2026-10-26). El CAGR de ingresos, EPS y FCF mide la ventana en años de calendario cuando los estados traen fechas: un año que falta en el medio ya no se lee como un año menos (10,0 % real contra 13,55 % antes), y un ejercicio de transición no se redondea a año entero. También se corrigió el corte del día local en el cambio de horario de verano (una hora corrida dos días por año). Medido sobre una copia de solo lectura de la base: sólo 2 de 260 tickers tienen un hueco interior (CLX y 8035.T, −2 puntos de growth cada uno, sin cambio de señal). Los otros puntos de la fila (desempate 10-K/10-K/A, errores de SQLite en `fetcher`, un 429 de SEC) pasaron a AUDIT-RESIDUALES.
+
+---
+
 ## AUDIT-MOAT-ERP-SECTORES — el moat de un banco usa el ERP de su sector, no el genérico (2026-10-27)
 
 AUDIT-MOAT-ERP-SECTORES (serie AUDIT-*, hallado al cerrar AUDIT-STRESS-SECTORES). El umbral de ROIC del moat de un banco o una aseguradora ya usa el ERP de Financials (5,5) y no el genérico (5,0): yfinance los llama «Financial Services» y la tabla `MOAT.sector_erp_pct` sólo tenía «Financials». Medido sobre una copia de solo lectura de la base: de 274 tickers cacheados (49 financieros) mueven el score 4, por −0,2 a −0,3 pt, y ninguna señal cambia.
