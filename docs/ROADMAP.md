@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-STRESS-SECTORES — el estrés reconoce los nombres de sector de yfinance y los del repo (2026-10-27)
+
+AUDIT-STRESS-SECTORES (serie AUDIT-*, auditoría de 2026-10-26). El estrés de cartera y los shocks que ve el comité ya reconocen los nombres de sector de yfinance («Financial Services», «Basic Materials») y los que produce el propio repo (`SECTOR_MAP`, «Index» para un ETF): un banco recibe el shock de Financials y no el genérico. Medido con una cartera sintética moderada: la caída de 2008 pasa de −45,4 % a −51,5 %; no todas las crisis empeoran (Dot-com y 2022 mejoran). Anotado AUDIT-MOAT-ERP-SECTORES, el mismo defecto de nombre en la tabla de ERP del moat.
+
+---
+
 ## AUDIT-MOAT-IA — el moat de IA no puntúa ni cachea una respuesta que no midió nada, y el moat cripto es sólo de Bitcoin (2026-10-27)
 
 AUDIT-MOAT-IA (serie AUDIT-*, auditoría de 2026-10-26). El tramo de IA del moat ya no toma por medición una respuesta que no midió nada: un campo `NaN`/`Infinity` vale 0 (antes el máximo), un `{}` sin ningún score usable es un error de parseo y no se cachea (antes cuatro ceros válidos durante 7 días), y el moat cripto sólo se mide para Bitcoin (decisión del usuario): otros activos cripto, ETH incluido, quedan «no medido». El mismo patrón en el tope de posición que devuelve la IA en la decisión también se corrige. Medido con el caché real: en `main` un `NaN` quedaba en 2,0 y un `{}` en `ai_available = True`.

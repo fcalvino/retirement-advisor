@@ -24,7 +24,7 @@ GOAL-PRIORITY-TEXT y ORDEN-COHERENCIA.)
 
 Esperan disparador: U5-1b, COM-*, COUNTRY-RISK-AUTO, TR-RACE y VENV-PRUNE. Sin orden: PIT-TOOLS,
 PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND, MACRO-SIN-FECHA y la serie AUDIT-* (10 filas abiertas, auditoría
-2026-10-26; AUDIT-TELEGRAM-LOG, AUDIT-SCHEDULER-FEED, AUDIT-ALERTAS-DESPACHO, AUDIT-OPTIMIZER-LIMITES y AUDIT-MOAT-IA ya cerraron; AUDIT-ALERTAS-FRECUENCIA nació de la última). Espera Fuente: SCORE-CONTRACCION.
+2026-10-26; AUDIT-TELEGRAM-LOG, AUDIT-SCHEDULER-FEED, AUDIT-ALERTAS-DESPACHO, AUDIT-OPTIMIZER-LIMITES, AUDIT-MOAT-IA y AUDIT-STRESS-SECTORES ya cerraron; AUDIT-ALERTAS-FRECUENCIA y AUDIT-MOAT-ERP-SECTORES nacieron al cerrar otras). Espera Fuente: SCORE-CONTRACCION.
 
 ---
 
@@ -104,7 +104,7 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **MACRO-SIN-FECHA** | 5 | El gate de frescura de `MacroRagStore._fresh_docs` acepta un documento sin `as_of` como fresco. Latente: ningún camino lo crea hoy. Bloquea la opción completa de PROMPTS-MULTIMODELO (B1). Ver bloque 4 |
 | **AUDIT-ALERTAS-FRECUENCIA** | 3 | `frequency_mode` (`daily / weekly / critical_only`) se elige en la página Alertas pero ningún código lo lee: `critical_only` no filtra nada. Ver bloque 4 |
 | **AUDIT-PIT-CERO** | 5 | El backtest point-in-time persiste Piotroski 0 para un corte sin estados reconstruidos y la evidencia lo agrupa como «débil»: contamina PIT-2 con filas sin dato. Falta medirlo con un SELECT sobre la base. Ver bloque 4 |
-| **AUDIT-STRESS-SECTORES** | 5 | Los escenarios de estrés usan «Financials» y «Materials»; yfinance dice «Financial Services» y «Basic Materials»: esos dos sectores caen al shock por defecto. Ver bloque 4 |
+| **AUDIT-MOAT-ERP-SECTORES** | 4 | La tabla `sector_erp_pct` del moat tiene «Financials» y no «Financial Services» (el nombre que da yfinance): un banco usa el ERP por defecto en vez de 5,5 y su `roic_sustained` sale más generoso. Falta medirlo. Ver bloque 4 |
 | **AUDIT-UI-VERDAD** | 5 | Cinco pantallas dicen algo que el motor no hizo: la fuente «ai» del track record, la narrativa del plan, el `ai_enabled` de Settings, el color de un Backtesting negativo y un margen de 0 %. Ver bloque 4 |
 | **AUDIT-CHAT-PROYECCION** | 5 | La herramienta `retirement_projection` del chat proyecta con aporte, retiro y meta que elige el LLM (por defecto 0), no con los del plan activo. Ver bloque 4 |
 | **AUDIT-MC-ROBUSTEZ** | 5 | Monte Carlo: `log1p` sin guarda; y, reportado por subagentes sin re-verificar, el borde del bootstrap, la riqueza NaN en semanas extremas, `_asset_hist` viejo, Guardrails del año 1; más mutantes sin fijar (percentiles, escala de `prob_achieve_target_pct`). Ver bloque 4 |
@@ -321,12 +321,14 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
     así que daría 0 en todos sus cortes. **Medición pendiente** (necesita la base real, no se leyó):
     `SELECT symbol, as_of FROM synthetic_recommendation WHERE piotroski_score = 0 AND
     excess_return_pct IS NOT NULL`, para ver cuántas filas del grupo «débil» de PIT-2 son vacías.
-  - **AUDIT-STRESS-SECTORES** (corrección). Los seis escenarios de `STRESS_SCENARIOS` (`config.py:3756`)
-    tienen claves `Financials` y `Materials`; yfinance entrega `Financial Services` y `Basic Materials`
-    (reproducido contra `yfinance.const`: de los 11 sectores, esos dos no tienen clave), y
-    `portfolio/stress_test.py:102` hace `sector_shocks.get(sector, default_shock)` sin alias. Un banco o un
-    minero recibe el shock genérico en vez del de su sector. (`stress_test.py:9` y `config.py:684` también
-    usan «Financials»; no se rastreó de dónde sale el sector real que recibe `StressTester.run`.)
+  - **AUDIT-MOAT-ERP-SECTORES** (corrección; hallado al cerrar AUDIT-STRESS-SECTORES). `MOAT.sector_erp_pct`
+    (`config.py:1661`) tiene `"Financials": 5.5` y no `"Financial Services"` (sí tiene `"Basic Materials"` y
+    `"Materials"` a la vez: alguien parchó un caso y no el otro). `analysis/moat.py:680-681` hace
+    `erp_map.get(sector, default_sector_erp_pct)` con el sector crudo de yfinance (`:486-487`), así que un
+    banco usa el ERP por defecto (5,0) en vez de 5,5: el umbral de ROIC (`rf + ERP`) queda 0,5 pt más bajo y
+    `roic_sustained` sale más generoso. Verificado leyendo el código; no medido. Mover el score de los bancos
+    pide medirlo (`scripts/measure_score_impact.py` sobre una copia de solo lectura, con permiso) y ojo:
+    `tests/test_cost_of_equity_label_contract.py:268` itera las claves de la config, así que no lo detecta.
   - **AUDIT-UI-VERDAD** (corrección). (1) `dashboard/views/2_Stock_Analysis.py:191`:
     `_track_source = "ai" if ai_cfg.enabled else "rule_based"` rotula la fuente por la configuración y no
     por si la IA decidió; existe `Decision.ai_used` (`analysis/strategy.py:526-528`, puesto en True en

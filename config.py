@@ -3741,6 +3741,21 @@ class StressTestConfig:
 #  Stress-test scenarios (S27)                                         #
 # ------------------------------------------------------------------ #
 
+# yfinance names the sector of a ticker "Financial Services" / "Basic Materials"; the scenarios
+# below were written with "Financials" / "Materials". Without this a bank or a miner falls to
+# ``default_shock`` (2008: -50 % instead of the scenario's own -80 %).
+STRESS_SECTOR_ALIASES: Dict[str, str] = {
+    "Financial Services":     "Financials",
+    "Basic Materials":        "Materials",
+    # Names the repo itself produces: ``SECTOR_MAP`` (the Simulaciones fallback without an
+    # optimizer result) and ``fundamental`` ("Index" for an ETF with no sector in the feed).
+    # "Telecom / REIT" is deliberately absent: it mixes Communication Services and Real Estate.
+    "Consumer Staples":       "Consumer Defensive",
+    "Consumer Discretionary": "Consumer Cyclical",
+    "Index":                  "ETF",
+}
+
+
 @dataclass
 class StressScenario:
     name: str
@@ -3752,6 +3767,12 @@ class StressScenario:
     duration_months: int
     recovery_months_est: int   # typical months to recover to previous peak
     historical_spy_dd: float   # SPY peak-to-trough during same period (%)
+
+    def shock_for(self, sector: str) -> float:
+        """Peak-to-trough shock for ``sector``: its own entry, its alias, else ``default_shock``."""
+        if sector in self.sector_shocks:
+            return self.sector_shocks[sector]
+        return self.sector_shocks.get(STRESS_SECTOR_ALIASES.get(sector, ""), self.default_shock)
 
 
 # Six scenarios, calibrated from Bloomberg / FRED historical data (S27 — moved
