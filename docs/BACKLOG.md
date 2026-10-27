@@ -23,8 +23,8 @@ GOAL-PRIORITY-TEXT y ORDEN-COHERENCIA.)
 2. **IDEA-5 IMPUESTOS**: banda 5. Reglas y decisiones en `docs/plans/IDEA5_GANANCIA_CAPITAL_AR.md` (2026-10-10). Sigue: lotes y «Registrar venta» en Portfolio con el impuesto de acciones y ETFs del exterior (§6 de ese plan).
 
 Esperan disparador: U5-1b, COM-*, COUNTRY-RISK-AUTO, TR-RACE y VENV-PRUNE. Sin orden: PIT-TOOLS,
-PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND, MACRO-SIN-FECHA y la serie AUDIT-* (9 filas abiertas, auditoría
-2026-10-26; AUDIT-TELEGRAM-LOG, AUDIT-SCHEDULER-FEED, AUDIT-ALERTAS-DESPACHO, AUDIT-OPTIMIZER-LIMITES, AUDIT-MOAT-IA, AUDIT-STRESS-SECTORES y AUDIT-MOAT-ERP-SECTORES ya cerraron; AUDIT-ALERTAS-FRECUENCIA nació al cerrar otra). Espera Fuente: SCORE-CONTRACCION.
+PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND, MACRO-SIN-FECHA y la serie AUDIT-* (8 filas abiertas, auditoría
+2026-10-26; AUDIT-TELEGRAM-LOG, AUDIT-SCHEDULER-FEED, AUDIT-ALERTAS-DESPACHO, AUDIT-OPTIMIZER-LIMITES, AUDIT-MOAT-IA, AUDIT-STRESS-SECTORES, AUDIT-MOAT-ERP-SECTORES y AUDIT-DATOS ya cerraron; AUDIT-ALERTAS-FRECUENCIA nació al cerrar otra). Espera Fuente: SCORE-CONTRACCION.
 
 ---
 
@@ -107,7 +107,6 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **AUDIT-UI-VERDAD** | 5 | Cinco pantallas dicen algo que el motor no hizo: la fuente «ai» del track record, la narrativa del plan, el `ai_enabled` de Settings, el color de un Backtesting negativo y un margen de 0 %. Ver bloque 4 |
 | **AUDIT-CHAT-PROYECCION** | 5 | La herramienta `retirement_projection` del chat proyecta con aporte, retiro y meta que elige el LLM (por defecto 0), no con los del plan activo. Ver bloque 4 |
 | **AUDIT-MC-ROBUSTEZ** | 5 | Monte Carlo: `log1p` sin guarda; y, reportado por subagentes sin re-verificar, el borde del bootstrap, la riqueza NaN en semanas extremas, `_asset_hist` viejo, Guardrails del año 1; más mutantes sin fijar (percentiles, escala de `prob_achieve_target_pct`). Ver bloque 4 |
-| **AUDIT-DATOS** | 5 | `compute_cagr` y `compute_cagr_available` (el CAGR de ingresos y EPS del score) con un NaN interior cuentan puntos, no años; y, reportado por subagentes, el desempate SEC 10-K/10-K/A, errores de SQLite sin aislar en `fetcher`, un 429 de SEC tratado como «sin datos» y `local_day_start_utc` en el cambio de horario. Ver bloque 4 |
 | **AUDIT-TESTS** | 5 | Dos tests que siempre se saltean, `personal_book_convictions` sin tests y con escritura no atómica; y, reportado por subagentes, tests que fallan según el orden (B1/B2, ésta con la causa del fallo intermitente de `test_sim_gap_katex_oracle`). Ver bloque 4 |
 | **AUDIT-UI-ESTADO** | 5 | Reportado por subagentes con AppTest, sin re-verificar: en «Mis Metas» la prioridad no cambia con ⬆️/⬇️ y el resultado del plan sobrevive a la edición; el Optimizer llama al LLM en cada rerun; el rerun de Macro RAG borra el mensaje de éxito; el chat renderiza `$` sin `escape_dollars`. Ver bloque 4 |
 | **AUDIT-RESIDUALES** | 5 | Lo que los arreglos de #283–#290 dejaron dicho y sin cerrar: ventas parciales y lotes sin fecha en la curva del tracker, un NI diminuto con OCF negativo en el moat, el ancla que retrocede del Piotroski y las fechas exactas, el borde del `earningsGrowth` en Graham, y las dos bases del track record, más tres del optimizador (AUDIT-OPTIMIZER-LIMITES) y dos del moat de IA (AUDIT-MOAT-IA). Ver bloque 4 |
@@ -353,19 +352,6 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
     sitios): los percentiles y los `base_*` (`:548-562`), la escala de `prob_achieve_target_pct` (`:555`,
     `:564`; `×100 → ×110` sobrevive), el signo de `decumulation_years` (`:1089`), `initial_value / basis`
     (`:1095`) y `vol_scale ≠ 1` en el bootstrap: ningún test los fija.
-  - **AUDIT-DATOS** (robustez). `data/fetcher.py:335-339` (`compute_cagr`) y `:369-376`
-    (`compute_cagr_available`) hacen `series.dropna()` y después `series.iloc[years]`: con un NaN interior
-    el exponente cuenta puntos, no años. Reproducido con `[146.41, 133.1, nan, 110, 100]` y fechas anuales
-    2024→2020 (cuatro años de tramo): ambas dan 13,55 % con 3 años, y el CAGR real de 2020 a 2024 es 10,0 %;
-    el `years_used` que informa `compute_cagr_available` también miente. `compute_cagr_available` alimenta
-    el CAGR de ingresos (`analysis/fundamental.py:1673`), el de EPS (`:1716`), el respaldo de Net Income
-    (`:1722`) y, por el EPS, el `g` de Graham (`:1075`); `compute_cagr` tiene dos llamadores
-    (`fundamental.py:1810`, `data/crypto_fetcher.py:226`). `_extract_annual_series` (`fundamental.py:1964`)
-    no hace nada con los huecos. Falta contar cuántos tickers del universo tienen un hueco interior (leído y
-    reproducido, no medido sobre la base). Subagente, sin re-verificar: un 10-K y un 10-K/A con el mismo
-    `end` se resuelven según el orden del array (`data/data_sources.py:341`), los errores de SQLite no se
-    aíslan en los getters de `fetcher`, un 429 de SEC se trata como «sin datos» y `local_day_start_utc` falla
-    en el cambio de horario.
   - **AUDIT-TESTS** (robustez). `tests/test_backtesting.py:397` («no saved backtest in
     data/db/backtests/») y `tests/test_config_single_home_oracle.py:432` («fields removed — inertness is now
     structural») son los dos `skipped` del baseline (reproducido: `pytest` sobre esos dos archivos da
@@ -406,6 +392,15 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
     `ai_available = True`) siguen vigentes hasta 7 días; y para un ETH con la IA activa la pantalla dice
     «activá un proveedor AI» (`dashboard/views/2_Stock_Analysis.py:380`) y `main.py:48` «N/A (AI disabled)»,
     cuando lo que pasa es que la rúbrica sólo existe para Bitcoin (verificado por el revisor).
+    (AUDIT-DATOS) tres puntos que la fila traía de subagentes y no se arreglaron: `_latest_annual`
+    (`data/data_sources.py:341`) se queda con la primera fila de un mismo `end` (`row["end"] > best["end"]`
+    es estricto), así que un 10-K y un 10-K/A del mismo cierre se resuelven según el orden del array y no
+    por `filed` (leído; no se midió si los valores difieren); un 429 de SEC se trata como «sin datos»
+    (`_http_json` devuelve `None` ante cualquier estado distinto de 200 y `fetch_fundamentals` devuelve
+    `{}`; leído: el único llamador, `analysis/data_reconciliation.py:226`, sólo lo usa para la insignia de
+    reconciliación, así que el costo es una insignia vacía en esa corrida); y `DataCache.get` /
+    `get_age_hours` no aíslan un error de SQLite (por ejemplo `database is locked`), que sube hasta el
+    llamador (sin reproducir).
 - **PIT-TOOLS (prerrequisito para reabrir ReAct en el comité)**: `get_news`
   (`data/fetcher.py`) no acepta fecha y lee el feed de hoy; `MacroRagStore.retrieve`
   **sí** acepta `now=`, pero sólo lo usa para descartar lo viejo: `_days_old` hace

@@ -8,6 +8,7 @@ import pandas as pd
 import yfinance as yf
 from loguru import logger
 
+from config import THRESHOLDS
 from data.cache import cache
 
 # Maximum attempts and base delay for exponential backoff on yfinance failures.
@@ -324,19 +325,58 @@ def get_info_age_hours(symbol: str) -> Optional[float]:
     return cache.get_age_hours(f"info:{symbol}")
 
 
+def _prepare_series(series: pd.Series) -> Tuple[pd.Series, Optional[np.ndarray]]:
+    """The series without NaN/NaT (newest first) and each point's distance, in years, to the newest.
+
+    The distance is ``None`` for a series without a ``DatetimeIndex``: it does not say
+    how long ago anything was, and the callers fall back to counting points.
+    ``extract_financial_row`` drops NaNs, so a missing year reaches the CAGR as an
+    absent column, and counting positions then reads a four-year span as three.
+    """
+    series = series.dropna()
+    if not isinstance(series.index, pd.DatetimeIndex):
+        return series, None
+    series = series[series.index.notna()].sort_index(ascending=False)
+    if series.empty:
+        return series, None
+    days = np.asarray((series.index[0] - series.index).total_seconds() / 86400.0)
+    return series, days / 365.25
+
+
+def _whole_year_points(distance: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """``(whole_years, off)``: each point's distance rounded to a year, and how far it was from it.
+
+    Rounding days over 365.25 keeps 52/53-week fiscal years (closes a few days apart)
+    whole; ``off`` lets the callers refuse a point that is not really N years back.
+    """
+    whole = np.rint(distance)
+    return whole, np.abs(distance - whole)
+
+
 def compute_cagr(series: pd.Series, years: int) -> Optional[float]:
     """
     Compute CAGR from an annual time series (most recent value first).
     Returns None if insufficient data.
 
-    Fixed window: needs ``years + 1`` points or it gives up. Callers that would
+    Fixed window: needs a point ``years`` years before the newest one, or it gives up.
+    With a date index that is measured in calendar years (within
+    ``THRESHOLDS.cagr_date_tolerance_years``), so a missing year in the middle does not
+    shift the window; without dates it is the ``years + 1``-th point. Callers that would
     rather measure the window they have should use ``compute_cagr_available``.
     """
-    series = series.dropna()
-    if len(series) < years + 1:
-        return None
+    series, distance = _prepare_series(series)
+    if distance is None:
+        if len(series) < years + 1:
+            return None
+        start_pos = years
+    else:
+        whole, off = _whole_year_points(distance)
+        hits = np.flatnonzero((whole == years) & (off <= THRESHOLDS.cagr_date_tolerance_years))
+        if hits.size == 0:
+            return None
+        start_pos = int(hits[np.argmin(off[hits])])
     end_val = series.iloc[0]
-    start_val = series.iloc[years]
+    start_val = series.iloc[start_pos]
     if start_val <= 0 or end_val <= 0:
         return None
     return (end_val / start_val) ** (1 / years) - 1
@@ -365,15 +405,32 @@ def compute_cagr_available(
 
     The window is capped at ``target_years`` so tickers with deeper history stay
     comparable to the rest instead of being measured over a longer, gentler span.
-    """
-    series = series.dropna()
-    n_points = len(series)
-    if n_points < min_years + 1:
-        return None, 0
 
-    years = min(target_years, n_points - 1)
+    With a date index the window is measured in calendar years, not points
+    (AUDIT-DATOS): a missing year in the middle used to be read as one year less.
+    """
+    series, distance = _prepare_series(series)
+    if distance is None:
+        n_points = len(series)
+        if n_points < min_years + 1:
+            return None, 0
+        years = min(target_years, n_points - 1)
+        start_pos = years
+    else:
+        # The oldest point still inside the target window: its calendar distance to the
+        # newest one is the exponent, whatever number of points sits in between.
+        whole, off = _whole_year_points(distance)
+        inside = np.flatnonzero(
+            (whole >= max(min_years, 1)) & (whole <= target_years)
+            & (off <= THRESHOLDS.cagr_date_tolerance_years)
+        )
+        if inside.size == 0:
+            return None, 0
+        years = int(whole[inside].max())
+        at_years = inside[whole[inside] == years]
+        start_pos = int(at_years[np.argmin(off[at_years])])
     end_val = series.iloc[0]
-    start_val = series.iloc[years]
+    start_val = series.iloc[start_pos]
     if start_val <= 0 or end_val <= 0:
         return None, 0
 
