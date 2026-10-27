@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-ALERTAS-DESPACHO — las alertas del plan salen por email/Telegram y la severidad mínima por perfil se lee de la config (2026-10-26)
+
+AUDIT-ALERTAS-DESPACHO (serie AUDIT-*, auditoría de 2026-10-26). Las alertas del plan (SORR, riesgo de meta, salud del plan, coach de caída) ahora salen por email/Telegram: el job del scheduler junta lo que disparan y las manda en un solo resumen. Reproducido antes de arreglar con un plan activo con SORR 45 %: 0 mensajes en `main`, 1 con el arreglo. Además, la severidad mínima por perfil sale de `config.py` (nadie la leía) y un `ALERT_AI_MIN_SEVERITY` en mayúsculas ya no aborta el motor de alertas. Queda anotado AUDIT-ALERTAS-FRECUENCIA: `frequency_mode` no lo lee ningún código.
+
+---
+
 ## AUDIT-SCHEDULER-FEED — el scheduler no puntúa un feed vacío ni cuenta una posición sin cotización como pérdida (2026-10-26)
 
 AUDIT-SCHEDULER-FEED (serie AUDIT-*, auditoría de 2026-10-26). El scheduler diario ya no puntúa un ticker cuyo feed vino vacío: lo saltea con un aviso y conserva su snapshot anterior, en vez de tratar el resultado por defecto (score 0, SELL) como un veredicto. Reproducido de punta a punta antes de arreglar: en `main` un día de feed vacío disparaba tres alertas falsas y la recuperación del día siguiente metía un BUY falso en el track record. El retorno de cartera que usa el coach de caídas también deja de contar una posición sin cotización como pérdida.

@@ -80,6 +80,9 @@ class _Engine:
         }
         return []
 
+    def dispatch(self, alerts):
+        self.calls["dispatch"] = {"alerts": list(alerts)}
+
     def check_sorr(self, sorr, horizon, initial):
         return self._record("check_sorr", sorr=sorr, horizon=horizon, initial=initial)
 
@@ -232,6 +235,35 @@ class TestJobAlertCheck:
         assert engine.calls["run_with_portfolio"]["target_weights"] == {"AAPL": 100.0}
         assert "run" not in engine.calls
 
+    def test_plan_alerts_are_dispatched_once_together(self, monkeypatch):
+        """AUDIT-ALERTAS-DESPACHO: lo que devuelven los tres chequeos sale por el canal."""
+        engine = _Engine()
+        monkeypatch.setattr(sched, "_run_screener_for_alerts", lambda: [{"symbol": "AAPL"}])
+        monkeypatch.setattr(sched, "AlertEngine", lambda: engine)
+        monkeypatch.setattr(sched, "_active_plan_drift_inputs", lambda: None)
+        monkeypatch.setattr(sched, "_check_plan_health", lambda e: ["health"])
+        monkeypatch.setattr(sched, "_check_plan_mc_alerts", lambda e: ["sorr", "goal"])
+        monkeypatch.setattr(sched, "_check_market_drop_coach", lambda e, d: ["coach"])
+        sched.job_alert_check()
+        assert engine.calls["dispatch"]["alerts"] == ["health", "sorr", "goal", "coach"]
+
+    def test_nothing_is_dispatched_when_no_plan_alert_fired(self, monkeypatch):
+        engine = _Engine()
+        monkeypatch.setattr(sched, "_run_screener_for_alerts", lambda: [{"symbol": "AAPL"}])
+        monkeypatch.setattr(sched, "AlertEngine", lambda: engine)
+        monkeypatch.setattr(sched, "_active_plan_drift_inputs", lambda: None)
+        sched.job_alert_check()
+        assert "dispatch" not in engine.calls
+
+    def test_a_dispatch_failure_is_contained(self, monkeypatch):
+        engine = _Engine()
+        engine.dispatch = lambda alerts: (_ for _ in ()).throw(RuntimeError("smtp down"))
+        monkeypatch.setattr(sched, "_run_screener_for_alerts", lambda: [{"symbol": "AAPL"}])
+        monkeypatch.setattr(sched, "AlertEngine", lambda: engine)
+        monkeypatch.setattr(sched, "_active_plan_drift_inputs", lambda: None)
+        monkeypatch.setattr(sched, "_check_plan_mc_alerts", lambda e: ["sorr"])
+        sched.job_alert_check()          # no debe propagarse fuera del job
+
     def test_a_screener_explosion_is_contained(self, monkeypatch):
         def boom():
             raise RuntimeError("universe fetch failed")
@@ -254,6 +286,15 @@ class TestPlanMcAlerts:
         engine = _Engine()
         sched._check_plan_mc_alerts(engine)
         assert engine.calls == {}
+
+    def test_returns_what_fired_so_the_job_can_dispatch_it(self, stub_plan_context):
+        stub_plan_context.get_active_plan = lambda: _Plan(mc_summary={
+            "sorr_early_drawdown_pct": 42.0, "prob_target_pct": 55.0,
+        })
+        engine = _Engine(fire={"check_sorr", "check_goal_risk"})
+        engine._store.snapshots["GOAL:Retiro 2045"] = _Snapshot(80.0)
+        assert len(sched._check_plan_mc_alerts(engine)) == 2
+        assert sched._check_plan_mc_alerts(_Engine()) == []
 
     def test_sorr_is_read_from_the_saved_summary(self, stub_plan_context):
         stub_plan_context.get_active_plan = lambda: _Plan(mc_summary={

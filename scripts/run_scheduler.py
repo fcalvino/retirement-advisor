@@ -217,23 +217,32 @@ def job_alert_check() -> None:
         # Fase H.2 — longitudinal plan health: optionally record a health
         # snapshot for the active plan and fire a degradation alert if the
         # plan has been drifting structurally over recent records.
+        plan_alerts: list = []
         try:
-            _check_plan_health(engine)
+            plan_alerts += _check_plan_health(engine) or []
         except Exception as exc:
             logger.error(f"Plan-health check failed: {exc}")
 
         # SORR_HIGH / GOAL_RISK from the active plan's last MC summary
         # (persisted when the plan was saved; prev goal-prob via alert snapshots).
         try:
-            _check_plan_mc_alerts(engine)
+            plan_alerts += _check_plan_mc_alerts(engine) or []
         except Exception as exc:
             logger.error(f"Plan MC alert check failed: {exc}")
 
         # Backlog 12 — proactive coach after portfolio drop
         try:
-            _check_market_drop_coach(engine, drift_inputs)
+            plan_alerts += _check_market_drop_coach(engine, drift_inputs) or []
         except Exception as exc:
             logger.error(f"Market-drop coach check failed: {exc}")
+
+        # These checks only record and set the cooldown; without this they never left
+        # the database (AUDIT-ALERTAS-DESPACHO).
+        if plan_alerts:
+            try:
+                engine.dispatch(plan_alerts)
+            except Exception as exc:
+                logger.error(f"Plan alert dispatch failed: {exc}")
 
         logger.info(f"Alert check complete — {len(fired)} alerts fired")
     except Exception as exc:
@@ -241,7 +250,7 @@ def job_alert_check() -> None:
     logger.info("=== Alert check finished ===")
 
 
-def _check_market_drop_coach(engine, drift_inputs) -> None:
+def _check_market_drop_coach(engine, drift_inputs) -> list:
     """Proactive coach when the tracked portfolio has dropped hard (backlog 12).
 
     Uses positions + current prices when available; falls back to weighted
@@ -291,7 +300,7 @@ def _check_market_drop_coach(engine, drift_inputs) -> None:
                 portfolio_return_pct = None
 
     if portfolio_return_pct is None:
-        return
+        return []
 
     fired = engine.check_market_drop_coach(
         portfolio_return_pct=portfolio_return_pct,
@@ -300,9 +309,11 @@ def _check_market_drop_coach(engine, drift_inputs) -> None:
     )
     if fired is not None:
         logger.info(f"Market-drop coach fired ({portfolio_return_pct:.1f}%).")
+        return [fired]
+    return []
 
 
-def _check_plan_health(engine) -> None:
+def _check_plan_health(engine) -> list:
     """Record + evaluate longitudinal health of the active plan (Fase H.2).
 
     No-op unless there is an active plan. Recording is gated behind
@@ -312,7 +323,7 @@ def _check_plan_health(engine) -> None:
     from config import HEALTH
 
     if not HEALTH.enabled:
-        return
+        return []
 
     from data.plan_context import (
         compute_longitudinal_drift,
@@ -324,7 +335,7 @@ def _check_plan_health(engine) -> None:
 
     plan = get_active_plan()
     if plan is None:
-        return
+        return []
 
     if HEALTH.auto_record:
         record_plan_health(
@@ -336,9 +347,11 @@ def _check_plan_health(engine) -> None:
     fired = engine.check_plan_health_degradation(plan.name, drift)
     if fired is not None:
         logger.info(f"Plan-health degradation alert fired for «{plan.name}».")
+        return [fired]
+    return []
 
 
-def _check_plan_mc_alerts(engine) -> None:
+def _check_plan_mc_alerts(engine) -> list:
     """Fire SORR_HIGH / GOAL_RISK from the active plan's saved Monte Carlo summary.
 
     SORR uses ``mc_summary.sorr_early_drawdown_pct`` (persisted at plan save).
@@ -349,11 +362,12 @@ def _check_plan_mc_alerts(engine) -> None:
 
     plan = get_active_plan()
     if plan is None:
-        return
+        return []
     mc = getattr(plan, "mc_summary", None) or {}
     if not mc:
-        return
+        return []
 
+    fired_alerts: list = []
     sorr = mc.get("sorr_early_drawdown_pct")
     if sorr is not None:
         try:
@@ -362,17 +376,32 @@ def _check_plan_mc_alerts(engine) -> None:
             initial = float(mc.get("initial_value") or 0.0)
             fired = engine.check_sorr(sorr_f, horizon, initial)
             if fired is not None:
+                fired_alerts.append(fired)
                 logger.info(f"SORR_HIGH alert fired for plan «{plan.name}» ({sorr_f:.1f}%).")
         except (TypeError, ValueError) as exc:
             logger.debug(f"SORR check skipped — {exc}")
 
+    # SORR may already have fired (recorded, 14-day cooldown): a failure in the goal
+    # check must not lose it, or it never reaches the channel.
+    try:
+        goal = _goal_risk_alert(engine, plan, mc)
+    except Exception as exc:
+        logger.error(f"GOAL_RISK check failed: {exc}")
+        goal = None
+    if goal is not None:
+        fired_alerts.append(goal)
+    return fired_alerts
+
+
+def _goal_risk_alert(engine, plan, mc):
+    """GOAL_RISK from the plan's saved probability vs. the last one seen (or None)."""
     prob = mc.get("prob_target_pct")
     if prob is None:
-        return
+        return None
     try:
         current_prob = float(prob)
     except (TypeError, ValueError):
-        return
+        return None
 
     goal_symbol = f"GOAL:{plan.name}"
     store = engine._store
@@ -380,7 +409,7 @@ def _check_plan_mc_alerts(engine) -> None:
     if prev_snap is None:
         # Seed baseline; only fire on subsequent drops.
         store.save_snapshot(goal_symbol, current_prob, "GOAL", "")
-        return
+        return None
 
     prev_prob = float(prev_snap.score)
     horizon = int(mc.get("horizon_years") or 0)
@@ -391,6 +420,7 @@ def _check_plan_mc_alerts(engine) -> None:
             f"GOAL_RISK alert fired for plan «{plan.name}» "
             f"({prev_prob:.1f}% → {current_prob:.1f}%)."
         )
+    return fired
 
 
 def job_ingest_macro() -> None:

@@ -24,7 +24,7 @@ GOAL-PRIORITY-TEXT y ORDEN-COHERENCIA.)
 
 Esperan disparador: U5-1b, COM-*, COUNTRY-RISK-AUTO, TR-RACE y VENV-PRUNE. Sin orden: PIT-TOOLS,
 PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND, MACRO-SIN-FECHA y la serie AUDIT-* (12 filas abiertas, auditoría
-2026-10-26; AUDIT-TELEGRAM-LOG y AUDIT-SCHEDULER-FEED ya cerraron). Espera Fuente: SCORE-CONTRACCION.
+2026-10-26; AUDIT-TELEGRAM-LOG, AUDIT-SCHEDULER-FEED y AUDIT-ALERTAS-DESPACHO ya cerraron; AUDIT-ALERTAS-FRECUENCIA nació de la última). Espera Fuente: SCORE-CONTRACCION.
 
 ---
 
@@ -102,7 +102,7 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **PROMPTS-MULTIMODELO** | 5 | PR 4, 5, 6 y 7 de la serie multimodelo siguen abiertos (`docs/plans/PROMPTS_MULTIMODELO.md`, verificado contra el código el 2026-10-25): higiene de idioma, negaciones y few-shot (PR 4), delimitador único `=== ===` y orden datos→instrucción (PR 5), narrativa de plan en campos (PR 6) y macro sin memoria (PR 7, parcial). Orden recomendado por la serie: 7 → 4 → 5 → 6. Ver bloque 4 |
 | **CONFIDENCE-SELL-BAND** | 4 | `confidence_for` deriva de la banda de score: con score 87 y técnico BULLISH da `HIGH` para SELL, AVOID, REDUCE y HOLD (medido el 2026-10-25), el «la evidencia sostiene comprar» de la banda de compra junto a una no-compra. Punta suelta de SIGNAL-3. Ver bloque 4 |
 | **MACRO-SIN-FECHA** | 5 | El gate de frescura de `MacroRagStore._fresh_docs` acepta un documento sin `as_of` como fresco. Latente: ningún camino lo crea hoy. Bloquea la opción completa de PROMPTS-MULTIMODELO (B1). Ver bloque 4 |
-| **AUDIT-ALERTAS-DESPACHO** | 5 | Las alertas del plan (SORR, GOAL_RISK, salud del plan, coach de caída) se registran con `_fire` pero no se despachan por email/Telegram; la severidad mínima por perfil está hardcodeada (tres campos de config sin lectores); `ALERT_AI_MIN_SEVERITY=WARNING` lanza `ValueError`. Ver bloque 4 |
+| **AUDIT-ALERTAS-FRECUENCIA** | 3 | `frequency_mode` (`daily / weekly / critical_only`) se elige en la página Alertas pero ningún código lo lee: `critical_only` no filtra nada. Ver bloque 4 |
 | **AUDIT-MOAT-IA** | 5 | NaN en un campo del JSON de la IA se limita a 2,0 (el máximo) en el moat y en el cripto; un objeto JSON vacío `{}` se cachea 7 días como cuatro ceros; el prompt cripto del moat dice «Bitcoin (BTC)» para cualquier cripto (ETH incluido). Ver bloque 4 |
 | **AUDIT-PIT-CERO** | 5 | El backtest point-in-time persiste Piotroski 0 para un corte sin estados reconstruidos y la evidencia lo agrupa como «débil»: contamina PIT-2 con filas sin dato. Falta medirlo con un SELECT sobre la base. Ver bloque 4 |
 | **AUDIT-OPTIMIZER-LIMITES** | 5 | El respaldo score-weighted ignora los topes de sector y, al renormalizar, el de posición; ningún perfil puede sumar 100 % con su tope (80 / 96 / 90 %) y el water-filling del respaldo no converge; la nube de la frontera viola el tope; código muerto en la poda de pesos. Ver bloque 4 |
@@ -307,18 +307,13 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
   preset de 8 años (`_fan_paths` genera las claves de 0 a `horizon_years`, así que 8 existe) y que una
   respuesta de IA *vacía* se cachea 7 días como ceros (vacía o no-JSON lanza `MoatParseError`; sólo el
   objeto `{}` se cachea). Ninguna fila tiene orden: las pone el usuario.
-  - **AUDIT-ALERTAS-DESPACHO** (corrección). `AlertEngine.run` despacha un resumen con las alertas por
-    símbolo (`alerts/engine.py:220`) y las tres de cartera (`:263-268`); `check_sorr` (`:272`),
-    `check_goal_risk` (`:305`), `check_plan_health_degradation` (`:337`) y `check_market_drop_coach`
-    (`:370`) sólo hacen `_fire` —registrar y poner cooldown— y el scheduler (`scripts/run_scheduler.py:278,
-    318, 345, 369`) sólo loguea «alert fired»: nada las manda por email ni Telegram. Además
-    `_min_severity_for_profile` (`:80-85`) hardcodea «conservador → WARNING» y
-    `AlertConfig.min_severity_conservador/moderado/agresivo` (`config.py:607-609`) no los lee nadie
-    (reproducido: 0 lectores fuera de `config.py`). Y `_get_ai_explanation` hace
-    `AlertSeverity(ALERTS.ai_explanations_min_severity)` (`:95`) antes de su `try`, y los `check_*` lo
-    llaman sin otro: con `ALERT_AI_MIN_SEVERITY=WARNING` en mayúsculas lanza `ValueError` (reproducido:
-    el enum son `info/warning/critical`) y aborta `AlertEngine.run` entero, hasta que lo atrapa el
-    `except` del job. Falta decidir si el plan debe avisar por canal.
+  - **AUDIT-ALERTAS-FRECUENCIA** (corrección; hallado al cerrar AUDIT-ALERTAS-DESPACHO). `AlertConfig.frequency_mode`
+    (`config.py:587`, `ALERT_FREQUENCY_MODE`: `daily | weekly | critical_only`) lo muestra y lo edita la página
+    Alertas (`dashboard/views/8_Alertas.py:309`, con la ayuda «critical_only: solo alertas CRÍTICAS») y
+    la misma página lo lista en su `.env` de ejemplo (`:384`), pero ningún código lo lee (grep sobre todo `*.py`: sólo `config.py` y esa
+    página). El usuario que elige `critical_only` o `weekly` sigue recibiendo todo, a diario. Falta decidir si
+    se implementa (filtrar en `AlertEngine.dispatch`; `weekly` pide recordar el último envío) o se saca el
+    selector.
   - **AUDIT-MOAT-IA** (robustez). `analysis/moat.py:574` y `analysis/crypto_analyzer.py:557` hacen
     `max(lo, min(hi, float(raw)))`: con `NaN` da `hi` (reproducido: `max(0.0, min(2.0, nan)) = 2.0`; en el
     cripto, `network_adoption` 2,0), o sea que un campo `NaN` del JSON de la IA puntúa lo máximo.
