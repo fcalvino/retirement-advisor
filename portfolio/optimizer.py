@@ -332,6 +332,7 @@ class PortfolioOptimizer:
         # so the optimizer stays off the network. None → the score proxy of before.
         self._asset_classes = dict(asset_classes) if asset_classes is not None else None
         self._slsqp_note: Optional[str] = None   # aviso de la última corrida de SLSQP
+        self._fallback_notes: List[str] = []     # límites que el respaldo score-weighted aflojó
         self.cfg: ProfileConfig = OPTIMIZER_PROFILES.get(profile, OPTIMIZER_PROFILES["conservative"])
         self.opt = OPTIMIZER
         self._converted: Dict[str, str] = {}
@@ -453,6 +454,7 @@ class PortfolioOptimizer:
             result.slsqp_success = False
             result.warnings.append("SLSQP sin solución factible — usando score-weighted.")
             weights = self._score_weighted_optimize(eligible_filtered)
+            result.warnings.extend(self._fallback_notes)
         else:
             result.slsqp_success = True
 
@@ -1076,36 +1078,104 @@ class PortfolioOptimizer:
     #  Score-weighted fallback                                             #
     # ------------------------------------------------------------------ #
 
-    def _score_weighted_optimize(self, tickers: List[dict]) -> np.ndarray:
-        """Proportional allocation by adjusted_score, clipped to profile bounds.
+    def _position_caps(self, tickers: List[dict]) -> np.ndarray:
+        """Per-ticker upper bound in [0, 1]: ``max_position_pct``, or ``max_crypto_pct`` for crypto.
 
-        Crypto tickers are capped at max_crypto_pct regardless of score.
+        When those caps cannot add up to 100 % (``n × cap < 1`` — Conservador with 10
+        positions tops out at 80 %) no allocation exists, so the *position* cap is relaxed
+        to what makes one exist: ``1/n``, the same relaxation the SLSQP bounds use. The
+        crypto cap is never relaxed while there is anything else to hold.
+        """
+        from config import is_crypto as _is_crypto_ticker
+
+        cfg = self.cfg
+        n = len(tickers)
+        std = cfg.max_position_pct / 100
+        cry = cfg.max_crypto_pct / 100
+        is_c = np.array([_is_crypto_ticker(t["symbol"]) for t in tickers], dtype=bool)
+        ubs = np.where(is_c, cry, std)
+        if ubs.sum() >= 1.0 - 1e-12:
+            return ubs
+        k = int(is_c.sum())
+        if k < n:
+            std = max(std, 1.0 / n, (1.0 - cry * k) / (n - k))
+            return np.where(is_c, cry, std)
+        return np.full(n, max(cry, 1.0 / n))
+
+    @staticmethod
+    def _cap_weights(
+        target: np.ndarray,
+        ubs: np.ndarray,
+        groups: Optional[List[np.ndarray]] = None,
+        group_cap: float = 1.0,
+    ) -> np.ndarray:
+        """Proportional allocation of ``target`` with per-position (and per-group) caps.
+
+        A position over its cap is pinned there; a group over ``group_cap`` is scaled
+        down and frozen; the excess goes, in proportion to ``target``, to the positions
+        still free. Each pass freezes at least one position or ends, so it terminates —
+        also when ``n × cap < 1``, where the old loop ran out of passes with the caps
+        still violated. Returns a vector that may sum to less than 1 only when the group
+        caps leave no room (the caller relaxes them).
+        """
+        groups = groups or []
+        share = np.asarray(target, dtype=float).copy()
+        w = share / share.sum()
+        free = np.ones(len(w), dtype=bool)
+        for _ in range(2 * len(w) + len(groups) + 5):
+            over = w > ubs + 1e-12
+            if over.any():
+                w[over] = ubs[over]
+                free[over] = False
+            for idx in groups:
+                total = w[idx].sum()
+                if total > group_cap + 1e-12:
+                    w[idx] *= group_cap / total
+                    free[idx] = False
+            deficit = 1.0 - w.sum()
+            if deficit <= 1e-12 or not free.any():
+                break
+            w[free] += deficit * share[free] / share[free].sum()
+        return w
+
+    def _score_weighted_optimize(self, tickers: List[dict]) -> np.ndarray:
+        """Proportional allocation by adjusted_score, within the profile's limits.
+
+        Per-position cap (crypto tighter), per-sector cap and Σ = 100 %, as the SLSQP
+        path. A limit the universe cannot honour is relaxed — position first by
+        ``_position_caps``, sector here — and said in ``self._fallback_notes``.
         """
         cfg = self.cfg
+        self._fallback_notes = []
+        n = len(tickers)
         scores = np.array([float(t.get("adjusted_score", 1) or 1) for t in tickers])
         scores = np.clip(scores, 0.01, None)
-        w = scores / scores.sum()
 
-        from config import is_crypto as _is_crypto_ticker
-        standard_ub = cfg.max_position_pct / 100
-        crypto_ub   = cfg.max_crypto_pct / 100
-        ubs = np.array([
-            crypto_ub if _is_crypto_ticker(t["symbol"]) else standard_ub
-            for t in tickers
-        ])
+        ubs = self._position_caps(tickers)
+        relaxed_to = float(ubs[ubs > cfg.max_position_pct / 100 + 1e-12].max()) if (
+            (ubs > cfg.max_position_pct / 100 + 1e-12).any()
+        ) else None
+        if relaxed_to is not None:
+            self._fallback_notes.append(
+                f"Con {n} activos el tope por posición del perfil ({cfg.max_position_pct:.0f} %) "
+                f"no alcanza para sumar 100 %: se usó {relaxed_to * 100:.1f} % por posición."
+            )
 
-        # Water-filling: cap over-allocated tickers and redistribute excess
-        # to under-allocated ones. Converges in ≤ n iterations (one per ticker).
-        for _ in range(len(tickers) + 5):
-            over = w > ubs + 1e-10
-            if not over.any():
-                break
-            excess = (w[over] - ubs[over]).sum()
-            w[over] = ubs[over]
-            under = ~over
-            if w[under].sum() > 1e-10:
-                # Redistribute excess proportionally among uncapped tickers
-                w[under] += excess * (w[under] / w[under].sum())
+        sectors: Dict[str, List[int]] = {}
+        for i, t in enumerate(tickers):
+            sectors.setdefault(t.get("sector", "Unknown"), []).append(i)
+        groups = [np.array(ix) for ix in sectors.values()]
+        sector_cap = cfg.max_sector_pct / 100
+
+        w = self._cap_weights(scores, ubs, groups, sector_cap)
+        if w.sum() < 1.0 - 1e-9:
+            # The sector caps leave no feasible allocation (e.g. the whole universe in
+            # one sector): keep the position caps and let the sector go over, out loud.
+            w = self._cap_weights(scores, ubs)
+            self._fallback_notes.append(
+                f"El universo no permite respetar el tope por sector ({cfg.max_sector_pct:.0f} %) "
+                "y sumar 100 %: el respaldo score-weighted lo excede."
+            )
 
         # Final normalisation guard (handles floating-point drift)
         if w.sum() > 0:
@@ -1127,15 +1197,14 @@ class PortfolioOptimizer:
         """Monte Carlo portfolios on the Efficient Frontier."""
         n = len(tickers)
         rf = self.opt.risk_free_rate
-        ub = self.cfg.max_position_pct / 100
+        ubs = self._position_caps(tickers)
         rng = np.random.default_rng(42)
 
         rets, vols, sharpes = [], [], []
         for _ in range(self.opt.frontier_points):
-            w = rng.dirichlet(np.ones(n))
-            w = np.clip(w, 0, ub)
-            if w.sum() > 0:
-                w /= w.sum()
+            # Capped by redistribution: clip + renormalise handed the excess back to
+            # the same positions and put 500 of 500 samples over the cap.
+            w = self._cap_weights(rng.dirichlet(np.ones(n)), ubs)
             r = float(mu @ w) * 100
             v = float(np.sqrt(w @ cov @ w)) * 100
             s = (r / 100 - rf) / (v / 100) if v > 0 else 0
@@ -1166,11 +1235,9 @@ class PortfolioOptimizer:
             weights /= weights.sum()
         # Hard-cap each position to profile max (defensive: SLSQP can overshoot
         # bounds by a small epsilon; renormalization can amplify this)
-        max_w = self.cfg.max_position_pct / 100
-        if weights.max() > max_w + 0.001:
-            weights = np.clip(weights, 0, max_w)
-            if weights.sum() > 0:
-                weights /= weights.sum()
+        ubs = self._position_caps(tickers)
+        if (weights > ubs + 0.001).any() and weights.sum() > 0:
+            weights = self._cap_weights(np.clip(weights, 1e-12, None), ubs)
         # Zero dust positions
         weights[weights < 0.001] = 0.0
         # Re-normalize after zeroing so displayed weights sum exactly to 100 %

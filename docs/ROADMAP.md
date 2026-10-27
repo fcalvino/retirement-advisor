@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-OPTIMIZER-LIMITES — el respaldo score-weighted y la frontera respetan los topes de posición, cripto y sector (2026-10-26)
+
+AUDIT-OPTIMIZER-LIMITES (serie AUDIT-*, auditoría de 2026-10-26). El respaldo score-weighted del optimizador (al que se cae cuando SLSQP no converge) y la nube de la frontera ahora respetan el tope por posición, el de cripto y el de sector, con un reparto proporcional al score que termina siempre; lo que el universo no permite cumplir se afloja y se avisa en `result.warnings`. Medido con `optimize()` completo y SLSQP forzado a fallar: Technology pasaba de 57,1 % a 25,1 % en Moderado (tope 25 %) y de 59,1 % a 30,0 % en Agresivo (tope 30 %). El camino SLSQP no cambia. Tres residuales anotados en AUDIT-RESIDUALES.
+
+---
+
 ## AUDIT-ALERTAS-DESPACHO — las alertas del plan salen por email/Telegram y la severidad mínima por perfil se lee de la config (2026-10-26)
 
 AUDIT-ALERTAS-DESPACHO (serie AUDIT-*, auditoría de 2026-10-26). Las alertas del plan (SORR, riesgo de meta, salud del plan, coach de caída) ahora salen por email/Telegram: el job del scheduler junta lo que disparan y las manda en un solo resumen. Reproducido antes de arreglar con un plan activo con SORR 45 %: 0 mensajes en `main`, 1 con el arreglo. Además, la severidad mínima por perfil sale de `config.py` (nadie la leía) y un `ALERT_AI_MIN_SEVERITY` en mayúsculas ya no aborta el motor de alertas. Queda anotado AUDIT-ALERTAS-FRECUENCIA: `frequency_mode` no lo lee ningún código.
