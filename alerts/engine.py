@@ -77,12 +77,29 @@ class FiredAlert:
     explanation: str = ""
 
 
+def _parse_severity(value: object, default: AlertSeverity, source: str) -> AlertSeverity:
+    """Read a severity level from config; a misspelt value falls back, never raises.
+
+    ``AlertSeverity("WARNING")`` raises ``ValueError`` (the enum values are lower-case),
+    and a raise out of a ``check_*`` aborts the whole alert run — for a typo in an env var.
+    """
+    try:
+        return AlertSeverity(str(value).strip().lower())
+    except ValueError:
+        logger.warning(f"{source}={value!r} no es un nivel válido (info/warning/critical); uso {default.value}")
+        return default
+
+
 def _min_severity_for_profile(profile_name: str) -> AlertSeverity:
-    """Return minimum severity threshold for the given profile."""
+    """Return minimum severity threshold for the given profile (``ALERTS.min_severity_*``)."""
     name = (profile_name or "").lower()
     if "conservador" in name or "conservative" in name:
-        return AlertSeverity.WARNING
-    return AlertSeverity.INFO
+        field = "min_severity_conservador"
+    elif "agresivo" in name or "aggressive" in name:
+        field = "min_severity_agresivo"
+    else:
+        field = "min_severity_moderado"
+    return _parse_severity(getattr(ALERTS, field), AlertSeverity.INFO, field)
 
 
 def _get_ai_explanation(
@@ -92,7 +109,10 @@ def _get_ai_explanation(
     """Call AI to generate a natural-language explanation for the alert."""
     if not ALERTS.ai_explanations_enabled:
         return ""
-    min_sev_rank = _SEVERITY_RANK.get(AlertSeverity(ALERTS.ai_explanations_min_severity), 1)
+    min_sev = _parse_severity(
+        ALERTS.ai_explanations_min_severity, AlertSeverity.WARNING, "ALERT_AI_MIN_SEVERITY"
+    )
+    min_sev_rank = _SEVERITY_RANK[min_sev]
     if _SEVERITY_RANK.get(severity, 0) < min_sev_rank:
         return ""
     try:
@@ -217,7 +237,7 @@ class AlertEngine:
 
         # Dispatch all fired alerts
         if fired:
-            self._dispatch(fired)
+            self.dispatch(fired)
 
         logger.info(f"AlertEngine: {len(scored_tickers)} tickers checked, {len(fired)} alerts fired")
         return fired
@@ -261,7 +281,7 @@ class AlertEngine:
                     fired.append(alert)
 
             if candidates:
-                self._dispatch([a for a in fired if a.alert_type in (
+                self.dispatch([a for a in fired if a.alert_type in (
                     AlertType.PORTFOLIO_LOSS,
                     AlertType.PORTFOLIO_DRIFT,
                     AlertType.PORTFOLIO_REBALANCE,
@@ -593,8 +613,17 @@ class AlertEngine:
             message=message, severity=severity, explanation=explanation,
         )
 
-    def _dispatch(self, alerts: List[FiredAlert]) -> None:
-        """Send all alerts as a single digest message through enabled channels."""
+    def dispatch(self, alerts: List[FiredAlert]) -> None:
+        """Send all alerts as a single digest message through enabled channels.
+
+        ``run`` and ``run_with_portfolio`` call it themselves. The plan checks
+        (``check_sorr``, ``check_goal_risk``, ``check_plan_health_degradation``,
+        ``check_market_drop_coach``) only record and set the cooldown — the caller
+        collects what they return and dispatches it once.
+        """
+        if not ALERTS.alerts_enabled:
+            logger.info("AlertEngine.dispatch skipped — ALERTS.alerts_enabled is False")
+            return
         if not (ALERTS.email_enabled or ALERTS.telegram_enabled):
             return
 
