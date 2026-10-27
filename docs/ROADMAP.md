@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-CHAT-PROYECCION — la proyección del chat usa el ahorro, el retiro y la meta del plan activo (2026-10-27)
+
+AUDIT-CHAT-PROYECCION (serie AUDIT-*, auditoría de 2026-10-26). La proyección del chat usa el ahorro, el retiro, la meta, los drags y la estrategia de retiro del plan activo cuando el modelo no pasa la cifra, en vez de proyectar un plan sin ahorro ni meta (0 por defecto); un argumento explícito sigue ganando. La salida dice de dónde salió cada supuesto. Con el plan activo del usuario (copia de solo lectura), el ahorro de la proyección pasa de 0 a 48 000 por año.
+
+---
+
 ## AUDIT-DATOS — el CAGR mide años de calendario y el corte del día local respeta el cambio de horario (2026-10-27)
 
 AUDIT-DATOS (serie AUDIT-*, auditoría de 2026-10-26). El CAGR de ingresos, EPS y FCF mide la ventana en años de calendario cuando los estados traen fechas: un año que falta en el medio ya no se lee como un año menos (10,0 % real contra 13,55 % antes), y un ejercicio de transición no se redondea a año entero. También se corrigió el corte del día local en el cambio de horario de verano (una hora corrida dos días por año). Medido sobre una copia de solo lectura de la base: sólo 2 de 260 tickers tienen un hueco interior (CLX y 8035.T, −2 puntos de growth cada uno, sin cambio de señal). Los otros puntos de la fila (desempate 10-K/10-K/A, errores de SQLite en `fetcher`, un 429 de SEC) pasaron a AUDIT-RESIDUALES.

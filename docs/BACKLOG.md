@@ -23,8 +23,8 @@ GOAL-PRIORITY-TEXT y ORDEN-COHERENCIA.)
 2. **IDEA-5 IMPUESTOS**: banda 5. Reglas y decisiones en `docs/plans/IDEA5_GANANCIA_CAPITAL_AR.md` (2026-10-10). Sigue: lotes y «Registrar venta» en Portfolio con el impuesto de acciones y ETFs del exterior (§6 de ese plan).
 
 Esperan disparador: U5-1b, COM-*, COUNTRY-RISK-AUTO, TR-RACE y VENV-PRUNE. Sin orden: PIT-TOOLS,
-PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND, MACRO-SIN-FECHA y la serie AUDIT-* (8 filas abiertas, auditoría
-2026-10-26; AUDIT-TELEGRAM-LOG, AUDIT-SCHEDULER-FEED, AUDIT-ALERTAS-DESPACHO, AUDIT-OPTIMIZER-LIMITES, AUDIT-MOAT-IA, AUDIT-STRESS-SECTORES, AUDIT-MOAT-ERP-SECTORES y AUDIT-DATOS ya cerraron; AUDIT-ALERTAS-FRECUENCIA nació al cerrar otra). Espera Fuente: SCORE-CONTRACCION.
+PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND, MACRO-SIN-FECHA y la serie AUDIT-* (7 filas abiertas, auditoría
+2026-10-26; AUDIT-TELEGRAM-LOG, AUDIT-SCHEDULER-FEED, AUDIT-ALERTAS-DESPACHO, AUDIT-OPTIMIZER-LIMITES, AUDIT-MOAT-IA, AUDIT-STRESS-SECTORES, AUDIT-MOAT-ERP-SECTORES, AUDIT-DATOS y AUDIT-CHAT-PROYECCION ya cerraron; AUDIT-ALERTAS-FRECUENCIA nació al cerrar otra). Espera Fuente: SCORE-CONTRACCION.
 
 ---
 
@@ -105,7 +105,6 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **AUDIT-ALERTAS-FRECUENCIA** | 3 | `frequency_mode` (`daily / weekly / critical_only`) se elige en la página Alertas pero ningún código lo lee: `critical_only` no filtra nada. Ver bloque 4 |
 | **AUDIT-PIT-CERO** | 5 | El backtest point-in-time persiste Piotroski 0 para un corte sin estados reconstruidos y la evidencia lo agrupa como «débil»: contamina PIT-2 con filas sin dato. Falta medirlo con un SELECT sobre la base. Ver bloque 4 |
 | **AUDIT-UI-VERDAD** | 5 | Cinco pantallas dicen algo que el motor no hizo: la fuente «ai» del track record, la narrativa del plan, el `ai_enabled` de Settings, el color de un Backtesting negativo y un margen de 0 %. Ver bloque 4 |
-| **AUDIT-CHAT-PROYECCION** | 5 | La herramienta `retirement_projection` del chat proyecta con aporte, retiro y meta que elige el LLM (por defecto 0), no con los del plan activo. Ver bloque 4 |
 | **AUDIT-MC-ROBUSTEZ** | 5 | Monte Carlo: `log1p` sin guarda; y, reportado por subagentes sin re-verificar, el borde del bootstrap, la riqueza NaN en semanas extremas, `_asset_hist` viejo, Guardrails del año 1; más mutantes sin fijar (percentiles, escala de `prob_achieve_target_pct`). Ver bloque 4 |
 | **AUDIT-TESTS** | 5 | Dos tests que siempre se saltean, `personal_book_convictions` sin tests y con escritura no atómica; y, reportado por subagentes, tests que fallan según el orden (B1/B2, ésta con la causa del fallo intermitente de `test_sim_gap_katex_oracle`). Ver bloque 4 |
 | **AUDIT-UI-ESTADO** | 5 | Reportado por subagentes con AppTest, sin re-verificar: en «Mis Metas» la prioridad no cambia con ⬆️/⬇️ y el resultado del plan sobrevive a la edición; el Optimizer llama al LLM en cada rerun; el rerun de Macro RAG borra el mensaje de éxito; el chat renderiza `$` sin `escape_dollars`. Ver bloque 4 |
@@ -335,12 +334,6 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
     `data/product_ux.py:3467` hace `if override:` y `9_Settings.py:80` `int(_prefs.margin_pct or ...)`: un
     margen de 0 % (el `number_input` tiene `min_value=0`, `:78`) se persiste como `float(0)` y al releerlo se
     interpreta como «no elegido» y vuelve al del perfil.
-  - **AUDIT-CHAT-PROYECCION** (corrección). `analysis/chat_tools.py:151-173`: `initial_value` y
-    `horizon_years` caen al plan (`personal`: `current_capital`, `primary_horizon_years`), pero
-    `annual_withdrawal`, `annual_contribution` y `target_value` son `_arg_float(name, 0.0)`: salen de los
-    argumentos del LLM y no consultan el plan en ningún caso. Una pregunta como «¿me alcanza?» proyecta sin
-    el ahorro del plan activo salvo que el modelo lo pase (no se leyó el schema de la herramienta ni qué
-    claves de `personal` hay para el ahorro mensual).
   - **AUDIT-MC-ROBUSTEZ** (robustez). `portfolio/monte_carlo.py:843` hace `np.log1p(port_dev)` sin guarda
     (reproducido: `log1p(-1.0)` da `-inf` y `log1p(-1.2)` da `nan`). En esa rama `port_dev` es
     `Σ w·(r−m)·vol_scale` (`:834`): con `vol_scale` 1,15 hace falta que el portafolio pierda ≈ 87 % en una
