@@ -1662,6 +1662,9 @@ class MoatConfig:
         "Technology": 5.0,
         "Healthcare": 4.5,
         "Financials": 5.5,
+        # AUDIT-MOAT-ERP-SECTORES: yfinance llama "Financial Services" al sector que el repo
+        # llama "Financials"; sin esta clave un banco caía al ERP por defecto (5,0).
+        "Financial Services": 5.5,
         "Energy": 6.0,
         "Utilities": 4.0,
         "Consumer Defensive": 4.5,

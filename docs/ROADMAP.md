@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-MOAT-ERP-SECTORES — el moat de un banco usa el ERP de su sector, no el genérico (2026-10-27)
+
+AUDIT-MOAT-ERP-SECTORES (serie AUDIT-*, hallado al cerrar AUDIT-STRESS-SECTORES). El umbral de ROIC del moat de un banco o una aseguradora ya usa el ERP de Financials (5,5) y no el genérico (5,0): yfinance los llama «Financial Services» y la tabla `MOAT.sector_erp_pct` sólo tenía «Financials». Medido sobre una copia de solo lectura de la base: de 274 tickers cacheados (49 financieros) mueven el score 4, por −0,2 a −0,3 pt, y ninguna señal cambia.
+
+---
+
 ## AUDIT-STRESS-SECTORES — el estrés reconoce los nombres de sector de yfinance y los del repo (2026-10-27)
 
 AUDIT-STRESS-SECTORES (serie AUDIT-*, auditoría de 2026-10-26). El estrés de cartera y los shocks que ve el comité ya reconocen los nombres de sector de yfinance («Financial Services», «Basic Materials») y los que produce el propio repo (`SECTOR_MAP`, «Index» para un ETF): un banco recibe el shock de Financials y no el genérico. Medido con una cartera sintética moderada: la caída de 2008 pasa de −45,4 % a −51,5 %; no todas las crisis empeoran (Dot-com y 2022 mejoran). Anotado AUDIT-MOAT-ERP-SECTORES, el mismo defecto de nombre en la tabla de ERP del moat.
