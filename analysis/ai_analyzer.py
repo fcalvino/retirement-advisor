@@ -26,7 +26,7 @@ from analysis.strategy import (
     effective_decision_score,
 )
 from analysis.technical import TechnicalResult
-from analysis.utils import extract_json_object, read_allocation
+from analysis.utils import extract_json_object, finite_float, read_allocation
 from config import (
     AI_DECISION_MAX_TOKENS,
     AI_FALLBACK,
@@ -804,13 +804,12 @@ class AIAnalyzer:
         # P0 D2: same effective score as rule-based engine / optimizer
         score = effective_decision_score(fund)
 
+        # A cap the model did not give as a finite number is no cap (None), not the
+        # maximum: ``min(max_pct, nan)`` is ``max_pct``.
         _alloc = None
-        try:
-            _alloc_raw = read_allocation(data)
-            if _alloc_raw is not None:
-                _alloc = max(0.0, min(STRATEGY.ai_max_allocation_pct, float(_alloc_raw)))
-        except (TypeError, ValueError):
-            pass
+        _alloc_val = finite_float(read_allocation(data))
+        if _alloc_val is not None:
+            _alloc = max(0.0, min(STRATEGY.ai_max_allocation_pct, _alloc_val))
 
         conf = str(data.get("confidence", "MEDIUM") or "MEDIUM").upper()
         if conf not in {"HIGH", "MEDIUM", "LOW"}:

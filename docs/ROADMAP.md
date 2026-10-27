@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-MOAT-IA — el moat de IA no puntúa ni cachea una respuesta que no midió nada, y el moat cripto es sólo de Bitcoin (2026-10-27)
+
+AUDIT-MOAT-IA (serie AUDIT-*, auditoría de 2026-10-26). El tramo de IA del moat ya no toma por medición una respuesta que no midió nada: un campo `NaN`/`Infinity` vale 0 (antes el máximo), un `{}` sin ningún score usable es un error de parseo y no se cachea (antes cuatro ceros válidos durante 7 días), y el moat cripto sólo se mide para Bitcoin (decisión del usuario): otros activos cripto, ETH incluido, quedan «no medido». El mismo patrón en el tope de posición que devuelve la IA en la decisión también se corrige. Medido con el caché real: en `main` un `NaN` quedaba en 2,0 y un `{}` en `ai_available = True`.
+
+---
+
 ## AUDIT-OPTIMIZER-LIMITES — el respaldo score-weighted y la frontera respetan los topes de posición, cripto y sector (2026-10-26)
 
 AUDIT-OPTIMIZER-LIMITES (serie AUDIT-*, auditoría de 2026-10-26). El respaldo score-weighted del optimizador (al que se cae cuando SLSQP no converge) y la nube de la frontera ahora respetan el tope por posición, el de cripto y el de sector, con un reparto proporcional al score que termina siempre; lo que el universo no permite cumplir se afloja y se avisa en `result.warnings`. Medido con `optimize()` completo y SLSQP forzado a fallar: Technology pasaba de 57,1 % a 25,1 % en Moderado (tope 25 %) y de 59,1 % a 30,0 % en Agresivo (tope 30 %). El camino SLSQP no cambia. Tres residuales anotados en AUDIT-RESIDUALES.

@@ -23,8 +23,8 @@ GOAL-PRIORITY-TEXT y ORDEN-COHERENCIA.)
 2. **IDEA-5 IMPUESTOS**: banda 5. Reglas y decisiones en `docs/plans/IDEA5_GANANCIA_CAPITAL_AR.md` (2026-10-10). Sigue: lotes y «Registrar venta» en Portfolio con el impuesto de acciones y ETFs del exterior (§6 de ese plan).
 
 Esperan disparador: U5-1b, COM-*, COUNTRY-RISK-AUTO, TR-RACE y VENV-PRUNE. Sin orden: PIT-TOOLS,
-PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND, MACRO-SIN-FECHA y la serie AUDIT-* (11 filas abiertas, auditoría
-2026-10-26; AUDIT-TELEGRAM-LOG, AUDIT-SCHEDULER-FEED, AUDIT-ALERTAS-DESPACHO y AUDIT-OPTIMIZER-LIMITES ya cerraron; AUDIT-ALERTAS-FRECUENCIA nació de la última). Espera Fuente: SCORE-CONTRACCION.
+PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND, MACRO-SIN-FECHA y la serie AUDIT-* (10 filas abiertas, auditoría
+2026-10-26; AUDIT-TELEGRAM-LOG, AUDIT-SCHEDULER-FEED, AUDIT-ALERTAS-DESPACHO, AUDIT-OPTIMIZER-LIMITES y AUDIT-MOAT-IA ya cerraron; AUDIT-ALERTAS-FRECUENCIA nació de la última). Espera Fuente: SCORE-CONTRACCION.
 
 ---
 
@@ -103,7 +103,6 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **CONFIDENCE-SELL-BAND** | 4 | `confidence_for` deriva de la banda de score: con score 87 y técnico BULLISH da `HIGH` para SELL, AVOID, REDUCE y HOLD (medido el 2026-10-25), el «la evidencia sostiene comprar» de la banda de compra junto a una no-compra. Punta suelta de SIGNAL-3. Ver bloque 4 |
 | **MACRO-SIN-FECHA** | 5 | El gate de frescura de `MacroRagStore._fresh_docs` acepta un documento sin `as_of` como fresco. Latente: ningún camino lo crea hoy. Bloquea la opción completa de PROMPTS-MULTIMODELO (B1). Ver bloque 4 |
 | **AUDIT-ALERTAS-FRECUENCIA** | 3 | `frequency_mode` (`daily / weekly / critical_only`) se elige en la página Alertas pero ningún código lo lee: `critical_only` no filtra nada. Ver bloque 4 |
-| **AUDIT-MOAT-IA** | 5 | NaN en un campo del JSON de la IA se limita a 2,0 (el máximo) en el moat y en el cripto; un objeto JSON vacío `{}` se cachea 7 días como cuatro ceros; el prompt cripto del moat dice «Bitcoin (BTC)» para cualquier cripto (ETH incluido). Ver bloque 4 |
 | **AUDIT-PIT-CERO** | 5 | El backtest point-in-time persiste Piotroski 0 para un corte sin estados reconstruidos y la evidencia lo agrupa como «débil»: contamina PIT-2 con filas sin dato. Falta medirlo con un SELECT sobre la base. Ver bloque 4 |
 | **AUDIT-STRESS-SECTORES** | 5 | Los escenarios de estrés usan «Financials» y «Materials»; yfinance dice «Financial Services» y «Basic Materials»: esos dos sectores caen al shock por defecto. Ver bloque 4 |
 | **AUDIT-UI-VERDAD** | 5 | Cinco pantallas dicen algo que el motor no hizo: la fuente «ai» del track record, la narrativa del plan, el `ai_enabled` de Settings, el color de un Backtesting negativo y un margen de 0 %. Ver bloque 4 |
@@ -112,7 +111,7 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **AUDIT-DATOS** | 5 | `compute_cagr` y `compute_cagr_available` (el CAGR de ingresos y EPS del score) con un NaN interior cuentan puntos, no años; y, reportado por subagentes, el desempate SEC 10-K/10-K/A, errores de SQLite sin aislar en `fetcher`, un 429 de SEC tratado como «sin datos» y `local_day_start_utc` en el cambio de horario. Ver bloque 4 |
 | **AUDIT-TESTS** | 5 | Dos tests que siempre se saltean, `personal_book_convictions` sin tests y con escritura no atómica; y, reportado por subagentes, tests que fallan según el orden (B1/B2, ésta con la causa del fallo intermitente de `test_sim_gap_katex_oracle`). Ver bloque 4 |
 | **AUDIT-UI-ESTADO** | 5 | Reportado por subagentes con AppTest, sin re-verificar: en «Mis Metas» la prioridad no cambia con ⬆️/⬇️ y el resultado del plan sobrevive a la edición; el Optimizer llama al LLM en cada rerun; el rerun de Macro RAG borra el mensaje de éxito; el chat renderiza `$` sin `escape_dollars`. Ver bloque 4 |
-| **AUDIT-RESIDUALES** | 5 | Lo que los arreglos de #283–#290 dejaron dicho y sin cerrar: ventas parciales y lotes sin fecha en la curva del tracker, un NI diminuto con OCF negativo en el moat, el ancla que retrocede del Piotroski y las fechas exactas, el borde del `earningsGrowth` en Graham, y las dos bases del track record, más tres del optimizador (AUDIT-OPTIMIZER-LIMITES). Ver bloque 4 |
+| **AUDIT-RESIDUALES** | 5 | Lo que los arreglos de #283–#290 dejaron dicho y sin cerrar: ventas parciales y lotes sin fecha en la curva del tracker, un NI diminuto con OCF negativo en el moat, el ancla que retrocede del Piotroski y las fechas exactas, el borde del `earningsGrowth` en Graham, y las dos bases del track record, más tres del optimizador (AUDIT-OPTIMIZER-LIMITES) y dos del moat de IA (AUDIT-MOAT-IA). Ver bloque 4 |
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **TR-RACE** | 5 | `analysis/track_record.py` (deduplicación por día, upsert de outcomes) y `analysis/macro_rag.py:129` hacen «leer y después insertar», como `DataCache` antes de CACHE-RACE. Sin daño medido el 2026-10-10: 0 duplicados a menos de 5 s en `recommendation_log`; los 74 del 2026-08-28 son anteriores a la deduplicación. **Reabrir** si aparece un duplicado a menos de 5 s o si un escritor del track record pasa a correr en hilos o en dos procesos a la vez. |
 | **VENV-PRUNE** | 5 | `run.sh` instala el lock con `pip install`, que no saca lo que salió del lock (`pandas-ta`/`numba`/`llvmlite`, 2026-10-10). Un sync completo borraría Playwright. Espera disparador: la próxima dependencia que se retire. Ver bloque 4 |
@@ -313,15 +312,6 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
     página). El usuario que elige `critical_only` o `weekly` sigue recibiendo todo, a diario. Falta decidir si
     se implementa (filtrar en `AlertEngine.dispatch`; `weekly` pide recordar el último envío) o se saca el
     selector.
-  - **AUDIT-MOAT-IA** (robustez). `analysis/moat.py:574` y `analysis/crypto_analyzer.py:557` hacen
-    `max(lo, min(hi, float(raw)))`: con `NaN` da `hi` (reproducido: `max(0.0, min(2.0, nan)) = 2.0`; en el
-    cripto, `network_adoption` 2,0), o sea que un campo `NaN` del JSON de la IA puntúa lo máximo.
-    `_parse_ai_response("{}")` devuelve cuatro ceros válidos, `ai_available = True`, y `moat.py:396` los
-    cachea 168 h; el cripto hace lo mismo (`crypto_analyzer.py:455`, con `moat_durability_years` 10).
-    Una respuesta vacía o no-JSON, en cambio, lanza `MoatParseError` y no se cachea. `crypto_moat_prompt`
-    (`analysis/prompts.py:655`; el texto, `:703`) dice «Estás analizando el Economic Moat de **Bitcoin
-    (BTC)**» y trae suministro y ETFs spot de BTC para cualquier símbolo (reproducido con ETH-USD: «120,000,000
-    BTC de 21.000.000 máximo»), y `ETH` está en `CRYPTO_TICKERS`.
   - **AUDIT-PIT-CERO** (corrección). `piotroski_as_of({}, cutoff)` devuelve score 0 con los tres estados
     vacíos (reproducido: sin excepción, las nueve banderas en False);
     `scripts/point_in_time_backtest.py:302` lo persiste con `log_piotroski` sin guarda y
@@ -419,6 +409,10 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
     reparto es grueso) y `_rebalancing_suggestions` recibe los pesos crudos y no los de `_populate_result`
     (coinciden mientras el SLSQP respete los topes; verificado por el revisor). Subagente, sin re-verificar:
     la lista de compra del núcleo (`_select_core_holdings`) y `target_weights()` no coinciden.
+    (AUDIT-MOAT-IA) las entradas de caché que ya se escribieron con `{}` (cuatro o cinco ceros con
+    `ai_available = True`) siguen vigentes hasta 7 días; y para un ETH con la IA activa la pantalla dice
+    «activá un proveedor AI» (`dashboard/views/2_Stock_Analysis.py:380`) y `main.py:48` «N/A (AI disabled)»,
+    cuando lo que pasa es que la rúbrica sólo existe para Bitcoin (verificado por el revisor).
 - **PIT-TOOLS (prerrequisito para reabrir ReAct en el comité)**: `get_news`
   (`data/fetcher.py`) no acepta fecha y lee el feed de hoy; `MacroRagStore.retrieve`
   **sí** acepta `now=`, pero sólo lo usa para descartar lo viejo: `_days_old` hace

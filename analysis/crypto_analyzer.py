@@ -40,9 +40,10 @@ from analysis.utils import (
     ALLOCATION_KEY,
     LEGACY_ALLOCATION_KEY,
     extract_json_object,
+    finite_float,
     read_allocation,
 )
-from config import CRYPTO_MOAT, AIConfig
+from config import BITCOIN_TICKERS, CRYPTO_MOAT, AIConfig
 
 # ---------------------------------------------------------------------------
 # Crypto Moat data class
@@ -415,9 +416,20 @@ class CryptoAnalyzer:
         Cache key: "crypto_moat_ai_{symbol}_{provider}_{model}"
         TTL: 168 h (7 days) — halving cycles don't change weekly.
         On any API or parse error: returns default zeros (graceful degradation).
+        Only Bitcoin is measured: the rubric is Bitcoin's (``BITCOIN_TICKERS``).
         """
-        cache_key = f"crypto_moat_ai_{symbol}_{ai_config.provider}_{ai_config.model}"
         moat = CryptoMoatDetail()
+        if symbol.upper() not in BITCOIN_TICKERS:
+            # The rubric (halving, hash rate, 21M supply, Lightning) is Bitcoin's. Asking it
+            # about another asset scored ETH with Bitcoin's criteria — and cached it. Checked
+            # before the cache: an ETH entry from before this guard must not stay in force.
+            moat.ai_reasoning = (
+                f"[Moat no medido: la rúbrica del moat cripto está definida sólo para Bitcoin ({symbol})]"
+            )
+            logger.info(f"{symbol}: crypto moat not measured — the rubric is Bitcoin-only")
+            return moat
+
+        cache_key = f"crypto_moat_ai_{symbol}_{ai_config.provider}_{ai_config.model}"
 
         # --- Cache hit ---
         cached = self._get_cache().get(cache_key)
@@ -551,26 +563,36 @@ class CryptoAnalyzer:
             "institutional_regulatory":  (0.0, 1.5),
             "tech_resilience":           (0.0, 1.0),
         }
+        usable = 0
         for key, (lo, hi) in clamp_rules.items():
-            raw_val = data.get(key, 0.0)
-            try:
-                data[key] = round(max(lo, min(hi, float(raw_val))), 1)
-            except (TypeError, ValueError):
-                logger.warning(f"{symbol}: crypto moat field {key!r} invalid ({raw_val!r}), defaulting to 0")
+            raw_val = data.get(key)
+            val = finite_float(raw_val)
+            if val is None:
+                # Not a finite number = not measured: 0, never ``hi`` (``min(hi, nan)`` is ``hi``).
+                if key in data:
+                    logger.warning(f"{symbol}: crypto moat field {key!r} invalid ({raw_val!r}), defaulting to 0")
                 data[key] = 0.0
+            else:
+                usable += 1
+                data[key] = round(max(lo, min(hi, val)), 1)
+        if usable == 0:
+            # ``{}`` is not five zeros: nobody measured anything, and a "measurement" gets cached.
+            raise ValueError(
+                f"AI response for crypto moat {symbol} has no usable score field — raw: {text[:200]!r}"
+            )
 
         # Optional fields — graceful defaults if LLM omits them
         try:
             alloc_raw = read_allocation(data, 5)
             data[ALLOCATION_KEY] = int(max(1, min(20, int(alloc_raw))))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             data[ALLOCATION_KEY] = 5
         data.pop(LEGACY_ALLOCATION_KEY, None)
 
         try:
             dur = int(data.get("moat_durability_years", 10))
             data["moat_durability_years"] = max(1, min(30, dur))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             data["moat_durability_years"] = 10
 
         # retirement_risk_summary — plain string, no clamping needed
