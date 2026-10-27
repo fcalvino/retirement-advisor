@@ -23,8 +23,8 @@ GOAL-PRIORITY-TEXT y ORDEN-COHERENCIA.)
 2. **IDEA-5 IMPUESTOS**: banda 5. Reglas y decisiones en `docs/plans/IDEA5_GANANCIA_CAPITAL_AR.md` (2026-10-10). Sigue: lotes y «Registrar venta» en Portfolio con el impuesto de acciones y ETFs del exterior (§6 de ese plan).
 
 Esperan disparador: U5-1b, COM-*, COUNTRY-RISK-AUTO, TR-RACE y VENV-PRUNE. Sin orden: PIT-TOOLS,
-PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND, MACRO-SIN-FECHA y la serie AUDIT-* (12 filas abiertas, auditoría
-2026-10-26; AUDIT-TELEGRAM-LOG, AUDIT-SCHEDULER-FEED y AUDIT-ALERTAS-DESPACHO ya cerraron; AUDIT-ALERTAS-FRECUENCIA nació de la última). Espera Fuente: SCORE-CONTRACCION.
+PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND, MACRO-SIN-FECHA y la serie AUDIT-* (11 filas abiertas, auditoría
+2026-10-26; AUDIT-TELEGRAM-LOG, AUDIT-SCHEDULER-FEED, AUDIT-ALERTAS-DESPACHO y AUDIT-OPTIMIZER-LIMITES ya cerraron; AUDIT-ALERTAS-FRECUENCIA nació de la última). Espera Fuente: SCORE-CONTRACCION.
 
 ---
 
@@ -105,7 +105,6 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **AUDIT-ALERTAS-FRECUENCIA** | 3 | `frequency_mode` (`daily / weekly / critical_only`) se elige en la página Alertas pero ningún código lo lee: `critical_only` no filtra nada. Ver bloque 4 |
 | **AUDIT-MOAT-IA** | 5 | NaN en un campo del JSON de la IA se limita a 2,0 (el máximo) en el moat y en el cripto; un objeto JSON vacío `{}` se cachea 7 días como cuatro ceros; el prompt cripto del moat dice «Bitcoin (BTC)» para cualquier cripto (ETH incluido). Ver bloque 4 |
 | **AUDIT-PIT-CERO** | 5 | El backtest point-in-time persiste Piotroski 0 para un corte sin estados reconstruidos y la evidencia lo agrupa como «débil»: contamina PIT-2 con filas sin dato. Falta medirlo con un SELECT sobre la base. Ver bloque 4 |
-| **AUDIT-OPTIMIZER-LIMITES** | 5 | El respaldo score-weighted ignora los topes de sector y, al renormalizar, el de posición; ningún perfil puede sumar 100 % con su tope (80 / 96 / 90 %) y el water-filling del respaldo no converge; la nube de la frontera viola el tope; código muerto en la poda de pesos. Ver bloque 4 |
 | **AUDIT-STRESS-SECTORES** | 5 | Los escenarios de estrés usan «Financials» y «Materials»; yfinance dice «Financial Services» y «Basic Materials»: esos dos sectores caen al shock por defecto. Ver bloque 4 |
 | **AUDIT-UI-VERDAD** | 5 | Cinco pantallas dicen algo que el motor no hizo: la fuente «ai» del track record, la narrativa del plan, el `ai_enabled` de Settings, el color de un Backtesting negativo y un margen de 0 %. Ver bloque 4 |
 | **AUDIT-CHAT-PROYECCION** | 5 | La herramienta `retirement_projection` del chat proyecta con aporte, retiro y meta que elige el LLM (por defecto 0), no con los del plan activo. Ver bloque 4 |
@@ -113,7 +112,7 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **AUDIT-DATOS** | 5 | `compute_cagr` y `compute_cagr_available` (el CAGR de ingresos y EPS del score) con un NaN interior cuentan puntos, no años; y, reportado por subagentes, el desempate SEC 10-K/10-K/A, errores de SQLite sin aislar en `fetcher`, un 429 de SEC tratado como «sin datos» y `local_day_start_utc` en el cambio de horario. Ver bloque 4 |
 | **AUDIT-TESTS** | 5 | Dos tests que siempre se saltean, `personal_book_convictions` sin tests y con escritura no atómica; y, reportado por subagentes, tests que fallan según el orden (B1/B2, ésta con la causa del fallo intermitente de `test_sim_gap_katex_oracle`). Ver bloque 4 |
 | **AUDIT-UI-ESTADO** | 5 | Reportado por subagentes con AppTest, sin re-verificar: en «Mis Metas» la prioridad no cambia con ⬆️/⬇️ y el resultado del plan sobrevive a la edición; el Optimizer llama al LLM en cada rerun; el rerun de Macro RAG borra el mensaje de éxito; el chat renderiza `$` sin `escape_dollars`. Ver bloque 4 |
-| **AUDIT-RESIDUALES** | 5 | Lo que los arreglos de #283–#290 dejaron dicho y sin cerrar: ventas parciales y lotes sin fecha en la curva del tracker, un NI diminuto con OCF negativo en el moat, el ancla que retrocede del Piotroski y las fechas exactas, el borde del `earningsGrowth` en Graham, y las dos bases del track record. Ver bloque 4 |
+| **AUDIT-RESIDUALES** | 5 | Lo que los arreglos de #283–#290 dejaron dicho y sin cerrar: ventas parciales y lotes sin fecha en la curva del tracker, un NI diminuto con OCF negativo en el moat, el ancla que retrocede del Piotroski y las fechas exactas, el borde del `earningsGrowth` en Graham, y las dos bases del track record, más tres del optimizador (AUDIT-OPTIMIZER-LIMITES). Ver bloque 4 |
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **TR-RACE** | 5 | `analysis/track_record.py` (deduplicación por día, upsert de outcomes) y `analysis/macro_rag.py:129` hacen «leer y después insertar», como `DataCache` antes de CACHE-RACE. Sin daño medido el 2026-10-10: 0 duplicados a menos de 5 s en `recommendation_log`; los 74 del 2026-08-28 son anteriores a la deduplicación. **Reabrir** si aparece un duplicado a menos de 5 s o si un escritor del track record pasa a correr en hilos o en dos procesos a la vez. |
 | **VENV-PRUNE** | 5 | `run.sh` instala el lock con `pip install`, que no saca lo que salió del lock (`pandas-ta`/`numba`/`llvmlite`, 2026-10-10). Un sync completo borraría Playwright. Espera disparador: la próxima dependencia que se retire. Ver bloque 4 |
@@ -332,19 +331,6 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
     así que daría 0 en todos sus cortes. **Medición pendiente** (necesita la base real, no se leyó):
     `SELECT symbol, as_of FROM synthetic_recommendation WHERE piotroski_score = 0 AND
     excess_return_pct IS NOT NULL`, para ver cuántas filas del grupo «débil» de PIT-2 son vacías.
-  - **AUDIT-OPTIMIZER-LIMITES** (corrección). `_score_weighted_optimize` (`portfolio/optimizer.py:1079`)
-    no tiene ningún tope de sector (el SLSQP sí, `:972`) y su water-filling **no converge cuando
-    `n × tope < 1`** (`under = ~over` incluye a los que ya están en el tope): ninguno de los tres perfiles
-    puede sumar 100 % con su tope (`min_positions × max_position_pct`: Conservador 10 × 8 % = 80 %,
-    Moderado 96 %, Agresivo 90 %; reproducido desde `OPTIMIZER_PROFILES`), y el SLSQP sí lo contempla
-    (`max(max_position_pct/100, 1/n)`). Reproducido por el revisor: con Conservador, n = 10 y scores
-    desiguales, el respaldo devuelve [28 %, 8 %, 8 %, …]; Agresivo n = 5 da 20,5 % (tope 18 %) y Moderado
-    n = 8 da 13,3 % (tope 12 %); con scores iguales da 10 % cada uno. El comentario «converge en ≤ n
-    iteraciones» es falso en ese caso. Además `w[w < lb * 0.5] = 0` (`:1029`) es código muerto: viene justo
-    después de `np.clip(res.x, lb, ub_arr)`, que lleva todo a ≥ `lb`. Y la nube de la frontera viola el tope
-    por posición (confirmado por el revisor: `:1135-1137` hace clip y renormaliza; 500 de 500 muestras con
-    n = 20 y tope 8 % lo superan). Subagente, sin re-verificar: la lista de compra del núcleo y
-    `target_weights()` no coinciden.
   - **AUDIT-STRESS-SECTORES** (corrección). Los seis escenarios de `STRESS_SCENARIOS` (`config.py:3756`)
     tienen claves `Financials` y `Materials`; yfinance entrega `Financial Services` y `Basic Materials`
     (reproducido contra `yfinance.const`: de los 11 sectores, esos dos no tienen clave), y
@@ -426,7 +412,13 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
     (#287) un `earningsGrowth` positivo diminuto se redondea a 0,0 y se valúa como cero medido, mientras
     que exactamente 0,0 queda sin tasa (verificado); (#289) el track record mezcla dos bases (las filas
     anteriores a 2026-10-26 parten del precio del momento) y no se re-puntúa (sin re-verificar por el
-    revisor).
+    revisor); (AUDIT-OPTIMIZER-LIMITES) en el camino SLSQP, `w[w < lb * 0.5] = 0` sigue siendo código muerto
+    (viene después de un `clip` a `lb`, así que nada baja de `lb` y el «polvo» nunca se anula; verificado),
+    cuando el tope de sector es infactible el respaldo descarta *todos* los topes de sector en vez de subirlos
+    al mínimo factible (con 3 sectores de 4 tickers, uno puede pasar de 60 %; el aviso es honesto pero el
+    reparto es grueso) y `_rebalancing_suggestions` recibe los pesos crudos y no los de `_populate_result`
+    (coinciden mientras el SLSQP respete los topes; verificado por el revisor). Subagente, sin re-verificar:
+    la lista de compra del núcleo (`_select_core_holdings`) y `target_weights()` no coinciden.
 - **PIT-TOOLS (prerrequisito para reabrir ReAct en el comité)**: `get_news`
   (`data/fetcher.py`) no acepta fecha y lee el feed de hoy; `MacroRagStore.retrieve`
   **sí** acepta `now=`, pero sólo lo usa para descartar lo viejo: `_days_old` hace
