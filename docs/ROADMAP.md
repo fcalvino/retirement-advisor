@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-UI-VERDAD-IA — tres pantallas dejan de decir IA sin que la IA haya decidido (AUDIT-UI-VERDAD, 1/2) (2026-10-28)
+
+AUDIT-UI-VERDAD, primera mitad (serie AUDIT-*, auditoría de 2026-10-26). Tres pantallas dejan de afirmar IA sin que la IA haya decidido: el track record de Stock Analysis rotula la fuente por `Decision.ai_used` y no por la configuración; Mi Plan no muestra la narrativa de otra corrida de Simulaciones; elegir Hermes o xAI en Settings no prende la IA hasta guardar. Quedan el color de un Backtesting negativo y el margen de 0 %.
+
+---
+
 ## AUDIT-CHAT-PROYECCION — la proyección del chat usa el ahorro, el retiro y la meta del plan activo (2026-10-27)
 
 AUDIT-CHAT-PROYECCION (serie AUDIT-*, auditoría de 2026-10-26). La proyección del chat usa el ahorro, el retiro, la meta, los drags y la estrategia de retiro del plan activo cuando el modelo no pasa la cifra, en vez de proyectar un plan sin ahorro ni meta (0 por defecto); un argumento explícito sigue ganando. La salida dice de dónde salió cada supuesto. Con el plan activo del usuario (copia de solo lectura), el ahorro de la proyección pasa de 0 a 48 000 por año.

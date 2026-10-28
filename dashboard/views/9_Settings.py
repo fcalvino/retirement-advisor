@@ -278,8 +278,7 @@ model_index   = model_list.index(current_model) if current_model in model_list e
 ai_model_sel  = st.selectbox("Modelo", model_list, index=model_index)
 
 if provider_key in ("nous", "xai"):
-    st.info("🔐 Usa tu sesión local de Hermes OAuth. La API key es opcional.")
-    st.session_state.ai_enabled = True
+    st.info("🔐 Usa tu sesión local de Hermes OAuth. La API key es opcional. Se activa al guardar.")
 
 ai_key_input = st.text_input(
     "API Key" + (" (opcional para Hermes)" if provider_key == "nous" else ""),
