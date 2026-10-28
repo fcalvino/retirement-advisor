@@ -77,7 +77,7 @@ if _chosen:
     _marg = _pc2.number_input(
         "Margen de seguridad que pedís antes de comprar (%)",
         min_value=0, max_value=60, step=1, key="settings_margin",
-        value=int(_prefs.margin_pct or _prof_cfg.margin_of_safety_pct),
+        value=int(_prof_cfg.margin_of_safety_pct if _prefs.margin_pct is None else _prefs.margin_pct),
         help=f"El de tu perfil ({_prof_cfg.name}) es {_prof_cfg.margin_of_safety_pct:.0f}%. "
              "Se muestra en la ficha de Análisis; la Señal usa su propia regla fija.",
     )

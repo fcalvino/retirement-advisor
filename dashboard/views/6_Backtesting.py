@@ -161,7 +161,6 @@ if bt_result is None:
 st.divider()
 st.subheader("📈 Performance Summary")
 
-excess_color = "normal" if bt_result.excess_return_pct >= 0 else "inverse"
 rebal_label = bt_result.rebalance_freq.replace("_", " ").title()
 st.caption(
     f"Rebalanceo: **{rebal_label}** · Top-{bt_result.top_n} "
@@ -182,7 +181,9 @@ col1.metric(
     "Portfolio CAGR",
     f"{bt_result.portfolio_cagr_pct:+.1f}%",
     f"{bt_result.excess_return_pct:+.1f}% vs {bt_result.benchmark}",
-    delta_color=excess_color,
+    # «normal»: Streamlit pinta de verde el delta positivo y de rojo el negativo. «inverse» pintaba de
+    # verde un portafolio por debajo del benchmark (AUDIT-UI-VERDAD).
+    delta_color="normal",
     help=f"**{EXCESS_RETURN_LABEL}.** {EXCESS_RETURN_HELP}",
 )
 col2.metric("Benchmark CAGR",         f"{bt_result.benchmark_cagr_pct:+.1f}%")
