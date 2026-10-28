@@ -297,8 +297,9 @@ elif _has_session_run:
         st.warning(_note, icon="⚠️")
     _core_table(_core.holdings, _core.label)
 
-    # Narrative
-    _live_narrative = getattr(opt_result, "ai_narrative", "") or st.session_state.get("last_plan_narrative", "")
+    # Narrative: la del resultado y nada más. ``last_plan_narrative`` es de una corrida de Simulaciones, sin
+    # ligar a este plan (AUDIT-UI-VERDAD), y el Optimizer vacía ``ai_narrative`` cuando era el texto de respaldo.
+    _live_narrative = getattr(opt_result, "ai_narrative", "") or ""
     if _live_narrative:
         with st.expander("📝 Narrativa del plan", expanded=False):
             render_ai_badge("interpretación del modelo; las métricas del plan son cálculos")

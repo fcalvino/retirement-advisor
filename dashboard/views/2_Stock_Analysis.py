@@ -188,7 +188,9 @@ if symbol:
     # Track record capture (Gran Salto, Fase 1) — dedupe protects against reruns.
     # SA-TR-CAPTION: se guarda lo que devolvió el store para que el caption de
     # abajo diga lo que pasó (registrado, no admitido o ya registrado hoy).
-    _track_source = "ai" if ai_cfg.enabled else "rule_based"
+    # AUDIT-UI-VERDAD: la fuente es quién decidió (``Decision.ai_used``), no si la IA estaba prendida:
+    # con el respaldo por reglas o ``enrich_only`` el veredicto es del motor.
+    _track_source = "ai" if getattr(decision, "ai_used", False) else "rule_based"
     _track_rec_id = None
     _track_skip = None
     try:

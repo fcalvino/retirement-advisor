@@ -104,7 +104,7 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **MACRO-SIN-FECHA** | 5 | El gate de frescura de `MacroRagStore._fresh_docs` acepta un documento sin `as_of` como fresco. Latente: ningún camino lo crea hoy. Bloquea la opción completa de PROMPTS-MULTIMODELO (B1). Ver bloque 4 |
 | **AUDIT-ALERTAS-FRECUENCIA** | 3 | `frequency_mode` (`daily / weekly / critical_only`) se elige en la página Alertas pero ningún código lo lee: `critical_only` no filtra nada. Ver bloque 4 |
 | **AUDIT-PIT-CERO** | 5 | El backtest point-in-time persiste Piotroski 0 para un corte sin estados reconstruidos y la evidencia lo agrupa como «débil»: contamina PIT-2 con filas sin dato. Falta medirlo con un SELECT sobre la base. Ver bloque 4 |
-| **AUDIT-UI-VERDAD** | 5 | Cinco pantallas dicen algo que el motor no hizo: la fuente «ai» del track record, la narrativa del plan, el `ai_enabled` de Settings, el color de un Backtesting negativo y un margen de 0 %. Ver bloque 4 |
+| **AUDIT-UI-VERDAD** | 5 | Dos pantallas dicen algo que el motor no hizo: el color de un Backtesting con exceso negativo y un margen de 0 % que vuelve al del perfil. (La fuente «ai» del track record, la narrativa del plan y el `ai_enabled` de Settings se corrigieron en AUDIT-UI-VERDAD-IA.) Ver bloque 4 |
 | **AUDIT-MC-ROBUSTEZ** | 5 | Monte Carlo: `log1p` sin guarda; y, reportado por subagentes sin re-verificar, el borde del bootstrap, la riqueza NaN en semanas extremas, `_asset_hist` viejo, Guardrails del año 1; más mutantes sin fijar (percentiles, escala de `prob_achieve_target_pct`). Ver bloque 4 |
 | **AUDIT-TESTS** | 5 | Dos tests que siempre se saltean, `personal_book_convictions` sin tests y con escritura no atómica; y, reportado por subagentes, tests que fallan según el orden (B1/B2, ésta con la causa del fallo intermitente de `test_sim_gap_katex_oracle`). Ver bloque 4 |
 | **AUDIT-UI-ESTADO** | 5 | Reportado por subagentes con AppTest, sin re-verificar: en «Mis Metas» la prioridad no cambia con ⬆️/⬇️ y el resultado del plan sobrevive a la edición; el Optimizer llama al LLM en cada rerun; el rerun de Macro RAG borra el mensaje de éxito; el chat renderiza `$` sin `escape_dollars`. Ver bloque 4 |
@@ -318,17 +318,8 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
     así que daría 0 en todos sus cortes. **Medición pendiente** (necesita la base real, no se leyó):
     `SELECT symbol, as_of FROM synthetic_recommendation WHERE piotroski_score = 0 AND
     excess_return_pct IS NOT NULL`, para ver cuántas filas del grupo «débil» de PIT-2 son vacías.
-  - **AUDIT-UI-VERDAD** (corrección). (1) `dashboard/views/2_Stock_Analysis.py:191`:
-    `_track_source = "ai" if ai_cfg.enabled else "rule_based"` rotula la fuente por la configuración y no
-    por si la IA decidió; existe `Decision.ai_used` (`analysis/strategy.py:526-528`, puesto en True en
-    `analysis/ai_analyzer.py:331`) y la pantalla no lo lee: con `enrich_only` o con el respaldo por reglas
-    rotula «ai» una decisión del motor. (2) `dashboard/views/12_Plan.py:301`: la narrativa cae a
-    `st.session_state["last_plan_narrative"]` cuando el resultado vivo no trae; esa clave la escribe
-    Simulaciones (`7_Simulaciones.py:856`) y nada la liga a un plan ni a una corrida, así que puede
-    mostrarse la de otra corrida o de otro plan dentro del expander «Narrativa del plan» con la insignia de
-    IA. (3) `dashboard/views/9_Settings.py:280-282`: elegir `nous` o `xai` pone `ai_enabled = True` en la
-    sesión en cada render, sin «Guardar» (`:324`); no se persiste, pero `dashboard/shared.py:1504` lo lee y
-    `_get_ai_config()` activa la IA en las demás páginas de la sesión antes de guardar. (4)
+  - **AUDIT-UI-VERDAD** (corrección). Quedan (4) y (5); los otros tres (la fuente «ai» del track record,
+    la narrativa del plan y el `ai_enabled` de Settings) se corrigieron en AUDIT-UI-VERDAD-IA. (4)
     `dashboard/views/6_Backtesting.py:164` y `:185`: con exceso negativo `delta_color="inverse"` pinta de
     verde el retorno por debajo del benchmark (leído, por la semántica de Streamlit; no se renderizó). (5)
     `data/product_ux.py:3467` hace `if override:` y `9_Settings.py:80` `int(_prefs.margin_pct or ...)`: un
