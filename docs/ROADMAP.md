@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-RESIDUALES-MENSAJES — los mensajes de Alertas, Settings y Simulaciones sobreviven al rerun (AUDIT-RESIDUALES, mensajes) (2026-10-28)
+
+AUDIT-RESIDUALES, mensajes perdidos por `st.rerun()` (serie AUDIT-*, auditoría de 2026-10-26). Alertas (el resumen de «Ejecutar análisis» y «Silenciado»), Settings (cotización paralelo y caché) y Simulaciones (meta agregada) vuelven a mostrar su mensaje, con `flash`/`show_flash` en `dashboard/shared.py`.
+
+---
+
 ## AUDIT-UI-ESTADO — el mensaje de Macro RAG sobrevive al rerun y el chat escapa el $ (AUDIT-UI-ESTADO, 3/3) (2026-10-28)
 
 AUDIT-UI-ESTADO, parte 3/3 (serie AUDIT-*, auditoría de 2026-10-26). El mensaje de éxito de Macro RAG sobrevive al `st.rerun()` y el chat escapa el `$` del modelo, del historial y del usuario. Con #303 (Optimizer) y #304 («Mis Metas») cierra la fila.

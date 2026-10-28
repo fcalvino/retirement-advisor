@@ -223,6 +223,28 @@ def escape_dollars(text: str) -> str:
     return str(text).replace("$", "\\$")
 
 
+_FLASH_KINDS = ("success", "info", "warning", "error")
+
+
+def flash(key: str, kind: str, text: str) -> None:
+    """Guarda un mensaje para mostrarlo en la corrida siguiente (AUDIT-RESIDUALES).
+
+    Un ``st.rerun()`` descarta lo que el script dibujó en esa corrida: un ``st.success(...)`` seguido de
+    ``st.rerun()`` nunca llega a la pantalla. Se guarda el mensaje, se hace el rerun y ``show_flash(key)``
+    lo dibuja una sola vez donde corresponde. ``kind`` es ``success``, ``info``, ``warning`` o ``error``.
+    """
+    if kind not in _FLASH_KINDS:
+        raise ValueError(f"flash kind {kind!r}: use one of {_FLASH_KINDS}")
+    st.session_state[key] = (kind, text)
+
+
+def show_flash(key: str) -> None:
+    """Dibuja y olvida el mensaje que dejó ``flash(key, …)``; no hace nada si no hay."""
+    message = st.session_state.pop(key, None)
+    if message:
+        getattr(st, message[0])(message[1])
+
+
 def escape_html(text) -> str:
     """Escape text we do not control before it goes into raw HTML (LLM-5).
 

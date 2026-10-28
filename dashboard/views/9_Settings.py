@@ -19,6 +19,8 @@ from dashboard.shared import (
     _save_ai_config_to_env,
     cache_stats,
     clear_data_cache,
+    flash,
+    show_flash,
     usd_ars_quote,
 )
 from data.preferences import UserPreferences
@@ -382,13 +384,14 @@ _par_nuevo = _fc2.number_input(
     help="El que vos observás. Con 0 la app no muestra brecha, porque una brecha "
          "contra un valor por defecto no dice nada del mercado.",
 )
+show_flash("flash_usd_ars")
 if st.button("Guardar cotización", key="save_usd_ars_parallel"):
     _prefs.usd_ars_parallel = float(_par_nuevo)
     _prefs.usd_ars_parallel_asof = (
         datetime.now().date().isoformat() if _par_nuevo > 0 else ""
     )
     _prefs.save()
-    st.success("Cotización guardada." if _par_nuevo > 0 else "Paralelo borrado.")
+    flash("flash_usd_ars", "success", "Cotización guardada." if _par_nuevo > 0 else "Paralelo borrado.")
     st.rerun()
 
 if _fx_now.rate_source == "placeholder":
@@ -424,12 +427,13 @@ if _stats["newest"]:
     _oldest_str = _stats["oldest"].strftime("%d/%m %H:%M") if _stats["oldest"] else "—"
     st.caption(f"Entrada más reciente: **{_newest_str}** · Entrada más antigua: **{_oldest_str}** (UTC)")
 
+show_flash("flash_cache")
 _cc1, _cc2 = st.columns(2)
 with _cc1:
     if st.button("🗑️ Limpiar todo el caché", type="secondary"):
         clear_data_cache()
         st.cache_data.clear()
-        st.success("✅ Caché limpiado — el próximo análisis va a re-obtener todos los datos.")
+        flash("flash_cache", "success", "✅ Caché limpiado — el próximo análisis va a re-obtener todos los datos.")
         st.rerun()
 with _cc2:
     st.caption(
