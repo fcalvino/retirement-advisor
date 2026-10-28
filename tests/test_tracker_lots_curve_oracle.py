@@ -141,15 +141,17 @@ class TestSharesAreCountedFromWhenTheyWereHeld:
         expected = (pd.Timestamp(_ago(2)) + pd.Timedelta(weeks=PORTFOLIO.min_risk_curve_points - 1)).date()
         assert metrics.risk_measurable_from == expected.isoformat()
 
-    def test_a_lot_without_a_date_falls_back_to_the_whole_history(self, tmp_path, monkeypatch):
-        """Unchanged contract: an unparseable date means no filter, as ``_held_from`` always said."""
+    def test_a_lot_without_a_date_has_no_anchor_and_no_curve(self, tmp_path, monkeypatch):
+        """No date, no anchor (``_held_from`` is ``None``). The old contract —\"no filter\", the whole
+        history — fabricated the very curve this window exists to prevent (AUDIT-RESIDUALES): now there
+        is no curve at all. See ``test_tracker_undated_lot_oracle``."""
         series = {"KO": _prices(60.0, 0.001)}
         _install(monkeypatch, series)
         p = Portfolio(file_path=tmp_path / "p.json")
         p.add_position("KO", 100.0, 55.0, purchase_date=_ago(104))
         p.add_position("KO", 100.0, 70.0, purchase_date="")
         assert p._held_from() is None
-        assert len(p._build_equity_curve()) == _WEEKS
+        assert p._build_equity_curve() is None
 
 
 class TestAMissingPriceIsNotAZeroPosition:

@@ -127,7 +127,7 @@ def cmd_portfolio() -> None:
     print(f"  Positions    : {metrics.num_positions}")
     print(f"  Total Value  : ${metrics.total_value:,.0f}")
     print(f"  Total P&L    : ${metrics.total_pnl:,.0f} ({metrics.total_pnl_pct:.1f}%)")
-    print(f"  Ann. Return  : {metrics.annualized_return_pct:.1f}%")
+    print(f"  Ann. Return  : {risk_metric_text(metrics.annualized_return_pct, '{:.1f}%')}")
     # Risk metrics are None until the shared curve is long enough (PORTFOLIO-RISK-CERO):
     # formatting None with ":.2f" raised TypeError, the same as the page's dash.
     print(f"  Sharpe Ratio : {risk_metric_text(metrics.sharpe_ratio, '{:.2f}')}")

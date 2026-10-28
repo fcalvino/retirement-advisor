@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-RESIDUALES-TRACKER — un lote sin fecha legible deja la curva de riesgo en «no medido» (AUDIT-RESIDUALES, tracker) (2026-10-28)
+
+AUDIT-RESIDUALES, tracker (serie AUDIT-*, auditoría de 2026-10-26). Un lote sin fecha de compra legible deja de medirse con historia que no se vivió: no se arma la curva de riesgo y Sharpe, Sortino, drawdown y beta quedan en «no medido», con el símbolo nombrado; el retorno anualizado deja de ser 0,0 cuando no hay fecha. El libro real no tiene lotes sin fecha: 0 cambios.
+
+---
+
 ## AUDIT-RESIDUALES-GRAHAM — un earningsGrowth trimestral de exactamente 0 es un cero medido que Graham valúa (AUDIT-RESIDUALES, Graham) (2026-10-28)
 
 AUDIT-RESIDUALES, Graham (serie AUDIT-*, auditoría de 2026-10-26). Un `earningsGrowth` trimestral de exactamente 0 es un cero medido que Graham valúa, como uno de +0,04 %; sólo cuenta un número finito (la clave ausente, NaN, texto y booleanos siguen sin tasa). Medido: 0 de 274 tickers cambian.
