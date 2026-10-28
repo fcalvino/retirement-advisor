@@ -25,13 +25,20 @@ st.caption(
 n = macro_rag_store.count()
 st.metric("Documentos macro indexados", n)
 
+# AUDIT-UI-ESTADO: el ``st.rerun()`` de los botones borra lo que se dibujó en esa corrida (el contador de
+# arriba se calcula antes de ellos y hay que releerlo), así que su mensaje se guarda y se muestra acá, una vez.
+_flash = st.session_state.pop("macro_rag_flash", None)
+if _flash:
+    getattr(st, _flash[0])(_flash[1])
+
 col1, col2 = st.columns(2)
 with col1:
     if st.button("🌱 Cargar set de ejemplo (offline)"):
         added = macro_rag_store.ingest_many(example_macro_docs())
-        st.success(
+        st.session_state["macro_rag_flash"] = (
+            "success",
             f"Listo: {added} documentos de ejemplo cargados. Son texto de demo: sirven "
-            "para ver esta página, pero no llegan a ningún prompt."
+            "para ver esta página, pero no llegan a ningún prompt.",
         )
         st.rerun()
 with col2:
@@ -39,8 +46,9 @@ with col2:
     if st.button(fred_label, disabled=not MULTI_SOURCE.fred_api_key):
         with st.spinner("Consultando FRED…"):
             added = ingest_from_fred(macro_rag_store)
-        st.success(f"Ingeridos {added} documentos desde FRED.") if added else st.warning(
-            "No se pudo ingerir desde FRED (sin datos o sin clave)."
+        st.session_state["macro_rag_flash"] = (
+            ("success", f"Ingeridos {added} documentos desde FRED.") if added
+            else ("warning", "No se pudo ingerir desde FRED (sin datos o sin clave).")
         )
         st.rerun()
 

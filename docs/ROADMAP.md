@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-UI-ESTADO — el mensaje de Macro RAG sobrevive al rerun y el chat escapa el $ (AUDIT-UI-ESTADO, 3/3) (2026-10-28)
+
+AUDIT-UI-ESTADO, parte 3/3 (serie AUDIT-*, auditoría de 2026-10-26). El mensaje de éxito de Macro RAG sobrevive al `st.rerun()` y el chat escapa el `$` del modelo, del historial y del usuario. Con #303 (Optimizer) y #304 («Mis Metas») cierra la fila.
+
+---
+
 ## AUDIT-UI-ESTADO-METAS — «Mis Metas»: los botones cambian la prioridad y el plan simulado es el de las metas de hoy (AUDIT-UI-ESTADO, 2/3) (2026-10-28)
 
 AUDIT-UI-ESTADO, parte 2/3 (serie AUDIT-*, auditoría de 2026-10-26). En «Mis Metas», ⬆️/⬇️ cambian la prioridad de la meta un nivel (antes sólo reordenaban la lista y el motor no lee el orden), y el plan simulado deja de mostrarse cuando las metas cambiaron desde la simulación. Queda la parte 3: el mensaje de éxito de Macro RAG y el `$` del chat.
