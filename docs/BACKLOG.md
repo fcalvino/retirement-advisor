@@ -346,9 +346,7 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
     con otro en blanco), y las fechas se cruzan por igualdad exacta (sin re-verificar por el revisor);
     (#289) el track record mezcla dos bases (las filas
     anteriores a 2026-10-26 parten del precio del momento) y no se re-puntúa (sin re-verificar por el
-    revisor); (AUDIT-OPTIMIZER-LIMITES) en el camino SLSQP, `w[w < lb * 0.5] = 0` sigue siendo código muerto
-    (viene después de un `clip` a `lb`, así que nada baja de `lb` y el «polvo» nunca se anula; verificado),
-    cuando el tope de sector es infactible el respaldo descarta *todos* los topes de sector en vez de subirlos
+    revisor); (AUDIT-OPTIMIZER-LIMITES) cuando el tope de sector es infactible el respaldo descarta *todos* los topes de sector en vez de subirlos
     al mínimo factible (con 3 sectores de 4 tickers, uno puede pasar de 60 %; el aviso es honesto pero el
     reparto es grueso) y `_rebalancing_suggestions` recibe los pesos crudos y no los de `_populate_result`
     (coinciden mientras el SLSQP respete los topes; verificado por el revisor). Subagente, sin re-verificar:

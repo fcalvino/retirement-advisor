@@ -1027,10 +1027,9 @@ class PortfolioOptimizer:
                 w = np.clip(res.x, lb, ub_arr)
                 if w.sum() > 0:
                     w /= w.sum()
-                if n > cfg.min_positions:
-                    w[w < lb * 0.5] = 0
-                    if w.sum() > 0:
-                        w /= w.sum()
+                # No dust to zero out here: every bound is [lb, ub], so each ticker already holds at
+                # least ``min_weight_pct``. A ``w[w < lb * 0.5] = 0`` step used to follow the clip
+                # above and could never fire (nothing is below ``lb`` after it) — AUDIT-RESIDUALES.
                 if objective is neg_sharpe:
                     logger.info(f"SLSQP converged — proxy/vol ratio {-res.fun:.3f}")
                 else:
@@ -1228,8 +1227,7 @@ class PortfolioOptimizer:
         mu: np.ndarray,
         cov: Optional[np.ndarray],
     ) -> None:
-        # Normalize to sum=1 before any display logic (guards against floating-point
-        # drift and the double-zeroing in _try_minimize leaving a sum < 1)
+        # Normalize to sum=1 before any display logic (guards against floating-point drift)
         weights = np.asarray(weights, dtype=float).copy()
         if weights.sum() > 0:
             weights /= weights.sum()

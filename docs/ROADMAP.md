@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-RESIDUALES-OPTIMIZER-POLVO — se quita el paso inalcanzable que anulaba el polvo en el camino SLSQP (AUDIT-RESIDUALES, optimizador) (2026-10-28)
+
+AUDIT-RESIDUALES, optimizador (serie AUDIT-*, auditoría de 2026-10-26). Se quita de `_try_minimize` el paso `w[w < lb * 0.5] = 0`, que iba después de un clip a `lb` y no podía dispararse: el polvo lo evita la cota inferior, no ese paso. Sin cambio de comportamiento (480 problemas sintéticos, diferencia máxima 2,8e-17).
+
+---
+
 ## AUDIT-RESIDUALES-TRACKER — un lote sin fecha legible deja la curva de riesgo en «no medido» (AUDIT-RESIDUALES, tracker) (2026-10-28)
 
 AUDIT-RESIDUALES, tracker (serie AUDIT-*, auditoría de 2026-10-26). Un lote sin fecha de compra legible deja de medirse con historia que no se vivió: no se arma la curva de riesgo y Sharpe, Sortino, drawdown y beta quedan en «no medido», con el símbolo nombrado; el retorno anualizado deja de ser 0,0 cuando no hay fecha. El libro real no tiene lotes sin fecha: 0 cambios.
