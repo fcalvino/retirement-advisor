@@ -106,7 +106,7 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **AUDIT-PIT-CERO** | 5 | El backtest point-in-time persiste Piotroski 0 para un corte sin estados reconstruidos y la evidencia lo agrupa como «débil»: contamina PIT-2 con filas sin dato. Falta medirlo con un SELECT sobre la base. Ver bloque 4 |
 | **AUDIT-MC-ROBUSTEZ** | 5 | Monte Carlo: `log1p` sin guarda; y, reportado por subagentes sin re-verificar, el borde del bootstrap, la riqueza NaN en semanas extremas, `_asset_hist` viejo, Guardrails del año 1; más mutantes sin fijar (percentiles, escala de `prob_achieve_target_pct`). Ver bloque 4 |
 | **AUDIT-TESTS** | 5 | Dos tests que siempre se saltean, `personal_book_convictions` sin tests y con escritura no atómica; y, reportado por subagentes, tests que fallan según el orden (B1/B2, ésta con la causa del fallo intermitente de `test_sim_gap_katex_oracle`). Ver bloque 4 |
-| **AUDIT-UI-ESTADO** | 5 | Quedan: en «Mis Metas» ⬆️/⬇️ sólo reordenan (el motor lee la prioridad) y el plan simulado sobrevive a cambiar las metas; el rerun de Macro RAG borra el mensaje de éxito; el chat renderiza `$` sin `escape_dollars`. Ver bloque 4 |
+| **AUDIT-UI-ESTADO** | 5 | Quedan: el rerun de Macro RAG borra el mensaje de éxito y el chat renderiza `$` sin `escape_dollars`. Ver bloque 4 |
 | **AUDIT-RESIDUALES** | 5 | Lo que los arreglos de #283–#290 dejaron dicho y sin cerrar: ventas parciales y lotes sin fecha en la curva del tracker, un NI diminuto con OCF negativo en el moat, el ancla que retrocede del Piotroski y las fechas exactas, el borde del `earningsGrowth` en Graham, y las dos bases del track record, más tres del optimizador (AUDIT-OPTIMIZER-LIMITES) y dos del moat de IA (AUDIT-MOAT-IA). Ver bloque 4 |
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **TR-RACE** | 5 | `analysis/track_record.py` (deduplicación por día, upsert de outcomes) y `analysis/macro_rag.py:129` hacen «leer y después insertar», como `DataCache` antes de CACHE-RACE. Sin daño medido el 2026-10-10: 0 duplicados a menos de 5 s en `recommendation_log`; los 74 del 2026-08-28 son anteriores a la deduplicación. **Reabrir** si aparece un duplicado a menos de 5 s o si un escritor del track record pasa a correr en hilos o en dos procesos a la vez. |
@@ -339,15 +339,14 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
     de `fetch`; B2: `test_sim_gap_katex_oracle` después de `test_plan_load_savings_oracle`, por estado
     compartido del archivo de preferencias —la causa del fallo intermitente que se vio—) y que `get_stats`,
     `keys_with_prefix` y `get_age_hours` de `data/cache.py` no tienen tests.
-  - **AUDIT-UI-ESTADO** (corrección). Quedan dos grupos (el Optimizer, parte 1/3, se cerró como
-    AUDIT-UI-ESTADO-OPTIMIZER). **«Mis Metas»** (`dashboard/views/7_Simulaciones.py`; leído): ⬆️/⬇️
-    («Subir prioridad», `:1677-1683`) sólo intercambian la posición en la lista y el motor lee el campo
-    `priority` (peso 3/2/1, `portfolio/goals.py:291,435`), nunca el orden; y `goal_plan_result`
-    (`:1865-1887`) se muestra mientras exista en la sesión, así que agregar, borrar o reordenar metas deja
-    en pantalla el plan de las metas anteriores. Decisión del usuario (2026-10-28): los botones cambian la
-    prioridad un nivel. **Macro RAG y chat** (leído): el `st.rerun()` de `17_Macro_RAG.py:32-36` borra el
-    mensaje de éxito (y el de FRED, `:42-45`); `18_Chat.py:59,88,117` renderiza el texto del modelo con
-    `st.markdown` sin `escape_dollars` (KaTeX no se probó en navegador).
+  - **AUDIT-UI-ESTADO** (corrección). Queda la parte 3/3 (el Optimizer y «Mis Metas» se cerraron como
+    AUDIT-UI-ESTADO-OPTIMIZER y AUDIT-UI-ESTADO-METAS). **Macro RAG y chat** (leído): el `st.rerun()` de
+    `dashboard/views/17_Macro_RAG.py:32-36` borra el mensaje de éxito (y el de FRED, `:42-45`);
+    `18_Chat.py:59,88,117` renderiza el texto del modelo con `st.markdown` sin `escape_dollars` (KaTeX no se
+    probó en navegador). Anotado por la revisión de AUDIT-UI-ESTADO-METAS, sin arreglar: la firma del plan
+    simulado no cubre capital, n. de simulaciones, escenario ni pesos del portafolio (cambiar
+    `plan_total_capital` deja el plan viejo a la vista sin aviso), y `pdf_goals_bytes` no se invalida al
+    volver a simular.
   - **AUDIT-RESIDUALES**. Lo que los PRs ya mergeados dejaron escrito (de sus descripciones y revisiones;
     el revisor de este registro verificó algunas y no otras): (#288) un lote sin fecha legible deja sin
     filtro a todo el libro (`_held_from` devuelve `None`; verificado) y una venta parcial posterior al lote
