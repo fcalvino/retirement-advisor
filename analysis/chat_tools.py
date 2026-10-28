@@ -148,6 +148,71 @@ def projection_scenario(snap, prefs) -> str:
             or ESTIMACION.default_scenario)
 
 
+def _plan_projection_defaults(snap, prefs) -> dict:
+    """La corrida del plan activo: con qué ahorro, retiro, meta y supuestos se proyectó (AUDIT-CHAT-PROYECCION).
+
+    Es el valor por defecto de ``retirement_projection`` cuando el modelo no pasa el argumento. Antes salía
+    0, y «¿me alcanza?» proyectaba un plan sin ahorro, sin retiro y sin meta. Devuelve, para ahorro anual,
+    retiro anual y meta, ``(valor, fuente)``; y los supuestos que Simulaciones pasa al motor y el plan guardó
+    (``mc_summary`` y los bloques de estrategia y drags): capital, horizonte, crecimiento del retiro y del
+    ahorro, estrategia de retiro con sus años de ahorro y su longevidad, y drags. Pasarlos todos es lo que
+    hace que la herramienta proyecte el plan y no un híbrido: con una estrategia de retiro el motor decide
+    solo qué hacer con el ahorro (``years_to_retirement``), como en la pantalla.
+
+    El ahorro es el de la corrida guardada (``mc_summary.monthly_savings``; un 0 guardado es «no aporto» y no
+    se reemplaza), después el del perfil guardado con el plan y por último el de hoy (``contribution_inputs``,
+    la regla de Simulaciones y del PDF).
+    """
+    from data.product_ux import MONTHS_PER_YEAR, contribution_inputs
+
+    mc = getattr(snap, "mc_summary", None) or {}
+    personal = getattr(snap, "personal", None) or {}
+
+    def _number(value):
+        try:
+            return None if value is None else float(value)
+        except (TypeError, ValueError):
+            return None
+
+    run_monthly = _number(mc.get("monthly_savings"))
+    if run_monthly is not None:
+        contribution = (max(run_monthly, 0.0) * MONTHS_PER_YEAR, "plan")
+    else:
+        resolved = contribution_inputs(prefs=prefs, personal=personal)
+        origin = {"personal": "perfil del plan", "perfil": "perfil actual"}.get(resolved["source"])
+        contribution = (resolved["annual"], origin) if origin else (0.0, "sin dato")
+
+    strategy = getattr(snap, "withdrawal_strategy", None) or None
+    if strategy:
+        # El motor reemplaza el retiro por la estrategia: el monto fijo no entra.
+        withdrawal = (0.0, "estrategia del plan")
+    else:
+        saved = _number(mc.get("annual_withdrawal"))
+        withdrawal = (max(saved, 0.0), "plan") if saved is not None else (0.0, "sin dato")
+
+    target_saved = _number(mc.get("target_value"))
+    target = (max(target_saved, 0.0), "plan") if target_saved is not None else (0.0, "sin dato")
+
+    inflation = _number(mc.get("inflation_rate"))
+    growth = _number(mc.get("contribution_growth_pct"))
+    longevity = _number(mc.get("longevity_years")) if strategy else None
+    saving_years = max(int(_number(mc.get("retirement_years")) or 0), 0) if strategy else None
+    drags = getattr(snap, "drags_at_save", None) or None
+    return {
+        "annual_contribution": contribution,
+        "annual_withdrawal": withdrawal,
+        "target_value": target,
+        "initial_value": _number(mc.get("initial_value")) or _number(personal.get("current_capital")) or 100_000.0,
+        "horizon_years": int(_number(mc.get("horizon_years")) or _number(personal.get("primary_horizon_years")) or 20),
+        "withdrawal_growth_rate": (inflation or 0.0) / 100.0,
+        "contribution_growth_rate": (growth or 0.0) / 100.0,
+        "withdrawal_strategy": dict(strategy) if strategy else None,
+        "longevity_years": int(longevity) if longevity else None,
+        "years_to_retirement": saving_years,
+        "drags": dict(drags) if drags else None,
+    }
+
+
 def _tool_retirement_projection(args: dict) -> dict:
     snap = _active_plan()
     if snap is None:
@@ -160,8 +225,6 @@ def _tool_retirement_projection(args: dict) -> dict:
     if not weights_pct:
         return {"ok": False, "error": "El plan no tiene una asignación con la que proyectar."}
 
-    personal = getattr(snap, "personal", None) or {}
-
     def _arg_float(name, default):
         try:
             v = args.get(name)
@@ -169,11 +232,45 @@ def _tool_retirement_projection(args: dict) -> dict:
         except (TypeError, ValueError):
             return float(default)
 
-    initial_value = _arg_float("initial_value", personal.get("current_capital", 100_000))
-    horizon_years = int(_arg_float("horizon_years", personal.get("primary_horizon_years", 20)))
-    annual_withdrawal = _arg_float("annual_withdrawal", 0.0)
-    annual_contribution = _arg_float("annual_contribution", 0.0)
-    target_value = _arg_float("target_value", 0.0)
+    try:
+        from data.preferences import UserPreferences
+
+        prefs = UserPreferences.load()
+    except Exception as exc:   # sin preferencias, decide el plan
+        logger.debug(f"chat_tools: sin preferencias — {exc}")
+        prefs = None
+    plan = _plan_projection_defaults(snap, prefs)
+
+    initial_value = _arg_float("initial_value", plan["initial_value"])
+    horizon_years = int(_arg_float("horizon_years", plan["horizon_years"]))
+    sources: Dict[str, str] = {}
+    not_applied: List[str] = []
+
+    def _explicit(name):
+        """La cifra que el modelo pasó (un 0 explícito cuenta), o ``None`` si omitió el argumento."""
+        try:
+            return None if args.get(name) is None else float(args[name])
+        except (TypeError, ValueError):   # un texto no es una cifra: decide el plan
+            return None
+
+    def _arg_or_plan(name):
+        value, source = plan[name]
+        explicit = _explicit(name)
+        if explicit is not None:
+            sources[name] = "argumento"
+            return explicit
+        sources[name] = source
+        return value
+
+    annual_withdrawal = _arg_or_plan("annual_withdrawal")
+    annual_contribution = _arg_or_plan("annual_contribution")
+    target_value = _arg_or_plan("target_value")
+
+    strategy, longevity, saving_years = plan["withdrawal_strategy"], plan["longevity_years"], plan["years_to_retirement"]
+    if strategy and _explicit("annual_withdrawal") is not None:
+        # «¿Y si retiro 40 000?» es otro escenario: un retiro fijo reemplaza la estrategia del plan.
+        strategy, longevity, saving_years = None, None, None
+        not_applied.append("la estrategia de retiro del plan no se usó: pediste un retiro fijo")
 
     try:
         import numpy as np
@@ -185,13 +282,6 @@ def _tool_retirement_projection(args: dict) -> dict:
         w = w / w.sum() if w.sum() > 0 else None
 
         from analysis.estimacion import classes_for, countries_for
-        try:
-            from data.preferences import UserPreferences
-
-            prefs = UserPreferences.load()
-        except Exception as exc:   # sin preferencias, decide el plan
-            logger.debug(f"chat_tools: sin preferencias — {exc}")
-            prefs = None
         scenario = projection_scenario(snap, prefs)
         sim = MonteCarloSimulator(symbols, weights=w, asset_classes=classes_for(symbols),
                                   scenario=scenario, countries=countries_for(symbols))
@@ -202,6 +292,13 @@ def _tool_retirement_projection(args: dict) -> dict:
             annual_withdrawal=annual_withdrawal,
             annual_contribution=annual_contribution,
             target_value=target_value,
+            # Los supuestos con que el plan corrió (los mismos que pasa Simulaciones).
+            withdrawal_growth_rate=plan["withdrawal_growth_rate"],
+            contribution_growth_rate=plan["contribution_growth_rate"],
+            drags=plan["drags"],
+            withdrawal_strategy=strategy,
+            longevity_years=longevity,
+            years_to_retirement=saving_years,
         )
         out = {
             "ok": True,
@@ -215,6 +312,12 @@ def _tool_retirement_projection(args: dict) -> dict:
             "p10_terminal": round(float(res.p10_terminal), 0),
             "p90_terminal": round(float(res.p90_terminal), 0),
             "prob_ruin_pct": round(float(res.prob_ruin_pct), 1),
+            # De dónde salió cada supuesto: el modelo puede decirle al usuario «con el ahorro de tu
+            # plan» o «sin dato de ahorro», y lo que el plan tiene y esta proyección no aplica.
+            "assumption_sources": sources,
+            "plan_not_applied": not_applied,
+            "withdrawal_strategy": (strategy or {}).get("kind"),
+            "drags_applied": bool(plan["drags"]),
         }
         # Only report goal probability when a real target was provided.
         # target_value <= 0 means "no goal set", in which case the engine
@@ -262,13 +365,15 @@ def build_default_registry() -> Dict[str, Tool]:
             name="retirement_projection",
             description=("Proyección Monte Carlo del plan: probabilidad de éxito y rangos de capital final. "
                          "Útil para '¿me alcanza si me jubilo en X años / retiro Y por año?' y para "
-                         "'¿llego si ahorro Z por mes?', que funciona incluso sin capital inicial."),
+                         "'¿llego si ahorro Z por mes?', que funciona incluso sin capital inicial. "
+                         "Los argumentos que se omiten salen del plan activo (su ahorro, retiro y meta): "
+                         "omitilos para proyectar el plan tal como está."),
             parameters={
                 "horizon_years": "años de proyección (opcional)",
-                "annual_withdrawal": "retiro anual en USD (opcional)",
-                "annual_contribution": "ahorro anual en USD, se deposita mensualmente (opcional)",
+                "annual_withdrawal": "retiro anual en USD (opcional; omitido = el del plan)",
+                "annual_contribution": "ahorro anual en USD, se deposita mensualmente (opcional; omitido = el del plan)",
                 "initial_value": "capital inicial en USD (opcional)",
-                "target_value": "objetivo de capital en USD (opcional)",
+                "target_value": "objetivo de capital en USD (opcional; omitido = el del plan)",
             },
             run=_tool_retirement_projection,
         ),
