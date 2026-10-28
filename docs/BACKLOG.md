@@ -23,8 +23,8 @@ GOAL-PRIORITY-TEXT y ORDEN-COHERENCIA.)
 2. **IDEA-5 IMPUESTOS**: banda 5. Reglas y decisiones en `docs/plans/IDEA5_GANANCIA_CAPITAL_AR.md` (2026-10-10). Sigue: lotes y «Registrar venta» en Portfolio con el impuesto de acciones y ETFs del exterior (§6 de ese plan).
 
 Esperan disparador: U5-1b, COM-*, COUNTRY-RISK-AUTO, TR-RACE y VENV-PRUNE. Sin orden: PIT-TOOLS,
-PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND, MACRO-SIN-FECHA y la serie AUDIT-* (6 filas abiertas, auditoría
-2026-10-26; AUDIT-TELEGRAM-LOG, AUDIT-SCHEDULER-FEED, AUDIT-ALERTAS-DESPACHO, AUDIT-OPTIMIZER-LIMITES, AUDIT-MOAT-IA, AUDIT-STRESS-SECTORES, AUDIT-MOAT-ERP-SECTORES, AUDIT-DATOS, AUDIT-CHAT-PROYECCION y AUDIT-UI-VERDAD ya cerraron; AUDIT-ALERTAS-FRECUENCIA nació al cerrar otra). Espera Fuente: SCORE-CONTRACCION.
+PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND, MACRO-SIN-FECHA y la serie AUDIT-* (5 filas abiertas, auditoría
+2026-10-26; AUDIT-TELEGRAM-LOG, AUDIT-SCHEDULER-FEED, AUDIT-ALERTAS-DESPACHO, AUDIT-OPTIMIZER-LIMITES, AUDIT-MOAT-IA, AUDIT-STRESS-SECTORES, AUDIT-MOAT-ERP-SECTORES, AUDIT-DATOS, AUDIT-CHAT-PROYECCION, AUDIT-UI-VERDAD y AUDIT-UI-ESTADO ya cerraron; AUDIT-ALERTAS-FRECUENCIA nació al cerrar otra). Espera Fuente: SCORE-CONTRACCION.
 
 ---
 
@@ -106,8 +106,7 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **AUDIT-PIT-CERO** | 5 | El backtest point-in-time persiste Piotroski 0 para un corte sin estados reconstruidos y la evidencia lo agrupa como «débil»: contamina PIT-2 con filas sin dato. Falta medirlo con un SELECT sobre la base. Ver bloque 4 |
 | **AUDIT-MC-ROBUSTEZ** | 5 | Monte Carlo: `log1p` sin guarda; y, reportado por subagentes sin re-verificar, el borde del bootstrap, la riqueza NaN en semanas extremas, `_asset_hist` viejo, Guardrails del año 1; más mutantes sin fijar (percentiles, escala de `prob_achieve_target_pct`). Ver bloque 4 |
 | **AUDIT-TESTS** | 5 | Dos tests que siempre se saltean, `personal_book_convictions` sin tests y con escritura no atómica; y, reportado por subagentes, tests que fallan según el orden (B1/B2, ésta con la causa del fallo intermitente de `test_sim_gap_katex_oracle`). Ver bloque 4 |
-| **AUDIT-UI-ESTADO** | 5 | Quedan: el rerun de Macro RAG borra el mensaje de éxito y el chat renderiza `$` sin `escape_dollars`. Ver bloque 4 |
-| **AUDIT-RESIDUALES** | 5 | Lo que los arreglos de #283–#290 dejaron dicho y sin cerrar: ventas parciales y lotes sin fecha en la curva del tracker, un NI diminuto con OCF negativo en el moat, el ancla que retrocede del Piotroski y las fechas exactas, el borde del `earningsGrowth` en Graham, y las dos bases del track record, más tres del optimizador (AUDIT-OPTIMIZER-LIMITES) y dos del moat de IA (AUDIT-MOAT-IA). Ver bloque 4 |
+| **AUDIT-RESIDUALES** | 5 | Lo que los arreglos de #283–#290 dejaron dicho y sin cerrar: ventas parciales y lotes sin fecha en la curva del tracker, un NI diminuto con OCF negativo en el moat, el ancla que retrocede del Piotroski y las fechas exactas, el borde del `earningsGrowth` en Graham, y las dos bases del track record, más tres del optimizador (AUDIT-OPTIMIZER-LIMITES) dos del moat de IA (AUDIT-MOAT-IA) y los mensajes que otras cinco pantallas pierden en un `st.rerun()` (AUDIT-UI-ESTADO). Ver bloque 4 |
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **TR-RACE** | 5 | `analysis/track_record.py` (deduplicación por día, upsert de outcomes) y `analysis/macro_rag.py:129` hacen «leer y después insertar», como `DataCache` antes de CACHE-RACE. Sin daño medido el 2026-10-10: 0 duplicados a menos de 5 s en `recommendation_log`; los 74 del 2026-08-28 son anteriores a la deduplicación. **Reabrir** si aparece un duplicado a menos de 5 s o si un escritor del track record pasa a correr en hilos o en dos procesos a la vez. |
 | **VENV-PRUNE** | 5 | `run.sh` instala el lock con `pip install`, que no saca lo que salió del lock (`pandas-ta`/`numba`/`llvmlite`, 2026-10-10). Un sync completo borraría Playwright. Espera disparador: la próxima dependencia que se retire. Ver bloque 4 |
@@ -339,14 +338,6 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
     de `fetch`; B2: `test_sim_gap_katex_oracle` después de `test_plan_load_savings_oracle`, por estado
     compartido del archivo de preferencias —la causa del fallo intermitente que se vio—) y que `get_stats`,
     `keys_with_prefix` y `get_age_hours` de `data/cache.py` no tienen tests.
-  - **AUDIT-UI-ESTADO** (corrección). Queda la parte 3/3 (el Optimizer y «Mis Metas» se cerraron como
-    AUDIT-UI-ESTADO-OPTIMIZER y AUDIT-UI-ESTADO-METAS). **Macro RAG y chat** (leído): el `st.rerun()` de
-    `dashboard/views/17_Macro_RAG.py:32-36` borra el mensaje de éxito (y el de FRED, `:42-45`);
-    `18_Chat.py:59,88,117` renderiza el texto del modelo con `st.markdown` sin `escape_dollars` (KaTeX no se
-    probó en navegador). Anotado por la revisión de AUDIT-UI-ESTADO-METAS, sin arreglar: la firma del plan
-    simulado no cubre capital, n. de simulaciones, escenario ni pesos del portafolio (cambiar
-    `plan_total_capital` deja el plan viejo a la vista sin aviso), y `pdf_goals_bytes` no se invalida al
-    volver a simular.
   - **AUDIT-RESIDUALES**. Lo que los PRs ya mergeados dejaron escrito (de sus descripciones y revisiones;
     el revisor de este registro verificó algunas y no otras): (#288) un lote sin fecha legible deja sin
     filtro a todo el libro (`_held_from` devuelve `None`; verificado) y una venta parcial posterior al lote
@@ -378,6 +369,18 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
     reconciliación, así que el costo es una insignia vacía en esa corrida); y `DataCache.get` /
     `get_age_hours` no aíslan un error de SQLite (por ejemplo `database is locked`), que sube hasta el
     llamador (sin reproducir).
+    (AUDIT-UI-ESTADO) lo que las tres partes dejaron anotado y sin arreglar (leído, no renderizado):
+    el mismo patrón mensaje + `st.rerun()` pierde su mensaje en `9_Settings.py:391` y `:432`
+    («Cotización guardada», «Caché limpiado»), `8_Alertas.py:170/179` (el resumen de alertas detectadas o
+    «Sin cambios significativos»: el más grave) y `:444` («Silenciado»), y `7_Simulaciones.py:1625` («Meta
+    agregada»); la referencia correcta ya existe en `3_Portfolio.py:52-53` (`_portfolio_msg` con `pop`). En el
+    chat, `escape_dollars` sobre un `\$` que el modelo ya escapó da `\\$` (dos montos en una línea vuelven a
+    ser LaTeX) y un `$` dentro de código se ve con la barra; ni `chat_agent.py` ni `prompts.py` le piden al
+    modelo que escape, y corregirlo toca `escape_dollars`, compartida; el `st.error` de una excepción en
+    `18_Chat.py` (~`:97`) tampoco se escapa. En «Mis Metas», la firma del plan simulado no cubre capital,
+    n. de simulaciones, escenario ni pesos del portafolio (cambiar `plan_total_capital` deja el plan viejo a
+    la vista sin aviso) y `pdf_goals_bytes` no se invalida al volver a simular. En el Optimizer,
+    `optimizer_goals` y `optimizer_current_weights` no los escribe nadie (siempre `[]` y `None`).
 - **PIT-TOOLS (prerrequisito para reabrir ReAct en el comité)**: `get_news`
   (`data/fetcher.py`) no acepta fecha y lee el feed de hoy; `MacroRagStore.retrieve`
   **sí** acepta `now=`, pero sólo lo usa para descartar lo viejo: `_days_old` hace

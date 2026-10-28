@@ -8,7 +8,7 @@ import streamlit as st
 from loguru import logger
 
 from config import CHAT
-from dashboard.shared import AI_BADGE, CALC_BADGE, _get_ai_config, get_user_prefs
+from dashboard.shared import AI_BADGE, CALC_BADGE, _get_ai_config, escape_dollars, get_user_prefs
 from data.product_ux import (
     chat_missing_context_message,
     chat_suggested_questions,
@@ -56,7 +56,7 @@ if _ctx_tip:
 # Replay history
 for msg in st.session_state.chat_history:
     with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+        st.markdown(escape_dollars(msg["content"]))   # el historial guarda el texto crudo; «$» no es LaTeX
         if msg["role"] == "assistant":
             st.caption(f"{AI_BADGE} · respuesta en palabras; el dato duro es {CALC_BADGE}")
         if msg.get("data") and CHAT.show_raw_data:
@@ -85,7 +85,7 @@ if not prompt and st.session_state.get("_chat_pending"):
 if prompt:
     st.session_state.chat_history.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
-        st.markdown(prompt)
+        st.markdown(escape_dollars(prompt))
 
     with st.chat_message("assistant"):
         with st.spinner("Pensando y corriendo los cálculos…"):
@@ -114,7 +114,7 @@ if prompt:
             )
         if _human:
             st.info(_human, icon="🧭")
-        st.markdown(resp.answer)
+        st.markdown(escape_dollars(resp.answer))
         st.caption(f"{AI_BADGE} · respuesta en palabras; el dato duro es {CALC_BADGE}")
         if resp.data and CHAT.show_raw_data:
             with st.expander("📊 Calculado · dato crudo usado (sin inventar)"):
