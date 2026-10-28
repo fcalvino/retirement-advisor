@@ -676,16 +676,23 @@ def portfolio_committee_context_block(ctx: dict) -> str:
 
             pts = rz.get("risk_curve_points")
             since = rz.get("risk_measurable_from")
-            window = (
-                f" (la curva común de la cartera tiene {pts} de "
-                f"{PORTFOLIO.min_risk_curve_points} semanas"
-                + (f"; medible desde ~{since}" if since else "")
-                + ")"
-            ) if pts is not None else ""
-            lines.append(
-                f"Métricas en n/d: riesgo realizado no medible todavía{window}. No las "
-                "supongas ni las reemplaces por valores típicos de mercado."
-            )
+            undated = rz.get("risk_undated_symbols") or []
+            if undated:
+                lines.append(
+                    "Métricas en n/d: riesgo realizado no medible porque hay lotes sin fecha de compra "
+                    f"({', '.join(undated)}). No las supongas ni las reemplaces por valores típicos de mercado."
+                )
+            else:
+                window = (
+                    f" (la curva común de la cartera tiene {pts} de "
+                    f"{PORTFOLIO.min_risk_curve_points} semanas"
+                    + (f"; medible desde ~{since}" if since else "")
+                    + ")"
+                ) if pts is not None else ""
+                lines.append(
+                    f"Métricas en n/d: riesgo realizado no medible todavía{window}. No las "
+                    "supongas ni las reemplaces por valores típicos de mercado."
+                )
 
     # Forward projection (only when present — e.g. a proposed/optimized plan).
     if g("expected_return_pct") is not None or g("prob_target_pct") is not None:

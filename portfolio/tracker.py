@@ -12,10 +12,10 @@ Metrics computed:
 """
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -65,6 +65,19 @@ DEFAULT_LOT_INSTRUMENT = "acción"
 #: A position from before IDEA5-LOTES only had a weighted average: its single
 #: lot carries this label so nobody reads it as a real purchase (D8).
 MIGRATED_LOT_LABEL = "costo promedio migrado"
+
+
+
+def _parse_date(raw: Any) -> Optional[datetime]:
+    """An ISO date as a naive ``datetime``, or ``None`` when it is empty or unreadable.
+
+    A date with a UTC offset is read and its offset dropped: the rest of the tracker compares naive
+    datetimes, and subtracting an aware one from ``datetime.now()`` raises.
+    """
+    try:
+        return datetime.fromisoformat(raw).replace(tzinfo=None)
+    except (TypeError, ValueError):
+        return None
 
 
 @dataclass
@@ -160,8 +173,9 @@ class PortfolioMetrics:
     total_pnl_pct: float = 0.0
     #: (total_value / total_cost) ** (1/years) − 1, with ``years`` measured from
     #: the EARLIEST purchase. Not an IRR: it weights no cash flow by its own
-    #: timing (U5-12). See ``ANNUALIZED_RETURN_CAVEAT``.
-    annualized_return_pct: float = 0.0
+    #: timing (U5-12). See ``ANNUALIZED_RETURN_CAVEAT``. ``None`` when no position has a readable
+    #: purchase date (or no cost): there is no age to annualize over, and 0.0 would read as measured.
+    annualized_return_pct: Optional[float] = None
     #: The four risk metrics are ``None`` when they were not measured — too short
     #: a shared curve, no spread, no SPY overlap — never 0 or beta 1.0: the page
     #: and the portfolio committee read them as measured (PORTFOLIO-RISK-CERO).
@@ -175,6 +189,10 @@ class PortfolioMetrics:
     #: ``PORTFOLIO.min_risk_curve_points`` — the day it will have enough.
     risk_curve_points: int = 0
     risk_measurable_from: Optional[str] = None
+    #: Symbols with a lot whose purchase date is missing or unreadable. The risk curve cannot be
+    #: windowed without it (AUDIT-RESIDUALES), so the four risk metrics stay ``None`` and these
+    #: are the ones to ask a date for.
+    risk_undated_symbols: List[str] = field(default_factory=list)
     dividend_income_ytd: float = 0.0
     num_positions: int = 0
 
@@ -344,10 +362,7 @@ class Portfolio:
         # Annualised growth of cost → value. NOT an IRR (U5-12): `years` comes
         # from the earliest purchase, so every dollar is credited with the age of
         # the oldest one. See ANNUALIZED_RETURN_CAVEAT.
-        dates = [
-            datetime.fromisoformat(self.positions[s].purchase_date)
-            for s in self.positions
-        ]
+        dates = [d for d in (_parse_date(self.positions[s].purchase_date) for s in self.positions) if d]
         if dates:
             start = min(dates)
             years = max((datetime.now() - start).days / 365.25, 0.1)
@@ -360,6 +375,7 @@ class Portfolio:
         # Below the minimum they stay None: not measured is not 0 (and beta is
         # not 1.0) — PORTFOLIO-RISK-CERO.
         min_points = PORTFOLIO.min_risk_curve_points
+        metrics.risk_undated_symbols = self.undated_symbols()
         equity_curve = self._build_equity_curve()
         metrics.risk_curve_points = 0 if equity_curve is None else len(equity_curve)
         if metrics.risk_curve_points < min_points:
@@ -456,6 +472,12 @@ class Portfolio:
         a step change, and a purchase is not a return. Measured on a two-position
         book it reported 60.8 % volatility against 18.8 %.
         """
+        undated = self.undated_symbols()
+        if undated:
+            # A lot with no readable date cannot be placed in time, so neither can the window:
+            # without it the curve multiplies five years of prices by today's shares. Not measured.
+            logger.info(f"Equity curve not built: lots without a readable date in {', '.join(undated)}")
+            return None
         try:
             curves = []
             for sym, pos in self.positions.items():
@@ -488,17 +510,25 @@ class Portfolio:
         sums every lot, and a lot bought last month was not in the portfolio three
         years ago. The oldest lot (``Position.purchase_date``) is the right date for
         "how long have I held this" and the wrong one here. A lot with no readable
-        date means no filter (``None``): there is no way to say when those shares
-        entered.
+        date returns ``None``: there is no way to say when those shares entered. That
+        is not "no filter" for the curve — ``_build_equity_curve`` does not build one
+        while a lot is undated (``undated_symbols``) — it only leaves no anchor date.
         """
         dates = []
         for pos in self.positions.values():
             for lot in pos.lots:
-                try:
-                    dates.append(pd.Timestamp(datetime.fromisoformat(lot.date)))
-                except (TypeError, ValueError):
+                parsed = _parse_date(lot.date)
+                if parsed is None:
                     return None
+                dates.append(pd.Timestamp(parsed))
         return max(dates) if dates else None
+
+    def undated_symbols(self) -> List[str]:
+        """Symbols with at least one lot whose purchase date is missing or unreadable, sorted."""
+        return sorted(
+            sym for sym, pos in self.positions.items()
+            if any(_parse_date(lot.date) is None for lot in pos.lots)
+        )
 
     def _save(self) -> None:
         if self._legacy_on_disk:

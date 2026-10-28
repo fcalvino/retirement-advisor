@@ -905,13 +905,22 @@ def risk_unmeasured_caption(metrics: Any) -> str:
     """Why the realized-risk cards are dashes, and until when; ``""`` if all measured.
 
     The shared curve starts at the latest purchase (U5-12), so one recent buy
-    leaves the whole book without Sharpe, drawdown or beta for a few weeks.
+    leaves the whole book without Sharpe, drawdown or beta for a few weeks; and a lot
+    with no readable date leaves it without them until the date is loaded.
     """
     from config import PORTFOLIO
 
     fields = ("sharpe_ratio", "downside_vol_ratio", "max_drawdown_pct", "beta")
     if all(getattr(metrics, f, None) is not None for f in fields):
         return ""
+    undated = list(getattr(metrics, "risk_undated_symbols", None) or [])
+    if undated:
+        return (
+            "Riesgo realizado no medible: hay lotes sin fecha de compra legible en "
+            f"{', '.join(undated)}. Sin la fecha no se sabe desde cuándo se tuvieron esas acciones, "
+            "y no se estima con historia que la cartera no vivió. Cargá la fecha en Portfolio "
+            "(si la posición tiene varios lotes, la fecha se corrige en data/db/portfolio.json)."
+        )
     points = getattr(metrics, "risk_curve_points", 0) or 0
     need = PORTFOLIO.min_risk_curve_points
     when = getattr(metrics, "risk_measurable_from", None)

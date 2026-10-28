@@ -66,7 +66,7 @@ metrics = portfolio.compute_metrics()
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Valor total",     f"${metrics.total_value:,.0f}")
 col2.metric("P&L total",       f"${metrics.total_pnl:,.0f}", f"{metrics.total_pnl_pct:.1f}%")
-col3.metric("Retorno anual",   f"{metrics.annualized_return_pct:.1f}%",
+col3.metric("Retorno anual",   risk_metric_text(metrics.annualized_return_pct, "{:.1f}%"),
             help=ANNUALIZED_RETURN_CAVEAT)
 col4.metric("Sharpe Ratio",    risk_metric_text(metrics.sharpe_ratio, "{:.2f}"))
 col5.metric("Max Drawdown",    risk_metric_text(metrics.max_drawdown_pct, "{:.1f}%"))
