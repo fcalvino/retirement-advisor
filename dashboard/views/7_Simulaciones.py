@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import math
 from datetime import datetime
 from pathlib import Path
@@ -1626,6 +1627,9 @@ def _tab_goals_content():
 
     # ---- Display current goals with reorder buttons ----
     goals_list = st.session_state["goals_list"]
+    # AUDIT-UI-ESTADO: firma de las metas de ahora; los resultados que dependen de ellas (el plan simulado
+    # y el portafolio optimizado para las metas) guardan la de cuando se calcularon.
+    _goals_sig = json.dumps(goals_list, sort_keys=True, default=str)
 
     if not goals_list:
         st.info(
@@ -1673,13 +1677,15 @@ def _tab_goals_content():
                     )
                 with c_btns:
                     _b1, _b2, _b3 = st.columns(3)
-                    if i > 0:
-                        if _b1.button("⬆️", key=f"up_{i}", help="Subir prioridad"):
-                            goals_list[i - 1], goals_list[i] = goals_list[i], goals_list[i - 1]
+                    # AUDIT-UI-ESTADO: el motor lee ``priority`` (1 Alta · 2 Media · 3 Baja), nunca el orden de
+                    # la lista; los botones cambian esa prioridad un nivel y sólo existen si hay adónde moverla.
+                    if g["priority"] > min(PRIORITY_LABELS):
+                        if _b1.button("⬆️", key=f"up_{i}", help="Subir prioridad (hacia Alta)"):
+                            g["priority"] -= 1
                             st.rerun()
-                    if i < len(goals_list) - 1:
-                        if _b2.button("⬇️", key=f"dn_{i}", help="Bajar prioridad"):
-                            goals_list[i], goals_list[i + 1] = goals_list[i + 1], goals_list[i]
+                    if g["priority"] < max(PRIORITY_LABELS):
+                        if _b2.button("⬇️", key=f"dn_{i}", help="Bajar prioridad (hacia Baja)"):
+                            g["priority"] += 1
                             st.rerun()
                     if _b3.button("🗑️", key=f"del_goal_{i}", help=f"Eliminar '{g['name']}'"):
                         st.session_state["goals_list"].pop(i)
@@ -1726,10 +1732,18 @@ def _tab_goals_content():
                 )
             st.session_state["goal_optimizer_result"] = _goal_result
             st.session_state["goal_optimizer_explanation"] = _goal_explanation
+            st.session_state["goal_optimizer_goals_sig"] = _goals_sig
             st.rerun()
 
         # ---- Goal optimizer comparison UI ----
-        if "goal_optimizer_result" in st.session_state:
+        _goal_opt_current = st.session_state.get("goal_optimizer_goals_sig") == _goals_sig
+        if "goal_optimizer_result" in st.session_state and not _goal_opt_current:
+            st.info(
+                "Cambiaste las metas desde la última optimización: el portafolio que se había calculado "
+                "ya no corresponde. Presioná **🔬 Optimizar para mis metas** para recalcularlo.",
+                icon="ℹ️",
+            )
+        if "goal_optimizer_result" in st.session_state and _goal_opt_current:
             _goal_res = st.session_state["goal_optimizer_result"]
             _goal_exp = st.session_state.get("goal_optimizer_explanation", "")
             _base_res = st.session_state.get("optimizer_result") or st.session_state.get("optimizer_prev_result")
@@ -1862,7 +1876,17 @@ def _tab_goals_content():
         # ---- Run simulation ----
         run_plan = st.button("▶ Simular plan completo", type="primary", key="run_goal_plan")
 
-        if run_plan or "goal_plan_result" in st.session_state:
+        # AUDIT-UI-ESTADO: el plan simulado se muestra sólo para las metas que se simularon; si se
+        # agregó, borró o repriorizó una meta, es el plan de otras metas y se pide simular de nuevo.
+        _plan_is_current = st.session_state.get("goal_plan_goals_sig") == _goals_sig
+        if "goal_plan_result" in st.session_state and not run_plan and not _plan_is_current:
+            st.info(
+                "Cambiaste las metas desde la última simulación: el plan que se había calculado ya no "
+                "corresponde. Presioná **▶ Simular plan completo** para verlo con las metas de ahora.",
+                icon="ℹ️",
+            )
+
+        if run_plan or ("goal_plan_result" in st.session_state and _plan_is_current):
             if run_plan:
                 if not (opt_result and opt_result.tickers):
                     st.warning(
@@ -1883,6 +1907,7 @@ def _tab_goals_content():
                         scenario=_planning_scenario(st.session_state.get("plan_profile")),  # EO-4c
                     )
                 st.session_state["goal_plan_result"] = plan_result
+                st.session_state["goal_plan_goals_sig"] = _goals_sig
 
             plan_result = st.session_state.get("goal_plan_result")
             if plan_result is None:
@@ -2460,7 +2485,10 @@ def _tab_goals_content():
                                 "inflation_rate",
                                 st.session_state.get("inflation_rate", 3.0),
                             )
-                            _pdf_opt_result = st.session_state.get("goal_optimizer_result")
+                            _pdf_opt_result = (
+                                st.session_state.get("goal_optimizer_result")
+                                if st.session_state.get("goal_optimizer_goals_sig") == _goals_sig else None
+                            )
                             _pdf_ai_config = _get_ai_config() if _pdf_incl_ai else None
                             _pdf_bytes = InvestmentPlanReport().generate(
                                 goal_plan=plan_result,

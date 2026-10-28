@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-UI-ESTADO-METAS — «Mis Metas»: los botones cambian la prioridad y el plan simulado es el de las metas de hoy (AUDIT-UI-ESTADO, 2/3) (2026-10-28)
+
+AUDIT-UI-ESTADO, parte 2/3 (serie AUDIT-*, auditoría de 2026-10-26). En «Mis Metas», ⬆️/⬇️ cambian la prioridad de la meta un nivel (antes sólo reordenaban la lista y el motor no lee el orden), y el plan simulado deja de mostrarse cuando las metas cambiaron desde la simulación. Queda la parte 3: el mensaje de éxito de Macro RAG y el `$` del chat.
+
+---
+
 ## AUDIT-UI-ESTADO-OPTIMIZER — el Optimizer pide la explicación de la IA una vez por resultado (AUDIT-UI-ESTADO, 1/3) (2026-10-28)
 
 AUDIT-UI-ESTADO, parte 1/3 (serie AUDIT-*, auditoría de 2026-10-26). La explicación de la IA del Optimizer se pide una vez por resultado y no en cada rerun del script: antes cada interacción de la página pagaba otra llamada de hasta 2 500 tokens y la narrativa podía cambiar sola. Quedan «Mis Metas» y los mensajes de Macro RAG / `$` del chat.
