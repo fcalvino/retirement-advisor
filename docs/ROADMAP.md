@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-RESIDUALES-GRAHAM — un earningsGrowth trimestral de exactamente 0 es un cero medido que Graham valúa (AUDIT-RESIDUALES, Graham) (2026-10-28)
+
+AUDIT-RESIDUALES, Graham (serie AUDIT-*, auditoría de 2026-10-26). Un `earningsGrowth` trimestral de exactamente 0 es un cero medido que Graham valúa, como uno de +0,04 %; sólo cuenta un número finito (la clave ausente, NaN, texto y booleanos siguen sin tasa). Medido: 0 de 274 tickers cambian.
+
+---
+
 ## AUDIT-RESIDUALES-MOAT-NI — el cociente OCF/NI de un año también se topa hacia abajo (AUDIT-RESIDUALES, moat) (2026-10-28)
 
 AUDIT-RESIDUALES, moat (serie AUDIT-*, auditoría de 2026-10-26). El cociente OCF/NI de un año también se topa hacia abajo (`MOAT.fcf_conversion_year_floor`, −2,4), así que un año con ganancia diminuta y caja muy negativa no hunde el promedio de la conversión. Medido: 0 de 274 tickers cambian.
