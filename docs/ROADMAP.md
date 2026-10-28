@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-UI-ESTADO-OPTIMIZER — el Optimizer pide la explicación de la IA una vez por resultado (AUDIT-UI-ESTADO, 1/3) (2026-10-28)
+
+AUDIT-UI-ESTADO, parte 1/3 (serie AUDIT-*, auditoría de 2026-10-26). La explicación de la IA del Optimizer se pide una vez por resultado y no en cada rerun del script: antes cada interacción de la página pagaba otra llamada de hasta 2 500 tokens y la narrativa podía cambiar sola. Quedan «Mis Metas» y los mensajes de Macro RAG / `$` del chat.
+
+---
+
 ## AUDIT-UI-VERDAD — un Backtesting negativo ya no sale verde y un margen de 0 % se respeta (2026-10-28)
 
 AUDIT-UI-VERDAD, segunda mitad (serie AUDIT-*, auditoría de 2026-10-26). Un portafolio por debajo del benchmark deja de pintarse de verde en Backtesting, y un margen de seguridad de 0 % deja de volver al del perfil. Con #301 (la fuente «ai» del track record, la narrativa del plan y el `ai_enabled` de Settings) cierra la fila.
