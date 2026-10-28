@@ -106,7 +106,7 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **AUDIT-PIT-CERO** | 5 | El backtest point-in-time persiste Piotroski 0 para un corte sin estados reconstruidos y la evidencia lo agrupa como «débil»: contamina PIT-2 con filas sin dato. Falta medirlo con un SELECT sobre la base. Ver bloque 4 |
 | **AUDIT-MC-ROBUSTEZ** | 5 | Monte Carlo: `log1p` sin guarda; y, reportado por subagentes sin re-verificar, el borde del bootstrap, la riqueza NaN en semanas extremas, `_asset_hist` viejo, Guardrails del año 1; más mutantes sin fijar (percentiles, escala de `prob_achieve_target_pct`). Ver bloque 4 |
 | **AUDIT-TESTS** | 5 | Dos tests que siempre se saltean, `personal_book_convictions` sin tests y con escritura no atómica; y, reportado por subagentes, tests que fallan según el orden (B1/B2, ésta con la causa del fallo intermitente de `test_sim_gap_katex_oracle`). Ver bloque 4 |
-| **AUDIT-RESIDUALES** | 5 | Lo que los arreglos de #283–#290 dejaron dicho y sin cerrar: ventas parciales y lotes sin fecha en la curva del tracker, un NI diminuto con OCF negativo en el moat, el ancla que retrocede del Piotroski y las fechas exactas, el borde del `earningsGrowth` en Graham, y las dos bases del track record, más tres del optimizador (AUDIT-OPTIMIZER-LIMITES) dos del moat de IA (AUDIT-MOAT-IA) y los mensajes que otras cinco pantallas pierden en un `st.rerun()` (AUDIT-UI-ESTADO). Ver bloque 4 |
+| **AUDIT-RESIDUALES** | 5 | Lo que los arreglos de #283–#290 dejaron dicho y sin cerrar: ventas parciales y lotes sin fecha en la curva del tracker, un NI diminuto con OCF negativo en el moat, el ancla que retrocede del Piotroski y las fechas exactas, el borde del `earningsGrowth` en Graham, y las dos bases del track record, más tres del optimizador (AUDIT-OPTIMIZER-LIMITES) dos del moat de IA (AUDIT-MOAT-IA) y lo que dejó AUDIT-UI-ESTADO (el escape de `\$` del chat, «Limpiar historial» sin mensaje, la firma del plan de «Mis Metas»). Ver bloque 4 |
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
 | **TR-RACE** | 5 | `analysis/track_record.py` (deduplicación por día, upsert de outcomes) y `analysis/macro_rag.py:129` hacen «leer y después insertar», como `DataCache` antes de CACHE-RACE. Sin daño medido el 2026-10-10: 0 duplicados a menos de 5 s en `recommendation_log`; los 74 del 2026-08-28 son anteriores a la deduplicación. **Reabrir** si aparece un duplicado a menos de 5 s o si un escritor del track record pasa a correr en hilos o en dos procesos a la vez. |
 | **VENV-PRUNE** | 5 | `run.sh` instala el lock con `pip install`, que no saca lo que salió del lock (`pandas-ta`/`numba`/`llvmlite`, 2026-10-10). Un sync completo borraría Playwright. Espera disparador: la próxima dependencia que se retire. Ver bloque 4 |
@@ -370,10 +370,8 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
     `get_age_hours` no aíslan un error de SQLite (por ejemplo `database is locked`), que sube hasta el
     llamador (sin reproducir).
     (AUDIT-UI-ESTADO) lo que las tres partes dejaron anotado y sin arreglar (leído, no renderizado):
-    el mismo patrón mensaje + `st.rerun()` pierde su mensaje en `9_Settings.py:391` y `:432`
-    («Cotización guardada», «Caché limpiado»), `8_Alertas.py:170/179` (el resumen de alertas detectadas o
-    «Sin cambios significativos»: el más grave) y `:444` («Silenciado»), y `7_Simulaciones.py:1625` («Meta
-    agregada»); la referencia correcta ya existe en `3_Portfolio.py:52-53` (`_portfolio_msg` con `pop`). En el
+    la acción «Limpiar historial» de `8_Alertas.py:228-231` hace `clear_history()` y rerun sin ningún
+    mensaje (el patrón mensaje + `st.rerun()` se corrigió en AUDIT-RESIDUALES-MENSAJES). En el
     chat, `escape_dollars` sobre un `\$` que el modelo ya escapó da `\\$` (dos montos en una línea vuelven a
     ser LaTeX) y un `$` dentro de código se ve con la barra; ni `chat_agent.py` ni `prompts.py` le piden al
     modelo que escape, y corregirlo toca `escape_dollars`, compartida; el `st.error` de una excepción en

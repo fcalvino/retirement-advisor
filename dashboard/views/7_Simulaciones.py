@@ -25,6 +25,7 @@ from dashboard.shared import (
     drags_to_tuple,
     escape_dollars,
     escape_html,
+    flash,
     format_drags_badge,
     format_withdrawal_badge,
     get_economic_drags,
@@ -35,6 +36,7 @@ from dashboard.shared import (
     render_withdrawal_controls,
     run_plan_sensitivity,
     seed_session_defaults_from_profile,
+    show_flash,
     sim_horizon_index,
     snap_sim_horizon,
     withdrawal_to_tuple,
@@ -1608,6 +1610,7 @@ def _tab_goals_content():
                 icon="📊",
             )
 
+        show_flash("flash_goal_added")
         if st.button("✅ Agregar meta al plan", type="primary", key="add_goal_btn"):
             _final_name = new_name.strip() or _placeholder
             new_goal = {
@@ -1622,7 +1625,7 @@ def _tab_goals_content():
                 "notes": new_notes.strip(),
             }
             st.session_state["goals_list"].append(new_goal)
-            st.success(f"✅ Meta **{_icon} {_final_name}** agregada al plan.")
+            flash("flash_goal_added", "success", f"✅ Meta **{_icon} {_final_name}** agregada al plan.")
             st.rerun()
 
     # ---- Display current goals with reorder buttons ----

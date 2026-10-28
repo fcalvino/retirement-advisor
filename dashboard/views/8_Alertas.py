@@ -13,8 +13,10 @@ from config import ALERTS
 from dashboard.shared import (
     _fetch_universe_parallel,
     _get_ai_config,
+    flash,
     generate_alert_report,
     run_alert_engine,
+    show_flash,
 )
 from data.clock import utc_now
 
@@ -166,18 +168,25 @@ with tab_run:
             else:
                 fired = run_alert_engine(scored_for_alerts, active_profile=_profile)
 
-            if fired:
-                st.success(f"✅ {len(fired)} alertas detectadas y registradas.")
-                for a in fired[:10]:
-                    icon = {"critical": "🔴", "warning": "🟡", "info": "🔵"}.get(a.severity, "•")
-                    st.write(f"{icon} {a.message}")
-                    if a.explanation:
-                        st.caption(f"   💬 {a.explanation}")
-                if len(fired) > 10:
-                    st.caption(f"… y {len(fired) - 10} más. Ver historial en la pestaña Historial.")
+            # El rerun descarta lo dibujado en esta corrida: el resumen se guarda y se muestra después.
+            st.session_state["alert_run_summary"] = [
+                (a.severity, a.message, a.explanation) for a in fired
+            ]
+            st.rerun()
+
+        _summary = st.session_state.pop("alert_run_summary", None)
+        if _summary is not None:
+            if _summary:
+                st.success(f"✅ {len(_summary)} alertas detectadas y registradas.")
+                for _sev, _msg, _expl in _summary[:10]:
+                    icon = {"critical": "🔴", "warning": "🟡", "info": "🔵"}.get(_sev, "•")
+                    st.write(f"{icon} {_msg}")
+                    if _expl:
+                        st.caption(f"   💬 {_expl}")
+                if len(_summary) > 10:
+                    st.caption(f"… y {len(_summary) - 10} más. Ver historial en la pestaña Historial.")
             else:
                 st.info("Sin cambios significativos detectados en esta ejecución.")
-            st.rerun()
 
     with col_report:
         st.subheader("📄 Reporte PDF")
@@ -403,6 +412,7 @@ with tab_mutes:
     st.caption("Tickers o tipos de alerta silenciados temporalmente.")
 
     # Add new mute
+    show_flash("flash_mute")
     with st.form("add_mute_form"):
         st.markdown("**Agregar silencio**")
         mc1, mc2, mc3, mc4 = st.columns([2, 2, 1, 1])
@@ -441,7 +451,8 @@ with tab_mutes:
             sym = (_mute_sym or "").strip().upper() or "*"
             days = int(_mute_days) if _mute_days > 0 else None
             alert_store.add_mute(symbol=sym, alert_type=_mute_type, days=days)
-            st.success(f"Silenciado: {sym} / {_mute_type_label}" + (f" por {days} días" if days else " (permanente)"))
+            flash("flash_mute", "success",
+                  f"Silenciado: {sym} / {_mute_type_label}" + (f" por {days} días" if days else " (permanente)"))
             st.rerun()
 
     # List active mutes
