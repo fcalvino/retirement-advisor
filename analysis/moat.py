@@ -787,8 +787,9 @@ class MoatAnalyzer:
         hand a company one profitable year's points) and adds nothing. A year's ratio is
         capped at ``MOAT.fcf_conversion_year_cap``: with the loss years no longer pulling the
         mean down, one year of a sliver of positive earnings (ratio 6, or 60) could lift it
-        over the excellent bar alone. Years with positive net income and a ratio under the
-        cap are unchanged.
+        over the excellent bar alone; the ratio is floored at ``fcf_conversion_year_floor`` for
+        the same reason (NI 1, OCF -100 is -100, and one such year sank a mean of three excellent
+        ones). Years with positive net income and a ratio between floor and cap are unchanged.
         """
         try:
             ni = self._row_series(income_stmt, ["Net Income"])
@@ -804,9 +805,10 @@ class MoatAnalyzer:
             ni_v, ocf_v = ni[common], ocf[common]
             earns = ni_v > 0
             conversion = pd.Series(0.0, index=common)
-            # Capped per year: a sliver of positive earnings must not decide the mean.
+            # Capped per year, both ways: a sliver of positive earnings must not decide the mean,
+            # whether the cash is hugely positive (ratio 60) or hugely negative (ratio -100).
             conversion[earns] = (ocf_v[earns] / ni_v[earns]).clip(
-                upper=self.cfg.fcf_conversion_year_cap
+                lower=self.cfg.fcf_conversion_year_floor, upper=self.cfg.fcf_conversion_year_cap
             )
             return float(conversion.mean())
         except Exception:

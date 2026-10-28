@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-RESIDUALES-MOAT-NI — el cociente OCF/NI de un año también se topa hacia abajo (AUDIT-RESIDUALES, moat) (2026-10-28)
+
+AUDIT-RESIDUALES, moat (serie AUDIT-*, auditoría de 2026-10-26). El cociente OCF/NI de un año también se topa hacia abajo (`MOAT.fcf_conversion_year_floor`, −2,4), así que un año con ganancia diminuta y caja muy negativa no hunde el promedio de la conversión. Medido: 0 de 274 tickers cambian.
+
+---
+
 ## AUDIT-RESIDUALES-MENSAJES — los mensajes de Alertas, Settings y Simulaciones sobreviven al rerun (AUDIT-RESIDUALES, mensajes) (2026-10-28)
 
 AUDIT-RESIDUALES, mensajes perdidos por `st.rerun()` (serie AUDIT-*, auditoría de 2026-10-26). Alertas (el resumen de «Ejecutar análisis» y «Silenciado»), Settings (cotización paralelo y caché) y Simulaciones (meta agregada) vuelven a mostrar su mensaje, con `flash`/`show_flash` en `dashboard/shared.py`.

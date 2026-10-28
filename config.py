@@ -1704,6 +1704,15 @@ class MoatConfig:
     # year could lift a four-year mean over the "excellent" bar on its own (NI -50 x3 and 5:
     # OCF 30 -> mean 1.5 -> 2 points). Twice the excellent bar says everything a year can say.
     fcf_conversion_year_cap: float = 2.4
+    # And the mirror of it (AUDIT-RESIDUALES): the `clip` only capped upward, so NI 1 / OCF -100
+    # (ratio -100) in one year sank a four-year mean whose other three years were at the cap
+    # (mean -23 → 0 points). A year's ratio sits between this floor and the cap, which BOUNDS
+    # what one year can do (±2.4 / n on the mean) without removing it: a year at the floor
+    # against a year at the cap still moves a four-year mean by 1.2, the width of the
+    # "excellent" band. A moderate negative ratio (NI 100, OCF -20 → -0.2) is untouched because
+    # it says something real. The floor is not 0 (where a loss year sits) because that would
+    # change the cash-negative profit years the oracle pins as unchanged.
+    fcf_conversion_year_floor: float = -2.4
     # S4: FCF Margin (FCF / Revenue, percentage)
     fcf_margin_excellent: float = 20.0
     fcf_margin_good: float = 10.0
