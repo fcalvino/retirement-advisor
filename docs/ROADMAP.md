@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-UI-VERDAD — un Backtesting negativo ya no sale verde y un margen de 0 % se respeta (2026-10-28)
+
+AUDIT-UI-VERDAD, segunda mitad (serie AUDIT-*, auditoría de 2026-10-26). Un portafolio por debajo del benchmark deja de pintarse de verde en Backtesting, y un margen de seguridad de 0 % deja de volver al del perfil. Con #301 (la fuente «ai» del track record, la narrativa del plan y el `ai_enabled` de Settings) cierra la fila.
+
+---
+
 ## AUDIT-UI-VERDAD-IA — tres pantallas dejan de decir IA sin que la IA haya decidido (AUDIT-UI-VERDAD, 1/2) (2026-10-28)
 
 AUDIT-UI-VERDAD, primera mitad (serie AUDIT-*, auditoría de 2026-10-26). Tres pantallas dejan de afirmar IA sin que la IA haya decidido: el track record de Stock Analysis rotula la fuente por `Decision.ai_used` y no por la configuración; Mi Plan no muestra la narrativa de otra corrida de Simulaciones; elegir Hermes o xAI en Settings no prende la IA hasta guardar. Quedan el color de un Backtesting negativo y el margen de 0 %.

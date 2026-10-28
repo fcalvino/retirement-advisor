@@ -3466,7 +3466,7 @@ def profile_margin_pct(profile_key: str | None, override: float | None = None) -
 
     if profile_key not in OPTIMIZER_PROFILES:
         return None
-    if override:
+    if override is not None:      # un margen de 0 % es una respuesta, no «sin elegir»
         return float(override)
     return float(OPTIMIZER_PROFILES[profile_key].margin_of_safety_pct)
 
