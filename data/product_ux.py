@@ -3591,3 +3591,42 @@ def resolve_core(opt_result) -> ResolvedCore:
             return ResolvedCore(ai, CORE_SOURCE.IA, False)
         return ResolvedCore(ai, "", True)
     return ResolvedCore(det, CORE_SOURCE.REGLAS, False)
+
+
+def optimizer_advice_key(result: Any, goals: Any, current_weights: Any, ai_cfg: Any) -> tuple:
+    """Lo que determina la explicación de la IA del Optimizer (AUDIT-UI-ESTADO).
+
+    ``generate_optimizer_advice`` no cachea: la página la guarda en la sesión con esta clave y sólo la
+    vuelve a pedir si cambia algo de lo que llega al prompt: el proveedor y el modelo, las metas, los
+    pesos actuales y el resultado (sus escalares y, por posición, símbolo, peso, retorno, volatilidad,
+    score, moat, dividendo y sector). El orden de las claves de un dict y el ruido de coma flotante no
+    cuentan.
+    """
+    import json
+
+    from config import OPTIMIZER
+
+    def _num(value: Any) -> Any:
+        return round(float(value), OPTIMIZER.advice_key_decimals) if isinstance(value, (int, float)) else value
+
+    def _canon(value: Any) -> str:
+        return json.dumps(value, sort_keys=True, default=str)
+
+    def _attrs(obj: Any, names: Sequence[str]) -> tuple:
+        return tuple(_canon(_num(getattr(obj, name, None))) for name in names)
+
+    positions = tuple(
+        _attrs(t, ("symbol", "weight_pct", "expected_return_pct", "volatility_pct", "adjusted_score",
+                   "moat_score", "dividend_yield_pct", "sector"))
+        for t in getattr(result, "tickers", None) or []
+    )
+    current = None if current_weights is None else tuple(
+        sorted((str(sym), _num(w)) for sym, w in dict(current_weights).items())
+    )
+    return (
+        str(getattr(ai_cfg, "provider", "")), str(getattr(ai_cfg, "model", "")),
+        _attrs(result, ("profile_name", "return_basis", "expected_return_pct", "volatility_pct",
+                        "sharpe_ratio", "dividend_yield_pct", "moat_score_avg", "rebalance_rationale")),
+        _canon(getattr(result, "sector_weights", None)), _canon(getattr(result, "warnings", None)),
+        positions, _canon(goals or []), current,
+    )

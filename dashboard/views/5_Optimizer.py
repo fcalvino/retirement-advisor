@@ -32,6 +32,7 @@ from data.product_ux import (
     fmt_expected_return,
     is_estimation_basis,
     max_dd_estimate_help,
+    optimizer_advice_key,
     ratio_help,
     ratio_label,
     resolve_core,
@@ -283,7 +284,7 @@ st.session_state["optimizer_total_capital"] = int(total_capital)
 if st.sidebar.button("🔄 Re-analizar universo", type="secondary"):
     for k in [
         "optimizer_scored", "optimizer_universe",
-        "optimizer_result", "optimizer_result_key", "optimizer_prev_result",
+        "optimizer_result", "optimizer_result_key", "optimizer_prev_result", "optimizer_ai_advice",
     ]:
         st.session_state.pop(k, None)
     st.cache_data.clear()
@@ -661,11 +662,21 @@ _ai_fallback_reason = ""
 if getattr(_ai_cfg, "enabled", False):
     try:
         from analysis.ai_analyzer import AIAnalyzer
-        _advice = AIAnalyzer(_ai_cfg).generate_optimizer_advice(
-            result,
-            goals=st.session_state.get("optimizer_goals", []),
-            current_weights=st.session_state.get("optimizer_current_weights"),
-        )
+
+        _goals = st.session_state.get("optimizer_goals", [])
+        _current_w = st.session_state.get("optimizer_current_weights")
+        # AUDIT-UI-ESTADO: la explicación se pide una vez por resultado, no en cada rerun del script
+        # (cada interacción de la página pagaba otra llamada). Una respuesta de respaldo no se guarda.
+        _advice_key = optimizer_advice_key(result, _goals, _current_w, _ai_cfg)
+        _kept = st.session_state.get("optimizer_ai_advice")
+        if _kept and _kept[0] == _advice_key:
+            _advice = _kept[1]
+        else:
+            _advice = AIAnalyzer(_ai_cfg).generate_optimizer_advice(
+                result, goals=_goals, current_weights=_current_w,
+            )
+            if not _advice.get("ai_fallback_reason"):
+                st.session_state["optimizer_ai_advice"] = (_advice_key, _advice)
         result.ai_narrative                   = _advice.get("narrative", "")
         result.ai_recommended_max_human_positions = _advice.get("recommended_max_human_positions", 0)
         # NUCLEO-PROCEDENCIA: ``core_holdings_ai`` es solo lo que el modelo eligió;

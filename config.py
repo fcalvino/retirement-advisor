@@ -2047,6 +2047,10 @@ class OptimizerConfig:
     glide_crypto_cap_near: float = 2.0   # horizon ≤ 4 yr
     glide_crypto_cap_mid: float = 3.0    # horizon ≤ 7 yr
     glide_div_floor_near: float = 3.5    # horizon ≤ 3 yr
+    # AUDIT-UI-ESTADO: decimales con que se redondean los pesos y retornos (en %) de la clave de la
+    # explicación de la IA del Optimizer: el ruido de coma flotante de una re-optimización idéntica no
+    # debe pedirle otra respuesta al modelo.
+    advice_key_decimals: int = 4
 
 
 @dataclass
