@@ -13,6 +13,7 @@ and bypass the equity-specific scoring entirely.  They return the same
 FundamentalResult with equity fields set to None and is_crypto=True.
 """
 
+import math
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Dict, Optional
@@ -1068,7 +1069,7 @@ class FundamentalAnalyzer:
         # rate reported elsewhere is never truncated.
         eps = _safe_float(info.get("trailingEps"))
         # ``None`` is "growth was never measured" (statements too short, no quarterly
-        # figure, or a falling one — the yoy fallback only records a positive rate), and
+        # figure, or a falling one — the yoy fallback records a rate only when it is not negative), and
         # ``or 0.0`` priced it as a flat company: 41.56 for EPS 5, a ~40 % margin of safety
         # at P/E 5, for a business that may well be shrinking. A missing figure is not a
         # flat one; only a MEASURED zero is (U3-3), so without a rate there is no value.
@@ -1732,8 +1733,16 @@ class FundamentalAnalyzer:
             result.eps_cagr_years = ni_years
             result.eps_growth_source = "net_income_cagr"
         else:
-            yoy = _safe_float(info.get("earningsGrowth")) * 100
-            if yoy > 0:
+            # AUDIT-RESIDUALES: un 0,0 exacto es una medición (un cero medido, como el +0,04 % que
+            # se redondea a 0,0 y sí se valuaba). Lo que no es medición es la clave ausente, un NaN,
+            # un texto o un booleano, que ``_safe_float`` lee como 0,0: sólo un número finito cuenta.
+            # Una caída medida sigue sin registrarse.
+            raw_yoy = info.get("earningsGrowth")
+            measured = (
+                isinstance(raw_yoy, (int, float)) and not isinstance(raw_yoy, bool) and math.isfinite(raw_yoy)
+            )
+            yoy = float(raw_yoy) * 100 if measured else 0.0
+            if measured and yoy >= 0:
                 result.eps_cagr_5y = round(yoy, 1)
                 result.eps_cagr_years = 1
                 result.eps_growth_source = "yoy"
