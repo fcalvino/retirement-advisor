@@ -34,6 +34,7 @@ from data.product_ux import (
     MID_MA_SHORT,
     TREND_MA_HELP,
     TREND_MA_SHORT,
+    crypto_moat_unmeasured_text,
     dividend_score_help,
     format_dividend_score,
     graham_value_help,
@@ -380,10 +381,7 @@ if symbol:
                         f" · Drawdown máx histórico: {_dd_str}.",
                     )
         elif _moat_detail_crypto and not _moat_detail_crypto.ai_available:
-            st.caption(
-                "🔒 Moat crypto AI no disponible — activá un proveedor AI en **⚙️ Settings** "
-                "para evaluar network effects, escasez monetaria, seguridad y regulatorio."
-            )
+            st.caption(crypto_moat_unmeasured_text(symbol, bool(ai_cfg.enabled)))
 
     else:
         # ── Equity score panel (original) ───────────────────────────────

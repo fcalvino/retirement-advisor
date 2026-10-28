@@ -26,7 +26,7 @@ from loguru import logger
 
 from analysis.strategy import full_analysis
 from config import DEFAULT_TICKERS
-from data.product_ux import risk_metric_text
+from data.product_ux import crypto_moat_na_label, risk_metric_text
 from portfolio.tracker import Portfolio
 
 
@@ -46,7 +46,7 @@ def cmd_analyze(symbols: list[str]) -> None:
         if getattr(fund, "is_crypto", False):
             # Crypto display: no equity sub-scores, show crypto metrics
             moat_detail = getattr(fund, "crypto_moat_detail", None)
-            moat_str = f"{fund.moat_classification} ({fund.moat_score:.1f}/8)" if fund.moat_score > 0 else "N/A (AI disabled)"
+            moat_str = f"{fund.moat_classification} ({fund.moat_score:.1f}/8)" if fund.moat_score > 0 else crypto_moat_na_label(symbol)
             from config import CRYPTO_MOAT
             print(f"\n  🪙 Crypto Score: {fund.adjusted_score:.1f}/{CRYPTO_MOAT.max_achievable_score():.0f}  |  Moat: {moat_str}")
             print(f"    (base {CRYPTO_MOAT.base_score:.0f} + técnico + moat − volatilidad − drawdown)")

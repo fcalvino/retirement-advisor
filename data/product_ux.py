@@ -3639,3 +3639,38 @@ def optimizer_advice_key(result: Any, goals: Any, current_weights: Any, ai_cfg: 
         _canon(getattr(result, "sector_weights", None)), _canon(getattr(result, "warnings", None)),
         positions, _canon(goals or []), current,
     )
+
+
+def crypto_moat_unmeasured_text(symbol: str, ai_enabled: Optional[bool]) -> str:
+    """Why a crypto's moat has no figure, in the words that fit the cause (AUDIT-RESIDUALES).
+
+    The crypto moat rubric (halving, fixed supply, hash rate) is Bitcoin's: ``CryptoAnalyzer`` measures
+    no other asset, with or without the AI. «Activá un proveedor AI» is only true for Bitcoin with the AI
+    off; for Bitcoin with it on, the model did not answer; for anything else, enabling it changes nothing.
+    ``ai_enabled`` is ``None`` when the caller does not know.
+    """
+    from config import BITCOIN_TICKERS
+
+    if symbol.upper() not in BITCOIN_TICKERS:
+        return (
+            f"Moat cripto no medido: la rúbrica (halving, suministro fijo, hash rate) está definida sólo "
+            f"para Bitcoin; {symbol.upper()} no se evalúa, ni siquiera con un proveedor AI activo."
+        )
+    if ai_enabled is False:
+        return (
+            "🔒 Moat crypto AI no disponible — activá un proveedor AI en **⚙️ Settings** "
+            "para evaluar network effects, escasez monetaria, seguridad y regulatorio."
+        )
+    if ai_enabled:
+        return (
+            "Moat crypto AI no disponible: el proveedor AI no devolvió una evaluación utilizable "
+            "(revisá el proveedor y la clave en **⚙️ Settings**)."
+        )
+    return "Moat crypto AI no disponible: requiere un proveedor AI activo y que responda."
+
+
+def crypto_moat_na_label(symbol: str) -> str:
+    """The short «N/A» label for the CLI; the reason differs for a non-Bitcoin crypto."""
+    from config import BITCOIN_TICKERS
+
+    return "N/A (AI disabled)" if symbol.upper() in BITCOIN_TICKERS else "N/A (rúbrica sólo para Bitcoin)"

@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-RESIDUALES-MOAT-ETH — el moat cripto de ETH ya no pide activar la IA: la rúbrica es sólo de Bitcoin (AUDIT-RESIDUALES, moat de IA) (2026-10-28)
+
+AUDIT-RESIDUALES, moat de IA (serie AUDIT-*, auditoría de 2026-10-26). Para un cripto que no es Bitcoin la pantalla ya no pide «activar un proveedor AI» (la rúbrica sólo existe para Bitcoin) y, para Bitcoin con la IA activa y sin respuesta, dice que el proveedor no devolvió una evaluación.
+
+---
+
 ## AUDIT-RESIDUALES-OPTIMIZER-POLVO — se quita el paso inalcanzable que anulaba el polvo en el camino SLSQP (AUDIT-RESIDUALES, optimizador) (2026-10-28)
 
 AUDIT-RESIDUALES, optimizador (serie AUDIT-*, auditoría de 2026-10-26). Se quita de `_try_minimize` el paso `w[w < lb * 0.5] = 0`, que iba después de un clip a `lb` y no podía dispararse: el polvo lo evita la cota inferior, no ese paso. Sin cambio de comportamiento (480 problemas sintéticos, diferencia máxima 2,8e-17).
