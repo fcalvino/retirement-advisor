@@ -186,7 +186,7 @@ falsa) está en `.claude/agents/engine-reviewer.md`.
 sin solaparse: una zona de pantallas (`dashboard/`), dos de números (scoring/valuación; portafolio/datos/alertas),
 una de rutas de IA y persistencia, una de tests, y **dos de regresiones de los arreglos ya mergeados** (los diffs
 de la serie se auditan como superficie propia: la revisión encontró defectos en los propios arreglos al
-menos tres veces). Todos de solo lectura; los scripts de reproducción van a `/tmp` y fijan **antes de importar el proyecto** las seis variables
+menos tres veces). Todos de solo lectura; los scripts de reproducción van a `/tmp` y fijan **antes de importar el proyecto** las cinco rutas
 `RETIREMENT_ADVISOR_DB_PATH`, `RETIREMENT_ADVISOR_PREFS_PATH`, `RETIREMENT_ADVISOR_LOG_PATH`, `RETIREMENT_ADVISOR_PLANS_PATH`,
 `RETIREMENT_ADVISOR_EVAL_RUNS_DIR` (todas a `/tmp`) y `RETIREMENT_ADVISOR_NO_DOTENV=1`. La primera auditoría con agentes dio
 sólo las cuatro primeras, y quedó un hueco: sin `PLANS_PATH` un script apunta al archivo real de planes, y
