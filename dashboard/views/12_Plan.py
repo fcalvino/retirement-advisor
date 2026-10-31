@@ -69,6 +69,10 @@ from data.product_ux import (
 )
 from data.universe_loader import UNIVERSE_META
 
+_PLAN_NOT_SAVED = (
+    "No se pudo guardar el plan: el archivo de planes no se pudo leer ni escribir. "
+    "Revisá el espacio en disco y los permisos de `data/retirement_plans.json`; el plan no quedó guardado."
+)
 # Map a saved plan's profile name back to an optimizer profile key (for "load plan").
 _PROFILE_NAME_TO_KEY = {"Conservador": "conservative", "Moderado": "moderate", "Agresivo": "aggressive"}
 _SEVERITY_BADGE = {
@@ -389,12 +393,14 @@ elif _has_session_run:
                     ),
                     run_params=_run,   # PLAN-LOAD-SAVINGS: savings and assumptions of the run
                 )
-                plan_store.upsert(snap)
-                if _activate_on_save and activate_plan(snap.id, prefs):
-                    st.toast(f"✅ Plan guardado y activado: {snap.name}", icon="🎯")
+                if not plan_store.upsert(snap):
+                    st.error(_PLAN_NOT_SAVED)
                 else:
-                    st.toast(f"✅ Plan guardado: {snap.name}", icon="🗺️")
-                st.rerun()
+                    if _activate_on_save and activate_plan(snap.id, prefs):
+                        st.toast(f"✅ Plan guardado y activado: {snap.name}", icon="🎯")
+                    else:
+                        st.toast(f"✅ Plan guardado: {snap.name}", icon="🗺️")
+                    st.rerun()
         if _existing:
             st.caption(f"⚠️ Ya existe un plan **{_existing.name}** — guardar lo **actualiza**.")
 
@@ -967,7 +973,10 @@ def _render_plan_ai(snap: PlanSnapshot) -> None:
                     # build_home_hub_for_prefs) and generating a narrative fetches
                     # no prices. Stamping it here reset the freshness clock without
                     # any refresh, while the real refresh button never moved it.
-                    plan_store.upsert(snap)
+                    if not plan_store.upsert(snap):
+                        st.error("No se pudo guardar la narrativa: el archivo de planes no se pudo leer ni escribir. "
+                                 "Revisá el espacio en disco y los permisos de `data/retirement_plans.json`.")
+                        return
                     st.toast("🧠 Narrativa del plan actualizada", icon="✅")
                     st.rerun()
                 except Exception as exc:
@@ -1054,15 +1063,19 @@ with st.expander("📦 Importar / Restaurar plan desde backup", expanded=False):
                 _ic1, _ic2 = st.columns(2)
                 with _ic1:
                     if st.button("📥 Importar plan", type="primary", key="plan_import_btn"):
-                        plan_store.upsert(_imported)
-                        st.toast(f"✅ Plan importado: {_imported.name}", icon="📦")
-                        st.rerun()
+                        if not plan_store.upsert(_imported):
+                            st.error(_PLAN_NOT_SAVED)
+                        else:
+                            st.toast(f"✅ Plan importado: {_imported.name}", icon="📦")
+                            st.rerun()
                 with _ic2:
                     if st.button("📥 Importar y activar", key="plan_import_activate_btn"):
-                        plan_store.upsert(_imported)
-                        activate_plan(_imported.id, prefs)
-                        st.toast(f"🎯 Plan importado y activado: {_imported.name}", icon="📦")
-                        st.rerun()
+                        if not plan_store.upsert(_imported):
+                            st.error(_PLAN_NOT_SAVED)
+                        else:
+                            activate_plan(_imported.id, prefs)
+                            st.toast(f"🎯 Plan importado y activado: {_imported.name}", icon="📦")
+                            st.rerun()
             else:
                 _copy_id = unique_plan_id(_imported.id, lambda pid: plan_store.get(pid) is not None)
                 st.warning(
@@ -1080,15 +1093,19 @@ with st.expander("📦 Importar / Restaurar plan desde backup", expanded=False):
                         _copy = replace(
                             _imported, id=_copy_id, name=f"{_imported.name} (copia)",
                         )
-                        plan_store.upsert(_copy)
-                        st.toast(f"✅ Importado como copia: {_copy.name}", icon="📦")
-                        st.rerun()
+                        if not plan_store.upsert(_copy):
+                            st.error(_PLAN_NOT_SAVED)
+                        else:
+                            st.toast(f"✅ Importado como copia: {_copy.name}", icon="📦")
+                            st.rerun()
                 with _ic2:
                     if st.button("♻️ Sobrescribir el existente", key="plan_import_overwrite_btn",
                                  help=f"Reemplaza «{_clash.name}» con el plan del archivo"):
-                        plan_store.upsert(_imported)
-                        st.toast(f"♻️ Plan sobrescrito: {_imported.name}", icon="📦")
-                        st.rerun()
+                        if not plan_store.upsert(_imported):
+                            st.error(_PLAN_NOT_SAVED)
+                        else:
+                            st.toast(f"♻️ Plan sobrescrito: {_imported.name}", icon="📦")
+                            st.rerun()
 
 _plans = plan_store.list()
 
@@ -1247,13 +1264,18 @@ else:
                     st.rerun()
             with _c4:
                 if st.button("🗑️ Borrar", key=f"del_{p.id}", width="stretch"):
-                    plan_store.delete(p.id)
-                    if _is_active:
-                        deactivate_plan(prefs)
-                    if st.session_state.get("plan_view_id") == p.id:
-                        st.session_state.pop("plan_view_id", None)
-                    st.toast(f"Plan '{p.name}' borrado", icon="🗑️")
-                    st.rerun()
+                    # ``delete`` también da False si el plan ya no está (borrado desde otra pestaña): eso no es un
+                    # error de escritura y la lista sólo necesita refrescarse.
+                    if not plan_store.delete(p.id) and plan_store.get(p.id) is not None:
+                        st.error(f"No se pudo borrar el plan «{p.name}»: el archivo de planes no se pudo escribir. "
+                                 "Revisá el espacio en disco y los permisos de `data/retirement_plans.json`.")
+                    else:
+                        if _is_active:
+                            deactivate_plan(prefs)
+                        if st.session_state.get("plan_view_id") == p.id:
+                            st.session_state.pop("plan_view_id", None)
+                        st.toast(f"Plan '{p.name}' borrado", icon="🗑️")
+                        st.rerun()
 
             # Item 2 — export this plan (JSON bundle + restore instructions).
             with st.expander("📥 Exportar / Respaldar este plan", expanded=False):

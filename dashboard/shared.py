@@ -564,13 +564,14 @@ def load_sample_plan_into_store(key: str):
     Reuses ``data.plan_context.load_sample_plan`` (which goes through the same
     import/validation path as user uploads) and upserts it into the plan store
     so it appears in "Planes guardados" and can be activated immediately.
-    Returns the saved PlanSnapshot.
+    Returns the saved PlanSnapshot; raises ``OSError`` if it could not be written (the callers show it).
     """
     from data.plan_context import load_sample_plan
     from data.plan_store import plan_store
 
     snap = load_sample_plan(key)
-    plan_store.upsert(snap)
+    if not plan_store.upsert(snap):
+        raise OSError("no se pudo escribir el archivo de planes")
     return snap
 
 
