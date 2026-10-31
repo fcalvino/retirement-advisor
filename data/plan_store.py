@@ -524,16 +524,23 @@ class PlanStore:
                 return s
         return None
 
-    def upsert(self, snapshot: PlanSnapshot) -> None:
-        """Insert or replace a snapshot by id."""
+    def upsert(self, snapshot: PlanSnapshot) -> bool:
+        """Insert or replace a snapshot by id.
+
+        Devuelve ``True`` sólo si el plan quedó en disco. Con ``False`` (archivo ilegible que no se pudo
+        apartar, disco lleno, sin permisos) no se guardó nada: quien llama tiene que decirlo, no mostrar
+        «Plan guardado» (AUDIT-MOTOR-3).
+        """
         current = self._read_items()
         if current is None:
             logger.error(f"Plan not saved: could not read the existing plans ({snapshot.id})")
-            return
+            return False
         items = [d for d in current if d.get("id") != snapshot.id]
         items.append(snapshot.to_dict())
-        if self._write_raw(items):
-            logger.info(f"Plan saved: {snapshot.name} ({snapshot.id})")
+        if not self._write_raw(items):
+            return False
+        logger.info(f"Plan saved: {snapshot.name} ({snapshot.id})")
+        return True
 
     def delete(self, plan_id: str) -> bool:
         items = self._read_items()

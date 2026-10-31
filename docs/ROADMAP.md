@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-MOTOR-3 — guardar o borrar un plan que no se pudo escribir ya no se anuncia como hecho (2026-10-30)
+
+`PlanStore.upsert` ahora dice si guardó; Mi Plan avisa del fallo en vez de anunciar «Plan guardado» o «borrado» (AUDIT-MOTOR-3).
+
+---
+
 ## AUDIT-METODO — los barridos por AST de la serie AUDIT-* y el método de auditoría, como código (AUDIT-METODO) (2026-10-29)
 
 Método de auditoría de la serie AUDIT-* como código: `scripts/audit_sweeps.py` barre por AST cuatro clases de defecto (mensaje antes de `st.rerun()`, `clip` de un lado, `x or default` sobre una magnitud con 0 válido, `pytest.skip`) en cada `make check`; lista de verificación en `engine-reviewer`; método en MAINTENANCE §9. Deja registrado un defecto real sin arreglar: el PDF reemplaza una inflación de 0 % por 3 %.
