@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-NUMB-6 — el retorno anualizado de la cartera exige un año de antigüedad (2026-10-30)
+
+El retorno anualizado de la cartera exige un año de antigüedad; debajo queda «no medido» con la fecha desde la que se mide (AUDIT-NUMB-6).
+
+---
+
 ## AUDIT-MOTOR-3 — guardar o borrar un plan que no se pudo escribir ya no se anuncia como hecho (2026-10-30)
 
 `PlanStore.upsert` ahora dice si guardó; Mi Plan avisa del fallo en vez de anunciar «Plan guardado» o «borrado» (AUDIT-MOTOR-3).
