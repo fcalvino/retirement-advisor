@@ -1285,7 +1285,10 @@ with tab_rebal:
 
     # Checked before the suggestions: a result computed while the book was fully priced keeps its
     # rebalance table on reruns, and it would be shown against a book that has lost a quote.
-    _unpriced_now = unpriced_symbols(portfolio.get_current_values()) if portfolio.positions else []
+    try:
+        _unpriced_now = unpriced_symbols(portfolio.get_current_values()) if portfolio.positions else []
+    except Exception:
+        _unpriced_now = []    # same fallback as the weights above: no book, no notice
     if _unpriced_now:
         st.info(
             unpriced_positions_notice(
