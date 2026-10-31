@@ -901,6 +901,26 @@ def risk_metric_text(value: Optional[float], fmt: str) -> str:
     return RISK_NOT_MEASURED if value is None else fmt.format(value)
 
 
+def annualized_unmeasured_caption(metrics: Any) -> str:
+    """Why «Retorno anual» is a dash because the book is too young, and until when; ``""`` otherwise.
+
+    Weeks compounded to a year are a number nobody earned (AUDIT-NUMB-6): under
+    ``PORTFOLIO.min_annualize_years`` the figure is not measured and ``total_pnl_pct``
+    is the return of the period. A book with no readable date is the risk caption's
+    business, not this one's.
+    """
+    from config import PORTFOLIO
+
+    when = getattr(metrics, "annualized_measurable_from", None)
+    if getattr(metrics, "annualized_return_pct", None) is not None or not when:
+        return ""
+    return (
+        f"Retorno anual no medido: la cartera tiene menos de {PORTFOLIO.min_annualize_years:g} año "
+        f"desde la primera compra y no se anualizan períodos más cortos; medible desde ~{when}. "
+        "Mientras tanto, el P&L total es el retorno del período."
+    )
+
+
 def risk_unmeasured_caption(metrics: Any) -> str:
     """Why the realized-risk cards are dashes, and until when; ``""`` if all measured.
 

@@ -29,6 +29,7 @@ from data.plan_context import (
 from data.product_ux import (
     DOWNSIDE_RATIO_HELP,
     DOWNSIDE_RATIO_LABEL,
+    annualized_unmeasured_caption,
     risk_metric_text,
     risk_unmeasured_caption,
 )
@@ -79,6 +80,9 @@ col3.metric("Posiciones",      metrics.num_positions)
 _risk_caption = risk_unmeasured_caption(metrics)
 if _risk_caption:
     st.caption(_risk_caption)
+_annualized_caption = annualized_unmeasured_caption(metrics)
+if _annualized_caption:
+    st.caption(_annualized_caption)
 
 st.divider()
 

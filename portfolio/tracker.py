@@ -12,8 +12,9 @@ Metrics computed:
 """
 
 import json
+import math
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -53,7 +54,8 @@ ANNUALIZED_RETURN_CAVEAT = (
     "Crecimiento anualizado del costo total al valor actual, medido desde la "
     "**primera compra**. No es un IRR: no pondera cada aporte por su propia fecha, "
     "así que una compra reciente recibe el mismo tiempo de capitalización que la "
-    "más antigua. Un retorno ponderado por dinero es trabajo aparte (X-02)."
+    "más antigua. Un retorno ponderado por dinero es trabajo aparte (X-02). Con menos de "
+    "un año desde la primera compra no se anualiza: «—», y el P&L total es el retorno del período."
 )
 
 
@@ -175,7 +177,12 @@ class PortfolioMetrics:
     #: the EARLIEST purchase. Not an IRR: it weights no cash flow by its own
     #: timing (U5-12). See ``ANNUALIZED_RETURN_CAVEAT``. ``None`` when no position has a readable
     #: purchase date (or no cost): there is no age to annualize over, and 0.0 would read as measured.
+    #: Also ``None`` under ``PORTFOLIO.min_annualize_years`` of age: weeks compounded into a year are
+    #: not a rate anyone earned (AUDIT-NUMB-6); ``total_pnl_pct`` is the return of the period.
     annualized_return_pct: Optional[float] = None
+    #: The day the book turns ``PORTFOLIO.min_annualize_years`` old and the annualised figure appears;
+    #: ``None`` when it is already old enough (or has no readable date).
+    annualized_measurable_from: Optional[str] = None
     #: The four risk metrics are ``None`` when they were not measured — too short
     #: a shared curve, no spread, no SPY overlap — never 0 or beta 1.0: the page
     #: and the portfolio committee read them as measured (PORTFOLIO-RISK-CERO).
@@ -365,8 +372,14 @@ class Portfolio:
         dates = [d for d in (_parse_date(self.positions[s].purchase_date) for s in self.positions) if d]
         if dates:
             start = min(dates)
-            years = max((datetime.now() - start).days / 365.25, 0.1)
-            if metrics.total_cost > 0:
+            years = (datetime.now() - start).days / 365.25
+            if years < PORTFOLIO.min_annualize_years:
+                # Younger than the minimum: not annualised (AUDIT-NUMB-6). The first day that
+                # reaches it, counted in the same whole days the age above uses.
+                metrics.annualized_measurable_from = (
+                    start + timedelta(days=math.ceil(PORTFOLIO.min_annualize_years * 365.25))
+                ).date().isoformat()
+            elif metrics.total_cost > 0:
                 metrics.annualized_return_pct = (
                     (metrics.total_value / metrics.total_cost) ** (1 / years) - 1
                 ) * 100

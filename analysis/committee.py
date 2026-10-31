@@ -688,6 +688,7 @@ def build_holdings_committee_context(
             "beta": getattr(metrics, "beta", None),
             "risk_curve_points": getattr(metrics, "risk_curve_points", None),
             "risk_measurable_from": getattr(metrics, "risk_measurable_from", None),
+            "annualized_measurable_from": getattr(metrics, "annualized_measurable_from", None),
             "risk_undated_symbols": list(getattr(metrics, "risk_undated_symbols", None) or []),
         }
 
