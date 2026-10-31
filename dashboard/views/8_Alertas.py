@@ -145,7 +145,10 @@ with tab_run:
                                     "avg_cost": pos.avg_cost,
                                     "sector": pos.sector,
                                 }
-                                current_prices[sym] = vals.get("current_price", pos.avg_cost)
+                                # No quote: the key stays absent, never the cost as a price (U2-3's
+                                # guard; AUDIT-NUMB-2) — the detector reads "unknown" as unknown.
+                                if vals.get("current_price"):
+                                    current_prices[sym] = vals["current_price"]
                     except Exception as e:
                         logger.warning(f"Portfolio data unavailable: {e}")
 

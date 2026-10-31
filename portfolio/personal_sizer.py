@@ -763,7 +763,9 @@ def analyze_personal_book(
     Args:
         positions: salida de ``Portfolio.get_current_values()`` — dict por símbolo
             con al menos ``weight_pct``, ``market_value``, ``shares``, ``avg_cost``.
-            Si ``weight_pct`` no viene, se calcula desde ``market_value``.
+            Si ``weight_pct`` no viene, se calcula desde ``market_value``. Una fila con
+            ``priced: False`` (sin cotización) levanta ``ValueError``: no se dimensiona un
+            libro al que le falta una posición.
         convictions: ``{ticker: "HIGH"|"MEDIUM"|"LOW"}``; faltantes → default config.
         enrich_fn: ``(symbol) -> dict`` con análisis fundamental/técnico. Si es None
             usa el pipeline real (``full_analysis``). Inyectable para tests offline.
@@ -772,6 +774,11 @@ def analyze_personal_book(
     Returns:
         ``PersonalBookAnalysis`` serializable (``.to_dict()``).
     """
+    unpriced = [s for s, p in positions.items() if not p.get("priced", True)]
+    if unpriced:
+        # A position with no quote has no weight (AUDIT-NUMB-2): reading it as 0 % would size the
+        # others against a book that is not the whole book. The caller names the symbols and waits.
+        raise ValueError(f"posiciones sin cotización: {', '.join(unpriced)}")
     convictions = {k.upper(): v for k, v in (convictions or {}).items()}
     enrich = enrich_fn or _default_enrich
 

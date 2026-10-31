@@ -23,8 +23,9 @@ from dashboard.shared import (
     track_record_log_caption,
 )
 from data.preferences import is_valid_ticker_symbol
-from data.product_ux import guided_empty_state
+from data.product_ux import guided_empty_state, unpriced_positions_notice
 from data.screener_store import is_empty_feed
+from portfolio.tracker import position_weights_from, sector_weights_from, unpriced_symbols
 
 st.title("🏛️ Comité de Inversión")
 st.caption(
@@ -120,15 +121,18 @@ if run and symbol:
             from data.plan_context import get_active_plan
 
             _values = _pf.get_current_values()
-            _total_mv = sum(v["market_value"] for v in _values.values()) or 1.0
-            _pos_w = {s: v["market_value"] / _total_mv * 100 for s, v in _values.items()}
-            _sec_w: dict[str, float] = {}
-            for v in _values.values():
-                _sec_w[v["sector"]] = _sec_w.get(v["sector"], 0.0) + v["market_value"] / _total_mv * 100
-            portfolio_ctx = build_ticker_portfolio_context(
-                symbol, getattr(fund, "sector", ""),
-                position_weights=_pos_w, sector_weights=_sec_w, active_plan=get_active_plan(),
-            )
+            # With a position unpriced the weights are those of an incomplete book: the PM gets the
+            # no-book prompt instead of sizing against them (AUDIT-NUMB-2).
+            _missing = unpriced_symbols(_values)
+            if _missing:
+                logger.warning(f"comité page: portfolio context skipped — sin cotización: {', '.join(_missing)}")
+                st.caption(unpriced_positions_notice(_missing, "El PM opina sin tu cartera."))
+            else:
+                portfolio_ctx = build_ticker_portfolio_context(
+                    symbol, getattr(fund, "sector", ""),
+                    position_weights=position_weights_from(_values), sector_weights=sector_weights_from(_values),
+                    active_plan=get_active_plan(),
+                )
         except Exception as exc:  # pragma: no cover - UI guard, PM falls back to no-book prompt
             logger.warning(f"comité page: portfolio context skipped — {exc}")
             portfolio_ctx = None

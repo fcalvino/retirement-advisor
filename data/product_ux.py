@@ -921,6 +921,24 @@ def annualized_unmeasured_caption(metrics: Any) -> str:
     )
 
 
+def unpriced_positions_notice(symbols: Any, effect: str = "") -> str:
+    """Names the positions the feed returned no price for, and what that leaves out; ``""`` if none.
+
+    A position without a quote is not valued at its cost (AUDIT-NUMB-2): the totals and weights
+    are those of the priced ones, and a decision that needs the whole book is not made. ``effect``
+    says what this surface leaves out because of it.
+    """
+    names = [str(s) for s in (symbols or [])]
+    if not names:
+        return ""
+    noun = "la posición" if len(names) == 1 else "las posiciones"
+    return (
+        f"Sin cotización para {noun} {', '.join(names)}: no se valúan a su costo ni suman al valor "
+        "total, al P&L ni a los pesos."
+        + (f" {effect}" if effect else "")
+    )
+
+
 def risk_unmeasured_caption(metrics: Any) -> str:
     """Why the realized-risk cards are dashes, and until when; ``""`` if all measured.
 

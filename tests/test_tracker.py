@@ -169,13 +169,15 @@ class TestValuation:
         assert v["pnl"] == pytest.approx(500.0)
         assert v["pnl_pct"] == pytest.approx(500.0 / 1_500.0 * 100)
 
-    def test_falls_back_to_cost_when_no_price_is_available(self, portfolio, monkeypatch):
-        """A missing quote must not show the position as a 100% loss."""
+    def test_a_missing_quote_is_not_valued_at_cost(self, portfolio, monkeypatch):
+        """AUDIT-NUMB-2: no quote means no value — not the cost passed off as a price (+0 %)."""
         monkeypatch.setattr(tracker_mod, "get_info", lambda sym: {"sector": "Unknown"})
         portfolio.positions["ZZZ"] = Position("ZZZ", 4, 25.0, "2024-01-15")
         v = portfolio.get_current_values()["ZZZ"]
-        assert v["current_price"] == 25.0
-        assert v["pnl"] == pytest.approx(0.0)
+        assert v["priced"] is False
+        assert v["current_price"] is None and v["market_value"] is None
+        assert v["pnl"] is None and v["pnl_pct"] is None
+        assert v["cost_basis"] == pytest.approx(100.0)
 
     def test_totals_across_positions(self, portfolio):
         portfolio.add_position("AAPL", 10, 150.0, "2024-01-15")   # 2000 / cost 1500

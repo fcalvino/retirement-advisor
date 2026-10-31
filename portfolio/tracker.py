@@ -82,6 +82,60 @@ def _parse_date(raw: Any) -> Optional[datetime]:
         return None
 
 
+def _usable_price(info: Optional[Dict]) -> Optional[float]:
+    """The quote in ``info`` when it is a finite number above zero; ``None`` otherwise."""
+    for key in ("currentPrice", "regularMarketPrice"):
+        try:
+            price = float((info or {}).get(key))
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(price) and price > 0:
+            return price
+    return None
+
+
+def priced_values(values: Dict[str, Dict]) -> Dict[str, Dict]:
+    """The rows of ``get_current_values()`` that have a quote."""
+    return {sym: v for sym, v in values.items() if v.get("priced", True)}
+
+
+def unpriced_symbols(values: Dict[str, Dict]) -> List[str]:
+    """The symbols of ``get_current_values()`` with no quote, in book order."""
+    return [sym for sym, v in values.items() if not v.get("priced", True)]
+
+
+def position_weights_from(values: Dict[str, Dict], require_complete: bool = False) -> Dict[str, float]:
+    """symbol → % of the book's value, over the positions that have a quote.
+
+    A position with no quote has no weight: it is absent from the result (the page shows "—"),
+    never 0 % (AUDIT-NUMB-2). The weights of the priced ones are shares of the PRICED total, so
+    with a missing quote they add up to 100 over a book that is not the whole book: any decision
+    that reads them (drift, rebalancing, concentration) passes ``require_complete=True`` and gets
+    ``{}`` instead, and says which symbols are missing.
+    """
+    if require_complete and unpriced_symbols(values):
+        return {}
+    priced = priced_values(values)
+    total = sum(v["market_value"] for v in priced.values())
+    if total == 0:
+        return {}
+    return {sym: round(v["market_value"] / total * 100, 1) for sym, v in priced.items()}
+
+
+def sector_weights_from(values: Dict[str, Dict], require_complete: bool = False) -> Dict[str, float]:
+    """sector → % of the book's value; same rules as ``position_weights_from``."""
+    if require_complete and unpriced_symbols(values):
+        return {}
+    priced = priced_values(values)
+    total = sum(v["market_value"] for v in priced.values())
+    if total == 0:
+        return {}
+    sector_totals: Dict[str, float] = {}
+    for v in priced.values():
+        sector_totals[v["sector"]] = sector_totals.get(v["sector"], 0) + v["market_value"]
+    return {k: round(v / total * 100, 1) for k, v in sorted(sector_totals.items(), key=lambda x: -x[1])}
+
+
 @dataclass
 class Lot:
     """One purchase. The law takes cost by FIFO (LIG arts. 149 and 65), so each
@@ -202,6 +256,10 @@ class PortfolioMetrics:
     risk_undated_symbols: List[str] = field(default_factory=list)
     dividend_income_ytd: float = 0.0
     num_positions: int = 0
+    #: Positions the market feed returned no usable price for. They are left out of
+    #: ``total_value`` / ``total_cost`` / ``total_pnl`` (never valued at cost): the totals are those
+    #: of the priced positions, and the page says which ones are missing (AUDIT-NUMB-2).
+    unpriced_symbols: List[str] = field(default_factory=list)
 
 
 class Portfolio:
@@ -330,26 +388,36 @@ class Portfolio:
     # ------------------------------------------------------------------ #
 
     def get_current_values(self) -> Dict[str, Dict]:
-        """Return current market value per position."""
+        """Return current market value per position.
+
+        A position with no usable quote is NOT valued at its cost (AUDIT-NUMB-2): its row carries
+        ``priced: False`` and ``None`` in ``current_price`` / ``market_value`` / ``pnl`` /
+        ``pnl_pct``. Valuing it at cost made a position the market could not price read as +0 %,
+        added a number nobody observed to the total and diluted every weight. Callers sum the
+        priced rows (``priced_values``) and name the others (``unpriced_symbols``).
+        """
         values = {}
         for sym, pos in self.positions.items():
             info = get_info(sym)
-            price = float(info.get("currentPrice") or info.get("regularMarketPrice") or pos.avg_cost)
-            market_value = price * pos.shares
-            pnl = market_value - pos.cost_basis
-            pnl_pct = pnl / pos.cost_basis * 100 if pos.cost_basis > 0 else 0
-            values[sym] = {
+            price = _usable_price(info)
+            row = {
                 "symbol": sym,
                 "shares": pos.shares,
                 "avg_cost": pos.avg_cost,
                 "current_price": price,
                 "cost_basis": pos.cost_basis,
-                "market_value": market_value,
-                "pnl": pnl,
-                "pnl_pct": pnl_pct,
+                "market_value": None,
+                "pnl": None,
+                "pnl_pct": None,
                 "sector": pos.sector,
                 "purchase_date": pos.purchase_date,
+                "priced": price is not None,
             }
+            if price is not None:
+                row["market_value"] = price * pos.shares
+                row["pnl"] = row["market_value"] - pos.cost_basis
+                row["pnl_pct"] = row["pnl"] / pos.cost_basis * 100 if pos.cost_basis > 0 else 0
+            values[sym] = row
         return values
 
     def compute_metrics(self) -> PortfolioMetrics:
@@ -359,8 +427,12 @@ class Portfolio:
 
         values = self.get_current_values()
         metrics.num_positions = len(values)
-        metrics.total_value = sum(v["market_value"] for v in values.values())
-        metrics.total_cost = sum(v["cost_basis"] for v in values.values())
+        # Totals over the positions with a quote: value and cost of the same set, so the P&L of
+        # the book is not a priced value minus an unpriced cost (AUDIT-NUMB-2).
+        priced = priced_values(values)
+        metrics.unpriced_symbols = unpriced_symbols(values)
+        metrics.total_value = sum(v["market_value"] for v in priced.values())
+        metrics.total_cost = sum(v["cost_basis"] for v in priced.values())
         metrics.total_pnl = metrics.total_value - metrics.total_cost
         metrics.total_pnl_pct = (
             metrics.total_pnl / metrics.total_cost * 100 if metrics.total_cost > 0 else 0
@@ -369,7 +441,9 @@ class Portfolio:
         # Annualised growth of cost → value. NOT an IRR (U5-12): `years` comes
         # from the earliest purchase, so every dollar is credited with the age of
         # the oldest one. See ANNUALIZED_RETURN_CAVEAT.
-        dates = [d for d in (_parse_date(self.positions[s].purchase_date) for s in self.positions) if d]
+        # The age is that of the priced positions: the totals above leave the unpriced ones out, and
+        # an old unpriced position must not set the exponent of a value it is not part of.
+        dates = [d for d in (_parse_date(self.positions[s].purchase_date) for s in priced) if d]
         if dates:
             start = min(dates)
             years = (datetime.now() - start).days / 365.25
@@ -440,23 +514,13 @@ class Portfolio:
 
         return metrics
 
-    def get_sector_weights(self) -> Dict[str, float]:
-        """Return sector → % of portfolio weight."""
-        values = self.get_current_values()
-        total = sum(v["market_value"] for v in values.values())
-        if total == 0:
-            return {}
-        sector_totals: Dict[str, float] = {}
-        for v in values.values():
-            sector_totals[v["sector"]] = sector_totals.get(v["sector"], 0) + v["market_value"]
-        return {k: round(v / total * 100, 1) for k, v in sorted(sector_totals.items(), key=lambda x: -x[1])}
+    def get_sector_weights(self, require_complete: bool = False) -> Dict[str, float]:
+        """Return sector → % of portfolio weight. See ``sector_weights_from``."""
+        return sector_weights_from(self.get_current_values(), require_complete)
 
-    def get_position_weights(self) -> Dict[str, float]:
-        values = self.get_current_values()
-        total = sum(v["market_value"] for v in values.values())
-        if total == 0:
-            return {}
-        return {sym: round(v["market_value"] / total * 100, 1) for sym, v in values.items()}
+    def get_position_weights(self, require_complete: bool = False) -> Dict[str, float]:
+        """Return symbol → % of portfolio weight. See ``position_weights_from``."""
+        return position_weights_from(self.get_current_values(), require_complete)
 
     # ------------------------------------------------------------------ #
     #  Internal helpers                                                    #

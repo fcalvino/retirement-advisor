@@ -67,6 +67,12 @@ def _install(monkeypatch, series: dict) -> None:
         "portfolio.tracker.get_history",
         lambda sym, period="5y", interval="1wk": pd.DataFrame({"close": series[sym]}),
     )
+    # A position is valued at its quote, never at its cost (AUDIT-NUMB-2): the last weekly close
+    # stands in for it, so the totals and the annualised return of these books exist.
+    monkeypatch.setattr(
+        "portfolio.tracker.get_info",
+        lambda sym: {"currentPrice": float(series[sym].iloc[-1])} if sym in series else {},
+    )
 
 
 def oracle_curve(lots_by_symbol: dict, series: dict) -> pd.Series:
