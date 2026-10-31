@@ -170,3 +170,43 @@ Antes de borrar: `ruff check --select F401,F811,F841`, triage manual (páginas
 Streamlit cargadas con `st.Page`, lazy imports, re-exports) y
 `./venv/bin/python3 -m pytest tests/ -q`. No tocar el split crypto/equity ni
 features marcadas ✅ en `docs/CONTEXT.md` §6 salvo evidencia clara.
+
+## 9. Cómo auditar (el método de la serie AUDIT-*)
+
+La serie AUDIT-* (29 PRs, #283–#311, 2026-10) arregló la mayoría de los defectos de la primera auditoría con un método que conviene repetir tal cual.
+
+**Antes de leer código:** `./venv/bin/python scripts/audit_sweeps.py` corre los barridos por AST de las clases
+mecánicas (mensaje antes de `st.rerun()`, `clip` de un solo lado, `x or default` sobre una magnitud con 0
+válido, `pytest.skip`). `tests/test_audit_sweeps_oracle.py` los corre en cada `make check`; una excepción
+justificada vive en `KNOWN_OK` con su razón y una que ya no se dispara hace fallar el test. La lista de las
+clases que **no** son mecánicas (estado sin atar a sus inputs, LLM por rerun, ausencia leída como cero, promesa
+falsa) está en `.claude/agents/engine-reviewer.md`.
+
+**Cómo repartir agentes:** por zona de código que un agente pueda leer con profundidad (unas 12–15 mil líneas) y
+sin solaparse: una zona de pantallas (`dashboard/`), dos de números (scoring/valuación; portafolio/datos/alertas),
+una de rutas de IA y persistencia, una de tests, y **dos de regresiones de los arreglos ya mergeados** (los diffs
+de la serie se auditan como superficie propia: la revisión encontró defectos en los propios arreglos al
+menos tres veces). Todos de solo lectura; los scripts de reproducción van a `/tmp` y fijan **antes de importar el proyecto** las cinco rutas
+`RETIREMENT_ADVISOR_DB_PATH`, `RETIREMENT_ADVISOR_PREFS_PATH`, `RETIREMENT_ADVISOR_LOG_PATH`, `RETIREMENT_ADVISOR_PLANS_PATH`,
+`RETIREMENT_ADVISOR_EVAL_RUNS_DIR` (todas a `/tmp`) y `RETIREMENT_ADVISOR_NO_DOTENV=1`. La primera auditoría con agentes dio
+sólo las cuatro primeras, y quedó un hueco: sin `PLANS_PATH` un script apunta al archivo real de planes, y
+`data/screener_store.py` tiene su ruta **fija** (`data/screener_last_run.json`, sin variable): no se ejecuta la página del
+Screener ni `ScreenerStore().save()` sin pasarle `path=` a `/tmp`. `pytest` sí está aislado por `tests/conftest.py`.
+Los agentes no leen `data/db/`, `.env`, `logs/` ni los JSON del usuario. Cada hallazgo viene con `archivo:línea`,
+reproducción, daño, y **verificado** o **sólo leído**.
+
+**Antes de arreglar:** una segunda ola de agentes frescos intenta *refutar* cada hallazgo contra `origin/main`.
+Varios resultaron no ser defecto, o existir en el código sin mover ninguna cifra real.
+
+**Cómo se arregla (un PR por hallazgo):**
+1. Test oráculo con el esperado calculado a mano, **corrido contra el código viejo** (copiar el archivo de
+   `origin/main` y restaurarlo con `cmp`; no `git stash`): tiene que fallar donde el PR dice que falla.
+2. El arreglo, y `make check` (más `TZ=UTC make test` si toca fechas).
+3. Medir el impacto sobre una **copia de solo lectura** de los datos del usuario (con su permiso explícito cada
+   vez), con el hash del original igual antes y después y la copia borrada. `scripts/measure_score_impact.py
+   --baseline/--compare` para scores; un script ad hoc para el resto. «0 de N cambian» es un resultado.
+4. Revisión por un subagente en contexto fresco (`engine-reviewer`) **sobre el diff, antes de abrir el PR**: casi
+   siempre encuentra algo del propio arreglo.
+5. `scripts/close_row.py` escribe la fila de CONTEXT §9, la entrada de ROADMAP y cierra la fila del BACKLOG; el PR
+   dice qué se midió, qué no, y qué no se probó en vivo.
+

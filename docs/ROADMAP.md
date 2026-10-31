@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-METODO — los barridos por AST de la serie AUDIT-* y el método de auditoría, como código (AUDIT-METODO) (2026-10-29)
+
+Método de auditoría de la serie AUDIT-* como código: `scripts/audit_sweeps.py` barre por AST cuatro clases de defecto (mensaje antes de `st.rerun()`, `clip` de un lado, `x or default` sobre una magnitud con 0 válido, `pytest.skip`) en cada `make check`; lista de verificación en `engine-reviewer`; método en MAINTENANCE §9. Deja registrado un defecto real sin arreglar: el PDF reemplaza una inflación de 0 % por 3 %.
+
+---
+
 ## AUDIT-RESIDUALES-MOAT-ETH — el moat cripto de ETH ya no pide activar la IA: la rúbrica es sólo de Bitcoin (AUDIT-RESIDUALES, moat de IA) (2026-10-28)
 
 AUDIT-RESIDUALES, moat de IA (serie AUDIT-*, auditoría de 2026-10-26). Para un cripto que no es Bitcoin la pantalla ya no pide «activar un proveedor AI» (la rúbrica sólo existe para Bitcoin) y, para Bitcoin con la IA activa y sin respuesta, dice que el proveedor no devolvió una evaluación.
