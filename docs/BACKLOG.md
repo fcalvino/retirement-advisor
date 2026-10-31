@@ -362,6 +362,10 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
     reconciliación, así que el costo es una insignia vacía en esa corrida); y `DataCache.get` /
     `get_age_hours` no aíslan un error de SQLite (por ejemplo `database is locked`), que sube hasta el
     llamador (sin reproducir).
+    (AUDIT-MOTOR-3) `refresh_plan_against_market(persist=True)` (`data/plan_context.py`) descarta el
+    resultado de `plan_store.upsert`: si el plan no se pudo escribir, la pantalla muestra las cifras
+    refrescadas y `last_refreshed_at` queda viejo, sin aviso (el error sólo está en el log). Y «Importar y
+    activar» (`12_Plan.py`) dice «activado» aunque `activate_plan` devuelva `False`. Leído, no reproducido.
     (AUDIT-UI-ESTADO) lo que las tres partes dejaron anotado y sin arreglar (leído, no renderizado):
     la acción «Limpiar historial» de `8_Alertas.py:228-231` hace `clear_history()` y rerun sin ningún
     mensaje (el patrón mensaje + `st.rerun()` se corrigió en AUDIT-RESIDUALES-MENSAJES). En el

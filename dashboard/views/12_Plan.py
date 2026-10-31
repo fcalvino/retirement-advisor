@@ -974,7 +974,8 @@ def _render_plan_ai(snap: PlanSnapshot) -> None:
                     # no prices. Stamping it here reset the freshness clock without
                     # any refresh, while the real refresh button never moved it.
                     if not plan_store.upsert(snap):
-                        st.error(_PLAN_NOT_SAVED)
+                        st.error("No se pudo guardar la narrativa: el archivo de planes no se pudo leer ni escribir. "
+                                 "Revisá el espacio en disco y los permisos de `data/retirement_plans.json`.")
                         return
                     st.toast("🧠 Narrativa del plan actualizada", icon="✅")
                     st.rerun()
@@ -1263,7 +1264,9 @@ else:
                     st.rerun()
             with _c4:
                 if st.button("🗑️ Borrar", key=f"del_{p.id}", width="stretch"):
-                    if not plan_store.delete(p.id):
+                    # ``delete`` también da False si el plan ya no está (borrado desde otra pestaña): eso no es un
+                    # error de escritura y la lista sólo necesita refrescarse.
+                    if not plan_store.delete(p.id) and plan_store.get(p.id) is not None:
                         st.error(f"No se pudo borrar el plan «{p.name}»: el archivo de planes no se pudo escribir. "
                                  "Revisá el espacio en disco y los permisos de `data/retirement_plans.json`.")
                     else:

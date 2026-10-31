@@ -94,6 +94,16 @@ def test_deleting_a_plan_whose_file_cannot_be_written_says_so_and_keeps_the_plan
     assert at.session_state["user_prefs"].active_plan_id == "retiro-2045"   # no se desactivó un plan que sigue ahí
 
 
+def test_deleting_a_plan_that_is_already_gone_refreshes_instead_of_blaming_the_disk(stores):  # noqa: F811
+    """Borrado desde otra pestaña: ``delete`` da False porque no hay nada que borrar, no porque no se pueda escribir."""
+    stores.plans.upsert(_snap())
+    at = _app(_FakePrefs())
+    assert stores.plans.delete("retiro-2045") is True      # la otra pestaña
+    at.button(key="del_retiro-2045").click().run()
+    assert not at.exception, [str(e) for e in at.exception]
+    assert not at.error, _all_text(at)
+
+
 def test_deleting_a_plan_still_works_when_the_file_is_writable(stores):  # noqa: F811
     stores.plans.upsert(_snap())
     at = _app(_FakePrefs())
@@ -111,7 +121,8 @@ def test_deleting_a_plan_still_works_when_the_file_is_writable(stores):  # noqa:
 _KNOWN_DISCARD = {
     "data/plan_context.py": (
         "refresh_plan_against_market devuelve la comparación calculada, no el guardado; "
-        "``upsert`` ya deja el error en el log y la cifra mostrada es la real. Pendiente: BACKLOG."
+        "``upsert`` ya deja el error en el log y la cifra mostrada es la real. Pendiente: BACKLOG, "
+        "AUDIT-RESIDUALES (AUDIT-MOTOR-3)."
     ),
 }
 
