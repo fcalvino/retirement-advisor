@@ -670,6 +670,14 @@ def portfolio_committee_context_block(ctx: dict) -> str:
         ]
         # PORTFOLIO-RISK-CERO: «n/d» here is "not measurable yet", not a gap in
         # the feed — and the model must not fill it with a market-like guess.
+        # AUDIT-NUMB-6: the annualised return is n/d for a book under a year old, and that
+        # is a different reason from the risk metrics' — say it, or the model fills it in.
+        if rz.get("annualized_return_pct") is None and rz.get("annualized_measurable_from"):
+            lines.append(
+                "Retorno anualizado en n/d: la cartera tiene menos de un año desde la primera compra y no "
+                f"se anualizan períodos más cortos (medible desde ~{rz['annualized_measurable_from']}). "
+                "El P&L total es el retorno del período; no lo anualices ni lo reemplaces por valores típicos."
+            )
         _risk_keys = ("sharpe_ratio", "downside_vol_ratio", "beta", "max_drawdown_pct")
         if any(rz.get(k) is None for k in _risk_keys):
             from config import PORTFOLIO

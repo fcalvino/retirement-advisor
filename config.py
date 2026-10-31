@@ -3036,9 +3036,17 @@ class PortfolioConfig:
                       shortens it; below this the four metrics are ``None``, not
                       0 and not beta 1.0 (PORTFOLIO-RISK-CERO). Was the literal
                       ``> 10`` in ``compute_metrics``.
+      min_annualize_years — antigüedad (años desde la primera compra) que necesita el
+                      retorno anualizado. Debajo de eso queda en ``None`` y el P&L total
+                      ya es el retorno del período: anualizar semanas compone una
+                      ganancia chica en una tasa que nadie obtuvo (+10 % en una semana
+                      daba +159 %/año). 1 año es la regla de GIPS (no anualizar períodos
+                      de menos de un año) y `cagr_min_years` ya exige 3 para el CAGR de
+                      una acción. Antes un piso de 0,1 años (AUDIT-NUMB-6).
     """
     base_currency: str = "USD"
     min_risk_curve_points: int = 11
+    min_annualize_years: float = 1.0
 
 
 @dataclass
@@ -3260,7 +3268,10 @@ class CommitteeConfig:
     # bloque común y el Fundamental dicen «ROIC: no aplica» / «Margen Bruto: no
     # aplica» en vez de 0.0 %, y las alertas «Low ROIC: 0.0%» y «Thin gross margin:
     # 0.0%» desaparecen. Solo cambia el prompt de esas empresas.
-    prompt_version: str = "2026-10-19a"
+    # 2026-10-30a: AUDIT-NUMB-6 — el bloque «REALIZADO» del comité de cartera dice por
+    # qué el retorno anualizado es n/d cuando la cartera tiene menos de un año, y el
+    # modelo no lo estima.
+    prompt_version: str = "2026-10-30a"
     data_quality_downgrade_missing_fields: int = 3
     # 50 % is the LOWEST value that makes it impossible for the Devil's Advocate
     # to be the majority of the surviving panel, in both panels: it would need a
