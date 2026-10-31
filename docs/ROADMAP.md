@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-NUMB-2 — una posición sin cotización ya no se valúa a su costo (2026-10-31)
+
+Una posición sin cotización ya no se valúa a su costo: queda fuera de los totales y los pesos, y las decisiones que dependen de ellos esperan y nombran el símbolo (AUDIT-NUMB-2).
+
+---
+
 ## AUDIT-NUMB-6 — el retorno anualizado de la cartera exige un año de antigüedad (2026-10-30)
 
 El retorno anualizado de la cartera exige un año de antigüedad; debajo queda «no medido» con la fecha desde la que se mide (AUDIT-NUMB-6).

@@ -66,6 +66,7 @@ from data.product_ux import (
     resolve_core,
     scenarios_block_text,
     strategy_ignored_savings_note,
+    unpriced_positions_notice,
 )
 from data.universe_loader import UNIVERSE_META
 
@@ -646,6 +647,8 @@ def _render_alignment_trades(snap: PlanSnapshot) -> None:
     """
     if snap.id != (getattr(prefs, "active_plan_id", "") or "").strip():
         return
+    from portfolio.tracker import position_weights_from, unpriced_symbols
+
     _portfolio = st.session_state.get("portfolio")
     if _portfolio is None:
         from portfolio.tracker import Portfolio
@@ -663,11 +666,21 @@ def _render_alignment_trades(snap: PlanSnapshot) -> None:
     if st.button("🧮 Calcular trades sugeridos", key=f"trades_{snap.id}",
                  help="Compara tus posiciones reales con los pesos objetivo del plan"):
         with st.spinner("Comparando posiciones reales vs plan…"):
-            _actual = _portfolio.get_position_weights()
-            _total = sum(v["market_value"] for v in _portfolio.get_current_values().values())
-            st.session_state[_trades_key] = compute_alignment_trades(
-                snap, _actual, _total, price_lookup=plan_price_lookup,
-            )
+            _values = _portfolio.get_current_values()
+            _missing = unpriced_symbols(_values)
+            if _missing:
+                # Trades need the whole book's value: with a position unpriced there is no honest
+                # total or weight (AUDIT-NUMB-2).
+                st.session_state.pop(_trades_key, None)
+                st.warning(
+                    unpriced_positions_notice(_missing, "Sin el valor de toda la cartera no se calculan los trades sugeridos."),
+                    icon="📡",
+                )
+            else:
+                st.session_state[_trades_key] = compute_alignment_trades(
+                    snap, position_weights_from(_values), sum(v["market_value"] for v in _values.values()),
+                    price_lookup=plan_price_lookup,
+                )
 
     _align = st.session_state.get(_trades_key)
     if not _align:

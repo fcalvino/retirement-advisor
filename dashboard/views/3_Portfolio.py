@@ -32,8 +32,15 @@ from data.product_ux import (
     annualized_unmeasured_caption,
     risk_metric_text,
     risk_unmeasured_caption,
+    unpriced_positions_notice,
 )
-from portfolio.tracker import ANNUALIZED_RETURN_CAVEAT, Portfolio
+from portfolio.tracker import (
+    ANNUALIZED_RETURN_CAVEAT,
+    Portfolio,
+    position_weights_from,
+    sector_weights_from,
+    unpriced_symbols,
+)
 
 # ------------------------------------------------------------------ #
 #  Page                                                                #
@@ -65,8 +72,13 @@ metrics = portfolio.compute_metrics()
 
 # Summary metrics
 col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("Valor total",     f"${metrics.total_value:,.0f}")
-col2.metric("P&L total",       f"${metrics.total_pnl:,.0f}", f"{metrics.total_pnl_pct:.1f}%")
+if len(metrics.unpriced_symbols) == metrics.num_positions:
+    # Nothing has a quote: $0 and 0.0 % would read as a measured book.
+    col1.metric("Valor total", "—")
+    col2.metric("P&L total", "—")
+else:
+    col1.metric("Valor total",     f"${metrics.total_value:,.0f}")
+    col2.metric("P&L total",       f"${metrics.total_pnl:,.0f}", f"{metrics.total_pnl_pct:.1f}%")
 col3.metric("Retorno anual",   risk_metric_text(metrics.annualized_return_pct, "{:.1f}%"),
             help=ANNUALIZED_RETURN_CAVEAT)
 col4.metric("Sharpe Ratio",    risk_metric_text(metrics.sharpe_ratio, "{:.2f}"))
@@ -83,6 +95,14 @@ if _risk_caption:
 _annualized_caption = annualized_unmeasured_caption(metrics)
 if _annualized_caption:
     st.caption(_annualized_caption)
+_unpriced = unpriced_symbols(values)    # same rows as the table, not a second fetch
+if _unpriced:
+    st.warning(
+        unpriced_positions_notice(
+            _unpriced, "Los pesos, la deriva contra el plan y el sizing esperan a que haya cotización."
+        ),
+        icon="📡",
+    )
 
 st.divider()
 
@@ -90,10 +110,13 @@ st.divider()
 st.subheader("📊 Posiciones actuales")
 rows = list(values.values())
 df = pd.DataFrame(rows)
+# A position with no quote has None in these columns (AUDIT-NUMB-2): numeric NaN, shown empty.
+for _col in ("current_price", "market_value", "pnl", "pnl_pct"):
+    df[_col] = pd.to_numeric(df[_col], errors="coerce")
 df["pnl_pct"]      = df["pnl_pct"].round(1)
 df["pnl"]          = df["pnl"].round(0)
 df["market_value"] = df["market_value"].round(0)
-df["weight_pct"]   = (df["market_value"] / metrics.total_value * 100).round(1)
+df["weight_pct"]   = (df["market_value"] / metrics.total_value * 100).round(1) if metrics.total_value else None
 
 st.dataframe(
     df[[
@@ -140,8 +163,18 @@ if session_plan_is_unsaved_target(_session_opt, _active_plan):
 
 if _active_plan is not None:
     _target = _active_plan.target_weights()
-    _actual = portfolio.get_position_weights()  # {symbol: weight_pct}
-    if _target:
+    # Drift and trades read the whole book: with a position unpriced they get {} (AUDIT-NUMB-2).
+    _actual = portfolio.get_position_weights(require_complete=True)  # {symbol: weight_pct}
+    if _target and _unpriced:
+        st.divider()
+        st.subheader(f"🎯 Alineación con tu Plan: {_active_plan.name}")
+        st.warning(
+            unpriced_positions_notice(
+                _unpriced, "Sin el valor de toda la cartera no se calcula la deriva ni los trades sugeridos."
+            ),
+            icon="📡",
+        )
+    elif _target:
         st.divider()
         st.subheader(f"🎯 Alineación con tu Plan: {_active_plan.name}")
 
@@ -285,13 +318,19 @@ else:
         )
     else:
         # Position/sector weights from the already-fetched current values (no re-fetch).
-        _total_mv = sum(v["market_value"] for v in values.values()) or 1.0
-        _pos_w = {s: v["market_value"] / _total_mv * 100 for s, v in values.items()}
-        _sec_w: dict[str, float] = {}
-        for v in values.values():
-            _sec_w[v["sector"]] = _sec_w.get(v["sector"], 0.0) + v["market_value"] / _total_mv * 100
+        # With a position unpriced the weights are those of an incomplete book: {} and no committee
+        # until every position has a quote (AUDIT-NUMB-2).
+        _pos_w = position_weights_from(values, require_complete=True)
+        _sec_w = sector_weights_from(values, require_complete=True)
 
-        if st.button("🏛️ Convocar al comité", key="convene_holdings_committee"):
+        if _unpriced:
+            st.info(
+                unpriced_positions_notice(
+                    _unpriced, "El comité espera a que toda la cartera tenga cotización: con un libro incompleto debatiría pesos que no son los tuyos."
+                ),
+                icon="📡",
+            )
+        elif st.button("🏛️ Convocar al comité", key="convene_holdings_committee"):
             with st.spinner("El comité está deliberando (varios agentes en paralelo)…"):
                 try:
                     st.session_state["holdings_committee_verdict"] = run_holdings_committee(
@@ -306,7 +345,9 @@ else:
                     st.error(f"No se pudo convocar al comité: {exc}")
 
         _verdict = st.session_state.get("holdings_committee_verdict")
-        if _verdict is not None:
+        # A verdict given on a fully priced book does not describe this one: it is not shown (its footer
+        # would read "posición máx 0%" from the empty weights).
+        if _verdict is not None and not _unpriced:
             _max_w = max(_pos_w.values()) if _pos_w else 0.0
             _footer = (
                 f"Sharpe {risk_metric_text(metrics.sharpe_ratio, '{:.2f}')} · "
@@ -371,7 +412,14 @@ if PERSONAL_BOOK.enabled:
         type="primary",
     )
 
-    if _run:
+    if _run and _unpriced:
+        st.warning(
+            unpriced_positions_notice(
+                _unpriced, "El sizing parte de los pesos de toda la cartera: no se calcula hasta que todas tengan cotización."
+            ),
+            icon="📡",
+        )
+    elif _run:
         _conv_for_run = {s: st.session_state.get(f"conv_{s}", _saved_conv.get(s, PERSONAL_BOOK.default_conviction))
                          for s in _symbols_now}
         _pos_tuple = tuple(
@@ -554,10 +602,14 @@ for sym, v in values.items():
     r[0].write(f"**{sym}**")
     r[1].write(f"{v['shares']:g}")
     r[2].write(f"${v['avg_cost']:,.2f}")
-    r[3].write(f"${v['market_value']:,.0f}")
-    _pnl_pct = v["pnl_pct"]
-    _color = "#16a34a" if _pnl_pct >= 0 else "#dc2626"
-    r[4].markdown(f"<span style='color:{_color};font-weight:600'>{_pnl_pct:+.1f}%</span>", unsafe_allow_html=True)
+    if v["priced"]:
+        r[3].write(f"${v['market_value']:,.0f}")
+        _pnl_pct = v["pnl_pct"]
+        _color = "#16a34a" if _pnl_pct >= 0 else "#dc2626"
+        r[4].markdown(f"<span style='color:{_color};font-weight:600'>{_pnl_pct:+.1f}%</span>", unsafe_allow_html=True)
+    else:
+        r[3].write("—")
+        r[4].write("—")
     if r[5].button("✏️", key=f"edit_{sym}", help=f"Editar {sym}"):
         _edit_position_dialog(sym)
     if r[6].button("🗑️", key=f"del_{sym}", help=f"Eliminar {sym}"):
@@ -566,25 +618,34 @@ for sym, v in values.items():
 # Charts
 st.divider()
 col1, col2 = st.columns(2)
-with col1:
-    sector_weights = portfolio.get_sector_weights()
-    fig = px.pie(
-        names=list(sector_weights.keys()),
-        values=list(sector_weights.values()),
-        title="Distribución sectorial",
-        hole=0.4,
-    )
-    st.plotly_chart(fig, width="stretch")
+sector_weights = portfolio.get_sector_weights()
+pos_weights = portfolio.get_position_weights()
+if not pos_weights:
+    # Nothing has a quote (AUDIT-NUMB-2): there is no weight to draw, and plotly rejects empty series.
+    st.caption("Sin cotización para ninguna posición: los gráficos de distribución esperan a que haya precio.")
+else:
+    with col1:
+        fig = px.pie(
+            names=list(sector_weights.keys()),
+            values=list(sector_weights.values()),
+            title="Distribución sectorial",
+            hole=0.4,
+        )
+        st.plotly_chart(fig, width="stretch")
 
-with col2:
-    pos_weights = portfolio.get_position_weights()
-    fig = px.bar(
-        x=list(pos_weights.keys()),
-        y=list(pos_weights.values()),
-        title="Peso por posición (%)",
-        color=list(pos_weights.values()),
-        color_continuous_scale="Blues",
+    with col2:
+        fig = px.bar(
+            x=list(pos_weights.keys()),
+            y=list(pos_weights.values()),
+            title="Peso por posición (%)",
+            color=list(pos_weights.values()),
+            color_continuous_scale="Blues",
+        )
+        fig.add_hline(y=8, line_dash="dash", line_color="red", annotation_text="Máx 8%")
+        fig.update_layout(yaxis_title="%", showlegend=False)
+        st.plotly_chart(fig, width="stretch")
+
+if _unpriced and pos_weights:
+    st.caption(
+        unpriced_positions_notice(_unpriced, "Los gráficos reparten solo las posiciones con cotización.")
     )
-    fig.add_hline(y=8, line_dash="dash", line_color="red", annotation_text="Máx 8%")
-    fig.update_layout(yaxis_title="%", showlegend=False)
-    st.plotly_chart(fig, width="stretch")

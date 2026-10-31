@@ -36,10 +36,11 @@ from data.product_ux import (
     ratio_help,
     ratio_label,
     resolve_core,
+    unpriced_positions_notice,
 )
 from data.universe_loader import UNIVERSE_META, list_universes, load_universe
 from portfolio.optimizer import PortfolioOptimizer
-from portfolio.tracker import Portfolio
+from portfolio.tracker import Portfolio, unpriced_symbols
 
 # ------------------------------------------------------------------ #
 #  Constants                                                           #
@@ -531,7 +532,7 @@ if run_now or not has_valid_result:
             asset_classes=dict(cached_asset_classes(tuple(t["symbol"] for t in scored))),
         )
         try:
-            current_weights = portfolio.get_position_weights()
+            current_weights = portfolio.get_position_weights(require_complete=True)
         except Exception:
             current_weights = {}
         result = opt.optimize(scored, current_weights=current_weights or None)
@@ -547,7 +548,7 @@ else:
     result = st.session_state.optimizer_result
     scored = st.session_state.optimizer_scored
     try:
-        current_weights = portfolio.get_position_weights()
+        current_weights = portfolio.get_position_weights(require_complete=True)
     except Exception:
         current_weights = {}
 
@@ -1282,7 +1283,17 @@ with tab_rebal:
             f"{result.rebalance_rationale}"
         )
 
-    if not result.rebalance_suggestions:
+    # Checked before the suggestions: a result computed while the book was fully priced keeps its
+    # rebalance table on reruns, and it would be shown against a book that has lost a quote.
+    _unpriced_now = unpriced_symbols(portfolio.get_current_values()) if portfolio.positions else []
+    if _unpriced_now:
+        st.info(
+            unpriced_positions_notice(
+                _unpriced_now, "Sin el valor de toda la cartera no se calculan las acciones de rebalanceo."
+            ),
+            icon="📡",
+        )
+    elif not result.rebalance_suggestions:
         if not current_weights:
             st.info(
                 "Para ver las acciones de rebalanceo específicas, agrega tus posiciones actuales "

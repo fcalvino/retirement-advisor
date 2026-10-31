@@ -10,9 +10,10 @@ from data.product_ux import (
     DEFENSIVE_SLEEVE_HELP,
     DEFENSIVE_SLEEVE_LABEL,
     defensive_sleeve_caption,
+    unpriced_positions_notice,
 )
 from portfolio.allocation import AllocationAdvisor
-from portfolio.tracker import Portfolio
+from portfolio.tracker import Portfolio, unpriced_symbols
 
 # ------------------------------------------------------------------ #
 #  Page                                                                #
@@ -47,8 +48,11 @@ if not _prefs.chosen_profile_key:
     stop_view()
 
 portfolio: Portfolio = st.session_state.portfolio
-sector_weights   = portfolio.get_sector_weights()   if portfolio.positions else {}
-position_weights = portfolio.get_position_weights() if portfolio.positions else {}
+# With a position unpriced the weights are {} and the concentration limits are not evaluated:
+# a book the market could not fully price is not read as one with nothing concentrated (AUDIT-NUMB-2).
+_unpriced = unpriced_symbols(portfolio.get_current_values()) if portfolio.positions else []
+sector_weights   = portfolio.get_sector_weights(require_complete=True)   if portfolio.positions else {}
+position_weights = portfolio.get_position_weights(require_complete=True) if portfolio.positions else {}
 
 advisor = AllocationAdvisor()
 # The glide path and the concentration limits both read the risk profile the
@@ -58,6 +62,11 @@ advice = advisor.advise(
     age, retirement_age, sector_weights, position_weights,
     profile=_prefs.default_profile,
 )
+if _unpriced:
+    st.warning(
+        unpriced_positions_notice(_unpriced, "Los límites de concentración no se evalúan hasta que haya cotización."),
+        icon="📡",
+    )
 st.caption(
     f"📊 Calculado · perfil **{advice.profile_name}** — la mezcla acciones/bonos y los "
     f"límites de concentración salen de él. Se cambia en ⚙️ Settings."
