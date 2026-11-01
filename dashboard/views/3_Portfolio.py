@@ -14,11 +14,12 @@ from config import ALERTS, PERSONAL_BOOK
 from dashboard.shared import (
     _get_ai_config,
     cached_personal_book_analysis,
+    delete_position_and_conviction,
     plan_price_lookup,
     render_committee_verdict,
     run_holdings_committee,
 )
-from data.personal_book_convictions import get_convictions, remove_conviction, set_all
+from data.personal_book_convictions import get_convictions, set_all
 from data.plan_context import (
     compute_alignment_trades,
     drift_breakdown,
@@ -59,6 +60,8 @@ portfolio: Portfolio = st.session_state.portfolio
 # One-shot success message from a previous edit/delete action
 if "_portfolio_msg" in st.session_state:
     st.success(st.session_state.pop("_portfolio_msg"))
+if "_portfolio_warn" in st.session_state:
+    st.warning(st.session_state.pop("_portfolio_warn"))
 
 if not portfolio.positions:
     st.info(
@@ -403,9 +406,14 @@ if PERSONAL_BOOK.enabled:
                 _conv_inputs[_sym] = st.selectbox(_sym, _levels, index=_idx, key=f"conv_{_sym}")
         _save_conv = st.form_submit_button("💾 Guardar convicciones", type="secondary")
         if _save_conv:
-            set_all(_conv_inputs)
-            st.success("Convicciones guardadas.")
-            _saved_conv = _conv_inputs
+            try:
+                set_all(_conv_inputs)
+            except OSError as exc:
+                # Not «guardadas»: the file is unreadable and could not be set aside, or the disk refused (AUDIT-AIIO-3).
+                st.error(f"No se pudieron guardar las convicciones: {exc}.")
+            else:
+                st.success("Convicciones guardadas.")
+                _saved_conv = _conv_inputs
 
     _run = st.button(
         "🔍 Ejecutar / refrescar análisis de sizing (precios y fundamentals live)",
@@ -576,8 +584,9 @@ def _delete_position_dialog(sym: str) -> None:
 
     b1, b2 = st.columns(2)
     if b1.button("Sí, eliminar", type="primary", width="stretch"):
-        portfolio.remove_position(sym)
-        remove_conviction(sym)
+        _warn = delete_position_and_conviction(portfolio, sym)
+        if _warn:
+            st.session_state["_portfolio_warn"] = _warn
         st.session_state.portfolio = portfolio
         st.session_state["_portfolio_msg"] = f"🗑️ Posición {sym} eliminada."
         st.rerun()

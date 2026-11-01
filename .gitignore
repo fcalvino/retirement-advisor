@@ -56,6 +56,8 @@ data/plan_health_history.corrupt-*.json
 data/user_preferences.corrupt-*.json
 data/personal_book_convictions.json
 data/personal_book_convictions.corrupt-*.json
+# Temporaries of the atomic saves (tmp + replace); they hold the same personal data as the file.
+data/*.json.tmp
 # Derived cache of the last Screener run (safe to delete; rebuilt on demand).
 data/screener_last_run.json
 # Local working notes (audit write-ups, scratch plans). Not product docs — they
