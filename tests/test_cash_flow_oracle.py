@@ -187,14 +187,15 @@ class TestZeroCapitalAccumulationOracle:
         result = self._run(initial=0.0, contribution=0.0)
         assert result.median_terminal == 0.0
 
-    def test_annualised_growth_stays_a_finite_number_without_capital(self):
+    def test_annualised_growth_is_not_measured_without_capital(self):
         """Pot growth divides by ``initial_value``; with no capital it is undefined.
 
-        It must degrade to something a caller can render, not to ``inf``.
+        It must degrade to something a caller can render, not to ``inf`` — and not to a
+        0.0 that reads as «flat» (AUDIT-NUMB-1): ``None``, rendered as «sin tasa».
         """
         result = self._run(initial=0.0, contribution=self.CONTRIB)
-        assert np.isfinite(result.median_cagr_pct)
-        assert np.isfinite(result.p10_cagr_pct)
+        assert result.median_cagr_pct is None
+        assert result.p10_cagr_pct is None
 
 
 # ================================================================== #

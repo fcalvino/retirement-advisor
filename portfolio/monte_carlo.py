@@ -37,6 +37,7 @@ from loguru import logger
 from config import ESTIMACION, MONTE_CARLO, WITHDRAWAL
 from data.fetcher import get_history
 from data.fx import fx_pair_symbol, to_base_or_reason
+from data.product_ux import pot_growth_pct
 from portfolio.decumulation import (
     WithdrawalStrategy,
     apply_cash_flow_schedule,
@@ -92,8 +93,13 @@ class MonteCarloResult:
     # ``terminal`` but not in ``initial``, so the figure inflates far above any
     # return the portfolio earned (e.g. 30 %/yr for a 7 % portfolio fed monthly).
     # Callers MUST NOT label it "CAGR"/"retorno" when cash flows are present.
-    median_cagr_pct: float = 0.0
-    p10_cagr_pct: float = 0.0
+    #
+    # AUDIT-NUMB-1: both are the rate of the PUBLISHED terminal of all the paths
+    # (``median_terminal`` / ``p10_terminal``), so ruined paths count. ``None`` —never
+    # 0.0— where there is no rate: that terminal is <= 0 (the median pot, or the worst
+    # decile, ended with no money) or there is no starting capital to have grown from.
+    median_cagr_pct: Optional[float] = None
+    p10_cagr_pct: Optional[float] = None
 
     # Sequence of Returns Risk (SORR) and intra-horizon drawdown metrics.
     # U2-2: every percentage below is measured on the MARKET series — the
@@ -601,18 +607,16 @@ class MonteCarloSimulator:
             np.percentile(paths_usd[:, : horizon_week + 1].min(axis=1), 10)
         )
 
-        # Pot growth per simulation. Already not a rate of return whenever there
-        # are cash flows (see MonteCarloResult) — and with no starting capital it
-        # is not a number at all: there is no base to have grown from. Report 0
-        # rather than inf, and let the caller's cash-flow check suppress the
-        # label, so no surface can render "∞ %/año" as a projection.
-        if initial_value > 0:
-            terminal_positive = np.where(terminal > 0, terminal, np.nan)
-            with np.errstate(divide="ignore", invalid="ignore"):
-                cagrs = (terminal_positive / initial_value) ** (1 / horizon_years) - 1
-            if np.isfinite(cagrs).any():
-                result.median_cagr_pct = float(np.nanmedian(cagrs) * 100)
-                result.p10_cagr_pct    = float(np.nanpercentile(cagrs, 10) * 100)
+        # Pot growth, from the same terminal the screen prints next to it: the rate of the
+        # published ``median_terminal`` / ``p10_terminal`` of ALL the paths. Already not a
+        # rate of return whenever there are cash flows (see MonteCarloResult). A pot that
+        # ended with no money has no rate (``None``, which every surface renders as «sin
+        # tasa»), instead of the survivors' median or a default 0.0 (AUDIT-NUMB-1). With no
+        # starting capital there is no base to have grown from: also ``None``. (The rate is
+        # monotone in the terminal, so this is the per-path median up to the interpolation
+        # ``np.median`` / ``np.percentile`` do between two terminals: < 0.1 pp.)
+        result.median_cagr_pct = pot_growth_pct(result.median_terminal, initial_value, horizon_years)
+        result.p10_cagr_pct = pot_growth_pct(result.p10_terminal, initial_value, horizon_years)
 
         # 5c — Decumulation metrics (Fase H.1). Only when a strategy was applied.
         if strategy is not None:

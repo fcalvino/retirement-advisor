@@ -557,7 +557,7 @@ def _tab_mc_content():
     k2.metric(
         "Valor más probable (mediana)",
         f"${mc.median_terminal:,.0f}",
-        delta=pot_growth_delta(mc.median_cagr_pct, _mc_flows),
+        delta=pot_growth_delta(mc.median_cagr_pct, _mc_flows, case="median", has_capital=mc.initial_value > 0),
         delta_color="off",
         delta_arrow="off",
         help="En la mitad de las simulaciones terminás por encima de este número, "
@@ -567,7 +567,7 @@ def _tab_mc_content():
     k3.metric(
         BAD_RUN_LABEL,   # EO-4c-2: el Azar, no el Escenario pesimista
         f"${mc.p10_terminal:,.0f}",
-        delta=pot_growth_delta(mc.p10_cagr_pct, _mc_flows),
+        delta=pot_growth_delta(mc.p10_cagr_pct, _mc_flows, case="p10", has_capital=mc.initial_value > 0),
         # "off", no "inverse": teñir de rojo una tasa positiva confunde. Lo malo
         # acá es la racha, y eso ya lo dice la etiqueta.
         delta_color="off",
@@ -2054,7 +2054,7 @@ def _tab_goals_content():
                         delta=(
                             f"incl. ${_total_aportado:,.0f} aportados"
                             if _con_aportes else
-                            pot_growth_delta(mc.median_cagr_pct, False)
+                            pot_growth_delta(mc.median_cagr_pct, False, case="median", has_capital=mc.initial_value > 0)
                         ),
                         delta_color="off",
                         delta_arrow="off",
@@ -2070,7 +2070,7 @@ def _tab_goals_content():
                         delta=(
                             "peor 10% de las simulaciones"
                             if _con_aportes else
-                            pot_growth_delta(mc.p10_cagr_pct, False)
+                            pot_growth_delta(mc.p10_cagr_pct, False, case="p10", has_capital=mc.initial_value > 0)
                         ),
                         delta_color="off",
                         delta_arrow="off",
@@ -2389,7 +2389,10 @@ def _tab_goals_content():
                     "Prob. éxito (%)": round(gr.prob_success_pct, 1),
                     "P10 (USD)": mc.p10_terminal,
                     "P90 (USD)": mc.p90_terminal,
-                    _goals_growth_col: round(mc.median_cagr_pct, 1),
+                    # None = sin tasa (el pozo de la mediana terminó sin dinero): una celda vacía, no un 0,0.
+                    _goals_growth_col: (
+                        None if mc.median_cagr_pct is None else round(mc.median_cagr_pct, 1)
+                    ),
                     "Drawdown máx. med. (%)": round(mc.median_max_drawdown_pct, 1),
                     "Riesgo SORR (%)": round(mc.sorr_early_drawdown_pct, 1),
                 })

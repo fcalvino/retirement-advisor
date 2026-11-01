@@ -314,7 +314,12 @@ class PlanSnapshot:
                 "p90_terminal":     round(float(getattr(mc_result, "p90_terminal", 0.0)), 0),
                 "prob_target_pct":  round(float(getattr(mc_result, "prob_achieve_target_pct", 0.0)), 1),
                 "prob_ruin_pct":    round(float(getattr(mc_result, "prob_ruin_pct", 0.0)), 1),
-                "median_cagr_pct":  round(float(getattr(mc_result, "median_cagr_pct", 0.0)), 2),
+                # None = sin tasa (AUDIT-NUMB-1): el pozo de la mediana terminó sin dinero, o no
+                # hubo capital inicial. Nunca 0.0, que se leería como «plano».
+                "median_cagr_pct":  (
+                    None if getattr(mc_result, "median_cagr_pct", None) is None
+                    else round(float(mc_result.median_cagr_pct), 2)
+                ),
                 # U1-7: el bundle se exporta, así que la cifra viaja con el dato
                 # que decide qué es. Con flujos `median_cagr_pct` no es un
                 # retorno (el capital aportado/retirado mueve el terminal sin

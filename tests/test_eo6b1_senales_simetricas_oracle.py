@@ -127,4 +127,4 @@ def test_the_stock_analysis_ficha_shows_the_note():
 
 def test_the_signal_method_version_moves_and_the_engine_does_not():
     assert SIGNAL_METHOD_VERSION >= "2026.10-senales2"
-    assert ENGINE_VERSION == "2026.10-tier23"
+    assert ENGINE_VERSION >= "2026.10-tier23"   # this PR did not move it (later ones may)
