@@ -939,6 +939,39 @@ def unpriced_positions_notice(symbols: Any, effect: str = "") -> str:
     )
 
 
+#: Why «Vivir N años más» is not measured on a plan that withdraws nothing (AUDIT-NUMB-5).
+#: Short on purpose: it lands in a table cell, where a long text is cut off.
+SCENARIO_NEEDS_WITHDRAWALS = "tu plan no tiene retiros, sumar años solo alargaría el ahorro"
+#: Same, for a phased plan whose retirement starts after the simulated horizon.
+SCENARIO_WITHDRAWALS_AFTER_HORIZON = "tu retiro empieza después del horizonte simulado"
+
+
+def sensitivity_scenario_rows(
+    scenarios: Any, metric: str, metric_label: str, fmt: Any, not_applicable: str
+) -> list[dict]:
+    """The rows of the lab's scenario table. A scenario that did not apply is a dash and its reason.
+
+    ``applies=False`` carries no metrics (``{}``): printing ``fmt(0)`` would show «$0», a measured
+    zero where there was no measurement (U4-3, AUDIT-NUMB-5). ``fmt`` is the metric's formatter. The
+    reason replaces the description in the wide «Qué cambia» column: in the narrow delta cell it was
+    cut off.
+    """
+    rows = []
+    for s in scenarios:
+        what = s.description
+        if s.applies:
+            d = s.deltas.get(metric, 0.0)
+            value = fmt(s.metrics.get(metric, 0.0))
+            delta = f"{'+' if d >= 0 else ''}{fmt(d)}"
+        else:
+            value, delta = "—", not_applicable
+            reason = getattr(s, "reason", "")
+            if reason:
+                what = f"No se mide: {reason}."
+        rows.append({"Escenario": s.label, "Qué cambia": what, metric_label: value, "Δ vs base": delta})
+    return rows
+
+
 def risk_unmeasured_caption(metrics: Any) -> str:
     """Why the realized-risk cards are dashes, and until when; ``""`` if all measured.
 

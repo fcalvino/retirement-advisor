@@ -77,6 +77,7 @@ from data.product_ux import (
     restore_sim_sidebar,
     scenario_caption,
     scenarios_block_text,
+    sensitivity_scenario_rows,
     sim_sidebar_value,
 )
 from portfolio.goals import (
@@ -1206,19 +1207,9 @@ def _render_sensitivity_lab():
 
     # --- Scenario table ---
     st.markdown("**Escenarios de retiro predefinidos**")
-    _scn_rows = []
-    for s in res.scenarios:
-        _d = s.deltas.get(metric, 0.0)
-        _scn_rows.append({
-            "Escenario": s.label,
-            "Qué cambia": s.description,
-            _metric_label[metric]: _fmt(s.metrics.get(metric, 0.0)),
-            # U4-3: mismo criterio que el tornado. Un escenario que no tocó
-            # ninguna métrica reportaba "Δ vs base $0", que es un cero medido.
-            "Δ vs base": (
-                f"{'+' if _d >= 0 else ''}{_fmt(_d)}" if s.applies else _NO_APLICA
-            ),
-        })
+    # U4-3: mismo criterio que el tornado. Un escenario que no tocó ninguna métrica reportaba
+    # "Δ vs base $0", que es un cero medido; uno que no se corrió (NUMB-5) es un «—» y su razón.
+    _scn_rows = sensitivity_scenario_rows(res.scenarios, metric, _metric_label[metric], _fmt, _NO_APLICA)
     st.dataframe(pd.DataFrame(_scn_rows), width="stretch", hide_index=True)
     st.caption(
         "Orientativo — combina supuestos realistas usando tu propia cartera. No es asesoramiento financiero."

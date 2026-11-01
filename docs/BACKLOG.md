@@ -366,6 +366,13 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
     resultado de `plan_store.upsert`: si el plan no se pudo escribir, la pantalla muestra las cifras
     refrescadas y `last_refreshed_at` queda viejo, sin aviso (el error sólo está en el log). Y «Importar y
     activar» (`12_Plan.py`) dice «activado» aunque `activate_plan` devuelva `False`. Leído, no reproducido.
+    (AUDIT-NUMB-5) «Vivir 5 años más» (`portfolio/sensitivity.py`) no mide longevidad ni en un plan que sí
+    retira: compara el terminal nominal en `horizon_years` y en `horizon_years + 5`, y mientras el pozo
+    crece más que el retiro, más años dan más plata (medido con el motor sintético del revisor: +19,8 mil
+    con `constant_pct` 4 % sin fase; +76 mil con `constant_pct` y retiro desde el año 20; +153 mil con
+    `fixed_real` 15 mil). Falta una métrica de sustento (años de gasto cubiertos, o ruina medida a
+    `longevity_years`) que no está en `METRIC_KEYS`; hoy `longevity_years` sola no mueve ninguna métrica.
+    Es una decisión de producto: qué se promete con ese escenario.
     (AUDIT-UI-ESTADO) lo que las tres partes dejaron anotado y sin arreglar (leído, no renderizado):
     la acción «Limpiar historial» de `8_Alertas.py:228-231` hace `clear_history()` y rerun sin ningún
     mensaje (el patrón mensaje + `st.rerun()` se corrigió en AUDIT-RESIDUALES-MENSAJES). En el
