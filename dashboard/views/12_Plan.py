@@ -51,6 +51,7 @@ from data.plan_context import (
     is_sample_plan,
     session_plan_is_unsaved_target,
 )
+from data.plan_health import PlanHealthUnavailable
 from data.plan_store import PlanSnapshot, _slugify, optimizer_metrics, plan_store, unique_plan_id
 from data.product_ux import (
     MAX_DD_ESTIMATE_SHORT,
@@ -823,12 +824,20 @@ def _render_plan_health_history(snap: PlanSnapshot) -> None:
         with st.spinner("Calculando y guardando la salud del plan…"):
             # Reuse the just-refreshed market data if available (no extra fetch).
             _refreshed = st.session_state.get(f"plan_health_{snap.id}")
-            rec = record_plan_health_now(snap, refreshed=_refreshed)
-        if rec is not None:
-            st.toast("✅ Salud registrada", icon="📊")
+            _health_error = None
+            try:
+                rec = record_plan_health_now(snap, refreshed=_refreshed)
+            except PlanHealthUnavailable as exc:
+                rec, _health_error = None, exc
+        if _health_error is not None:      # ``is not None``: ``str(OSError())`` is '' and would read as no error
+            # Not «ya registraste hoy»: the record was NOT saved (AUDIT-AIIO-2). No rerun, so it stays.
+            st.error(f"No se pudo registrar la salud del plan: {_health_error}.")
         else:
-            st.toast("Ya habías registrado la salud hoy.", icon="ℹ️")
-        st.rerun()
+            if rec is not None:
+                st.toast("✅ Salud registrada", icon="📊")
+            else:
+                st.toast("Ya habías registrado la salud hoy.", icon="ℹ️")
+            st.rerun()
 
     history, drift = plan_health_history(snap.id)
     if not history:

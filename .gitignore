@@ -52,7 +52,10 @@ data/user_preferences.json
 data/retirement_plans.json
 data/retirement_plans.corrupt-*.json
 data/plan_health_history.json
+data/plan_health_history.corrupt-*.json
+data/user_preferences.corrupt-*.json
 data/personal_book_convictions.json
+data/personal_book_convictions.corrupt-*.json
 # Derived cache of the last Screener run (safe to delete; rebuilt on demand).
 data/screener_last_run.json
 # Local working notes (audit write-ups, scratch plans). Not product docs — they
