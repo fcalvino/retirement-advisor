@@ -526,6 +526,23 @@ def compute_plan_health(snap, *, core_only: bool = False) -> dict:
     return refresh_plan_against_market(snap, plan_price_lookup)
 
 
+def delete_position_and_conviction(portfolio, symbol: str) -> str | None:
+    """Remove a position and its declared conviction; returns a warning when the conviction could not be cleaned.
+
+    The position goes first and stays gone either way. The conviction store can refuse (AUDIT-AIIO-3):
+    ``ConvictionsUnavailable`` when its file is unreadable and could not be set aside, or any other
+    ``OSError`` (disk full, read-only) — the warning names which, instead of calling every failure «ilegible».
+    """
+    from data.personal_book_convictions import remove_conviction
+
+    portfolio.remove_position(symbol)
+    try:
+        remove_conviction(symbol)
+    except OSError as exc:
+        return f"No se pudo limpiar la convicción de {symbol}: {exc}."
+    return None
+
+
 def record_plan_health_now(
     snap,
     *,

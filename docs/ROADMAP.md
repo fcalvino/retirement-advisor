@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-AIIO-3 — las convicciones ilegibles se apartan y borrar una que no está no escribe nada (2026-11-01)
+
+Las convicciones del libro personal ilegibles se apartan como `.corrupt-<fecha>` y borrar la convicción de un ticker que no está ya no reescribe el archivo (AUDIT-AIIO-3).
+
+---
+
 ## AUDIT-AIIO-2 — el historial de salud del plan ilegible se aparta, no se pisa (2026-11-01)
 
 El historial de salud del plan ilegible se aparta como `.corrupt-<fecha>` y «Registrar salud ahora» ya no dice «ya registraste hoy» cuando no pudo guardar (AUDIT-AIIO-2).
