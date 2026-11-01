@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-AIIO-1 — un archivo de preferencias ilegible se aparta, no se pisa (2026-11-01)
+
+Un archivo de preferencias ilegible se aparta como `.corrupt-<fecha>` en vez de dejarlo para que el próximo guardado lo pise; helper compartido `data/json_files.py` (AUDIT-AIIO-1).
+
+---
+
 ## AUDIT-NUMB-1 — el crecimiento del pozo del Monte Carlo no se calcula solo sobre los sobrevivientes (2026-11-01)
 
 El crecimiento anual del pozo de la proyección Monte Carlo ya no describe solo a los sobrevivientes: es la tasa del valor final publicado y dice «sin tasa» cuando ese valor termina sin dinero (AUDIT-NUMB-1).
