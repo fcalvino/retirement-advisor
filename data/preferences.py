@@ -216,38 +216,64 @@ class UserPreferences:
         # counts as a choice only if the investor completed the onboarding —
         # the template's «Moderado» was never anyone's choice.
         if "profile_chosen" not in kept:
+            profile = kept.get("default_profile")
             kept["profile_chosen"] = (
                 bool(kept.get("onboarded"))
-                and kept.get("default_profile") in PROFILE_NAME_TO_KEY
+                and isinstance(profile, str)         # a list/dict is unhashable: ``in`` raised TypeError
+                and profile in PROFILE_NAME_TO_KEY
             )
         return cls(**kept)
 
     @classmethod
     def load(cls) -> "UserPreferences":
-        """Load from disk. Returns defaults on missing or corrupt file.
+        """Load from disk. Returns the template/defaults when the file is missing or unreadable.
 
         The real file is gitignored (audit D6: it holds the user's actual age,
         capital and savings). On a fresh clone it does not exist, so we seed
         from the tracked ``user_preferences.example.json`` template — which is
         deliberately ``onboarded: false`` so the wizard runs. Any failure to
         read the template falls back to the in-code defaults.
+
+        A file that exists but cannot be read is set aside as ``…corrupt-<fecha>.json``
+        (AUDIT-AIIO-1) and the load goes on as if it were missing: leaving it in place
+        meant the next ``save()`` — every page saves at each step — rewrote it with the
+        defaults and the investor's profile, savings, watchlist and active plan were gone.
         """
-        if not _PREFS_PATH.exists():
-            if _PREFS_EXAMPLE_PATH.exists():
-                try:
-                    return cls._from_raw(
-                        json.loads(_PREFS_EXAMPLE_PATH.read_text(encoding="utf-8"))
-                    )
-                except Exception as exc:
-                    logger.warning(f"Could not seed prefs from template ({exc}) — using defaults")
-            return cls.get_default()
-        try:
-            data = json.loads(_PREFS_PATH.read_text(encoding="utf-8"))
-            # Unknown keys are silently dropped so old files stay compatible
-            return cls._from_raw(data)
-        except Exception as exc:
-            logger.warning(f"Could not load preferences ({exc}) — using defaults")
-            return cls.get_default()
+        from data.json_files import set_aside_unreadable
+
+        def loadable(data) -> bool:
+            """An object ``_from_raw`` can turn into preferences: a shape it rejects is as unreadable as bad JSON."""
+            try:
+                return isinstance(data, dict) and cls._from_raw(data) is not None
+            except Exception:
+                return False
+
+        for _ in range(2):          # twice: another session may fix the file between our two reads
+            if not _PREFS_PATH.exists():
+                return cls._seed_from_template()
+            try:
+                data = json.loads(_PREFS_PATH.read_text(encoding="utf-8"))
+                if not isinstance(data, dict):
+                    raise ValueError(f"se esperaba un objeto y hay {type(data).__name__}")
+                # Unknown keys are silently dropped so old files stay compatible
+                return cls._from_raw(data)
+            except Exception as exc:
+                state = set_aside_unreadable(_PREFS_PATH, str(exc), is_valid=loadable)
+                if state == "valid":
+                    continue
+                logger.warning(f"Could not load preferences ({exc}) — using defaults")
+                return cls._seed_from_template() if state in ("moved", "gone") else cls.get_default()
+        logger.warning("Could not load preferences (the file changed under us twice) — using defaults")
+        return cls.get_default()
+
+    @classmethod
+    def _seed_from_template(cls) -> "UserPreferences":
+        if _PREFS_EXAMPLE_PATH.exists():
+            try:
+                return cls._from_raw(json.loads(_PREFS_EXAMPLE_PATH.read_text(encoding="utf-8")))
+            except Exception as exc:
+                logger.warning(f"Could not seed prefs from template ({exc}) — using defaults")
+        return cls.get_default()
 
     def save(self) -> None:
         """Persist current state to disk atomically."""
