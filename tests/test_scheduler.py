@@ -92,11 +92,11 @@ class _Engine:
     def check_plan_health_degradation(self, name, drift):
         return self._record("check_plan_health_degradation", name=name, drift=drift)
 
-    def check_market_drop_coach(self, portfolio_return_pct, plan_name, plan_prob_target_pct):
+    def check_market_drop_coach(self, portfolio_return_pct, plan_name, plan_prob_target_pct, basis="cost"):
         return self._record(
             "check_market_drop_coach",
             portfolio_return_pct=portfolio_return_pct,
-            plan_name=plan_name, prob=plan_prob_target_pct,
+            plan_name=plan_name, prob=plan_prob_target_pct, basis=basis,
         )
 
 

@@ -394,8 +394,12 @@ class AlertEngine:
         plan_prob_target_pct: Optional[float] = None,
         drop_threshold_pct: Optional[float] = None,
         plan_prob_floor_pct: Optional[float] = None,
+        basis: str = "cost",
     ) -> Optional[FiredAlert]:
-        """Proactive coach after a portfolio drop (backlog 12).
+        """Proactive coach when the portfolio is well under water (backlog 12).
+
+        ``portfolio_return_pct`` is the accumulated return against ``basis`` (``"cost"`` or
+        ``"plan_saved"``), not a recent move — the message says which (AUDIT-NUMB-4).
 
         Uses ``data.product_ux.coach_should_fire_on_drop`` (pure predicate) and
         the existing fire/cooldown path. Message reassures when the plan still
@@ -422,6 +426,7 @@ class AlertEngine:
             plan_prob_target_pct=plan_prob_target_pct,
             plan_prob_floor_pct=floor,
             already_on_cooldown=on_cd,
+            basis=basis,
         )
         if not decision.get("should_fire"):
             return None

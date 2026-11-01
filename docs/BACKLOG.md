@@ -307,6 +307,12 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
     página). El usuario que elige `critical_only` o `weekly` sigue recibiendo todo, a diario. Falta decidir si
     se implementa (filtrar en `AlertEngine.dispatch`; `weekly` pide recordar el último envío) o se saca el
     selector.
+    **Pendiente de AUDIT-NUMB-4 (PR-2, va junto con esta fila):** el coach de cartera
+    (`check_market_drop_coach`) se vuelve a disparar cada 72 h mientras la cartera siga bajo el umbral, aunque
+    nada haya cambiado: decidido, un re-disparo solo si empeora `coach_refire_extra_drop_pp = 2,0` puntos
+    más allá de lo ya avisado, y el cooldown de 72 h pasa de `alerts/store.py` a `config.py`. Aparte, **no
+    existe una alerta de caída reciente** (ventana de días, no resultado acumulado): es una fila nueva de
+    producto, no de este PR; el coach que existe mide contra el costo promedio (PR-1, #317).
   - **AUDIT-PIT-CERO** (corrección). `piotroski_as_of({}, cutoff)` devuelve score 0 con los tres estados
     vacíos (reproducido: sin excepción, las nueve banderas en False);
     `scripts/point_in_time_backtest.py:302` lo persiste con `log_piotroski` sin guarda y

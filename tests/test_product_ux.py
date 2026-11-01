@@ -220,7 +220,7 @@ def test_coach_fires_on_drop_when_plan_ok():
     )
     assert d["should_fire"] is True
     assert d["severity"] == "info"
-    assert "plan" in d["message"].lower() or "Caída" in d["message"]
+    assert "por debajo de tu costo promedio" in d["message"]      # AUDIT-NUMB-4: says what it measures
 
 
 def test_coach_does_not_fire_small_move_or_cooldown():
@@ -454,7 +454,7 @@ def test_alert_engine_market_drop_coach_fires():
     )
     assert fired is not None
     assert fired.alert_type == AlertType.MARKET_DROP_COACH
-    assert "Caída" in fired.message or "caída" in fired.message.lower()
+    assert "por debajo de tu costo promedio" in fired.message
 
     # After fire, store should have cooldown set by _fire — set it like production
     store.set_cooldown(AlertType.MARKET_DROP_COACH, "COACH:Demo")

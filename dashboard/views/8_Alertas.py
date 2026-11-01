@@ -8,7 +8,7 @@ from pathlib import Path
 import streamlit as st
 from loguru import logger
 
-from alerts.store import AlertSeverity, AlertType, alert_store
+from alerts.store import AlertSeverity, alert_store
 from config import ALERTS
 from dashboard.shared import (
     _fetch_universe_parallel,
@@ -19,6 +19,7 @@ from dashboard.shared import (
     show_flash,
 )
 from data.clock import utc_now
+from data.product_ux import ALERT_TYPE_LABELS
 
 # ------------------------------------------------------------------ #
 #  Mark alerts as read when user visits this page                      #
@@ -249,18 +250,7 @@ with tab_history:
             AlertSeverity.WARNING:  "🟡",
             AlertSeverity.INFO:     "🔵",
         }
-        _TYPE_LABEL = {
-            "signal_change":       "Cambio de señal",
-            "score_drop":          "Caída de score",
-            "score_surge":         "Suba de score",
-            "opportunity":         "Oportunidad",
-            "moat_change":         "Cambio de moat",
-            "portfolio_loss":      "Pérdida en posición",
-            "portfolio_drift":     "Drift de posición",
-            "portfolio_rebalance": "Rebalanceo requerido",
-            "sorr_high":           "SORR elevado",
-            "goal_risk":           "Meta en riesgo",
-        }
+        _TYPE_LABEL = ALERT_TYPE_LABELS    # one source with the mute form (AUDIT-NUMB-4)
 
         # Filters
         fcol1, fcol2, fcol3 = st.columns(3)
@@ -423,22 +413,13 @@ with tab_mutes:
             _mute_sym = st.text_input(
                 "Ticker (o '*' para todos)",
                 placeholder="AAPL",
-                help="'*' silencia el tipo de alerta para todos los tickers.",
+                help=(
+                    "'*' silencia el tipo de alerta para todos los tickers. El coach de cartera usa el "
+                    "símbolo COACH:<nombre del plan> en mayúsculas; para silenciarlo dejá '*'."
+                ),
             )
         with mc2:
-            _type_options = {
-                "Todos los tipos": "*",
-                "Cambio de señal": AlertType.SIGNAL_CHANGE.value,
-                "Caída de score": AlertType.SCORE_DROP.value,
-                "Suba de score": AlertType.SCORE_SURGE.value,
-                "Oportunidad": AlertType.OPPORTUNITY.value,
-                "Cambio de moat": AlertType.MOAT_CHANGE.value,
-                "Pérdida en posición": AlertType.PORTFOLIO_LOSS.value,
-                "Drift de posición": AlertType.PORTFOLIO_DRIFT.value,
-                "Rebalanceo": AlertType.PORTFOLIO_REBALANCE.value,
-                "SORR elevado": AlertType.SORR_HIGH.value,
-                "Meta en riesgo": AlertType.GOAL_RISK.value,
-            }
+            _type_options = {"Todos los tipos": "*", **{label: value for value, label in ALERT_TYPE_LABELS.items()}}
             _mute_type_label = st.selectbox("Tipo de alerta", list(_type_options.keys()))
             _mute_type = _type_options[_mute_type_label]
         with mc3:
@@ -463,19 +444,7 @@ with tab_mutes:
     if not mutes:
         st.info("No hay silenciados activos.")
     else:
-        _TYPE_LABEL_SHORT = {v: k for k, v in {
-            "Todos los tipos": "*",
-            "Cambio de señal": AlertType.SIGNAL_CHANGE.value,
-            "Caída de score": AlertType.SCORE_DROP.value,
-            "Suba de score": AlertType.SCORE_SURGE.value,
-            "Oportunidad": AlertType.OPPORTUNITY.value,
-            "Cambio de moat": AlertType.MOAT_CHANGE.value,
-            "Pérdida en posición": AlertType.PORTFOLIO_LOSS.value,
-            "Drift de posición": AlertType.PORTFOLIO_DRIFT.value,
-            "Rebalanceo": AlertType.PORTFOLIO_REBALANCE.value,
-            "SORR elevado": AlertType.SORR_HIGH.value,
-            "Meta en riesgo": AlertType.GOAL_RISK.value,
-        }.items()}
+        _TYPE_LABEL_SHORT = {"*": "Todos los tipos", **ALERT_TYPE_LABELS}
 
         for m in mutes:
             col_a, col_b, col_c, col_d = st.columns([2, 3, 3, 1])

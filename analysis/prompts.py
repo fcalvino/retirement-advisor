@@ -923,7 +923,8 @@ def alert_explanation_prompt(
     ----------
     alert_type : str
         One of: signal_change, score_drop, score_surge, opportunity, moat_change,
-        portfolio_loss, portfolio_drift, portfolio_rebalance, sorr_high, goal_risk
+        portfolio_loss, portfolio_drift, portfolio_rebalance, sorr_high, goal_risk,
+        market_drop_coach
     symbol : str
         Ticker or portfolio identifier.
     context : dict
@@ -936,12 +937,25 @@ def alert_explanation_prompt(
             portfolio_rebalance: total_drift_pct, positions_count
             sorr_high: sorr_pct, horizon_years, initial_value
             goal_risk: goal_name, prev_prob_pct, current_prob_pct, horizon_years
+            market_drop_coach: portfolio_return_pct, threshold_pct, basis (cost | plan_saved),
+                plan_prob_target_pct, plan_ok, plan_name
 
     JSON output contract (2 fields):
         explanation     str  2-3 sentence explanation in Spanish, clear and actionable
         action_suggested str brief recommended action (1 sentence)
     """
     ctx_lines = "\n".join(f"  {k}: {v}" for k, v in context.items())
+    basis_note = ""
+    if alert_type == "market_drop_coach":
+        from data.product_ux import COACH_BASIS_TEXT
+
+        # AUDIT-NUMB-4: the figure is the accumulated result against a basis, not a recent move.
+        basis_note = (
+            "\nNOTA DE LA ALERTA: `portfolio_return_pct` es el resultado ACUMULADO de la cartera contra "
+            f"{COACH_BASIS_TEXT.get(str(context.get('basis') or 'cost'), COACH_BASIS_TEXT['cost']).replace('guardaste', 'se guardó')}"
+            ", no una caída reciente: no la presentes como un movimiento de los últimos días ni como "
+            "una caída del mercado.\n"
+        )
 
     return f"""{ANALYST_ROLE}, especializado en comunicar alertas financieras con claridad a inversores de largo plazo en español.
 
@@ -952,7 +966,7 @@ Se ha disparado una alerta automática para el activo **{symbol}**.
 Tipo de alerta: {alert_type}
 Contexto de la alerta:
 {ctx_lines}
-
+{basis_note}
 TAREA: Explicá esta alerta con cadena causal (P3 D12). El campo `explanation` DEBE cubrir, en 3-4 oraciones, este orden:
 1) Hecho: qué umbral se cruzó y con qué magnitud (números del contexto).
 2) Causa probable: ¿ruido de mercado de corto plazo, deterioro fundamental, o downgrade de moat/tesis?

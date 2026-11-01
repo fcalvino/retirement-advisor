@@ -270,6 +270,7 @@ def _check_market_drop_coach(engine, drift_inputs) -> list:
                 prob = None
 
     portfolio_return_pct = None
+    basis = "cost"          # what the figure is measured against; the message says it (AUDIT-NUMB-4)
     if drift_inputs is not None:
         positions, current_prices, _tw, _label = drift_inputs
         cost = 0.0
@@ -296,6 +297,7 @@ def _check_market_drop_coach(engine, drift_inputs) -> list:
         if isinstance(summary, dict) and summary.get("weighted_delta_pct") is not None:
             try:
                 portfolio_return_pct = float(summary["weighted_delta_pct"])
+                basis = "plan_saved"
             except (TypeError, ValueError):
                 portfolio_return_pct = None
 
@@ -306,6 +308,7 @@ def _check_market_drop_coach(engine, drift_inputs) -> list:
         portfolio_return_pct=portfolio_return_pct,
         plan_name=plan_name or "portfolio",
         plan_prob_target_pct=prob,
+        basis=basis,
     )
     if fired is not None:
         logger.info(f"Market-drop coach fired ({portfolio_return_pct:.1f}%).")
