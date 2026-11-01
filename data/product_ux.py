@@ -11,6 +11,7 @@ No network. Fully unit-testable.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Mapping, NamedTuple, Optional, Sequence
 
@@ -1674,6 +1675,32 @@ def track_record_one_liner(
 #  12 — Coach: market drop + plan still OK                                    #
 # --------------------------------------------------------------------------- #
 
+#: Display label of every ``AlertType`` (alert_type value → label): the history filter and the mute form
+#: read it, so a new type is one line here, not two dicts in the page. A type missing from it was shown
+#: as the raw identifier and could not be muted (AUDIT-NUMB-4); ``tests`` check every ``AlertType`` is here.
+ALERT_TYPE_LABELS = {
+    "signal_change": "Cambio de señal",
+    "score_drop": "Caída de score",
+    "score_surge": "Suba de score",
+    "opportunity": "Oportunidad",
+    "moat_change": "Cambio de moat",
+    "portfolio_loss": "Pérdida en posición",
+    "portfolio_drift": "Drift de posición",
+    "portfolio_rebalance": "Rebalanceo requerido",
+    "sorr_high": "SORR elevado",
+    "goal_risk": "Meta en riesgo",
+    "plan_health_degradation": "Salud del plan",
+    "market_drop_coach": "Coach de cartera",
+}
+
+#: What the coach's return is measured against (AUDIT-NUMB-4): the average cost of the positions, or —
+#: with no positions to price — the prices the active plan was saved at. Neither is a recent move.
+COACH_BASIS_TEXT = {
+    "cost": "tu costo promedio",
+    "plan_saved": "los precios con que guardaste tu plan",
+}
+
+
 def coach_should_fire_on_drop(
     *,
     portfolio_return_pct: float,
@@ -1681,15 +1708,24 @@ def coach_should_fire_on_drop(
     plan_prob_target_pct: Optional[float] = None,
     plan_prob_floor_pct: float = 40.0,
     already_on_cooldown: bool = False,
+    basis: str = "cost",
 ) -> dict:
-    """Predicate for a proactive “plan sigue OK” coach after a market/portfolio drop.
+    """Predicate for a proactive “plan sigue OK” coach when the portfolio is well under water.
 
     Returns ``{should_fire, severity, message, context}``. Pure — the alert engine
     owns persistence/cooldown; pass ``already_on_cooldown=True`` to suppress.
+
+    ``portfolio_return_pct`` is the ACCUMULATED return against ``basis`` (``COACH_BASIS_TEXT``), not
+    the move of the last days: the message says so (AUDIT-NUMB-4) instead of «Caída de cartera», which
+    read as a recent drop to someone who has been −8 % for months.
     """
+    if basis not in COACH_BASIS_TEXT:
+        raise ValueError(f"basis must be one of {sorted(COACH_BASIS_TEXT)}, got {basis!r}")
     ret = float(portfolio_return_pct)
     thr = -abs(float(drop_threshold_pct))
-    if already_on_cooldown or ret > thr:
+    # A NaN return (a NaN quote that passed ``px <= 0``) compares False with everything: it fired and
+    # printed «nan% por debajo de tu costo promedio».
+    if already_on_cooldown or not math.isfinite(ret) or ret > thr:
         return {
             "should_fire": False,
             "severity": "info",
@@ -1697,11 +1733,15 @@ def coach_should_fire_on_drop(
             "context": {
                 "portfolio_return_pct": ret,
                 "threshold_pct": thr,
+                "basis": basis,
             },
         }
 
+    below = (
+        f"{abs(ret):.1f}% por debajo de {COACH_BASIS_TEXT[basis]}"
+    )
     plan_ok = True
-    plan_note = "No hay probabilidad de meta guardada; el desvío de corto plazo no invalida un plan de largo plazo por sí solo."
+    plan_note = "No hay probabilidad de meta guardada; estar por debajo del costo no invalida por sí solo un plan de largo plazo."
     if plan_prob_target_pct is not None:
         plan_ok = float(plan_prob_target_pct) >= float(plan_prob_floor_pct)
         plan_note = (
@@ -1709,21 +1749,23 @@ def coach_should_fire_on_drop(
             f"(piso de confort {plan_prob_floor_pct:.0f}%)."
             if plan_ok
             else (
-                f"La cartera cayó y la prob. de meta (~{float(plan_prob_target_pct):.0f}%) "
+                f"La prob. de meta (~{float(plan_prob_target_pct):.0f}%) "
                 f"está bajo el piso {plan_prob_floor_pct:.0f}% — revisá aportes u horizonte."
             )
         )
 
     if plan_ok:
         msg = (
-            f"📉 Caída de cartera {ret:.1f}% (umbral {thr:.0f}%). "
+            f"📉 Tu cartera está {below} (umbral {abs(thr):.0f}%): es el resultado acumulado, "
+            "no una caída reciente. "
             f"Respirá: {plan_note} "
             "Los planes de retiro se miden en años, no en semanas. Revisá Mi Plan antes de vender por pánico."
         )
         severity = "info"
     else:
         msg = (
-            f"📉 Caída de cartera {ret:.1f}% y el plan necesita atención. {plan_note}"
+            f"📉 Tu cartera está {below} (resultado acumulado, no una caída reciente) "
+            f"y el plan necesita atención. {plan_note}"
         )
         severity = "warning"
 
@@ -1736,6 +1778,7 @@ def coach_should_fire_on_drop(
             "threshold_pct": thr,
             "plan_prob_target_pct": plan_prob_target_pct,
             "plan_ok": plan_ok,
+            "basis": basis,
         },
     }
 

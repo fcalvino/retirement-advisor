@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-NUMB-4 — el coach «Caída de cartera» dice contra qué mide (2026-11-01)
+
+El coach de cartera dice «por debajo de tu costo promedio» y que es un resultado acumulado, no una caída reciente; el tipo se rotula y se puede silenciar (AUDIT-NUMB-4, PR-1).
+
+---
+
 ## AUDIT-NUMB-5 — «Vivir 5 años más» no se mide en un plan que no retira (2026-11-01)
 
 «Vivir 5 años más» no se mide en un plan que no retira dentro del horizonte: la tabla de sensibilidad dice por qué en vez de mostrar que vivir más mejora todo (AUDIT-NUMB-5).
