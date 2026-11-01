@@ -90,6 +90,26 @@ def _parse_severity(value: object, default: AlertSeverity, source: str) -> Alert
         return default
 
 
+FREQUENCY_MODES = ("daily", "critical_only")
+
+
+def effective_frequency_mode() -> str:
+    """The delivery mode in force: ``ALERTS.frequency_mode`` normalised, ``daily`` if it is not one we honour.
+
+    ``critical_only`` sends only the CRITICAL alerts by email/Telegram (every alert is still recorded).
+    ``weekly`` was offered but nothing ever read it, so it is retired: like any other unknown value it logs
+    a warning and runs as ``daily`` (what it was already doing).
+    """
+    raw = getattr(ALERTS, "frequency_mode", "daily")
+    mode = str(raw).strip().lower()
+    if mode in FREQUENCY_MODES:
+        return mode
+    logger.warning(
+        f"frequency_mode={raw!r} no es un modo válido (daily/critical_only); uso daily"
+    )
+    return "daily"
+
+
 def _min_severity_for_profile(profile_name: str) -> AlertSeverity:
     """Return minimum severity threshold for the given profile (``ALERTS.min_severity_*``)."""
     name = (profile_name or "").lower()
@@ -621,6 +641,9 @@ class AlertEngine:
     def dispatch(self, alerts: List[FiredAlert]) -> None:
         """Send all alerts as a single digest message through enabled channels.
 
+        With ``ALERTS.frequency_mode == "critical_only"`` only the CRITICAL ones go out
+        (``effective_frequency_mode``); the others stay in the history.
+
         ``run`` and ``run_with_portfolio`` call it themselves. The plan checks
         (``check_sorr``, ``check_goal_risk``, ``check_plan_health_degradation``,
         ``check_market_drop_coach``) only record and set the cooldown — the caller
@@ -631,6 +654,10 @@ class AlertEngine:
             return
         if not (ALERTS.email_enabled or ALERTS.telegram_enabled):
             return
+        if effective_frequency_mode() == "critical_only":
+            alerts = [a for a in alerts if a.severity == AlertSeverity.CRITICAL]
+            if not alerts:
+                return
 
         critical = [a for a in alerts if a.severity == AlertSeverity.CRITICAL]
         warnings = [a for a in alerts if a.severity == AlertSeverity.WARNING]

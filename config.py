@@ -593,8 +593,10 @@ class AlertConfig:
     alerts_enabled: bool = True            # master switch
 
     # Phase 6: frequency & portfolio alert settings
-    check_frequency_hours: int = int(os.getenv("ALERT_INTERVAL_HOURS", "24"))
-    frequency_mode: str = os.getenv("ALERT_FREQUENCY_MODE", "daily")  # daily | weekly | critical_only
+    # How often the scheduler checks is ``REPORT.alert_check_interval_hours`` (ALERT_INTERVAL_HOURS).
+    # Delivery mode: daily = everything; critical_only = only CRITICAL by email/Telegram
+    # (alerts.engine.effective_frequency_mode; anything else, "weekly" included, runs as daily).
+    frequency_mode: str = os.getenv("ALERT_FREQUENCY_MODE", "daily")
     portfolio_loss_threshold_pct: float = 8.0    # % loss vs avg_cost to trigger PORTFOLIO_LOSS
     portfolio_drift_threshold_pct: float = 5.0   # % drift from optimizer weight to trigger PORTFOLIO_DRIFT
     portfolio_rebalance_threshold_pct: float = 8.0  # total drift to trigger PORTFOLIO_REBALANCE

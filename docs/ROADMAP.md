@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-ALERTAS-FRECUENCIA — la pestaña «Configuración» de Alertas deja de prometer lo que no hace (2026-11-01)
+
+AUDIT-ALERTAS-FRECUENCIA y AUDIT-UI-7 (serie AUDIT-*, auditoría de 2026-10-26). La pestaña «Configuración» de Alertas mostraba siete controles que no hacían nada. Ahora «Solo críticas» filtra de verdad lo que sale por email y Telegram (el historial sigue guardando todo), `weekly` se retiró y un modo inválido ya no rompe la página, y los umbrales se muestran de sólo lectura con el valor que rige. El selector de perfil arranca en el perfil guardado. Falta el PR-2 de AUDIT-NUMB-4 (el coach no repite el aviso si nada empeoró).
+
+---
+
 ## AUDIT-AIIO-3 — las convicciones ilegibles se apartan y borrar una que no está no escribe nada (2026-11-01)
 
 Las convicciones del libro personal ilegibles se apartan como `.corrupt-<fecha>` y borrar la convicción de un ticker que no está ya no reescribe el archivo (AUDIT-AIIO-3).

@@ -24,7 +24,7 @@ GOAL-PRIORITY-TEXT y ORDEN-COHERENCIA.)
 
 Esperan disparador: U5-1b, COM-*, COUNTRY-RISK-AUTO, TR-RACE y VENV-PRUNE. Sin orden: PIT-TOOLS,
 PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND, MACRO-SIN-FECHA y la serie AUDIT-* (5 filas abiertas, auditoría
-2026-10-26; AUDIT-TELEGRAM-LOG, AUDIT-SCHEDULER-FEED, AUDIT-ALERTAS-DESPACHO, AUDIT-OPTIMIZER-LIMITES, AUDIT-MOAT-IA, AUDIT-STRESS-SECTORES, AUDIT-MOAT-ERP-SECTORES, AUDIT-DATOS, AUDIT-CHAT-PROYECCION, AUDIT-UI-VERDAD y AUDIT-UI-ESTADO ya cerraron; AUDIT-ALERTAS-FRECUENCIA nació al cerrar otra). Espera Fuente: SCORE-CONTRACCION.
+2026-10-26; AUDIT-TELEGRAM-LOG, AUDIT-SCHEDULER-FEED, AUDIT-ALERTAS-DESPACHO, AUDIT-OPTIMIZER-LIMITES, AUDIT-MOAT-IA, AUDIT-STRESS-SECTORES, AUDIT-MOAT-ERP-SECTORES, AUDIT-DATOS, AUDIT-CHAT-PROYECCION, AUDIT-UI-VERDAD, AUDIT-UI-ESTADO y AUDIT-ALERTAS-FRECUENCIA ya cerraron; AUDIT-NUMB-4-PR2 nació al cerrar otra). Espera Fuente: SCORE-CONTRACCION.
 
 ---
 
@@ -102,7 +102,7 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **PROMPTS-MULTIMODELO** | 5 | PR 4, 5, 6 y 7 de la serie multimodelo siguen abiertos (`docs/plans/PROMPTS_MULTIMODELO.md`, verificado contra el código el 2026-10-25): higiene de idioma, negaciones y few-shot (PR 4), delimitador único `=== ===` y orden datos→instrucción (PR 5), narrativa de plan en campos (PR 6) y macro sin memoria (PR 7, parcial). Orden recomendado por la serie: 7 → 4 → 5 → 6. Ver bloque 4 |
 | **CONFIDENCE-SELL-BAND** | 4 | `confidence_for` deriva de la banda de score: con score 87 y técnico BULLISH da `HIGH` para SELL, AVOID, REDUCE y HOLD (medido el 2026-10-25), el «la evidencia sostiene comprar» de la banda de compra junto a una no-compra. Punta suelta de SIGNAL-3. Ver bloque 4 |
 | **MACRO-SIN-FECHA** | 5 | El gate de frescura de `MacroRagStore._fresh_docs` acepta un documento sin `as_of` como fresco. Latente: ningún camino lo crea hoy. Bloquea la opción completa de PROMPTS-MULTIMODELO (B1). Ver bloque 4 |
-| **AUDIT-ALERTAS-FRECUENCIA** | 3 | `frequency_mode` (`daily / weekly / critical_only`) se elige en la página Alertas pero ningún código lo lee: `critical_only` no filtra nada. Ver bloque 4 |
+| **AUDIT-NUMB-4-PR2** | 3 | El coach de cartera (`check_market_drop_coach`) se vuelve a disparar cada 72 h mientras la cartera siga bajo el umbral, aunque nada haya cambiado. Decidido: re-disparo sólo si empeora `coach_refire_extra_drop_pp = 2,0` puntos; el cooldown de 72 h pasa a `config.py`. Ver bloque 4 |
 | **AUDIT-PIT-CERO** | 5 | El backtest point-in-time persiste Piotroski 0 para un corte sin estados reconstruidos y la evidencia lo agrupa como «débil»: contamina PIT-2 con filas sin dato. Falta medirlo con un SELECT sobre la base. Ver bloque 4 |
 | **AUDIT-MC-ROBUSTEZ** | 5 | Monte Carlo: `log1p` sin guarda; y, reportado por subagentes sin re-verificar, el borde del bootstrap, la riqueza NaN en semanas extremas, `_asset_hist` viejo, Guardrails del año 1; más mutantes sin fijar (percentiles, escala de `prob_achieve_target_pct`). Ver bloque 4 |
 | **AUDIT-TESTS** | 5 | Dos tests que siempre se saltean, `personal_book_convictions` sin tests y con escritura no atómica; y, reportado por subagentes, tests que fallan según el orden (B1/B2, ésta con la causa del fallo intermitente de `test_sim_gap_katex_oracle`). Ver bloque 4 |
@@ -300,14 +300,8 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
   preset de 8 años (`_fan_paths` genera las claves de 0 a `horizon_years`, así que 8 existe) y que una
   respuesta de IA *vacía* se cachea 7 días como ceros (vacía o no-JSON lanza `MoatParseError`; sólo el
   objeto `{}` se cachea). Ninguna fila tiene orden: las pone el usuario.
-  - **AUDIT-ALERTAS-FRECUENCIA** (corrección; hallado al cerrar AUDIT-ALERTAS-DESPACHO). `AlertConfig.frequency_mode`
-    (`config.py:587`, `ALERT_FREQUENCY_MODE`: `daily | weekly | critical_only`) lo muestra y lo edita la página
-    Alertas (`dashboard/views/8_Alertas.py:309`, con la ayuda «critical_only: solo alertas CRÍTICAS») y
-    la misma página lo lista en su `.env` de ejemplo (`:384`), pero ningún código lo lee (grep sobre todo `*.py`: sólo `config.py` y esa
-    página). El usuario que elige `critical_only` o `weekly` sigue recibiendo todo, a diario. Falta decidir si
-    se implementa (filtrar en `AlertEngine.dispatch`; `weekly` pide recordar el último envío) o se saca el
-    selector.
-    **Pendiente de AUDIT-NUMB-4 (PR-2, va junto con esta fila):** el coach de cartera
+  - **AUDIT-NUMB-4-PR2** (corrección; queda de AUDIT-NUMB-4, #317; AUDIT-ALERTAS-FRECUENCIA cerró sin él, en un PR aparte).
+    El coach de cartera
     (`check_market_drop_coach`) se vuelve a disparar cada 72 h mientras la cartera siga bajo el umbral, aunque
     nada haya cambiado: decidido, un re-disparo solo si empeora `coach_refire_extra_drop_pp = 2,0` puntos
     más allá de lo ya avisado, y el cooldown de 72 h pasa de `alerts/store.py` a `config.py`. Aparte, **no
