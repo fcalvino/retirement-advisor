@@ -335,16 +335,22 @@ def _check_plan_health(engine) -> list:
         plan_price_lookup,
         record_plan_health,
     )
+    from data.plan_health import PlanHealthUnavailable
 
     plan = get_active_plan()
     if plan is None:
         return []
 
     if HEALTH.auto_record:
-        record_plan_health(
-            plan, plan_price_lookup, source="scheduler",
-            min_days_between=HEALTH.min_days_between_records,
-        )
+        try:
+            record_plan_health(
+                plan, plan_price_lookup, source="scheduler",
+                min_days_between=HEALTH.min_days_between_records,
+            )
+        except PlanHealthUnavailable as exc:
+            # The history file is unreadable and could not be set aside (AUDIT-AIIO-2): no record
+            # today, but the degradation check below still reads what is there.
+            logger.error(f"Plan-health record skipped: {exc}")
 
     drift = compute_longitudinal_drift(get_plan_health_history(plan.id))
     fired = engine.check_plan_health_degradation(plan.name, drift)

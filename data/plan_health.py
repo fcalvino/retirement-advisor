@@ -32,6 +32,14 @@ from loguru import logger
 _HEALTH_PATH = Path(__file__).parent / "plan_health_history.json"
 
 
+class PlanHealthUnavailable(OSError):
+    """The history file is unreadable and could not be set aside: nothing was written.
+
+    Distinct from «skipped by dedup» (``append`` returning ``None``): the screen must not tell the
+    user «ya registraste hoy» when the record was not saved (AUDIT-AIIO-2).
+    """
+
+
 def _narrative_hash(text: str) -> str:
     """Short, stable hash of the plan narrative — lets us detect when it changed."""
     if not text:
@@ -99,15 +107,42 @@ class PlanHealthStore:
     def __init__(self, path: Path = _HEALTH_PATH) -> None:
         self.path = path
 
+    @staticmethod
+    def _is_history(data) -> bool:
+        """What the file must hold: a list of record objects."""
+        return isinstance(data, list) and all(isinstance(d, dict) for d in data)
+
+    def _read_items(self) -> Optional[List[dict]]:
+        """The stored records, or ``None`` when the file is unreadable AND could not be set aside.
+
+        An unreadable file is moved to ``…corrupt-<fecha>.json`` (AUDIT-AIIO-2) and the history starts
+        empty: ``append`` and ``clear`` rewrite the whole file from this reading, so leaving it in place
+        meant the next scheduler record wiped the longitudinal history of every plan. ``None`` means the
+        file is still there and still unreadable: the writers must not put anything on top of it.
+        """
+        from data.json_files import set_aside_unreadable
+
+        for _ in range(2):          # twice: another session may fix the file between our two reads
+            if not self.path.exists():
+                return []
+            try:
+                data = json.loads(self.path.read_text(encoding="utf-8"))
+                if self._is_history(data):
+                    return data
+                reason = "se esperaba una lista de registros"
+            except Exception as exc:
+                reason = str(exc)
+            state = set_aside_unreadable(self.path, reason, self._is_history)
+            if state == "valid":
+                continue
+            if state in ("moved", "gone"):
+                return []
+            logger.error(f"Plan-health history unreadable ({reason}) — file left in place")
+            return None
+        return None
+
     def _read_raw(self) -> List[dict]:
-        if not self.path.exists():
-            return []
-        try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-            return data if isinstance(data, list) else []
-        except Exception as exc:
-            logger.warning(f"Could not load plan-health history ({exc}) — starting empty")
-            return []
+        return self._read_items() or []
 
     def _write_raw(self, items: List[dict]) -> None:
         try:
@@ -137,11 +172,16 @@ class PlanHealthStore:
     ) -> Optional[PlanHealthRecord]:
         """Append a record. Returns the record, or None if skipped by dedup.
 
+        Raises ``PlanHealthUnavailable`` when the file is unreadable and could not be set aside.
+
         ``min_days_between`` > 0 skips the append when the plan already has a
         record on the same calendar day (or within the window). ``max_records``
         > 0 trims the oldest records for that plan beyond the cap.
         """
-        items = self._read_raw()
+        items = self._read_items()
+        if items is None:
+            logger.error("Plan-health record not saved: the history file is unreadable")
+            raise PlanHealthUnavailable("el historial de salud del plan está ilegible y no se pudo apartar")
 
         if min_days_between > 0:
             existing = [d for d in items if d.get("plan_id") == record.plan_id]
@@ -167,7 +207,10 @@ class PlanHealthStore:
 
     def clear(self, plan_id: str) -> int:
         """Delete all records for a plan. Returns the number removed."""
-        items = self._read_raw()
+        items = self._read_items()
+        if items is None:
+            logger.error("Plan-health history not cleared: the file is unreadable")
+            return 0
         remaining = [d for d in items if d.get("plan_id") != plan_id]
         removed = len(items) - len(remaining)
         if removed:

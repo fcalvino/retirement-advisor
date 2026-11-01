@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-AIIO-2 — el historial de salud del plan ilegible se aparta, no se pisa (2026-11-01)
+
+El historial de salud del plan ilegible se aparta como `.corrupt-<fecha>` y «Registrar salud ahora» ya no dice «ya registraste hoy» cuando no pudo guardar (AUDIT-AIIO-2).
+
+---
+
 ## AUDIT-AIIO-1 — un archivo de preferencias ilegible se aparta, no se pisa (2026-11-01)
 
 Un archivo de preferencias ilegible se aparta como `.corrupt-<fecha>` en vez de dejarlo para que el próximo guardado lo pise; helper compartido `data/json_files.py` (AUDIT-AIIO-1).
