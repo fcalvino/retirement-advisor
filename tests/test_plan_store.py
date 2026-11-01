@@ -200,7 +200,7 @@ def test_superseded_and_missing_engine_versions_are_stale():
     """
     from config import ENGINE_VERSION
 
-    assert ENGINE_VERSION == "2026.10-tier23"
+    assert ENGINE_VERSION == "2026.10-tier24"   # AUDIT-NUMB-1: the pot growth of the projection
 
     current = PlanSnapshot.from_session(name="actual", opt_result=_fake_opt_result())
     assert current.engine_version == ENGINE_VERSION
@@ -213,7 +213,8 @@ def test_superseded_and_missing_engine_versions_are_stale():
                        "2026.09-tier11", "2026.09-tier12", "2026.09-tier13",
                        "2026.09-tier14", "2026.09-tier15", "2026.09-tier16",
                        "2026.10-tier17", "2026.10-tier18", "2026.10-tier19",
-                       "2026.10-tier20", "2026.10-tier21", "2026.10-tier22"):
+                       "2026.10-tier20", "2026.10-tier21", "2026.10-tier22",
+                       "2026.10-tier23"):
         old = PlanSnapshot.from_session(name="viejo", opt_result=_fake_opt_result())
         old.engine_version = superseded
         assert old.is_engine_stale() is True

@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-NUMB-1 — el crecimiento del pozo del Monte Carlo no se calcula solo sobre los sobrevivientes (2026-11-01)
+
+El crecimiento anual del pozo de la proyección Monte Carlo ya no describe solo a los sobrevivientes: es la tasa del valor final publicado y dice «sin tasa» cuando ese valor termina sin dinero (AUDIT-NUMB-1).
+
+---
+
 ## AUDIT-NUMB-4 — el coach «Caída de cartera» dice contra qué mide (2026-11-01)
 
 El coach de cartera dice «por debajo de tu costo promedio» y que es un resultado acumulado, no una caída reciente; el tipo se rotula y se puede silenciar (AUDIT-NUMB-4, PR-1).

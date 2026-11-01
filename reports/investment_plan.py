@@ -808,17 +808,19 @@ class InvestmentPlanReport:
             if _pdf_flows else
             "Rendimiento anual compuesto típico"
         )
+        _pdf_no_rate_note = "Sin tasa: la mediana termina sin dinero (o no hay capital inicial)"
         risk_rows = [["Métrica de riesgo", "Valor", "Interpretación"]]
         risk_data = [
             ("Prob. de ruina (terminal ≤ $0)",
              f"{mc_result.prob_ruin_pct:.1f}%",
              "< 5% es aceptable para retiro"),
             (f"{_pdf_growth} mediano",
-             f"{mc_result.median_cagr_pct:.1f}%",
-             _pdf_growth_note),
+             _fmt(mc_result.median_cagr_pct, suffix="%"),
+             _pdf_growth_note if mc_result.median_cagr_pct is not None else _pdf_no_rate_note),
             (f"{_pdf_growth} en una mala racha (p10)",
-             f"{mc_result.p10_cagr_pct:.1f}%",
-             "1 de cada 10 simulaciones termina debajo"),
+             _fmt(mc_result.p10_cagr_pct, suffix="%"),
+             "1 de cada 10 simulaciones termina debajo" if mc_result.p10_cagr_pct is not None
+             else "Sin tasa: el peor decil termina sin dinero (o no hay capital inicial)"),
             ("Max Drawdown mediano",
              f"{mc_result.median_max_drawdown_pct:.0f}%",
              "Caída pico-a-valle típica del mercado (no incluye retiros)"),

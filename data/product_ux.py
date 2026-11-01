@@ -713,9 +713,11 @@ def max_dd_estimate_help(config=None) -> str:
 #      deflates below the return (−5,0 % on that same market).
 #
 #  Eleven points of spread on one portfolio, driven by the payment calendar
-#  alone. A third distortion rides along with withdrawals: the engine computes
+#  alone. A third distortion rode along with withdrawals: the engine computed
 #  the per-path figure as ``where(terminal > 0, terminal, nan)`` + ``nanmedian``,
-#  so ruined paths are dropped and what gets published describes the survivors.
+#  so ruined paths were dropped and what got published described the survivors.
+#  AUDIT-NUMB-1 fixed it: the rate is that of the published terminal of ALL the
+#  paths, and ``None`` where that terminal is <= 0 («sin tasa»).
 #
 #  The honest number here is money-weighted (a TIR/IRR), and the U1-7 ``no_hacer``
 #  is exactly "IRR completo" — so this wave names the quantity instead of
@@ -777,19 +779,32 @@ def pot_growth_pct(terminal: float, initial: float, years: float) -> Optional[fl
     return ((terminal / initial) ** (1.0 / years) - 1.0) * 100.0
 
 
-def pot_growth_delta(pct: float, has_cash_flows: bool) -> str:
+#: Whose pot ended with no money, per figure (AUDIT-NUMB-1): the median pot, or the worst decile.
+#: Short on purpose: it is the chip under an ``st.metric``, which cuts it at ~25 characters.
+_POT_GROWTH_CASE_TEXT = {
+    "median": "mediana agotada",
+    "p10": "p10 agotado",
+}
+
+
+def pot_growth_delta(
+    pct: Optional[float], has_cash_flows: bool, *, case: str = "median", has_capital: bool = True
+) -> str:
     """The one-line subtitle under a projected value (``st.metric`` delta).
 
-    When *every* simulated path ran dry the engine's ``nanmedian`` has nothing
-    left to take a median of and the field is NaN. Printing "nan%/año" states a
-    rate where there is none — say so instead.
+    ``None`` (or NaN) is «no rate»: the pot that figure describes ended with no
+    money, or there was no starting capital to have grown from. Printing a number
+    states a rate where there is none (AUDIT-NUMB-1) — say so instead. ``case`` is
+    which figure it is (``"median"`` or ``"p10"``), so the text names whose pot.
     """
     try:
         pct = float(pct)
     except (TypeError, ValueError):
         pct = float("nan")
     if pct != pct or pct in (float("inf"), float("-inf")):
-        return "sin tasa: todos los caminos se quedan sin dinero"
+        if not has_capital:
+            return "sin tasa: sin capital inicial"
+        return f"sin tasa: {_POT_GROWTH_CASE_TEXT.get(case, _POT_GROWTH_CASE_TEXT['median'])}"
     if has_cash_flows:
         return f"{pct:.1f}%/año de {POT_GROWTH_LABEL.lower()}"
     return f"{pct:.1f}%/año ({POT_CAGR_LABEL})"
@@ -816,8 +831,9 @@ def pot_growth_help(has_cash_flows: bool) -> str:
         "cifra) y lo que retirás sale del final sin salir del inicial (la "
         "hunde). El número que sí sería un retorno con flujos es money-weighted "
         "(TIR), y este proyecto todavía no lo calcula.\n\n"
-        "Si hay caminos que se quedan sin dinero, la cifra describe solo los "
-        "que sobrevivieron."
+        "Es la tasa del valor final que se muestra al lado, con todos los caminos "
+        "adentro: si ese valor terminó sin dinero (la mediana o el 10% peor), no "
+        "hay tasa y la pantalla dice «sin tasa»."
     )
 
 
@@ -2727,6 +2743,16 @@ ENGINE_CHANGELOG: tuple[tuple[str, str], ...] = (
         "Optimizer sólo les bajaba el score un 15 % y la proyección no lo veía. Cambian "
         "los pesos del Optimizer y la proyección de los planes que tienen ADRs "
         "argentinos; el resto no se mueve.",
+    ),
+    (
+        "2026.10-tier24",
+        "El crecimiento anual del pozo que mostraba la proyección (mediana y mala racha) se "
+        "calculaba solo sobre las simulaciones que no se quedaban sin dinero: con retiros que "
+        "arruinaban muchos caminos describía a los sobrevivientes, y con todos arruinados "
+        "decía 0,0 %. Ahora es la tasa del valor final que se muestra al lado, con todas las "
+        "simulaciones adentro, y si ese valor termina sin dinero dice «sin tasa». Cambia esa "
+        "cifra en los planes con ruina (y, por menos de 0,1 puntos, en los que no la tienen); "
+        "los valores finales y las probabilidades no se mueven.",
     ),
 )
 

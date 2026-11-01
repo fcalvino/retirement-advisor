@@ -207,7 +207,12 @@ DB_PATH = Path(os.getenv("RETIREMENT_ADVISOR_DB_PATH") or DB_DIR / "retirement_a
 #                   ``OPTIMIZER.ars_risk_discount`` (×0,85 al score). Mueve el μ del
 #                   Optimizer y el target del Monte Carlo sólo de los ADRs argentinos;
 #                   el resto de las carteras, byte-idéntico.
-ENGINE_VERSION = "2026.10-tier23"
+#   2026.10-tier24 — AUDIT-NUMB-1: el crecimiento anual pozo de la proyección (`median_cagr_pct`,
+#                   `p10_cagr_pct`) deja de calcularse solo sobre los caminos que sobreviven:
+#                   es la tasa del terminal publicado de todos los caminos, y `None` (sin
+#                   tasa) cuando ese terminal es <= 0 o no hay capital inicial. Los valores
+#                   finales y las probabilidades no se mueven.
+ENGINE_VERSION = "2026.10-tier24"
 
 # Versión del método de señales (EO-6a, ADR 0001): cómo se decide la acción que
 # `recommendation_log` registra —la escalera de score de `analysis/strategy.py`, la

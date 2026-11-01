@@ -187,4 +187,4 @@ def test_the_signal_method_version_moves_and_the_engine_does_not():
     assert SIGNAL_METHOD_VERSION == "2026.10-senales3"
     # El μ del Optimizer sale de la Clase (EO-4b) y el Monte Carlo no lee el score: el
     # score sólo ordena el pool del Optimizer. No hay μ ni Monte Carlo que se mueva.
-    assert ENGINE_VERSION == "2026.10-tier23"
+    assert ENGINE_VERSION >= "2026.10-tier23"   # this PR did not move it (later ones may)

@@ -78,7 +78,7 @@ def _runs():
     return (
         sim.run(annual_withdrawal=0.0, **kw),          # no flows
         sim.run(annual_withdrawal=-12_000.0, **kw),    # contributions
-        sim.run(annual_withdrawal=6_000.0, **kw),      # withdrawals
+        sim.run(annual_withdrawal=2_000.0, **kw),      # withdrawals (2,4 % de ruina: la mediana sigue viva)
     )
 
 
@@ -110,23 +110,24 @@ def test_with_no_flows_it_really_is_the_compound_growth(_mock):
 
     reference = ((flat.median_terminal / flat.initial_value)
                  ** (1.0 / flat.horizon_years) - 1.0) * 100.0
-    # The engine takes the median OF the per-path CAGRs while this takes the CAGR
-    # OF the median terminal; both are monotone transforms of the same ordering,
-    # so with no ruin they agree to well under a tenth of a point.
-    assert abs(flat.median_cagr_pct - reference) < 0.1
+    # Since AUDIT-NUMB-1 the engine takes the CAGR OF the published median terminal,
+    # which is what this reference is: they are the same number.
+    assert abs(flat.median_cagr_pct - reference) < 1e-9
 
 
 @patch("portfolio.monte_carlo.get_history", side_effect=_fake_history)
-def test_with_ruin_the_figure_describes_only_the_survivors(_mock):
-    """``nanmedian`` over ``where(terminal > 0)`` drops the ruined paths."""
-    _, _, withdraw = _runs()
+def test_with_ruin_the_figure_no_longer_describes_only_the_survivors(_mock):
+    """AUDIT-NUMB-1: the median pot ended with no money, so there is no growth rate.
+
+    It used to be the median of the paths that did NOT run dry (``nanmedian`` over
+    ``where(terminal > 0)``): a finite rate printed under a median of $0.
+    """
+    sim = MonteCarloSimulator(symbols=["AAPL"], seed=42)
+    withdraw = sim.run(annual_withdrawal=6_000.0, horizon_years=20, n_sims=2000, initial_value=100_000)
 
     assert withdraw.prob_ruin_pct > 50.0
     assert withdraw.median_terminal == 0.0
-    # The median pot is zero, yet a finite growth rate is published: it can only
-    # be describing the minority of paths that did not run dry.
-    assert withdraw.median_cagr_pct != 0.0
-    assert np.isfinite(withdraw.median_cagr_pct)
+    assert withdraw.median_cagr_pct is None       # not −5,8 %, not 0,0 %
 
 
 # --------------------------------------------------------------------------- #
@@ -234,8 +235,11 @@ def test_the_help_names_what_the_number_is_not():
     assert "aport" in text and "retir" in text
 
 
-def test_the_help_warns_that_ruined_paths_are_dropped():
-    assert "sobrevi" in pot_growth_help(True).lower()
+def test_the_help_says_a_pot_with_no_money_has_no_rate():
+    """AUDIT-NUMB-1: ruined paths are no longer dropped; a terminal of $0 has no rate."""
+    text = pot_growth_help(True).lower()
+    assert "sobrevi" not in text
+    assert "sin tasa" in text
 
 
 def test_without_flows_the_help_does_not_cry_wolf():
