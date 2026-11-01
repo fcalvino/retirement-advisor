@@ -35,6 +35,8 @@ from config import SENSITIVITY
 from data.product_ux import (
     INDEXATION_LABEL,
     INDEXATION_SCENARIO_DESCRIPTION,
+    SCENARIO_NEEDS_WITHDRAWALS,
+    SCENARIO_WITHDRAWALS_AFTER_HORIZON,
     indexation_scenario_label,
 )
 
@@ -72,8 +74,11 @@ class ScenarioResult:
     metrics: Dict[str, float] = field(default_factory=dict)
     deltas: Dict[str, float] = field(default_factory=dict)   # metric -> (scenario - base)
     #: Whether the what-if reached the plan at all (U4-3). False when every
-    #: delta is exactly zero — see ``_applies``.
+    #: delta is exactly zero — see ``_applies`` — or when the plan lacks what the
+    #: what-if is about (``requires_withdrawals``): then it was not run, ``metrics``
+    #: and ``deltas`` are ``{}`` and ``reason`` says why.
     applies: bool = True
+    reason: str = ""
 
 
 @dataclass
@@ -113,6 +118,23 @@ def _applies(low: Dict[str, float], high: Dict[str, float]) -> bool:
     metric selected in the UI would brand four live assumptions inapplicable.
     """
     return any(low.get(k) != high.get(k) for k in METRIC_KEYS)
+
+
+def _no_withdrawals_reason(params: dict) -> str:
+    """Why this plan withdraws nothing inside the simulated horizon; ``""`` when it does.
+
+    The engine reads the plan the same way (``cached_monte_carlo``: ``if withdrawal_tuple``): a
+    strategy REPLACES ``annual_withdrawal`` (``None`` and ``()`` are no strategy), so with one the
+    annual amount does not count. A phased strategy (``years_to_retirement`` > 0) saves until then and
+    the terminal and the ruin are read at ``horizon_years``: when retirement starts at or after the
+    horizon nothing is withdrawn inside it (AUDIT-NUMB-5).
+    """
+    if params.get("withdrawal_tuple"):
+        retires_in = int(params.get("years_to_retirement") or 0)
+        if retires_in and retires_in >= int(params.get("horizon_years") or 0):
+            return SCENARIO_WITHDRAWALS_AFTER_HORIZON
+        return ""
+    return "" if float(params.get("annual_withdrawal") or 0.0) > 0 else SCENARIO_NEEDS_WITHDRAWALS
 
 
 def _bumped(params: dict, **changes) -> dict:
@@ -203,6 +225,9 @@ def _scenario_specs(cfg) -> list[dict]:
             "key": "live_longer",
             "label": f"Vivir {cfg.longevity_delta_years} años más",
             "description": "Horizonte de retiro más largo (riesgo de longevidad).",
+            # Longevity risk is the risk of outliving what you withdraw. Without withdrawals the
+            # extra years are only more saving at a fixed goal, and every metric improves (AUDIT-NUMB-5).
+            "requires_withdrawals": True,
             "changes": {
                 "horizon_years": ("add", cfg.longevity_delta_years),
                 "longevity_years": ("add", cfg.longevity_delta_years),
@@ -260,6 +285,18 @@ def run_sensitivity(
     scenarios: List[ScenarioResult] = []
     if include_scenarios:
         for spec in _scenario_specs(cfg):
+            no_withdrawals = _no_withdrawals_reason(base_params) if spec.get("requires_withdrawals") else ""
+            if no_withdrawals:
+                scenarios.append(ScenarioResult(
+                    key=spec["key"],
+                    label=spec["label"],
+                    description=spec["description"],
+                    metrics={},
+                    deltas={},
+                    applies=False,
+                    reason=no_withdrawals,
+                ))
+                continue
             m = _metrics(run_fn(_bumped(base_params, **spec["changes"])))
             scenarios.append(ScenarioResult(
                 key=spec["key"],

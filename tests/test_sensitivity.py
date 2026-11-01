@@ -43,6 +43,8 @@ def _base():
         "vol_scale": 1.0,
         "horizon_years": 20,
         "longevity_years": 20,
+        # A plan that retires: «Vivir más» is only measured on one (AUDIT-NUMB-5).
+        "annual_withdrawal": 30_000.0,
     }
 
 

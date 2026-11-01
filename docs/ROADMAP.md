@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-NUMB-5 — «Vivir 5 años más» no se mide en un plan que no retira (2026-11-01)
+
+«Vivir 5 años más» no se mide en un plan que no retira dentro del horizonte: la tabla de sensibilidad dice por qué en vez de mostrar que vivir más mejora todo (AUDIT-NUMB-5).
+
+---
+
 ## AUDIT-NUMB-2 — una posición sin cotización ya no se valúa a su costo (2026-10-31)
 
 Una posición sin cotización ya no se valúa a su costo: queda fuera de los totales y los pesos, y las decisiones que dependen de ellos esperan y nombran el símbolo (AUDIT-NUMB-2).
