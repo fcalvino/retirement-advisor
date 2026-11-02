@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-MC-ROBUSTEZ-ASSET-HIST — un simulador reutilizado no proyecta con los activos de la corrida anterior (AUDIT-MC-ROBUSTEZ, _asset_hist viejo) (2026-11-02)
+
+Segunda pieza de la robustez del Monte Carlo: un simulador reutilizado que ya no consigue precios y cae al respaldo de SPY ya no proyecta con la Estimación y los pesos de los activos de la corrida anterior. Con simuladores nuevos las cifras son las mismas que antes.
+
+---
+
 ## AUDIT-MC-ROBUSTEZ-LOG1P — una semana de pérdida extrema no deja la proyección en NaN (AUDIT-MC-ROBUSTEZ, log1p) (2026-11-02)
 
 Primera pieza de la robustez del Monte Carlo: una semana de pérdida extrema en el historial de un activo único, combinada con la volatilidad del perfil conservador, ya no deja la proyección entera en NaN; se acota la pérdida máxima de una semana y se avisa. Las historias ordinarias dan exactamente lo mismo que antes.
