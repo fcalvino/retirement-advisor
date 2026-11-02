@@ -304,14 +304,19 @@ class AlertStore:
             ]
 
     def is_muted(self, symbol: str, alert_type: str) -> bool:
-        """Return True if this (symbol, alert_type) combination is silenced."""
+        """Return True if this (symbol, alert_type) combination is silenced.
+
+        The symbol is compared without regard to case: the form stores it upper-cased while the coach's own
+        symbol (``COACH:<plan name>``) keeps the plan's capitalisation.
+        """
         now = utc_now()
+        wanted = symbol.casefold()
         with self._Session() as s:
             q = s.query(AlertMute).filter(
                 (AlertMute.expires_at == None) | (AlertMute.expires_at > now)  # noqa: E711
             )
             for mute in q.all():
-                sym_match  = mute.symbol     in ("*", symbol)
+                sym_match  = mute.symbol == "*" or mute.symbol.casefold() == wanted
                 type_match = mute.alert_type in ("*", alert_type)
                 if sym_match and type_match:
                     return True

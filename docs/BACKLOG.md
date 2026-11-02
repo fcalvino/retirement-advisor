@@ -23,8 +23,8 @@ GOAL-PRIORITY-TEXT y ORDEN-COHERENCIA.)
 2. **IDEA-5 IMPUESTOS**: banda 5. Reglas y decisiones en `docs/plans/IDEA5_GANANCIA_CAPITAL_AR.md` (2026-10-10). Sigue: lotes y «Registrar venta» en Portfolio con el impuesto de acciones y ETFs del exterior (§6 de ese plan).
 
 Esperan disparador: U5-1b, COM-*, COUNTRY-RISK-AUTO, TR-RACE y VENV-PRUNE. Sin orden: PIT-TOOLS,
-PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND, MACRO-SIN-FECHA y la serie AUDIT-* (5 filas abiertas, auditoría
-2026-10-26; AUDIT-TELEGRAM-LOG, AUDIT-SCHEDULER-FEED, AUDIT-ALERTAS-DESPACHO, AUDIT-OPTIMIZER-LIMITES, AUDIT-MOAT-IA, AUDIT-STRESS-SECTORES, AUDIT-MOAT-ERP-SECTORES, AUDIT-DATOS, AUDIT-CHAT-PROYECCION, AUDIT-UI-VERDAD, AUDIT-UI-ESTADO, AUDIT-ALERTAS-FRECUENCIA y AUDIT-NUMB-4-PR2 ya cerraron; AUDIT-COACH-SILENCIO nació al cerrar otra). Espera Fuente: SCORE-CONTRACCION.
+PORTFOLIO-FX, IDEA-4, PROMPTS-MULTIMODELO, CONFIDENCE-SELL-BAND, MACRO-SIN-FECHA y la serie AUDIT-* (4 filas abiertas, auditoría
+2026-10-26; AUDIT-TELEGRAM-LOG, AUDIT-SCHEDULER-FEED, AUDIT-ALERTAS-DESPACHO, AUDIT-OPTIMIZER-LIMITES, AUDIT-MOAT-IA, AUDIT-STRESS-SECTORES, AUDIT-MOAT-ERP-SECTORES, AUDIT-DATOS, AUDIT-CHAT-PROYECCION, AUDIT-UI-VERDAD, AUDIT-UI-ESTADO, AUDIT-ALERTAS-FRECUENCIA, AUDIT-NUMB-4-PR2 y AUDIT-COACH-SILENCIO ya cerraron). Espera Fuente: SCORE-CONTRACCION.
 
 ---
 
@@ -102,7 +102,6 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **PROMPTS-MULTIMODELO** | 5 | PR 4, 5, 6 y 7 de la serie multimodelo siguen abiertos (`docs/plans/PROMPTS_MULTIMODELO.md`, verificado contra el código el 2026-10-25): higiene de idioma, negaciones y few-shot (PR 4), delimitador único `=== ===` y orden datos→instrucción (PR 5), narrativa de plan en campos (PR 6) y macro sin memoria (PR 7, parcial). Orden recomendado por la serie: 7 → 4 → 5 → 6. Ver bloque 4 |
 | **CONFIDENCE-SELL-BAND** | 4 | `confidence_for` deriva de la banda de score: con score 87 y técnico BULLISH da `HIGH` para SELL, AVOID, REDUCE y HOLD (medido el 2026-10-25), el «la evidencia sostiene comprar» de la banda de compra junto a una no-compra. Punta suelta de SIGNAL-3. Ver bloque 4 |
 | **MACRO-SIN-FECHA** | 5 | El gate de frescura de `MacroRagStore._fresh_docs` acepta un documento sin `as_of` como fresco. Latente: ningún camino lo crea hoy. Bloquea la opción completa de PROMPTS-MULTIMODELO (B1). Ver bloque 4 |
-| **AUDIT-COACH-SILENCIO** | 3 | Silenciar el coach de cartera por ticker no funciona: el formulario pasa el ticker a mayúsculas e `is_muted` compara con distinción de mayúsculas (reproducido con un plan «Retiro 2045»). Ver bloque 4 |
 | **AUDIT-PIT-CERO** | 5 | El backtest point-in-time persiste Piotroski 0 para un corte sin estados reconstruidos y la evidencia lo agrupa como «débil»: contamina PIT-2 con filas sin dato. Falta medirlo con un SELECT sobre la base. Ver bloque 4 |
 | **AUDIT-MC-ROBUSTEZ** | 5 | Monte Carlo: `log1p` sin guarda; y, reportado por subagentes sin re-verificar, el borde del bootstrap, la riqueza NaN en semanas extremas, `_asset_hist` viejo, Guardrails del año 1; más mutantes sin fijar (percentiles, escala de `prob_achieve_target_pct`). Ver bloque 4 |
 | **AUDIT-TESTS** | 5 | Dos tests que siempre se saltean, `personal_book_convictions` sin tests y con escritura no atómica; y, reportado por subagentes, tests que fallan según el orden (B1/B2, ésta con la causa del fallo intermitente de `test_sim_gap_katex_oracle`). Ver bloque 4 |
@@ -300,15 +299,9 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
   preset de 8 años (`_fan_paths` genera las claves de 0 a `horizon_years`, así que 8 existe) y que una
   respuesta de IA *vacía* se cachea 7 días como ceros (vacía o no-JSON lanza `MoatParseError`; sólo el
   objeto `{}` se cachea). Ninguna fila tiene orden: las pone el usuario.
-  - **AUDIT-COACH-SILENCIO** (corrección; hallado en AUDIT-NUMB-4, #317, y reproducido al cerrar su PR-2).
-    Silenciar el coach de cartera por ticker no funciona: el formulario de la pestaña Silenciados
-    (`dashboard/views/8_Alertas.py:422`) hace `.strip().upper()` y `AlertStore.is_muted` (`alerts/store.py`)
-    compara con distinción de mayúsculas, pero el símbolo del coach es `COACH:<nombre del plan>`. Reproducido
-    (VERIFICADO) con un `AlertStore` real: un plan «Retiro 2045» silenciado como `COACH:RETIRO 2045` sigue
-    avisando; con el nombre ya en mayúsculas, o con `*` más el tipo, sí se silencia. Arreglo propuesto:
-    comparar sin distinguir mayúsculas en `is_muted` (afecta a todos los símbolos silenciados). Aparte, **no
-    existe una alerta de caída reciente** (ventana de días, no resultado acumulado): es una fila nueva de
-    producto; el coach que existe mide contra el costo promedio (AUDIT-NUMB-4).
+  - **Alerta de caída reciente** (producto, sin id; nacida en AUDIT-NUMB-4). No existe una alerta de caída
+    reciente (ventana de días, no resultado acumulado): sería una fila nueva de producto, y la decide el
+    usuario. El coach que existe mide contra el costo promedio (AUDIT-NUMB-4).
   - **AUDIT-PIT-CERO** (corrección). `piotroski_as_of({}, cutoff)` devuelve score 0 con los tres estados
     vacíos (reproducido: sin excepción, las nueve banderas en False);
     `scripts/point_in_time_backtest.py:302` lo persiste con `log_piotroski` sin guarda y

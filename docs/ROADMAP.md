@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-COACH-SILENCIO — silenciar un símbolo no depende de las mayúsculas (2026-11-02)
+
+Silenciar el coach de cartera (o cualquier símbolo) desde Alertas → Silenciados ahora funciona aunque el nombre del plan tenga minúsculas: `AlertStore.is_muted` compara el símbolo sin distinguir mayúsculas. Antes, silenciar un plan «Retiro 2045» no frenaba su aviso.
+
+---
+
 ## AUDIT-NUMB-4-PR2 — el coach de cartera avisa una vez por episodio, no cada vez que vence el cooldown (2026-11-02)
 
 AUDIT-NUMB-4, PR-2 (serie AUDIT-*, auditoría de 2026-10-26). El coach de cartera ya no repite el mismo aviso cada 3 o 4 días: avisa una vez por episodio y vuelve a avisar solo si la cartera empeora 2 puntos o el plan pasa a necesitar atención. Reproducido con 30 días simulados de −9 %: 10 avisos antes, 1 ahora. En tu base real el coach nunca llegó a disparar (0 avisos medidos), así que el arreglo es preventivo. Queda anotado que silenciar el coach por ticker no funciona.
