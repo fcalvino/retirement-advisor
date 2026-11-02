@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-NUMB-4-PR2 — el coach de cartera avisa una vez por episodio, no cada vez que vence el cooldown (2026-11-02)
+
+AUDIT-NUMB-4, PR-2 (serie AUDIT-*, auditoría de 2026-10-26). El coach de cartera ya no repite el mismo aviso cada 3 o 4 días: avisa una vez por episodio y vuelve a avisar solo si la cartera empeora 2 puntos o el plan pasa a necesitar atención. Reproducido con 30 días simulados de −9 %: 10 avisos antes, 1 ahora. En tu base real el coach nunca llegó a disparar (0 avisos medidos), así que el arreglo es preventivo. Queda anotado que silenciar el coach por ticker no funciona.
+
+---
+
 ## AUDIT-ALERTAS-FRECUENCIA — la pestaña «Configuración» de Alertas deja de prometer lo que no hace (2026-11-01)
 
 AUDIT-ALERTAS-FRECUENCIA y AUDIT-UI-7 (serie AUDIT-*, auditoría de 2026-10-26). La pestaña «Configuración» de Alertas mostraba siete controles que no hacían nada. Ahora «Solo críticas» filtra de verdad lo que sale por email y Telegram (el historial sigue guardando todo), `weekly` se retiró y un modo inválido ya no rompe la página, y los umbrales se muestran de sólo lectura con el valor que rige. El selector de perfil arranca en el perfil guardado. Falta el PR-2 de AUDIT-NUMB-4 (el coach no repite el aviso si nada empeoró).

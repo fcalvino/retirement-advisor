@@ -156,7 +156,7 @@ Incluye además las verificaciones de concentración por sector y por posición,
 
 #### `store.py`
 Tres tablas SQLite:
-- `alert_snapshots`: último estado conocido por ticker (score, signal, moat_class)
+- `alert_snapshots`: último estado conocido por ticker (score, signal, moat_class) y por plan (`GOAL:`, `COACH:`)
 - `alert_history`: historial de alertas disparadas (MAX 500 entradas)
 - `alert_cooldowns`: cooldowns activos por tipo+ticker para evitar spam
 

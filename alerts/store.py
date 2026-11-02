@@ -18,7 +18,7 @@ from loguru import logger
 from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-from config import DB_PATH
+from config import ALERTS, DB_PATH
 from data.clock import utc_now
 
 MAX_HISTORY = 500  # cap rows in alert_history
@@ -61,8 +61,14 @@ _COOLDOWN_HOURS: dict[AlertType, int] = {
     AlertType.SORR_HIGH:           336,   # 14 days
     AlertType.GOAL_RISK:           168,   # 7 days
     AlertType.PLAN_HEALTH_DEGRADATION: 168,  # 7 days
-    AlertType.MARKET_DROP_COACH:   72,    # 3 days — coach should not spam
 }
+
+
+def _cooldown_hours(alert_type: AlertType) -> float:
+    """Hours a fired alert of this type stays on cooldown (the coach's lives in ``ALERTS.coach_cooldown_hours``)."""
+    if alert_type == AlertType.MARKET_DROP_COACH:
+        return float(ALERTS.coach_cooldown_hours)
+    return float(_COOLDOWN_HOURS.get(alert_type, 24))
 
 
 class _Base(DeclarativeBase):
@@ -163,7 +169,7 @@ class AlertStore:
 
     def is_on_cooldown(self, alert_type: AlertType, symbol: str) -> bool:
         key = f"{alert_type}:{symbol}"
-        hours = _COOLDOWN_HOURS.get(alert_type, 24)
+        hours = _cooldown_hours(alert_type)
         with self._Session() as s:
             cd = s.get(AlertCooldown, key)
             if cd is None:

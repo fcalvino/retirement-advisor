@@ -37,6 +37,9 @@ AlertEngine.run(scored_tickers)
 | `SCORE_SURGE` | Score subió ≥ 8 pts Y señal actual es BUY/STRONG_BUY | 168h | INFO |
 | `OPPORTUNITY` | Ticker entró en BUY/STRONG_BUY (venía de HOLD/SELL) | 72h | INFO |
 | `MOAT_CHANGE` | Moat degradado (Wide→Narrow, Narrow→Minimal, Minimal→None) | 336h (14 días) | WARNING |
+| `MARKET_DROP_COACH` | Cartera ≥ 8 % por debajo del costo promedio (o de los precios con que se guardó el plan): resultado acumulado, no una caída reciente | 72h (`AlertConfig.coach_cooldown_hours`) | INFO / WARNING si la prob. de meta está bajo el piso |
+
+El coach avisa **una vez por episodio** (mientras la cartera siga bajo el umbral): vuelve a avisar solo si el retorno empeora `AlertConfig.coach_refire_extra_drop_pp` (2 puntos) más allá del último nivel avisado o si sube la severidad. Mientras el retorno se recupera, el nivel de referencia sube con él (una caída que parte de lo recuperado vuelve a avisar), y cada base (costo / precios del plan) lleva su propio episodio, que vence si deja de medirse `AlertConfig.coach_episode_max_gap_days` (30) días. El nivel avisado se guarda en `alert_snapshots` bajo `COACH:<plan>:<base>`.
 
 El umbral de score change (8 pts) es configurable en `AlertConfig.score_change_threshold`.
 
@@ -54,7 +57,7 @@ Tres tablas en `data/db/retirement_advisor.db`:
 
 ### `alert_snapshots`
 
-Último estado conocido por ticker. Actualizado al final de cada `run()`.
+Último estado conocido por ticker. Actualizado al final de cada `run()`. También guarda estado de planes: `GOAL:<plan>` (probabilidad de meta previa) y `COACH:<plan>:<base>` (último retorno que avisó el coach; `score` = retorno, `signal` = `COACH`, `moat_class` = severidad).
 
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
