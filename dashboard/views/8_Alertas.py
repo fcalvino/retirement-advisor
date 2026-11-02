@@ -8,18 +8,25 @@ from pathlib import Path
 import streamlit as st
 from loguru import logger
 
+from alerts.engine import effective_frequency_mode
 from alerts.store import AlertSeverity, alert_store
-from config import ALERTS
+from config import AI_CONFIG, ALERTS, REPORT
 from dashboard.shared import (
     _fetch_universe_parallel,
     _get_ai_config,
     flash,
     generate_alert_report,
+    get_user_prefs,
     run_alert_engine,
     show_flash,
 )
 from data.clock import utc_now
 from data.product_ux import ALERT_TYPE_LABELS
+
+_FREQUENCY_LABELS = {
+    "daily": "Todas las alertas (diario)",
+    "critical_only": "Solo críticas",
+}
 
 # ------------------------------------------------------------------ #
 #  Mark alerts as read when user visits this page                      #
@@ -85,10 +92,12 @@ with tab_run:
         )
 
         # Profile selection for severity filtering
+        _profiles = ["Conservador", "Moderado", "Agresivo"]
+        _saved_profile = get_user_prefs().default_profile
         _profile = st.selectbox(
             "Perfil de alertas",
-            options=["Conservador", "Moderado", "Agresivo"],
-            index=1,
+            options=_profiles,
+            index=_profiles.index(_saved_profile) if _saved_profile in _profiles else 1,
             help=(
                 "Conservador: solo recibe alertas WARNING y CRITICAL. "
                 "Moderado/Agresivo: recibe todas las alertas."
@@ -302,68 +311,46 @@ with tab_history:
 with tab_config:
     st.subheader("⚙️ Configuración de alertas")
 
+    st.caption(
+        "Valores que rigen hoy; la página no los cambia. Los de frecuencia y canales se editan en `.env`; "
+        "los umbrales de detección, en `config.py:AlertConfig`. Se aplican al reiniciar el scheduler y el dashboard."
+    )
+
     st.markdown("**Frecuencia y canales**")
-    col_cfg1, col_cfg2 = st.columns(2)
-    with col_cfg1:
-        _freq = st.selectbox(
-            "Modo de frecuencia",
-            ["daily", "weekly", "critical_only"],
-            index=["daily", "weekly", "critical_only"].index(ALERTS.frequency_mode),
-            help=(
-                "daily: chequea cada 24hs.\n"
-                "weekly: chequea una vez por semana.\n"
-                "critical_only: solo alertas CRÍTICAS."
-            ),
-        )
-        _hours = st.number_input(
-            "Intervalo entre chequeos (horas)",
-            min_value=1, max_value=168,
-            value=ALERTS.check_frequency_hours,
-            step=1,
-        )
-    with col_cfg2:
-        _email_ok = st.checkbox("Email habilitado", value=ALERTS.email_enabled, disabled=True)
-        _tg_ok = st.checkbox("Telegram habilitado", value=ALERTS.telegram_enabled, disabled=True)
-        _ai_exp = st.checkbox(
-            "Explicaciones AI",
-            value=ALERTS.ai_explanations_enabled,
-            help="El proveedor de IA configurado genera una explicación natural para cada alerta.",
+    _mode = effective_frequency_mode()
+    if not ALERTS.ai_explanations_enabled:
+        _ai_text = "no"
+    elif not (AI_CONFIG.enabled and AI_CONFIG.api_key):
+        _ai_text = "no (la IA está apagada o falta la clave)"
+    else:
+        _ai_text = "sí, desde la severidad `ALERT_AI_MIN_SEVERITY`"
+    if ALERTS.email_ready:
+        _email_text = "habilitado"
+    elif ALERTS.email_enabled:
+        _email_text = "configuración incompleta (falta destinatario o `SMTP_PASSWORD`): no se envía"
+    else:
+        _email_text = "no habilitado"
+    st.markdown(
+        f"- **Modo de envío:** {_FREQUENCY_LABELS[_mode]} (`ALERT_FREQUENCY_MODE`). "
+        "Con «Solo críticas» las demás se registran en el historial pero no se envían.\n"
+        f"- **Intervalo entre chequeos del scheduler:** cada {REPORT.alert_check_interval_hours} h "
+        "(`ALERT_INTERVAL_HOURS`).\n"
+        f"- **Explicaciones con IA:** {_ai_text} (`ALERT_AI_EXPLANATIONS`).\n"
+        f"- **Email:** {_email_text} · "
+        f"**Telegram:** {'habilitado' if ALERTS.telegram_enabled else 'no habilitado'}"
+    )
+    if str(ALERTS.frequency_mode).strip().lower() != _mode:
+        st.warning(
+            f"`ALERT_FREQUENCY_MODE={ALERTS.frequency_mode}` no es un modo válido "
+            "(`daily` o `critical_only`): rige `daily`."
         )
 
     st.markdown("**Umbrales de detección**")
-    col_t1, col_t2 = st.columns(2)
-    with col_t1:
-        _score_thr = st.slider(
-            "Cambio mínimo de score (pts)",
-            min_value=3.0, max_value=20.0,
-            value=float(ALERTS.score_change_threshold),
-            step=1.0,
-        )
-        _loss_thr = st.slider(
-            "Pérdida en posición para alerta (%)",
-            min_value=3.0, max_value=25.0,
-            value=float(ALERTS.portfolio_loss_threshold_pct),
-            step=1.0,
-        )
-    with col_t2:
-        _drift_thr = st.slider(
-            "Drift individual por posición (%)",
-            min_value=2.0, max_value=15.0,
-            value=float(ALERTS.portfolio_drift_threshold_pct),
-            step=0.5,
-        )
-        _rebalance_thr = st.slider(
-            "Drift total para rebalanceo (%)",
-            min_value=5.0, max_value=20.0,
-            value=float(ALERTS.portfolio_rebalance_threshold_pct),
-            step=1.0,
-        )
-
-    st.info(
-        "⚠️ Los cambios de configuración aquí son visuales. "
-        "Para cambiarlos de forma permanente, editá las variables en `.env` "
-        "o los valores por defecto en `config.py:AlertConfig`.",
-        icon="ℹ️",
+    st.markdown(
+        f"- **Cambio mínimo de score:** {ALERTS.score_change_threshold:g} pts\n"
+        f"- **Pérdida en una posición:** {ALERTS.portfolio_loss_threshold_pct:g} %\n"
+        f"- **Drift individual por posición:** {ALERTS.portfolio_drift_threshold_pct:g} %\n"
+        f"- **Drift total para rebalanceo:** {ALERTS.portfolio_rebalance_threshold_pct:g} %"
     )
 
     with st.expander("⚙️ Cómo automatizar alertas (scheduler en background)"):
@@ -383,7 +370,7 @@ El scheduler:
 **Variables de entorno relevantes:**
 ```
 ALERT_INTERVAL_HOURS=24        # cada cuántas horas revisar alertas
-ALERT_FREQUENCY_MODE=daily     # daily | weekly | critical_only
+ALERT_FREQUENCY_MODE=daily     # daily | critical_only
 ALERT_AI_EXPLANATIONS=true     # habilitar explicaciones con IA
 REPORT_DAY=1                   # día del mes para el reporte
 EMAIL_FROM=...                 # habilita alertas por email
