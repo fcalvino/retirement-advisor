@@ -605,6 +605,11 @@ class AlertConfig:
     # Proactive coach (backlog 12): "plan sigue OK" after a material portfolio drop
     coach_drop_threshold_pct: float = 8.0          # fire when portfolio return ≤ -this
     coach_plan_prob_floor_pct: float = 40.0        # below this, coach severity escalates
+    # Anti-fatigue (AUDIT-NUMB-4 PR-2): inside one episode the coach repeats only if the return got this
+    # many points worse than the last announced level (or the severity rose); the cooldown is the floor.
+    coach_refire_extra_drop_pp: float = 2.0
+    coach_cooldown_hours: int = 72
+    coach_episode_max_gap_days: int = 30    # an announced episode not measured for this long is over
     # Fase E: suggested alignment trades (plan target vs tracker positions)
     alignment_min_trade_usd: float = 200.0   # ignore trades smaller than this (noise / fees)
     alignment_max_trades: int = 6            # cap the suggested-trades list (prioritized)

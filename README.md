@@ -460,7 +460,7 @@ Los límites se aplican a través del optimizer (SLSQP bounds + fallback score-w
 | SORR high | 336h (14d) | Prob. de drawdown temprano sobre el umbral |
 | Goal risk | 168h | Cayó la probabilidad de cumplir una meta |
 | Plan health degradation | 168h | Deriva estructural sostenida del plan activo |
-| Market drop coach | 72h | Coach de cartera: resultado acumulado por debajo de tu costo promedio y si el plan sigue OK |
+| Market drop coach | 72h (`coach_cooldown_hours`) | Coach de cartera: resultado acumulado por debajo de tu costo promedio y si el plan sigue OK. Avisa una vez por episodio: vuelve a avisar solo si empeora 2 puntos (`coach_refire_extra_drop_pp`) o sube la severidad; la referencia sube con la recuperación y cada base (costo / plan) lleva su propio episodio |
 
 Primera ejecución: guarda baseline silenciosamente sin disparar alertas (cold start).
 

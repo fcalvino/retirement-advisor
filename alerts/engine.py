@@ -27,12 +27,14 @@ scored_tickers format (same as Optimizer input):
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from loguru import logger
 
+from alerts import store as _alert_store_module
 from alerts.notifier import Notifier
 from alerts.portfolio_alerts import PortfolioAlertCandidate, PortfolioAlertDetector
 from alerts.store import AlertSeverity, AlertStore, AlertType, alert_store
@@ -59,6 +61,9 @@ def _normalize_signal(signal: str) -> str:
     if s == "STRONGBUY":
         s = "STRONG_BUY"
     return s
+
+# State of the coach's last announcement, kept in ``alert_snapshots`` under ``COACH:<plan>:<basis>``
+_COACH_ACTIVE = "COACH"
 
 # Severity ordering for profile filtering
 _SEVERITY_RANK = {
@@ -439,9 +444,24 @@ class AlertEngine:
         )
         symbol = f"COACH:{(plan_name or 'portfolio').strip() or 'portfolio'}"
         atype = AlertType.MARKET_DROP_COACH
+        ret = float(portfolio_return_pct)
+        # One episode per basis: the two figures are not comparable, and when the quotes fail the scheduler
+        # flips between them — a single shared state would make every flip look like news.
+        state_key = f"{symbol}:{basis}"
+        prev = self._store.get_snapshot(state_key)
+        announced = prev is not None and str(prev.signal) == _COACH_ACTIVE
+        if announced and self._coach_episode_is_stale(prev):
+            announced = False                  # not measured for a long while: whatever it was, it is over
+        if math.isfinite(ret) and ret > -abs(thr):
+            if announced:
+                # Not under the threshold now, but the episode is not over: the reference follows the recovery,
+                # so a drop that starts from the recovered level is measured from there (-12 -> -7 -> -9.5 is
+                # news) and a return wobbling around -8 % (-8.3 / -7.7) is not one announcement per crossing.
+                self._store.save_snapshot(state_key, max(float(prev.score), ret), _COACH_ACTIVE, prev.moat_class)
+            return None
         on_cd = self._store.is_on_cooldown(atype, symbol)
         decision = coach_should_fire_on_drop(
-            portfolio_return_pct=float(portfolio_return_pct),
+            portfolio_return_pct=ret,
             drop_threshold_pct=thr,
             plan_prob_target_pct=plan_prob_target_pct,
             plan_prob_floor_pct=floor,
@@ -455,13 +475,50 @@ class AlertEngine:
             if decision.get("severity") == "warning"
             else AlertSeverity.INFO
         )
+        if announced and not self._coach_worth_repeating(prev, ret, severity):
+            if math.isfinite(ret):             # observed again: keep the episode alive (same level)
+                self._store.save_snapshot(state_key, float(prev.score), _COACH_ACTIVE, prev.moat_class)
+            return None
         if self._store.is_muted(symbol, atype.value):
             return None
         msg = str(decision.get("message") or "")
         context = dict(decision.get("context") or {})
         context["plan_name"] = plan_name
         explanation = _get_ai_explanation(atype.value, symbol, context, severity)
-        return self._fire(atype, symbol, msg, severity, explanation)
+        fired = self._fire(atype, symbol, msg, severity, explanation)
+        try:
+            self._store.save_snapshot(state_key, ret, _COACH_ACTIVE, severity.value)
+        except Exception as exc:    # the alert is already recorded: losing it here would drop it from dispatch
+            logger.warning(f"No se pudo guardar el nivel avisado del coach ({state_key}): {exc}")
+        return fired
+
+    @staticmethod
+    def _coach_episode_is_stale(prev) -> bool:
+        """True if this basis has not been measured for ``ALERTS.coach_episode_max_gap_days``.
+
+        Every observation under the threshold refreshes the snapshot (``updated_at``), so only an episode
+        whose basis stopped being measured expires: the scheduler alternates between ``cost`` and
+        ``plan_saved`` when quotes fail, and a re-saved plan restarts its own figure. Without this a stale
+        level would hide a real new drop months later.
+        """
+        seen = getattr(prev, "updated_at", None)
+        if seen is None:
+            return False
+        age = _alert_store_module.utc_now() - seen
+        return age.total_seconds() > float(ALERTS.coach_episode_max_gap_days) * 86400.0
+
+    @staticmethod
+    def _coach_worth_repeating(prev, ret: float, severity: AlertSeverity) -> bool:
+        """Inside an announced episode, repeat only if it changed in a way the user has not been told.
+
+        ``prev`` is the ``COACH:<plan>:<basis>`` snapshot written at the last announcement: ``score`` is the
+        return announced and ``moat_class`` the severity. A rise in severity, or
+        ``ALERTS.coach_refire_extra_drop_pp`` more points of loss, counts as news.
+        """
+        prev_severity = _SEVERITY_RANK.get(_parse_severity(prev.moat_class, AlertSeverity.INFO, "coach snapshot"), 0)
+        if _SEVERITY_RANK.get(severity, 0) > prev_severity:
+            return True
+        return ret <= float(prev.score) - float(ALERTS.coach_refire_extra_drop_pp)
 
     # ------------------------------------------------------------------ #
     #  Alert check helpers                                                 #
