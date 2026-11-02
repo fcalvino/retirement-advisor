@@ -2492,6 +2492,8 @@ class MonteCarloConfig:
 
     min_history_weeks — minimum weeks of history required to run simulation.
     default_n_sims    — simulation count shown in the dashboard by default.
+    min_weekly_factor — floor of ``1 + weekly return`` after the volatility scaling, so a crash week
+                        pushed past −100 % is not -inf / NaN / negative wealth (AUDIT-MC-ROBUSTEZ).
 
     P2 D11 transparency:
       warn_static_weights / warn_crypto_without_extra_vol — append human-readable
@@ -2543,6 +2545,12 @@ class MonteCarloConfig:
     default_horizon_years: int = 20
     default_initial_value: int = 100_000   # capital de Simulaciones sin perfil (SIM-REENTRY-WIDGETS)
     block_size_weeks: int = 4            # bootstrap block size (preserves autocorrelation)
+    # Floor of the weekly factor ``1 + x`` in the Estimación recentring and in the historical haircut
+    # (AUDIT-MC-ROBUSTEZ). The recentring takes ``log1p`` of the portfolio's weekly deviation, and the
+    # volatility scaling can push a crash week to −100 % or below: -inf / NaN there, negative wealth in the
+    # haircut. 0.01 = a 99 % loss in one week. It binds only where the factor falls under it, which includes
+    # the band between -99 % and -100 % that was finite before; anything above it is untouched.
+    min_weekly_factor: float = 0.01
     warn_static_weights: bool = True
     warn_crypto_without_extra_vol: bool = True
     default_vol_scale_conservative: float = 1.15

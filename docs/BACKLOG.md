@@ -103,7 +103,7 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **CONFIDENCE-SELL-BAND** | 4 | `confidence_for` deriva de la banda de score: con score 87 y técnico BULLISH da `HIGH` para SELL, AVOID, REDUCE y HOLD (medido el 2026-10-25), el «la evidencia sostiene comprar» de la banda de compra junto a una no-compra. Punta suelta de SIGNAL-3. Ver bloque 4 |
 | **MACRO-SIN-FECHA** | 5 | El gate de frescura de `MacroRagStore._fresh_docs` acepta un documento sin `as_of` como fresco. Latente: ningún camino lo crea hoy. Bloquea la opción completa de PROMPTS-MULTIMODELO (B1). Ver bloque 4 |
 | **AUDIT-PIT-CERO** | 5 | El backtest point-in-time persiste Piotroski 0 para un corte sin estados reconstruidos y la evidencia lo agrupa como «débil»: contamina PIT-2 con filas sin dato. Falta medirlo con un SELECT sobre la base. Ver bloque 4 |
-| **AUDIT-MC-ROBUSTEZ** | 5 | Monte Carlo: `log1p` sin guarda; y, reportado por subagentes sin re-verificar, el borde del bootstrap, la riqueza NaN en semanas extremas, `_asset_hist` viejo, Guardrails del año 1; más mutantes sin fijar (percentiles, escala de `prob_achieve_target_pct`). Ver bloque 4 |
+| **AUDIT-MC-ROBUSTEZ** | 5 | Monte Carlo, en piezas. Hecha: `log1p` sin guarda (AUDIT-MC-ROBUSTEZ-LOG1P). Quedan `_asset_hist` viejo (verificado), Guardrails del año 1 (verificado), mutantes sin fijar; y dos para decidir vos: el borde del bootstrap y `p10_intra_min = 0` sin capital. Ver bloque 4 |
 | **AUDIT-TESTS** | 5 | Dos tests que siempre se saltean, `personal_book_convictions` sin tests y con escritura no atómica; y, reportado por subagentes, tests que fallan según el orden (B1/B2, ésta con la causa del fallo intermitente de `test_sim_gap_katex_oracle`). Ver bloque 4 |
 | **AUDIT-RESIDUALES** | 5 | Lo que los arreglos de #283–#290 dejaron dicho y sin cerrar: las ventas parciales en la curva del tracker, el ancla que retrocede del Piotroski y las fechas exactas y las dos bases del track record, más tres del optimizador (AUDIT-OPTIMIZER-LIMITES) una del moat de IA (AUDIT-MOAT-IA) y lo que dejó AUDIT-UI-ESTADO (el escape de `\$` del chat, «Limpiar historial» sin mensaje, la firma del plan de «Mis Metas»). Ver bloque 4 |
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
@@ -311,17 +311,27 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
     así que daría 0 en todos sus cortes. **Medición pendiente** (necesita la base real, no se leyó):
     `SELECT symbol, as_of FROM synthetic_recommendation WHERE piotroski_score = 0 AND
     excess_return_pct IS NOT NULL`, para ver cuántas filas del grupo «débil» de PIT-2 son vacías.
-  - **AUDIT-MC-ROBUSTEZ** (robustez). `portfolio/monte_carlo.py:843` hace `np.log1p(port_dev)` sin guarda
-    (reproducido: `log1p(-1.0)` da `-inf` y `log1p(-1.2)` da `nan`). En esa rama `port_dev` es
-    `Σ w·(r−m)·vol_scale` (`:834`): con `vol_scale` 1,15 hace falta que el portafolio pierda ≈ 87 % en una
-    semana, así que es **latente** y casi inalcanzable fuera de un activo único con extremos. Subagente, sin
-    re-verificar: el borde del bootstrap queda sub-cubierto (mediana −1,2 pp en historiales cortos o con
-    muchos extremos), `_asset_hist` queda viejo tras el respaldo a SPY, Guardrails evalúa el año 1 a las 4
-    semanas y `p10_intra_min` da 0 para quien arranca sin ahorros. Mutantes sobrevivientes del barrido
-    (subagente; 354 mutantes, 110 sobrevivieron sin triage de equivalentes; las líneas sí están en esos
-    sitios): los percentiles y los `base_*` (`:548-562`), la escala de `prob_achieve_target_pct` (`:555`,
-    `:564`; `×100 → ×110` sobrevive), el signo de `decumulation_years` (`:1089`), `initial_value / basis`
-    (`:1095`) y `vol_scale ≠ 1` en el bootstrap: ningún test los fija.
+  - **AUDIT-MC-ROBUSTEZ** (robustez; partida en piezas, una por PR; triada el 2026-11-02 con historias sintéticas).
+    **Hecha:** `log1p` sin guarda (`portfolio/monte_carlo.py`, `_estimation_adjustment`): con `vol_scale` 1,15 una
+    semana de ≈ −87 % da NaN en toda la proyección, y el ajuste histórico daba riqueza negativa con ≈ −79 %; ahora
+    hay un piso (`MONTE_CARLO.min_weekly_factor`) y un aviso (AUDIT-MC-ROBUSTEZ-LOG1P). Anotado ahí: las tarjetas por
+    meta de Simulaciones no muestran `mc_result.warnings` (VERIFICADO por lectura, `7_Simulaciones.py:~1990-2075`;
+    la corrida principal sí, `:544`), así que el aviso del piso no se ve en Metas. **Siguen abiertas, en este orden propuesto:** (1) `_asset_hist` viejo
+    (VERIFICADO): `_load_returns` sólo lo pisa en el camino bueno y `_spy_fallback` no lo limpia, así que la segunda
+    corrida de un simulador reutilizado (el solver de ahorro y Metas lo reutilizan) con la red caída informa
+    `symbols_used = ['SPY']` pero proyecta con la Estimación del activo viejo (mediana 19 066 contra 18 270 de un
+    simulador nuevo); arreglo: limpiarlo al empezar `_load_returns`. (2) Guardrails evalúa el año 1 a las 4
+    semanas (VERIFICADO el mecanismo y medido con bootstrap normal i.i.d.: dispara el recorte en 0,00 % de los
+    caminos con ~17 %/año de volatilidad, 3,5 % con ~35 % y 22 % con ~80 %, tipo cripto; el método de Guyton-Klinger, aquí simplificado (2 de sus 4 reglas), fija el
+    primer año en la tasa inicial). Cambia números sólo en planes volátiles con Guardrails. (3) Fijar los
+    mutantes que sobreviven (sólo tests): los percentiles y los `base_*` (`:548-562`), la escala de
+    `prob_achieve_target_pct` (`:555`, `:564`; `×100 → ×110` sobrevive), el signo de `decumulation_years`
+    (`:1089`), `initial_value / basis` (`:1095`) y `vol_scale ≠ 1` en el bootstrap (subagente; 354 mutantes, 110
+    sobrevivieron sin triage de equivalentes). **Para decidir vos, no se tocan:** el borde del bootstrap
+    (reproducido sólo con una historia corta y extremos en los bordes: −0,9 pp/año con 104 semanas; con historia
+    normal queda dentro del ruido, −0,28 ± 1,75 pp; el arreglo, un bootstrap circular, cambia toda proyección) y
+    `p10_intra_min = 0` sin capital inicial (VERIFICADO: el mínimo incluye la semana 0, que vale 0; con 10 000
+    iniciales da 9 542; excluirla cambia una cifra visible para todos).
   - **AUDIT-TESTS** (robustez). `tests/test_backtesting.py:397` («no saved backtest in
     data/db/backtests/») y `tests/test_config_single_home_oracle.py:432` («fields removed — inertness is now
     structural») son los dos `skipped` del baseline (reproducido: `pytest` sobre esos dos archivos da
