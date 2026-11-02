@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-MC-ROBUSTEZ-LOG1P — una semana de pérdida extrema no deja la proyección en NaN (AUDIT-MC-ROBUSTEZ, log1p) (2026-11-02)
+
+Primera pieza de la robustez del Monte Carlo: una semana de pérdida extrema en el historial de un activo único, combinada con la volatilidad del perfil conservador, ya no deja la proyección entera en NaN; se acota la pérdida máxima de una semana y se avisa. Las historias ordinarias dan exactamente lo mismo que antes.
+
+---
+
 ## AUDIT-COACH-SILENCIO — silenciar un símbolo no depende de las mayúsculas (2026-11-02)
 
 Silenciar el coach de cartera (o cualquier símbolo) desde Alertas → Silenciados ahora funciona aunque el nombre del plan tenga minúsculas: `AlertStore.is_muted` compara el símbolo sin distinguir mayúsculas. Antes, silenciar un plan «Retiro 2045» no frenaba su aviso.

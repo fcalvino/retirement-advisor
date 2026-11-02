@@ -814,9 +814,9 @@ class MonteCarloSimulator:
                 "volatilidad): no se pasaron las Clases de los activos, así que no hay "
                 "Estimación objetiva (sin Clases)."
             )
-            return self._conservative_adjustment(port_hist)
+            return self._floor_weekly(self._conservative_adjustment(port_hist), result)
         if self._asset_hist is None:
-            return self._conservative_adjustment(port_hist)
+            return self._floor_weekly(self._conservative_adjustment(port_hist), result)
         from analysis.estimacion import OBJETIVA, asset_estimations, country_warnings
 
         ests = asset_estimations(self._asset_symbols, self._asset_classes, self.scenario,
@@ -844,8 +844,28 @@ class MonteCarloSimulator:
         w = self._asset_weights
         port_dev = np.column_stack(deviations) @ w
         port_target = float(np.dot(w, targets))
-        logr = np.log1p(port_dev)
+        # ``vol_scale`` > 1 can scale a crash week to −100 % or below, where ``log1p`` is -inf / NaN and
+        # takes the whole projection with it: the factor ``1 + deviation`` has a floor.
+        logr = np.log1p(self._floor_weekly(port_dev, result))
         return np.expm1(logr - logr.mean() + np.log1p(port_target) / periods)
+
+    @staticmethod
+    def _floor_weekly(series: np.ndarray, result: "MonteCarloResult") -> np.ndarray:
+        """Bound a weekly return (or deviation) so that ``1 + x`` stays at least ``min_weekly_factor``.
+
+        A scaled crash week can reach −100 % or worse; wealth would go to zero or negative (or ``log1p``
+        to -inf / NaN) and every statistic of the projection with it. Wherever the series does not reach
+        the floor it is returned untouched, so an ordinary history gives the bits it always gave.
+        """
+        floor = MONTE_CARLO.min_weekly_factor - 1.0
+        if not (series < floor).any():
+            return series
+        result.warnings.append(
+            "Una semana del historial cae tanto que, con el ajuste de volatilidad de la proyección, la "
+            "habría llevado a −100 % o menos: se acotó a la pérdida máxima de una semana para que "
+            "la proyección no quede sin resultado."
+        )
+        return np.maximum(series, floor)
 
     # ------------------------------------------------------------------ #
     #  Conservative adjustment (bonds, no Clase, runs without Clases)      #
