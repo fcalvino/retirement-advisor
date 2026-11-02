@@ -402,7 +402,7 @@ with tab_mutes:
                 placeholder="AAPL",
                 help=(
                     "'*' silencia el tipo de alerta para todos los tickers. El coach de cartera usa el "
-                    "símbolo COACH:<nombre del plan> en mayúsculas; para silenciarlo dejá '*'."
+                    "símbolo COACH:<nombre del plan>; no distingue mayúsculas."
                 ),
             )
         with mc2:
