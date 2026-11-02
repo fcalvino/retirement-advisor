@@ -103,7 +103,7 @@ archivo tiene que nombrar estas y ninguna cerrada:
 | **CONFIDENCE-SELL-BAND** | 4 | `confidence_for` deriva de la banda de score: con score 87 y técnico BULLISH da `HIGH` para SELL, AVOID, REDUCE y HOLD (medido el 2026-10-25), el «la evidencia sostiene comprar» de la banda de compra junto a una no-compra. Punta suelta de SIGNAL-3. Ver bloque 4 |
 | **MACRO-SIN-FECHA** | 5 | El gate de frescura de `MacroRagStore._fresh_docs` acepta un documento sin `as_of` como fresco. Latente: ningún camino lo crea hoy. Bloquea la opción completa de PROMPTS-MULTIMODELO (B1). Ver bloque 4 |
 | **AUDIT-PIT-CERO** | 5 | El backtest point-in-time persiste Piotroski 0 para un corte sin estados reconstruidos y la evidencia lo agrupa como «débil»: contamina PIT-2 con filas sin dato. Falta medirlo con un SELECT sobre la base. Ver bloque 4 |
-| **AUDIT-MC-ROBUSTEZ** | 5 | Monte Carlo, en piezas. Hechas: `log1p` sin guarda (AUDIT-MC-ROBUSTEZ-LOG1P) y `_asset_hist` viejo (AUDIT-MC-ROBUSTEZ-ASSET-HIST). Quedan Guardrails del año 1 (verificado), mutantes sin fijar; y dos para decidir vos: el borde del bootstrap y `p10_intra_min = 0` sin capital. Ver bloque 4 |
+| **AUDIT-MC-ROBUSTEZ** | 5 | Monte Carlo, en piezas. Hechas: `log1p` sin guarda (AUDIT-MC-ROBUSTEZ-LOG1P) y `_asset_hist` viejo (AUDIT-MC-ROBUSTEZ-ASSET-HIST). Cerrada por diseño: Guardrails del año 1. Quedan los mutantes sin fijar; y dos para decidir vos: el borde del bootstrap y `p10_intra_min = 0` sin capital. Ver bloque 4 |
 | **AUDIT-TESTS** | 5 | Dos tests que siempre se saltean, `personal_book_convictions` sin tests y con escritura no atómica; y, reportado por subagentes, tests que fallan según el orden (B1/B2, ésta con la causa del fallo intermitente de `test_sim_gap_katex_oracle`). Ver bloque 4 |
 | **AUDIT-RESIDUALES** | 5 | Lo que los arreglos de #283–#290 dejaron dicho y sin cerrar: las ventas parciales en la curva del tracker, el ancla que retrocede del Piotroski y las fechas exactas y las dos bases del track record, más tres del optimizador (AUDIT-OPTIMIZER-LIMITES) una del moat de IA (AUDIT-MOAT-IA) y lo que dejó AUDIT-UI-ESTADO (el escape de `\$` del chat, «Limpiar historial» sin mensaje, la firma del plan de «Mis Metas»). Ver bloque 4 |
 | **PIT-TOOLS** | 5 | Prerrequisito de ReAct (descartado hoy): `get_news` no acepta fecha y un doc macro posterior a `now` cuenta como fresco. Ver bloque 4 |
@@ -321,10 +321,8 @@ ninguna fila. Ver `ROADMAP.md`. Lo que sigue abierto (o se cerró en este bloque
     empezar; con datos reales de yfinance el simulador reutilizado sin red daba mediana 190 198 (la corrida anterior)
     y uno nuevo 445 649. Anotado ahí, sin tocar: `converted_currencies` se acumula entre corridas (sólo alimenta un
     log) y `_rng` avanza en cada `run()` (VERIFICADO por lectura, `portfolio/monte_carlo.py:235`, `:238`).
-    **Siguen abiertas, en este orden propuesto:** (1) Guardrails evalúa el año 1 a las 4
-    semanas (VERIFICADO el mecanismo y medido con bootstrap normal i.i.d.: dispara el recorte en 0,00 % de los
-    caminos con ~17 %/año de volatilidad, 3,5 % con ~35 % y 22 % con ~80 %, tipo cripto; el método de Guyton-Klinger, aquí simplificado (2 de sus 4 reglas), fija el
-    primer año en la tasa inicial). Cambia números sólo en planes volátiles con Guardrails. (2) Fijar los
+    También **cerrada, por diseño:** Guardrails en el año 1 (decidido por el usuario; ver CONTEXT §8).
+    **Siguen abiertas, en este orden propuesto:** (1) Fijar los
     mutantes que sobreviven (sólo tests): los percentiles y los `base_*` (`:548-562`), la escala de
     `prob_achieve_target_pct` (`:555`, `:564`; `×100 → ×110` sobrevive), el signo de `decumulation_years`
     (`:1089`), `initial_value / basis` (`:1095`) y `vol_scale ≠ 1` en el bootstrap (subagente; 354 mutantes, 110
