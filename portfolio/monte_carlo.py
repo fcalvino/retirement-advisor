@@ -690,6 +690,9 @@ class MonteCarloSimulator:
         Fetch weekly prices for each symbol, compute portfolio returns.
         Falls back to SPY if individual symbols fail.
         """
+        # Simulators are reused (goal planner, savings solver): a load that finds no prices must not leave the
+        # previous run's assets for ``_estimation_adjustment`` to recentre the SPY fallback on.
+        self._asset_hist, self._asset_weights, self._asset_symbols = None, None, []
         warnings: List[str] = []
         frames: Dict[str, pd.Series] = {}
         fx_excluded: List[str] = []
