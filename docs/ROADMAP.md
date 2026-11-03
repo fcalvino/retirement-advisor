@@ -14,6 +14,12 @@ Este plan describe trabajo **ya completado**. El plan original (AI integration) 
 
 ---
 
+## AUDIT-MC-ROBUSTEZ-GUARDRAILS-ANO1 — guardrails evalúa las bandas en el año 1: por diseño (AUDIT-MC-ROBUSTEZ) (2026-11-02)
+
+Tercera pieza de la robustez del Monte Carlo, sólo documentación: Guardrails evalúa las bandas desde el año 1 por diseño (un test lo fija a propósito); el usuario decidió dejarlo y queda anotado para no reportarlo de nuevo.
+
+---
+
 ## AUDIT-MC-ROBUSTEZ-ASSET-HIST — un simulador reutilizado no proyecta con los activos de la corrida anterior (AUDIT-MC-ROBUSTEZ, _asset_hist viejo) (2026-11-02)
 
 Segunda pieza de la robustez del Monte Carlo: un simulador reutilizado que ya no consigue precios y cae al respaldo de SPY ya no proyecta con la Estimación y los pesos de los activos de la corrida anterior. Con simuladores nuevos las cifras son las mismas que antes.
